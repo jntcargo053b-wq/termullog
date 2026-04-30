@@ -1,0 +1,11 @@
+<application
+    android:label="termullog"
+    android:icon="@mipmap/ic_launcher">
+
+    <!-- Tambahkan baris ini -->
+    <meta-data
+        android:name="flutterEmbedding"
+        android:value="2" />
+
+    <activity ...>
+    ...

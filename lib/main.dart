@@ -1,5 +1,13 @@
+// =======================
+// TERMULLOG FULL FIX
+// PREMIUM TIMESTAMP UI
+// SAVE + SHARE
+// STABLE MAP
+// =======================
+
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -14,6 +22,7 @@ import 'package:http/http.dart' as http;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   runApp(const TermulLogApp());
 }
 
@@ -35,6 +44,10 @@ class TermulLogApp extends StatelessWidget {
     );
   }
 }
+
+// =======================
+// LOGIN
+// =======================
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -66,9 +79,6 @@ class _LoginScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('TermulLog'),
-      ),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -77,11 +87,11 @@ class _LoginScreenState
           children: [
             const Icon(
               Icons.local_shipping,
-              size: 80,
+              size: 100,
               color: Colors.blue,
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 30),
 
             TextField(
               controller: controller,
@@ -98,10 +108,16 @@ class _LoginScreenState
 
             SizedBox(
               width: double.infinity,
+              height: 55,
               child: ElevatedButton.icon(
                 onPressed: login,
                 icon: const Icon(Icons.login),
-                label: const Text('MASUK'),
+                label: const Text(
+                  'MASUK',
+                  style: TextStyle(
+                    fontSize: 18,
+                  ),
+                ),
               ),
             ),
           ],
@@ -110,6 +126,10 @@ class _LoginScreenState
     );
   }
 }
+
+// =======================
+// MODEL
+// =======================
 
 class DeliveryRecord {
   final String deliveryId;
@@ -127,6 +147,10 @@ class DeliveryRecord {
   });
 }
 
+// =======================
+// DELIVERY ID
+// =======================
+
 class DeliveryIdGenerator {
   static String generate() {
     final now = DateTime.now();
@@ -135,22 +159,22 @@ class DeliveryIdGenerator {
   }
 }
 
+// =======================
+// WEATHER
+// =======================
+
 class WeatherData {
   final double temperature;
   final double windspeed;
-  final String label;
-  final String emoji;
 
   WeatherData({
     required this.temperature,
     required this.windspeed,
-    required this.label,
-    required this.emoji,
   });
 
-  String get watermarkText =>
-      '$emoji $label ${temperature.toStringAsFixed(1)}°C'
-      ' | Angin ${windspeed.toStringAsFixed(0)} km/h';
+  String get text =>
+      '${temperature.toStringAsFixed(1)}°C | '
+      'Angin ${windspeed.toStringAsFixed(0)} km/h';
 }
 
 class WeatherHelper {
@@ -166,12 +190,7 @@ class WeatherHelper {
         '&current_weather=true',
       );
 
-      final response = await http.get(
-        url,
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-        },
-      );
+      final response = await http.get(url);
 
       if (response.statusCode == 200) {
         final data =
@@ -181,19 +200,13 @@ class WeatherHelper {
             data['current_weather'];
 
         if (cw != null) {
-          final temp =
-              (cw['temperature'] as num)
-                  .toDouble();
-
-          final wind =
-              (cw['windspeed'] as num)
-                  .toDouble();
-
           return WeatherData(
-            temperature: temp,
-            windspeed: wind,
-            label: 'Cuaca',
-            emoji: '☁',
+            temperature:
+                (cw['temperature'] as num)
+                    .toDouble(),
+            windspeed:
+                (cw['windspeed'] as num)
+                    .toDouble(),
           );
         }
       }
@@ -203,75 +216,16 @@ class WeatherHelper {
   }
 }
 
+// =======================
+// MAP
+// =======================
+
 class MapTileHelper {
-  static const int outputSize = 420;
-
-  static img.Image _fallbackMap(
-    double lat,
-    double lng,
-  ) {
-    final out = img.Image(
-      width: outputSize,
-      height: outputSize,
-    );
-
-    img.fill(
-      out,
-      color: img.ColorRgb8(
-        225,
-        235,
-        245,
-      ),
-    );
-
-    img.drawString(
-      out,
-      'MAP FAILED',
-      font: img.arial24,
-      x: 20,
-      y: 20,
-      color: img.ColorRgb8(
-        40,
-        40,
-        40,
-      ),
-    );
-
-    img.drawString(
-      out,
-      lat.toStringAsFixed(5),
-      font: img.arial24,
-      x: 20,
-      y: 80,
-      color: img.ColorRgb8(
-        40,
-        40,
-        40,
-      ),
-    );
-
-    img.drawString(
-      out,
-      lng.toStringAsFixed(5),
-      font: img.arial24,
-      x: 20,
-      y: 120,
-      color: img.ColorRgb8(
-        40,
-        40,
-        40,
-      ),
-    );
-
-    return out;
-  }
-
-  static Future<img.Image> fetchMap(
+  static Future<img.Image?> fetchMap(
     double lat,
     double lng,
   ) async {
     try {
-
       final url =
           'https://staticmap.openstreetmap.de/staticmap.php'
           '?center=$lat,$lng'
@@ -281,37 +235,22 @@ class MapTileHelper {
 
       final response = await http.get(
         Uri.parse(url),
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Accept': 'image/png',
-        },
       );
 
       if (response.statusCode == 200) {
-
-        final image = img.decodeImage(
+        return img.decodeImage(
           response.bodyBytes,
         );
-
-        if (image != null) {
-          return image;
-        }
       }
+    } catch (_) {}
 
-      return _fallbackMap(
-        lat,
-        lng,
-      );
-
-    } catch (_) {
-
-      return _fallbackMap(
-        lat,
-        lng,
-      );
-    }
+    return null;
   }
 }
+
+// =======================
+// WATERMARK PREMIUM
+// =======================
 
 Future<String> addWatermark({
   required String deliveryId,
@@ -324,7 +263,6 @@ Future<String> addWatermark({
   required double? lat,
   required double? lng,
 }) async {
-
   final bytes =
       await File(imagePath).readAsBytes();
 
@@ -344,13 +282,13 @@ Future<String> addWatermark({
     );
   }
 
-  const stripHeight = 380;
+  const panelHeight = 430;
   const mapSize = 380;
 
   final canvas = img.Image(
     width: original.width,
     height:
-        original.height + stripHeight,
+        original.height + panelHeight,
   );
 
   img.compositeImage(
@@ -358,23 +296,23 @@ Future<String> addWatermark({
     original,
   );
 
+  // BACKGROUND
   img.fillRect(
     canvas,
     x1: 0,
     y1: original.height,
     x2: original.width,
-    y2: original.height +
-        stripHeight,
+    y2:
+        original.height + panelHeight,
     color: img.ColorRgb8(
-      20,
-      20,
-      20,
+      15,
+      18,
+      25,
     ),
   );
 
   // MAP
   if (mapImage != null) {
-
     final resizedMap =
         img.copyResize(
       mapImage,
@@ -385,19 +323,20 @@ Future<String> addWatermark({
     img.compositeImage(
       canvas,
       resizedMap,
-      dstX: 0,
-      dstY: original.height,
+      dstX: 20,
+      dstY: original.height + 20,
     );
   }
 
-  final textX = mapSize + 20;
+  final textX = 430;
 
-  int y = original.height + 20;
+  int y = original.height + 30;
 
+  // TITLE
   img.drawString(
     canvas,
-    deliveryId,
-    font: img.arial24,
+    'DELIVERY PROOF',
+    font: img.arial48,
     x: textX,
     y: y,
     color: img.ColorRgb8(
@@ -407,8 +346,25 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 40;
+  y += 70;
 
+  // ID
+  img.drawString(
+    canvas,
+    deliveryId,
+    font: img.arial24,
+    x: textX,
+    y: y,
+    color: img.ColorRgb8(
+      200,
+      200,
+      200,
+    ),
+  );
+
+  y += 45;
+
+  // KURIR
   img.drawString(
     canvas,
     'Kurir : $kurirName',
@@ -422,8 +378,9 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 40;
+  y += 45;
 
+  // TIME
   img.drawString(
     canvas,
     'Waktu : $timestamp',
@@ -437,16 +394,17 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 40;
+  y += 45;
 
-  final gpsText =
+  // GPS
+  final gps =
       lat != null && lng != null
           ? '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}'
           : 'Tidak tersedia';
 
   img.drawString(
     canvas,
-    'GPS : $gpsText',
+    'GPS : $gps',
     font: img.arial24,
     x: textX,
     y: y,
@@ -457,11 +415,12 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 40;
+  y += 45;
 
+  // WEATHER
   img.drawString(
     canvas,
-    'Cuaca : ${weather ?? "Tidak tersedia"}',
+    'Cuaca : ${weather ?? "-"}',
     font: img.arial24,
     x: textX,
     y: y,
@@ -472,14 +431,12 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 40;
+  y += 45;
 
-  final alamat =
-      address ?? 'Tidak tersedia';
-
+  // ADDRESS
   img.drawString(
     canvas,
-    'Alamat : $alamat',
+    'Alamat : ${address ?? "-"}',
     font: img.arial24,
     x: textX,
     y: y,
@@ -499,12 +456,16 @@ Future<String> addWatermark({
   await File(path).writeAsBytes(
     img.encodeJpg(
       canvas,
-      quality: 90,
+      quality: 92,
     ),
   );
 
   return path;
 }
+
+// =======================
+// DASHBOARD
+// =======================
 
 class DashboardScreen extends StatefulWidget {
   final String name;
@@ -521,20 +482,17 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState
     extends State<DashboardScreen> {
-
   final deliveries =
       <DeliveryRecord>[];
 
   bool loading = false;
 
   Future<void> captureDelivery() async {
-
     setState(() {
       loading = true;
     });
 
     try {
-
       final picker = ImagePicker();
 
       final photo =
@@ -544,7 +502,6 @@ class _DashboardScreenState
       );
 
       if (photo == null) {
-
         setState(() {
           loading = false;
         });
@@ -561,25 +518,23 @@ class _DashboardScreenState
       img.Image? mapImage;
 
       try {
-
         LocationPermission permission =
             await Geolocator
                 .checkPermission();
 
         if (permission ==
             LocationPermission.denied) {
-
           permission =
               await Geolocator
                   .requestPermission();
         }
 
         if (permission ==
-                LocationPermission.always ||
+                LocationPermission
+                    .always ||
             permission ==
                 LocationPermission
                     .whileInUse) {
-
           final pos =
               await Geolocator
                   .getCurrentPosition(
@@ -592,16 +547,15 @@ class _DashboardScreenState
 
           // ADDRESS
           try {
-
-            final marks =
+            final placemarks =
                 await placemarkFromCoordinates(
               lat,
               lng,
             );
 
-            if (marks.isNotEmpty) {
-
-              final p = marks.first;
+            if (placemarks.isNotEmpty) {
+              final p =
+                  placemarks.first;
 
               address = [
                 p.street,
@@ -615,38 +569,32 @@ class _DashboardScreenState
                   )
                   .join(', ');
             }
-
           } catch (_) {}
 
           // WEATHER
           try {
-
             final w =
-                await WeatherHelper.fetch(
+                await WeatherHelper
+                    .fetch(
               lat,
               lng,
             );
 
             if (w != null) {
-              weather =
-                  w.watermarkText;
+              weather = w.text;
             }
-
           } catch (_) {}
 
           // MAP
           try {
-
             mapImage =
                 await MapTileHelper
                     .fetchMap(
               lat,
               lng,
             );
-
           } catch (_) {}
         }
-
       } catch (_) {}
 
       final timestamp = DateFormat(
@@ -656,7 +604,7 @@ class _DashboardScreenState
       final deliveryId =
           DeliveryIdGenerator.generate();
 
-      final watermarkedPath =
+      final finalPath =
           await addWatermark(
         deliveryId: deliveryId,
         imagePath: photo.path,
@@ -673,7 +621,7 @@ class _DashboardScreenState
         0,
         DeliveryRecord(
           deliveryId: deliveryId,
-          imagePath: watermarkedPath,
+          imagePath: finalPath,
           timestamp: timestamp,
           weather: weather,
           address: address,
@@ -683,12 +631,8 @@ class _DashboardScreenState
       setState(() {
         loading = false;
       });
-
     } catch (e) {
-
-      debugPrint(
-        e.toString(),
-      );
+      debugPrint(e.toString());
 
       setState(() {
         loading = false;
@@ -696,10 +640,11 @@ class _DashboardScreenState
     }
   }
 
+  // SAVE
+
   Future<void> saveToGallery(
     String path,
   ) async {
-
     await GallerySaver.saveImage(path);
 
     if (!mounted) return;
@@ -714,10 +659,11 @@ class _DashboardScreenState
     );
   }
 
+  // SHARE
+
   Future<void> shareImage(
     String path,
   ) async {
-
     await Share.shareXFiles([
       XFile(path),
     ]);
@@ -725,21 +671,19 @@ class _DashboardScreenState
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'TermulLog Dashboard',
-        ),
+        title:
+            const Text('TermulLog Dashboard'),
       ),
       body: Column(
         children: [
-
           Padding(
             padding:
                 const EdgeInsets.all(16),
             child: SizedBox(
               width: double.infinity,
+              height: 55,
               child:
                   ElevatedButton.icon(
                 onPressed: loading
@@ -778,7 +722,6 @@ class _DashboardScreenState
                         deliveries.length,
                     itemBuilder:
                         (_, index) {
-
                       final d =
                           deliveries[index];
 
@@ -786,14 +729,13 @@ class _DashboardScreenState
                         margin:
                             const EdgeInsets
                                 .all(12),
+                        elevation: 4,
                         child: Column(
                           children: [
-
                             Image.file(
                               File(
                                 d.imagePath,
                               ),
-                              fit: BoxFit.cover,
                             ),
 
                             Padding(
@@ -805,7 +747,6 @@ class _DashboardScreenState
                                     CrossAxisAlignment
                                         .start,
                                 children: [
-
                                   Text(
                                     d.deliveryId,
                                     style:
@@ -817,32 +758,16 @@ class _DashboardScreenState
                                   ),
 
                                   const SizedBox(
-                                    height: 4,
-                                  ),
+                                      height: 6),
 
                                   Text(
-                                    d.timestamp,
-                                  ),
-
-                                  if (d.weather !=
-                                      null)
-                                    Text(
-                                      d.weather!,
-                                    ),
-
-                                  if (d.address !=
-                                      null)
-                                    Text(
-                                      d.address!,
-                                    ),
+                                      d.timestamp),
 
                                   const SizedBox(
-                                    height: 12,
-                                  ),
+                                      height: 12),
 
                                   Row(
                                     children: [
-
                                       Expanded(
                                         child:
                                             ElevatedButton.icon(
@@ -864,8 +789,7 @@ class _DashboardScreenState
                                       ),
 
                                       const SizedBox(
-                                        width: 10,
-                                      ),
+                                          width: 10),
 
                                       Expanded(
                                         child:

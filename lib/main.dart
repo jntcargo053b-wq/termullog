@@ -115,8 +115,9 @@ class DeliveryRecord {
 // ─── MAP TILE ─────────────────────────────────────────────────────────────────
 
 class MapTileHelper {
-  static const int zoom = 16;
+  static const int zoom = 17;        // zoom 17 = lebih detail, jalan kecil kelihatan
   static const int tileSize = 256;
+  static const int outputSize = 400; // ukuran output peta (px)
 
   static int lonToTile(double lon) =>
       ((lon + 180.0) / 360.0 * (1 << zoom)).floor();
@@ -147,39 +148,39 @@ class MapTileHelper {
     final px = lonToPixelOffset(lng);
     final py = latToPixelOffset(lat);
 
-    // Canvas putih RGB — tile OSM akan di-copy pixel per pixel
-    final canvas = img.Image(width: tileSize * 3, height: tileSize * 3, numChannels: 3);
-    // Fill putih sebagai background default (supaya area tile yang gagal tetap putih)
+    // Canvas 5×5 tile agar ada cukup area untuk di-crop
+    final canvasW = tileSize * 5;
+    final canvasH = tileSize * 5;
+    final canvas = img.Image(width: canvasW, height: canvasH, numChannels: 3);
     img.fill(canvas, color: img.ColorRgb8(242, 239, 233));
 
-    for (int dy = -1; dy <= 1; dy++) {
-      for (int dx = -1; dx <= 1; dx++) {
+    for (int dy = -2; dy <= 2; dy++) {
+      for (int dx = -2; dx <= 2; dx++) {
         try {
           final url =
               'https://tile.openstreetmap.org/$zoom/${tx + dx}/${ty + dy}.png';
           final response = await http.get(
             Uri.parse(url),
             headers: {'User-Agent': 'TermulLogApp/1.0'},
-          ).timeout(const Duration(seconds: 8));
+          ).timeout(const Duration(seconds: 10));
           if (response.statusCode == 200) {
             img.Image? tile = img.decodePng(response.bodyBytes);
             if (tile != null) {
-              // Konversi tile ke RGB agar channel match dengan canvas
               if (tile.numChannels != 3) {
                 tile = img.copyResize(
-                  img.remapColors(tile,
-                    red:   img.Channel.red,
+                  img.remapColors(
+                    tile,
+                    red: img.Channel.red,
                     green: img.Channel.green,
-                    blue:  img.Channel.blue,
+                    blue: img.Channel.blue,
                     alpha: img.Channel.luminance,
                   ),
                   width: tileSize,
                   height: tileSize,
                 );
               }
-              // Copy pixel per pixel agar tidak ada masalah alpha blending
-              final dstX = (dx + 1) * tileSize;
-              final dstY = (dy + 1) * tileSize;
+              final dstX = (dx + 2) * tileSize;
+              final dstY = (dy + 2) * tileSize;
               for (int py2 = 0; py2 < tileSize; py2++) {
                 for (int px2 = 0; px2 < tileSize; px2++) {
                   final pixel = tile.getPixel(px2, py2);
@@ -198,17 +199,27 @@ class MapTileHelper {
       }
     }
 
-    final cropX = (tileSize + px - 256).clamp(0, tileSize * 3 - 512);
-    final cropY = (tileSize + py - 256).clamp(0, tileSize * 3 - 512);
-    final cropped = img.copyCrop(canvas, x: cropX, y: cropY, width: 512, height: 512);
+    // Titik center: tile (2,2) + offset piksel dalam tile tersebut
+    final centerX = 2 * tileSize + px;
+    final centerY = 2 * tileSize + py;
+    final half = outputSize ~/ 2;
 
-    final markerX = tileSize + px - cropX;
-    final markerY = tileSize + py - cropY;
-    final red   = img.ColorRgb8(220, 30, 30);
-    final white = img.ColorRgb8(255, 255, 255);
-    img.fillCircle(cropped, x: markerX, y: markerY, radius: 12, color: red);
-    img.drawCircle(cropped, x: markerX, y: markerY, radius: 12, color: white);
-    img.fillCircle(cropped, x: markerX, y: markerY, radius: 4,  color: white);
+    final cropX = (centerX - half).clamp(0, canvasW - outputSize);
+    final cropY = (centerY - half).clamp(0, canvasH - outputSize);
+    final cropped = img.copyCrop(canvas,
+        x: cropX, y: cropY, width: outputSize, height: outputSize);
+
+    final markerX = centerX - cropX;
+    final markerY = centerY - cropY;
+
+    // Marker dengan shadow agar kontras di atas peta terang
+    final shadow = img.ColorRgb8(0, 0, 0);
+    final red    = img.ColorRgb8(220, 30, 30);
+    final white  = img.ColorRgb8(255, 255, 255);
+    img.fillCircle(cropped, x: markerX + 2, y: markerY + 2, radius: 14, color: shadow);
+    img.fillCircle(cropped, x: markerX,     y: markerY,     radius: 14, color: red);
+    img.drawCircle(cropped, x: markerX,     y: markerY,     radius: 14, color: white);
+    img.fillCircle(cropped, x: markerX,     y: markerY,     radius: 5,  color: white);
 
     return cropped;
   }
@@ -236,100 +247,186 @@ Future<String> addWatermark({
 
   final w = original.width;
   final h = original.height;
-  final stripH = (h * 0.20).clamp(140.0, 220.0).toInt();
-  final mapSize = mapImage != null ? stripH : 0;
 
-  // Kanvas RGB — wajib numChannels:3 agar tidak ada masalah alpha saat encode JPEG
+  // Strip info tinggi tetap 260px — cukup untuk peta + semua teks
+  const stripH       = 260;
+  const mapDisplaySz = 260; // lebar/tinggi peta = sama dengan stripH
+  final hasMap       = mapImage != null;
+  final mapW         = hasMap ? mapDisplaySz : 0;
+
+  // ── Kanvas akhir (foto + strip bawah) ────────────────────────────────────
   final canvas = img.Image(width: w, height: h + stripH, numChannels: 3);
   img.compositeImage(canvas, original, dstX: 0, dstY: 0);
 
-  // Strip hitam solid
-  img.fillRect(canvas,
-      x1: 0, y1: h, x2: w, y2: h + stripH,
-      color: img.ColorRgb8(20, 20, 20));
-
-  // Tempel peta
-  if (mapImage != null) {
-    final scaled = img.copyResize(mapImage, width: mapSize, height: mapSize);
-    img.compositeImage(canvas, scaled, dstX: w - mapSize, dstY: h);
-    img.drawLine(canvas,
-        x1: w - mapSize, y1: h,
-        x2: w - mapSize, y2: h + stripH,
-        color: img.ColorRgb8(200, 200, 200));
+  // ── Background strip: gradient manual abu gelap → hitam ──────────────────
+  for (int row = 0; row < stripH; row++) {
+    final t    = row / (stripH - 1);
+    final gray = (35 * (1 - t) + 8 * t).toInt();
+    img.drawLine(
+      canvas,
+      x1: 0,     y1: h + row,
+      x2: w - 1, y2: h + row,
+      color: img.ColorRgb8(gray, gray, gray + 4),
+    );
   }
 
-  // Warna teks
+  // ── Garis aksen teal di batas foto-strip (3px) ───────────────────────────
+  for (int x = 0; x < w; x++) {
+    canvas.setPixelRgb(x, h,     0, 200, 180);
+    canvas.setPixelRgb(x, h + 1, 0, 200, 180);
+    canvas.setPixelRgb(x, h + 2, 0, 200, 180);
+  }
+
+  // ── Tempel peta di KIRI strip ─────────────────────────────────────────────
+  if (hasMap) {
+    final scaled =
+        img.copyResize(mapImage!, width: mapDisplaySz, height: mapDisplaySz);
+    img.compositeImage(canvas, scaled, dstX: 0, dstY: h);
+
+    // Garis vertikal pemisah peta-teks (teal 2px)
+    for (int row = 0; row < stripH; row++) {
+      canvas.setPixelRgb(mapW,     h + row, 0, 200, 180);
+      canvas.setPixelRgb(mapW + 1, h + row, 0, 200, 180);
+    }
+  }
+
+  // ── Warna teks ───────────────────────────────────────────────────────────
   final cWhite  = img.ColorRgb8(255, 255, 255);
-  final cYellow = img.ColorRgb8(255, 215, 40);
-  final cGrey   = img.ColorRgb8(170, 170, 170);
+  final cTeal   = img.ColorRgb8(0, 210, 185);
+  final cYellow = img.ColorRgb8(255, 210, 0);
+  final cGrey   = img.ColorRgb8(155, 155, 155);
 
-  final fontSize = (stripH * 0.16).clamp(12.0, 22.0).toInt();
-  final lineGap  = (fontSize * 1.6).toInt();
-  final pad      = (w * 0.02).toInt();
-  final maxW     = w - mapSize - pad * 2;
+  final fontBig   = img.arial24; // header kiriman
+  final fontSmall = img.arial14; // isi info
 
-  img.BitmapFont font;
-  if (fontSize <= 14) {
-    font = img.arial14;
-  } else if (fontSize <= 24) {
-    font = img.arial24;
-  } else {
-    font = img.arial48;
-  }
+  final textX  = mapW + 16;       // X awal teks (setelah peta + padding)
+  final maxTW  = w - textX - 12;  // lebar maksimal area teks
+  int   ty     = h + 12;          // Y awal teks
 
-  int y = h + (stripH * 0.07).toInt();
+  // ── Header: KIRIMAN #N ───────────────────────────────────────────────────
+  img.drawString(
+    canvas,
+    'KIRIMAN #$deliveryNum',
+    font: fontBig,
+    x: textX,
+    y: ty,
+    color: cYellow,
+  );
+  ty += 34;
 
-  // Baris 1 — nomor kiriman
-  final line1 = 'KIRIMAN #' + deliveryNum.toString();
-  img.drawString(canvas, line1, font: font, x: pad, y: y, color: cYellow);
-  img.drawString(canvas, 'TermulLog',
-      font: font, x: w - mapSize - fontSize * 6, y: y, color: cYellow);
-  y += lineGap;
+  // Garis dekoratif bawah header
+  img.drawLine(
+    canvas,
+    x1: textX,       y1: ty - 4,
+    x2: textX + 180, y2: ty - 4,
+    color: cTeal,
+  );
+  ty += 6;
 
-  // Baris 2 — kurir
-  img.drawString(canvas, 'Kurir : ' + kurirName,
-      font: font, x: pad, y: y, color: cWhite);
-  y += lineGap;
+  // ── Kurir ────────────────────────────────────────────────────────────────
+  img.drawString(
+    canvas,
+    'Kurir   : $kurirName',
+    font: fontSmall,
+    x: textX,
+    y: ty,
+    color: cWhite,
+  );
+  ty += 26;
 
-  // Baris 3 — waktu
-  img.drawString(canvas, 'Waktu : ' + timestamp,
-      font: font, x: pad, y: y, color: cWhite);
-  y += lineGap;
+  // ── Waktu ────────────────────────────────────────────────────────────────
+  img.drawString(
+    canvas,
+    'Waktu   : $timestamp',
+    font: fontSmall,
+    x: textX,
+    y: ty,
+    color: cWhite,
+  );
+  ty += 26;
 
-  // Baris 4 — GPS
+  // ── GPS ──────────────────────────────────────────────────────────────────
   if (lat != null && lng != null) {
-    final gpsText = 'GPS   : ' +
-        lat.toStringAsFixed(6) +
-        ', ' +
-        lng.toStringAsFixed(6);
-    img.drawString(canvas, gpsText, font: font, x: pad, y: y, color: cWhite);
+    img.drawString(
+      canvas,
+      'GPS     : ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+      font: fontSmall,
+      x: textX,
+      y: ty,
+      color: cWhite,
+    );
   } else {
-    img.drawString(canvas, 'GPS   : Tidak tersedia',
-        font: font, x: pad, y: y, color: cGrey);
+    img.drawString(
+      canvas,
+      'GPS     : Tidak tersedia',
+      font: fontSmall,
+      x: textX,
+      y: ty,
+      color: cGrey,
+    );
   }
-  y += lineGap;
+  ty += 26;
 
-  // Baris 5 — alamat
-  String addrText;
-  img.Color addrColor;
+  // ── Alamat (wrap 2 baris) ────────────────────────────────────────────────
+  // Estimasi lebar karakter arial14 ≈ 8px
+  const charW   = 8;
+  final maxChars = maxTW ~/ charW;
+
   if (address != null && address.isNotEmpty) {
-    final maxChars = (maxW / (fontSize * 0.6)).floor();
-    addrText = address.length > maxChars
-        ? address.substring(0, maxChars) + '...'
+    final line1 = address.length > maxChars
+        ? address.substring(0, maxChars)
         : address;
-    addrColor = cWhite;
-  } else {
-    addrText = 'Tidak tersedia';
-    addrColor = cGrey;
-  }
-  img.drawString(canvas, 'Alamat: ' + addrText,
-      font: font, x: pad, y: y, color: addrColor);
+    img.drawString(
+      canvas,
+      'Alamat  : $line1',
+      font: fontSmall,
+      x: textX,
+      y: ty,
+      color: cWhite,
+    );
+    ty += 22;
 
-  // Simpan
-  final dir = await getApplicationDocumentsDirectory();
-  final ms  = DateTime.now().millisecondsSinceEpoch.toString();
-  final outPath = dir.path + '/delivery_' + deliveryNum.toString() + '_' + ms + '.jpg';
-  await File(outPath).writeAsBytes(img.encodeJpg(canvas, quality: 88));
+    if (address.length > maxChars) {
+      final rest  = address.substring(maxChars);
+      final line2 = rest.length > maxChars
+          ? '${rest.substring(0, maxChars - 3)}...'
+          : rest;
+      img.drawString(
+        canvas,
+        '          $line2',
+        font: fontSmall,
+        x: textX,
+        y: ty,
+        color: cWhite,
+      );
+      ty += 22;
+    }
+  } else {
+    img.drawString(
+      canvas,
+      'Alamat  : Tidak tersedia',
+      font: fontSmall,
+      x: textX,
+      y: ty,
+      color: cGrey,
+    );
+  }
+
+  // ── Watermark brand di pojok kanan bawah strip ───────────────────────────
+  img.drawString(
+    canvas,
+    'TermulLog',
+    font: fontSmall,
+    x: w - 92,
+    y: h + stripH - 22,
+    color: cTeal,
+  );
+
+  // ── Simpan ───────────────────────────────────────────────────────────────
+  final dir     = await getApplicationDocumentsDirectory();
+  final ms      = DateTime.now().millisecondsSinceEpoch.toString();
+  final outPath = '${dir.path}/delivery_${deliveryNum}_$ms.jpg';
+  await File(outPath).writeAsBytes(img.encodeJpg(canvas, quality: 90));
   return outPath;
 }
 
@@ -350,8 +447,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => isLoading = true);
     try {
       final picker = ImagePicker();
-      final XFile? photo = await picker.pickImage(
-          source: ImageSource.camera, imageQuality: 90);
+      final XFile? photo =
+          await picker.pickImage(source: ImageSource.camera, imageQuality: 90);
       if (photo == null) {
         setState(() => isLoading = false);
         return;
@@ -378,10 +475,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final marks = await placemarkFromCoordinates(lat, lng)
                 .timeout(const Duration(seconds: 6));
             if (marks.isNotEmpty) {
-              final p = marks.first;
-              final parts = [p.street, p.subLocality, p.locality, p.subAdministrativeArea]
-                  .where((s) => s != null && s.isNotEmpty)
-                  .toList();
+              final p     = marks.first;
+              final parts = [
+                p.street,
+                p.subLocality,
+                p.locality,
+                p.subAdministrativeArea
+              ].where((s) => s != null && s.isNotEmpty).toList();
               address = parts.join(', ');
             }
           } catch (_) {}
@@ -408,22 +508,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
 
       setState(() {
-        deliveries.insert(0, DeliveryRecord(
-          number:    num,
-          imagePath: path,
-          timestamp: timestamp,
-          kurirName: widget.name,
-          lat:       lat,
-          lng:       lng,
-          address:   address,
-        ));
+        deliveries.insert(
+          0,
+          DeliveryRecord(
+            number:    num,
+            imagePath: path,
+            timestamp: timestamp,
+            kurirName: widget.name,
+            lat:       lat,
+            lng:       lng,
+            address:   address,
+          ),
+        );
         isLoading = false;
       });
     } catch (e) {
       setState(() => isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: ' + e.toString())));
+            .showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
       }
     }
   }
@@ -436,13 +539,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => Navigator.pushReplacement(context,
-                MaterialPageRoute(builder: (_) => const LoginScreen())),
+            onPressed: () => Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            ),
           ),
         ],
       ),
       body: Column(
         children: [
+          // ── Info kurir & total kiriman ──────────────────────────────────
           Container(
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(16),
@@ -454,7 +560,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _StatItem(label: 'Kurir', value: widget.name, icon: Icons.person),
+                _StatItem(
+                    label: 'Kurir',
+                    value: widget.name,
+                    icon: Icons.person),
                 _StatItem(
                     label: 'Total Kiriman',
                     value: deliveries.length.toString(),
@@ -462,6 +571,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
           ),
+
+          // ── Tombol foto ─────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -472,26 +583,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                        child:
+                            CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.camera_alt),
-                label: Text(isLoading ? 'Memproses...' : '+ FOTO BUKTI KIRIM'),
+                label: Text(
+                    isLoading ? 'Memproses...' : '+ FOTO BUKTI KIRIM'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  textStyle: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
           ),
           const SizedBox(height: 12),
+
+          // ── Daftar kiriman ───────────────────────────────────────────────
           Expanded(
             child: deliveries.isEmpty
                 ? const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey),
+                        Icon(Icons.photo_library_outlined,
+                            size: 64, color: Colors.grey),
                         SizedBox(height: 12),
                         Text('Belum ada foto kiriman',
                             style: TextStyle(color: Colors.grey)),
@@ -501,7 +618,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 : ListView.builder(
                     padding: const EdgeInsets.all(12),
                     itemCount: deliveries.length,
-                    itemBuilder: (_, i) => _DeliveryCard(delivery: deliveries[i]),
+                    itemBuilder: (_, i) =>
+                        _DeliveryCard(delivery: deliveries[i]),
                   ),
           ),
         ],
@@ -515,15 +633,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 class _StatItem extends StatelessWidget {
   final String label, value;
   final IconData icon;
-  const _StatItem({required this.label, required this.value, required this.icon});
+  const _StatItem(
+      {required this.label, required this.value, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Column(children: [
       Icon(icon, color: Colors.blue),
       const SizedBox(height: 4),
-      Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+      Text(value,
+          style:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      Text(label,
+          style: const TextStyle(color: Colors.grey, fontSize: 12)),
     ]);
   }
 }
@@ -540,55 +662,76 @@ class _DeliveryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Thumbnail foto (tap untuk fullscreen)
           GestureDetector(
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(
-                    builder: (_) => PhotoViewScreen(imagePath: delivery.imagePath))),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    PhotoViewScreen(imagePath: delivery.imagePath),
+              ),
+            ),
             child: SizedBox(
               width: double.infinity,
               height: 200,
-              child: Image.file(File(delivery.imagePath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      const Center(child: Icon(Icons.broken_image, size: 48))),
+              child: Image.file(
+                File(delivery.imagePath),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.broken_image, size: 48)),
+              ),
             ),
           ),
+
+          // Info kiriman
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Kiriman #' + delivery.number.toString(),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                Text(
+                  'Kiriman #${delivery.number}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 15),
+                ),
                 const SizedBox(height: 4),
                 Row(children: [
-                  const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                  const Icon(Icons.access_time,
+                      size: 14, color: Colors.grey),
                   const SizedBox(width: 4),
                   Text(delivery.timestamp,
-                      style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                      style: const TextStyle(
+                          color: Colors.grey, fontSize: 13)),
                 ]),
                 if (delivery.address != null) ...[
                   const SizedBox(height: 2),
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Icon(Icons.location_on, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(delivery.address!,
-                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                  ]),
+                  Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.location_on,
+                            size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            delivery.address!,
+                            style: const TextStyle(
+                                color: Colors.grey, fontSize: 13),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ]),
                 ] else if (delivery.lat != null) ...[
                   const SizedBox(height: 2),
                   Row(children: [
-                    const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                    const Icon(Icons.location_on,
+                        size: 14, color: Colors.grey),
                     const SizedBox(width: 4),
                     Text(
-                      delivery.lat!.toStringAsFixed(5) +
-                          ', ' +
-                          delivery.lng!.toStringAsFixed(5),
-                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      '${delivery.lat!.toStringAsFixed(5)}, '
+                      '${delivery.lng!.toStringAsFixed(5)}',
+                      style: const TextStyle(
+                          color: Colors.grey, fontSize: 13),
                     ),
                   ]),
                 ],
@@ -618,10 +761,15 @@ class PhotoViewScreen extends StatelessWidget {
       ),
       body: Center(
         child: InteractiveViewer(
-          child: Image.file(File(imagePath),
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.broken_image, color: Colors.white, size: 64)),
+          child: Image.file(
+            File(imagePath),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.broken_image,
+              color: Colors.white,
+              size: 64,
+            ),
+          ),
         ),
       ),
     );

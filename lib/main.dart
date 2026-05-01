@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
 import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(const TermulLogApp());
@@ -113,6 +115,99 @@ class DeliveryRecord {
   });
 }
 
+// ─── MAP TILE HELPER ─────────────────────────────────────────────────────────
+
+class MapTileHelper {
+  static const int zoom = 16;
+  static const int tileSize = 256;
+
+  static int lonToTile(double lon) =>
+      ((lon + 180.0) / 360.0 * (1 << zoom)).floor();
+
+  static int latToTile(double lat) {
+    final latRad = lat * pi / 180.0;
+    return ((1.0 -
+                log(tan(latRad) + 1.0 / cos(latRad)) / pi) /
+            2.0 *
+            (1 << zoom))
+        .floor();
+  }
+
+  // Pixel offset of lat/lng within the tile (0..255)
+  static int lonToPixelOffset(double lon) {
+    final worldTile = (lon + 180.0) / 360.0 * (1 << zoom);
+    return ((worldTile - worldTile.floor()) * tileSize).floor();
+  }
+
+  static int latToPixelOffset(double lat) {
+    final latRad = lat * pi / 180.0;
+    final worldTile = (1.0 - log(tan(latRad) + 1.0 / cos(latRad)) / pi) /
+        2.0 *
+        (1 << zoom);
+    return ((worldTile - worldTile.floor()) * tileSize).floor();
+  }
+
+  /// Fetch a 2×2 tile grid (512×512) centered near the location,
+  /// returns null on failure.
+  static Future<img.Image?> fetchMap(double lat, double lng) async {
+    final tx = lonToTile(lng);
+    final ty = latToTile(lat);
+    final px = lonToPixelOffset(lng);
+    final py = latToPixelOffset(lat);
+
+    // We fetch a 3×3 grid then crop a 512×512 around the marker
+    final canvas = img.Image(width: tileSize * 3, height: tileSize * 3);
+
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        try {
+          final url =
+              'https://tile.openstreetmap.org/$zoom/${tx + dx}/${ty + dy}.png';
+          final response =
+              await http.get(Uri.parse(url), headers: {
+            'User-Agent': 'TermulLogApp/1.0'
+          }).timeout(const Duration(seconds: 8));
+
+          if (response.statusCode == 200) {
+            final tile = img.decodePng(response.bodyBytes);
+            if (tile != null) {
+              img.compositeImage(
+                canvas,
+                tile,
+                dstX: (dx + 1) * tileSize,
+                dstY: (dy + 1) * tileSize,
+              );
+            }
+          }
+        } catch (_) {
+          // Tile gagal, biarkan kosong
+        }
+      }
+    }
+
+    // Crop 512×512 centered on the marker
+    final cropX = (tileSize + px - 256).clamp(0, tileSize * 3 - 512);
+    final cropY = (tileSize + py - 256).clamp(0, tileSize * 3 - 512);
+    final cropped = img.copyCrop(canvas,
+        x: cropX, y: cropY, width: 512, height: 512);
+
+    // Hitung posisi marker di cropped image
+    final markerX = (tileSize + px - cropX);
+    final markerY = (tileSize + py - cropY);
+
+    // Gambar lingkaran merah sebagai marker
+    final red = img.ColorRgba8(220, 30, 30, 255);
+    final white = img.ColorRgba8(255, 255, 255, 255);
+    img.fillCircle(cropped, x: markerX, y: markerY, radius: 10, color: red);
+    img.drawCircle(cropped, x: markerX, y: markerY, radius: 10, color: white);
+    img.drawCircle(cropped, x: markerX, y: markerY, radius: 11, color: red);
+    // Titik putih kecil di tengah
+    img.fillCircle(cropped, x: markerX, y: markerY, radius: 3, color: white);
+
+    return cropped;
+  }
+}
+
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
 
 class DashboardScreen extends StatefulWidget {
@@ -145,6 +240,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // 2. Ambil GPS
       double? lat, lng;
       String? address;
+      img.Image? mapImage;
+
       try {
         LocationPermission perm = await Geolocator.checkPermission();
         if (perm == LocationPermission.denied) {
@@ -160,8 +257,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           // Reverse geocoding
           try {
-            final placemarks = await placemarkFromCoordinates(lat, lng)
-                .timeout(const Duration(seconds: 6));
+            final placemarks =
+                await placemarkFromCoordinates(lat, lng)
+                    .timeout(const Duration(seconds: 6));
             if (placemarks.isNotEmpty) {
               final p = placemarks.first;
               final parts = [
@@ -173,12 +271,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
               address = parts.join(', ');
             }
           } catch (_) {}
+
+          // Fetch peta OSM
+          try {
+            mapImage = await MapTileHelper.fetchMap(lat, lng);
+          } catch (_) {}
         }
       } catch (_) {
-        // GPS gagal, lanjut tanpa koordinat
+        // GPS gagal
       }
 
-      // 3. Tambah watermark
+      // 3. Buat watermark
       final now = DateTime.now();
       final timestamp = DateFormat('dd/MM/yyyy HH:mm:ss').format(now);
       final deliveryNum = deliveries.length + 1;
@@ -191,6 +294,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         lat: lat,
         lng: lng,
         address: address,
+        mapImage: mapImage,
       );
 
       setState(() {
@@ -211,9 +315,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (e) {
       setState(() => isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -226,13 +329,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     double? lat,
     double? lng,
     String? address,
+    img.Image? mapImage,
   }) async {
-    // Baca gambar
     final bytes = await File(imagePath).readAsBytes();
     img.Image? original = img.decodeImage(bytes);
     if (original == null) throw Exception('Gagal membaca gambar');
 
-    // Resize jika terlalu besar (maks 1920px)
     if (original.width > 1920) {
       original = img.copyResize(original, width: 1920);
     }
@@ -240,139 +342,105 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final w = original.width;
     final h = original.height;
 
-    // Tinggi strip watermark di bawah (lebih tinggi karena ada baris alamat)
-    final stripHeight = (h * 0.17).clamp(110.0, 200.0).toInt();
+    // Tinggi strip teks di bawah
+    final stripHeight = (h * 0.20).clamp(140.0, 220.0).toInt();
 
-    // Buat kanvas baru dengan strip di bawah
+    // Lebar peta di sisi kanan strip (proporsional)
+    final mapSize = mapImage != null ? stripHeight : 0;
+
     final canvas = img.Image(width: w, height: h + stripHeight);
-
-    // Salin gambar asli
     img.compositeImage(canvas, original, dstX: 0, dstY: 0);
 
-    // Isi strip hitam semi-transparan
-    final black = img.ColorRgba8(0, 0, 0, 200);
+    // Background strip hitam
     img.fillRect(
       canvas,
       x1: 0,
       y1: h,
       x2: w,
       y2: h + stripHeight,
-      color: black,
+      color: img.ColorRgba8(0, 0, 0, 210),
     );
 
+    // Tempel peta di sisi kanan strip
+    if (mapImage != null) {
+      final scaledMap = img.copyResize(mapImage,
+          width: mapSize, height: mapSize);
+      img.compositeImage(canvas, scaledMap,
+          dstX: w - mapSize, dstY: h);
+
+      // Border putih tipis di kiri peta
+      img.drawLine(canvas,
+          x1: w - mapSize, y1: h,
+          x2: w - mapSize, y2: h + stripHeight,
+          color: img.ColorRgba8(255, 255, 255, 120));
+    }
+
     // Teks watermark
-    final white = img.ColorRgba8(255, 255, 255, 255);
+    final white  = img.ColorRgba8(255, 255, 255, 255);
     final yellow = img.ColorRgba8(255, 220, 50, 255);
-    final fontSize = (stripHeight * 0.18).clamp(12.0, 22.0).toInt();
-    final lineGap = (fontSize * 1.5).toInt();
-    final padding = (w * 0.02).toInt();
+    final grey   = img.ColorRgba8(180, 180, 180, 255);
+
+    final fontSize = (stripHeight * 0.16).clamp(12.0, 22.0).toInt();
+    final lineGap  = (fontSize * 1.55).toInt();
+    final padding  = (w * 0.02).toInt();
+    final textMaxW = w - mapSize - padding * 2;
 
     final font = _getFont(fontSize);
 
-    int yPos = h + (stripHeight * 0.08).toInt();
+    int yPos = h + (stripHeight * 0.07).toInt();
 
-    // Baris 1: Nomor kiriman (kuning)
-    img.drawString(
-      canvas,
-      'KIRIMAN #$deliveryNum',
-      font: font,
-      x: padding,
-      y: yPos,
-      color: yellow,
-    );
+    // Baris 1: KIRIMAN #N + "TermulLog" di kanan atas strip teks
+    img.drawString(canvas, 'KIRIMAN #$deliveryNum',
+        font: font, x: padding, y: yPos, color: yellow);
+
+    img.drawString(canvas, 'TermulLog',
+        font: font,
+        x: w - mapSize - (fontSize * 6),
+        y: yPos,
+        color: yellow);
 
     yPos += lineGap;
 
-    // Baris 2: Nama kurir
-    img.drawString(
-      canvas,
-      'Kurir: $kurirName',
-      font: font,
-      x: padding,
-      y: yPos,
-      color: white,
-    );
-
+    // Baris 2: Kurir
+    img.drawString(canvas, 'Kurir : $kurirName',
+        font: font, x: padding, y: yPos, color: white);
     yPos += lineGap;
 
     // Baris 3: Waktu
-    img.drawString(
-      canvas,
-      'Waktu: $timestamp',
-      font: font,
-      x: padding,
-      y: yPos,
-      color: white,
-    );
-
+    img.drawString(canvas, 'Waktu : $timestamp',
+        font: font, x: padding, y: yPos, color: white);
     yPos += lineGap;
 
     // Baris 4: GPS
     if (lat != null && lng != null) {
-      img.drawString(
-        canvas,
-        'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
-        font: font,
-        x: padding,
-        y: yPos,
-        color: white,
-      );
+      final latStr = lat.toStringAsFixed(6);
+      final lngStr = lng.toStringAsFixed(6);
+      img.drawString(canvas, 'GPS   : $latStr, $lngStr',
+          font: font, x: padding, y: yPos, color: white);
     } else {
-      img.drawString(
-        canvas,
-        'GPS: Tidak tersedia',
-        font: font,
-        x: padding,
-        y: yPos,
-        color: img.ColorRgba8(180, 180, 180, 255),
-      );
+      img.drawString(canvas, 'GPS   : Tidak tersedia',
+          font: font, x: padding, y: yPos, color: grey);
     }
-
     yPos += lineGap;
 
-    // Baris 5: Alamat
+    // Baris 5: Alamat (potong jika terlalu panjang)
+    final maxChars = (textMaxW / (fontSize * 0.58)).floor();
+    String addrDisplay = 'Tidak tersedia';
+    Color addrColor = grey;
     if (address != null && address.isNotEmpty) {
-      // Potong alamat jika terlalu panjang
-      final maxLen = (w / (fontSize * 0.6)).toInt();
-      final displayAddr = address.length > maxLen
-          ? '${address.substring(0, maxLen)}...'
+      addrDisplay = address.length > maxChars
+          ? address.substring(0, maxChars) + '...'
           : address;
-      img.drawString(
-        canvas,
-        'Alamat: $displayAddr',
-        font: font,
-        x: padding,
-        y: yPos,
-        color: white,
-      );
-    } else {
-      img.drawString(
-        canvas,
-        'Alamat: Tidak tersedia',
-        font: font,
-        x: padding,
-        y: yPos,
-        color: img.ColorRgba8(180, 180, 180, 255),
-      );
+      addrColor = white;
     }
+    img.drawString(canvas, 'Alamat: $addrDisplay',
+        font: font, x: padding, y: yPos, color: addrColor);
 
-    // Tambah logo kecil "TermulLog" di kanan
-    img.drawString(
-      canvas,
-      'TermulLog',
-      font: font,
-      x: w - (fontSize * 6),
-      y: h + (stripHeight * 0.08).toInt(),
-      color: yellow,
-    );
-
-    // Simpan ke file baru
+    // Simpan
     final dir = await getApplicationDocumentsDirectory();
     final outPath =
         '${dir.path}/delivery_${deliveryNum}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final outBytes = img.encodeJpg(canvas, quality: 88);
-    await File(outPath).writeAsBytes(outBytes);
-
+    await File(outPath).writeAsBytes(img.encodeJpg(canvas, quality: 88));
     return outPath;
   }
 
@@ -412,15 +480,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _StatItem(
-                  label: 'Kurir',
-                  value: widget.name,
-                  icon: Icons.person,
-                ),
+                    label: 'Kurir',
+                    value: widget.name,
+                    icon: Icons.person),
                 _StatItem(
-                  label: 'Total Kiriman',
-                  value: '${deliveries.length}',
-                  icon: Icons.inventory_2,
-                ),
+                    label: 'Total Kiriman',
+                    value: '${deliveries.length}',
+                    icon: Icons.inventory_2),
               ],
             ),
           ),
@@ -445,9 +511,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -455,7 +519,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           const SizedBox(height: 12),
 
-          // List foto
+          // List
           Expanded(
             child: deliveries.isEmpty
                 ? const Center(
@@ -465,20 +529,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Icon(Icons.photo_library_outlined,
                             size: 64, color: Colors.grey),
                         SizedBox(height: 12),
-                        Text(
-                          'Belum ada foto kiriman',
-                          style: TextStyle(color: Colors.grey),
-                        ),
+                        Text('Belum ada foto kiriman',
+                            style: TextStyle(color: Colors.grey)),
                       ],
                     ),
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.all(12),
                     itemCount: deliveries.length,
-                    itemBuilder: (context, index) {
-                      final d = deliveries[index];
-                      return _DeliveryCard(delivery: d);
-                    },
+                    itemBuilder: (context, index) =>
+                        _DeliveryCard(delivery: deliveries[index]),
                   ),
           ),
         ],
@@ -493,12 +553,8 @@ class _StatItem extends StatelessWidget {
   final String label;
   final String value;
   final IconData icon;
-
-  const _StatItem({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
+  const _StatItem(
+      {required this.label, required this.value, required this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -507,8 +563,10 @@ class _StatItem extends StatelessWidget {
         Icon(icon, color: Colors.blue),
         const SizedBox(height: 4),
         Text(value,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(label,
+            style: const TextStyle(color: Colors.grey, fontSize: 12)),
       ],
     );
   }
@@ -516,7 +574,6 @@ class _StatItem extends StatelessWidget {
 
 class _DeliveryCard extends StatelessWidget {
   final DeliveryRecord delivery;
-
   const _DeliveryCard({required this.delivery});
 
   @override
@@ -527,12 +584,12 @@ class _DeliveryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Foto
           GestureDetector(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => PhotoViewScreen(imagePath: delivery.imagePath),
+                builder: (_) =>
+                    PhotoViewScreen(imagePath: delivery.imagePath),
               ),
             ),
             child: SizedBox(
@@ -541,33 +598,28 @@ class _DeliveryCard extends StatelessWidget {
               child: Image.file(
                 File(delivery.imagePath),
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(Icons.broken_image, size: 48),
-                ),
+                errorBuilder: (_, __, ___) =>
+                    const Center(child: Icon(Icons.broken_image, size: 48)),
               ),
             ),
           ),
-          // Info
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Kiriman #${delivery.number}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15),
-                ),
+                Text('Kiriman #${delivery.number}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.access_time, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(delivery.timestamp,
-                        style: const TextStyle(
-                            color: Colors.grey, fontSize: 13)),
-                  ],
-                ),
+                Row(children: [
+                  const Icon(Icons.access_time,
+                      size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(delivery.timestamp,
+                      style: const TextStyle(
+                          color: Colors.grey, fontSize: 13)),
+                ]),
                 if (delivery.address != null) ...[
                   const SizedBox(height: 2),
                   Row(
@@ -589,18 +641,16 @@ class _DeliveryCard extends StatelessWidget {
                   ),
                 ] else if (delivery.lat != null) ...[
                   const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on,
-                          size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${delivery.lat!.toStringAsFixed(5)}, ${delivery.lng!.toStringAsFixed(5)}',
-                        style: const TextStyle(
-                            color: Colors.grey, fontSize: 13),
-                      ),
-                    ],
-                  ),
+                  Row(children: [
+                    const Icon(Icons.location_on,
+                        size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${delivery.lat!.toStringAsFixed(5)}, ${delivery.lng!.toStringAsFixed(5)}',
+                      style: const TextStyle(
+                          color: Colors.grey, fontSize: 13),
+                    ),
+                  ]),
                 ],
               ],
             ),
@@ -631,8 +681,8 @@ class PhotoViewScreen extends StatelessWidget {
           child: Image.file(
             File(imagePath),
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) =>
-                const Icon(Icons.broken_image, color: Colors.white, size: 64),
+            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image,
+                color: Colors.white, size: 64),
           ),
         ),
       ),

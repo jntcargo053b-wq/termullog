@@ -426,7 +426,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Baris 5: Alamat (potong jika terlalu panjang)
     final maxChars = (textMaxW / (fontSize * 0.58)).floor();
     String addrDisplay = 'Tidak tersedia';
-    Color addrColor = grey;
+    img.Color addrColor = grey;
     if (address != null && address.isNotEmpty) {
       addrDisplay = address.length > maxChars
           ? address.substring(0, maxChars) + '...'

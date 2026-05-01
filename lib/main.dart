@@ -147,7 +147,10 @@ class MapTileHelper {
     final px = lonToPixelOffset(lng);
     final py = latToPixelOffset(lat);
 
+    // Canvas putih RGB — tile OSM akan di-copy pixel per pixel
     final canvas = img.Image(width: tileSize * 3, height: tileSize * 3, numChannels: 3);
+    // Fill putih sebagai background default (supaya area tile yang gagal tetap putih)
+    img.fill(canvas, color: img.ColorRgb8(242, 239, 233));
 
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
@@ -159,13 +162,36 @@ class MapTileHelper {
             headers: {'User-Agent': 'TermulLogApp/1.0'},
           ).timeout(const Duration(seconds: 8));
           if (response.statusCode == 200) {
-            final tile = img.decodePng(response.bodyBytes);
+            img.Image? tile = img.decodePng(response.bodyBytes);
             if (tile != null) {
-              img.compositeImage(
-                canvas, tile,
-                dstX: (dx + 1) * tileSize,
-                dstY: (dy + 1) * tileSize,
-              );
+              // Konversi tile ke RGB agar channel match dengan canvas
+              if (tile.numChannels != 3) {
+                tile = img.copyResize(
+                  img.remapColors(tile,
+                    red:   img.Channel.red,
+                    green: img.Channel.green,
+                    blue:  img.Channel.blue,
+                    alpha: img.Channel.luminance,
+                  ),
+                  width: tileSize,
+                  height: tileSize,
+                );
+              }
+              // Copy pixel per pixel agar tidak ada masalah alpha blending
+              final dstX = (dx + 1) * tileSize;
+              final dstY = (dy + 1) * tileSize;
+              for (int py2 = 0; py2 < tileSize; py2++) {
+                for (int px2 = 0; px2 < tileSize; px2++) {
+                  final pixel = tile.getPixel(px2, py2);
+                  canvas.setPixelRgb(
+                    dstX + px2,
+                    dstY + py2,
+                    pixel.r.toInt(),
+                    pixel.g.toInt(),
+                    pixel.b.toInt(),
+                  );
+                }
+              }
             }
           }
         } catch (_) {}
@@ -180,8 +206,8 @@ class MapTileHelper {
     final markerY = tileSize + py - cropY;
     final red   = img.ColorRgb8(220, 30, 30);
     final white = img.ColorRgb8(255, 255, 255);
-    img.fillCircle(cropped, x: markerX, y: markerY, radius: 11, color: red);
-    img.drawCircle(cropped, x: markerX, y: markerY, radius: 11, color: white);
+    img.fillCircle(cropped, x: markerX, y: markerY, radius: 12, color: red);
+    img.drawCircle(cropped, x: markerX, y: markerY, radius: 12, color: white);
     img.fillCircle(cropped, x: markerX, y: markerY, radius: 4,  color: white);
 
     return cropped;

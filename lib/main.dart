@@ -1,3 +1,5 @@
+import 'package:gallery_saver_plus/gallery_saver.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:convert';
 import 'dart:io';
 

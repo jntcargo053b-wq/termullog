@@ -1,18 +1,36 @@
-import 'package:flutter/services.dart';
-import 'package:gallery_saver_plus/gallery_saver.dart';
-import 'package:share_plus/share_plus.dart';
+// =======================
+// TERMULLOG PREMIUM FULL
+// CUSTOM LOGO
+// SIGNATURE
+// PREMIUM WATERMARK
+// SAVE + SHARE
+// =======================
 
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'package:gallery_saver_plus/gallery_saver.dart';
+import 'package:share_plus/share_plus.dart';
+
 import 'package:image_picker/image_picker.dart';
+
 import 'package:geolocator/geolocator.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:intl/intl.dart';
-import 'package:image/image.dart' as img;
 import 'package:geocoding/geocoding.dart';
+
+import 'package:path_provider/path_provider.dart';
+
+import 'package:intl/intl.dart';
+
+import 'package:image/image.dart' as img;
+
 import 'package:http/http.dart' as http;
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:signature/signature.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +49,7 @@ class TermulLogApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: Colors.orange,
         ),
       ),
       home: const LoginScreen(),
@@ -39,7 +57,9 @@ class TermulLogApp extends StatelessWidget {
   }
 }
 
-// ================= LOGIN =================
+// =======================
+// LOGIN
+// =======================
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -80,35 +100,25 @@ class _LoginScreenState
             const Icon(
               Icons.local_shipping,
               size: 100,
-              color: Colors.blue,
+              color: Colors.orange,
             ),
-
             const SizedBox(height: 30),
-
             TextField(
               controller: controller,
               decoration:
                   const InputDecoration(
                 labelText: 'Nama Kurir',
                 border: OutlineInputBorder(),
-                prefixIcon:
-                    Icon(Icons.person),
               ),
             ),
-
             const SizedBox(height: 20),
-
             SizedBox(
               width: double.infinity,
               height: 55,
-              child: ElevatedButton.icon(
+              child: ElevatedButton(
                 onPressed: login,
-                icon: const Icon(Icons.login),
-                label: const Text(
+                child: const Text(
                   'MASUK',
-                  style: TextStyle(
-                    fontSize: 18,
-                  ),
                 ),
               ),
             ),
@@ -119,52 +129,28 @@ class _LoginScreenState
   }
 }
 
-// ================= MODEL =================
+// =======================
+// MODEL
+// =======================
 
 class DeliveryRecord {
   final String deliveryId;
   final String imagePath;
   final String timestamp;
-  final String? weather;
-  final String? address;
 
   DeliveryRecord({
     required this.deliveryId,
     required this.imagePath,
     required this.timestamp,
-    this.weather,
-    this.address,
   });
 }
 
-// ================= DELIVERY ID =================
-
-class DeliveryIdGenerator {
-  static String generate() {
-    final now = DateTime.now();
-
-    return 'TRM-${DateFormat('yyyyMMdd-HHmmssSSS').format(now)}';
-  }
-}
-
-// ================= WEATHER =================
-
-class WeatherData {
-  final double temperature;
-  final double windspeed;
-
-  WeatherData({
-    required this.temperature,
-    required this.windspeed,
-  });
-
-  String get text =>
-      '${temperature.toStringAsFixed(1)}°C | '
-      'Angin ${windspeed.toStringAsFixed(0)} km/h';
-}
+// =======================
+// WEATHER
+// =======================
 
 class WeatherHelper {
-  static Future<WeatherData?> fetch(
+  static Future<String?> fetch(
     double lat,
     double lng,
   ) async {
@@ -182,19 +168,11 @@ class WeatherHelper {
         final data =
             jsonDecode(response.body);
 
-        final cw =
+        final current =
             data['current_weather'];
 
-        if (cw != null) {
-          return WeatherData(
-            temperature:
-                (cw['temperature'] as num)
-                    .toDouble(),
-            windspeed:
-                (cw['windspeed'] as num)
-                    .toDouble(),
-          );
-        }
+        return
+            '${current['temperature']}°C';
       }
     } catch (_) {}
 
@@ -202,10 +180,22 @@ class WeatherHelper {
   }
 }
 
-// ================= LOAD LOGO =================
+// =======================
+// LOAD LOGO
+// =======================
 
-Future<img.Image?> loadLogo() async {
+Future<img.Image?> loadLogo(
+  String? path,
+) async {
   try {
+    if (path != null &&
+        File(path).existsSync()) {
+      final bytes =
+          await File(path).readAsBytes();
+
+      return img.decodeImage(bytes);
+    }
+
     final data =
         await rootBundle.load(
       'assets/logo.png',
@@ -214,54 +204,26 @@ Future<img.Image?> loadLogo() async {
     return img.decodeImage(
       data.buffer.asUint8List(),
     );
-  } catch (e) {
-    debugPrint('Logo tidak ditemukan');
+  } catch (_) {
     return null;
   }
 }
-// ================= TEXT WRAP =================
 
-List<String> wrapText(
-  String text,
-  int maxLength,
-) {
-  final words = text.split(' ');
-
-  List<String> lines = [];
-
-  String currentLine = '';
-
-  for (final word in words) {
-    final testLine =
-        '$currentLine $word';
-
-    if (testLine.length > maxLength) {
-      lines.add(currentLine.trim());
-
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
-  }
-
-  if (currentLine.isNotEmpty) {
-    lines.add(currentLine.trim());
-  }
-
-  return lines;
-}
-
-// ================= WATERMARK =================
+// =======================
+// WATERMARK
+// =======================
 
 Future<String> addWatermark({
-  required String deliveryId,
   required String imagePath,
-  required String kurirName,
+  required String kurir,
+  required String deliveryId,
   required String timestamp,
-  required String? weather,
   required String? address,
+  required String? weather,
   required double? lat,
   required double? lng,
+  required String? logoPath,
+  required String? signaturePath,
 }) async {
   final bytes =
       await File(imagePath).readAsBytes();
@@ -270,7 +232,9 @@ Future<String> addWatermark({
       img.decodeImage(bytes);
 
   if (original == null) {
-    throw Exception('Gagal membaca gambar');
+    throw Exception(
+      'Gagal membaca gambar',
+    );
   }
 
   if (original.width > 1080) {
@@ -280,9 +244,7 @@ Future<String> addWatermark({
     );
   }
 
-  final logo = await loadLogo();
-
-  const panelHeight = 420;
+  const panelHeight = 430;
 
   final canvas = img.Image(
     width: original.width,
@@ -295,7 +257,6 @@ Future<String> addWatermark({
     original,
   );
 
-  // PANEL BG
   img.fillRect(
     canvas,
     x1: 0,
@@ -304,29 +265,17 @@ Future<String> addWatermark({
     y2:
         original.height + panelHeight,
     color: img.ColorRgb8(
-      18,
-      22,
-      28,
+      20,
+      20,
+      20,
     ),
   );
 
-  // TOP LINE
-  img.fillRect(
-    canvas,
-    x1: 0,
-    y1: original.height,
-    x2: original.width,
-    y2: original.height + 8,
-    color: img.ColorRgb8(
-      255,
-      180,
-      0,
-    ),
-  );
+  final logo =
+      await loadLogo(logoPath);
 
-  // LOGO
   if (logo != null) {
-    final resizedLogo =
+    final resized =
         img.copyResize(
       logo,
       width: 220,
@@ -334,17 +283,16 @@ Future<String> addWatermark({
 
     img.compositeImage(
       canvas,
-      resizedLogo,
+      resized,
       dstX: 20,
       dstY: original.height + 30,
     );
   }
 
-  final textX = 270;
-
   int y = original.height + 30;
 
-  // TITLE
+  const textX = 280;
+
   img.drawString(
     canvas,
     'DELIVERY REPORT',
@@ -353,124 +301,25 @@ Future<String> addWatermark({
     y: y,
     color: img.ColorRgb8(
       255,
-      210,
+      200,
       0,
     ),
   );
 
-  y += 70;
+  y += 65;
 
-  // ID
-  img.drawString(
-    canvas,
-    deliveryId,
-    font: img.arial24,
-    x: textX,
-    y: y,
-    color: img.ColorRgb8(
-      180,
-      180,
-      180,
-    ),
-  );
-
-  y += 40;
-
-  // KURIR
-  img.drawString(
-    canvas,
-    'Kurir : $kurirName',
-    font: img.arial24,
-    x: textX,
-    y: y,
-    color: img.ColorRgb8(
-      255,
-      255,
-      255,
-    ),
-  );
-
-  y += 40;
-
-  // WAKTU
-  img.drawString(
-    canvas,
+  final items = [
+    'ID : $deliveryId',
+    'Kurir : $kurir',
     'Waktu : $timestamp',
-    font: img.arial24,
-    x: textX,
-    y: y,
-    color: img.ColorRgb8(
-      255,
-      255,
-      255,
-    ),
-  );
+    'GPS : ${lat ?? '-'}, ${lng ?? '-'}',
+    'Cuaca : ${weather ?? '-'}',
+  ];
 
-  y += 40;
-
-  // GPS
-  final gps =
-      lat != null && lng != null
-          ? '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}'
-          : 'Tidak tersedia';
-
-  img.drawString(
-    canvas,
-    'GPS : $gps',
-    font: img.arial24,
-    x: textX,
-    y: y,
-    color: img.ColorRgb8(
-      255,
-      255,
-      255,
-    ),
-  );
-
-  y += 40;
-
-  // WEATHER
-  img.drawString(
-    canvas,
-    'Cuaca : ${weather ?? "-"}',
-    font: img.arial24,
-    x: textX,
-    y: y,
-    color: img.ColorRgb8(
-      255,
-      255,
-      255,
-    ),
-  );
-
-  y += 45;
-
-  // ADDRESS TITLE
-  img.drawString(
-    canvas,
-    'Alamat :',
-    font: img.arial24,
-    x: textX,
-    y: y,
-    color: img.ColorRgb8(
-      255,
-      210,
-      0,
-    ),
-  );
-
-  y += 35;
-
-  // WRAP ADDRESS
-  final lines = wrapText(
-    address ?? 'Tidak tersedia',
-    42,
-  );
-
-  for (final line in lines) {
+  for (final item in items) {
     img.drawString(
       canvas,
-      line,
+      item,
       font: img.arial24,
       x: textX,
       y: y,
@@ -481,26 +330,120 @@ Future<String> addWatermark({
       ),
     );
 
-    y += 32;
+    y += 40;
+  }
+
+  img.drawString(
+    canvas,
+    'Alamat :',
+    font: img.arial24,
+    x: textX,
+    y: y,
+    color: img.ColorRgb8(
+      255,
+      200,
+      0,
+    ),
+  );
+
+  y += 35;
+
+  final addr =
+      address ?? 'Tidak tersedia';
+
+  final words = addr.split(' ');
+
+  String line = '';
+
+  for (final word in words) {
+    final test =
+        '$line $word';
+
+    if (test.length > 40) {
+      img.drawString(
+        canvas,
+        line.trim(),
+        font: img.arial24,
+        x: textX,
+        y: y,
+        color: img.ColorRgb8(
+          255,
+          255,
+          255,
+        ),
+      );
+
+      y += 30;
+
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+
+  if (line.isNotEmpty) {
+    img.drawString(
+      canvas,
+      line.trim(),
+      font: img.arial24,
+      x: textX,
+      y: y,
+      color: img.ColorRgb8(
+        255,
+        255,
+        255,
+      ),
+    );
+  }
+
+  // SIGNATURE
+
+  if (signaturePath != null &&
+      File(signaturePath).existsSync()) {
+    final sigBytes =
+        await File(signaturePath)
+            .readAsBytes();
+
+    final sig =
+        img.decodeImage(sigBytes);
+
+    if (sig != null) {
+      final resizedSig =
+          img.copyResize(
+        sig,
+        width: 220,
+      );
+
+      img.compositeImage(
+        canvas,
+        resizedSig,
+        dstX:
+            original.width - 260,
+        dstY:
+            original.height + 250,
+      );
+    }
   }
 
   final dir =
       await getApplicationDocumentsDirectory();
 
-  final path =
+  final output =
       '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-  await File(path).writeAsBytes(
+  await File(output).writeAsBytes(
     img.encodeJpg(
       canvas,
       quality: 92,
     ),
   );
 
-  return path;
+  return output;
 }
 
-// ================= DASHBOARD =================
+// =======================
+// DASHBOARD
+// =======================
 
 class DashboardScreen extends StatefulWidget {
   final String name;
@@ -521,6 +464,155 @@ class _DashboardScreenState
       <DeliveryRecord>[];
 
   bool loading = false;
+
+  String? customLogoPath;
+
+  String? signaturePath;
+
+  final SignatureController
+      signatureController =
+      SignatureController(
+    penStrokeWidth: 3,
+    penColor: Colors.black,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+
+    loadSettings();
+  }
+
+  Future<void> loadSettings() async {
+    final prefs =
+        await SharedPreferences
+            .getInstance();
+
+    setState(() {
+      customLogoPath =
+          prefs.getString(
+        'custom_logo',
+      );
+
+      signaturePath =
+          prefs.getString(
+        'signature',
+      );
+    });
+  }
+
+  Future<void> pickLogo() async {
+    final picker = ImagePicker();
+
+    final file =
+        await picker.pickImage(
+      source: ImageSource.gallery,
+    );
+
+    if (file == null) return;
+
+    final prefs =
+        await SharedPreferences
+            .getInstance();
+
+    await prefs.setString(
+      'custom_logo',
+      file.path,
+    );
+
+    setState(() {
+      customLogoPath = file.path;
+    });
+  }
+
+  Future<void> openSignature() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            title:
+                const Text('Tanda Tangan'),
+          ),
+          body: Column(
+            children: [
+              Expanded(
+                child: Signature(
+                  controller:
+                      signatureController,
+                  backgroundColor:
+                      Colors.white,
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        signatureController
+                            .clear();
+                      },
+                      child: const Text(
+                        'CLEAR',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final bytes =
+                            await signatureController
+                                .toPngBytes();
+
+                        if (bytes == null) {
+                          return;
+                        }
+
+                        final dir =
+                            await getApplicationDocumentsDirectory();
+
+                        final file = File(
+                          '${dir.path}/signature.png',
+                        );
+
+                        await file
+                            .writeAsBytes(
+                          bytes,
+                        );
+
+                        final prefs =
+                            await SharedPreferences
+                                .getInstance();
+
+                        await prefs.setString(
+                          'signature',
+                          file.path,
+                        );
+
+                        setState(() {
+                          signaturePath =
+                              file.path;
+                        });
+
+                        if (mounted) {
+                          Navigator.pop(
+                            context,
+                          );
+                        }
+                      },
+                      child: const Text(
+                        'SIMPAN',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> captureDelivery() async {
     setState(() {
@@ -553,69 +645,40 @@ class _DashboardScreenState
       try {
         LocationPermission permission =
             await Geolocator
-                .checkPermission();
-
-        if (permission ==
-            LocationPermission.denied) {
-          permission =
-              await Geolocator
-                  .requestPermission();
-        }
+                .requestPermission();
 
         if (permission ==
                 LocationPermission
-                    .always ||
+                    .whileInUse ||
             permission ==
                 LocationPermission
-                    .whileInUse) {
+                    .always) {
           final pos =
               await Geolocator
-                  .getCurrentPosition(
-            desiredAccuracy:
-                LocationAccuracy.high,
-          );
+                  .getCurrentPosition();
 
           lat = pos.latitude;
           lng = pos.longitude;
 
-          // ADDRESS
-          try {
-            final placemarks =
-                await placemarkFromCoordinates(
-              lat,
-              lng,
-            );
+          final placemarks =
+              await placemarkFromCoordinates(
+            lat,
+            lng,
+          );
 
-            if (placemarks.isNotEmpty) {
-              final p =
-                  placemarks.first;
+          if (placemarks.isNotEmpty) {
+            final p =
+                placemarks.first;
 
-              address = [
-                p.street,
-                p.subLocality,
-                p.locality,
-              ]
-                  .where(
-                    (e) =>
-                        e != null &&
-                        e.isNotEmpty,
-                  )
-                  .join(', ');
-            }
-          } catch (_) {}
+            address =
+                '${p.street}, ${p.locality}';
+          }
 
-          // WEATHER
-          try {
-            final w =
-                await WeatherHelper.fetch(
-              lat,
-              lng,
-            );
-
-            if (w != null) {
-              weather = w.text;
-            }
-          } catch (_) {}
+          weather =
+              await WeatherHelper.fetch(
+            lat,
+            lng,
+          );
         }
       } catch (_) {}
 
@@ -624,18 +687,21 @@ class _DashboardScreenState
       ).format(DateTime.now());
 
       final deliveryId =
-          DeliveryIdGenerator.generate();
+          'TRM-${DateTime.now().millisecondsSinceEpoch}';
 
       final finalPath =
           await addWatermark(
-        deliveryId: deliveryId,
         imagePath: photo.path,
-        kurirName: widget.name,
+        kurir: widget.name,
+        deliveryId: deliveryId,
         timestamp: timestamp,
-        weather: weather,
         address: address,
+        weather: weather,
         lat: lat,
         lng: lng,
+        logoPath: customLogoPath,
+        signaturePath:
+            signaturePath,
       );
 
       deliveries.insert(
@@ -644,8 +710,6 @@ class _DashboardScreenState
           deliveryId: deliveryId,
           imagePath: finalPath,
           timestamp: timestamp,
-          weather: weather,
-          address: address,
         ),
       );
 
@@ -661,9 +725,7 @@ class _DashboardScreenState
     }
   }
 
-  // SAVE
-
-  Future<void> saveToGallery(
+  Future<void> saveImage(
     String path,
   ) async {
     await GallerySaver.saveImage(path);
@@ -674,13 +736,11 @@ class _DashboardScreenState
         .showSnackBar(
       const SnackBar(
         content: Text(
-          'Berhasil disimpan ke galeri',
+          'Berhasil disimpan',
         ),
       ),
     );
   }
-
-  // SHARE
 
   Future<void> shareImage(
     String path,
@@ -702,40 +762,68 @@ class _DashboardScreenState
           Padding(
             padding:
                 const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              height: 55,
-              child:
-                  ElevatedButton.icon(
-                onPressed: loading
-                    ? null
-                    : captureDelivery,
-                icon: loading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child:
-                            CircularProgressIndicator(
-                          strokeWidth: 2,
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child:
+                          ElevatedButton.icon(
+                        onPressed:
+                            pickLogo,
+                        icon: const Icon(
+                          Icons.image,
                         ),
-                      )
-                    : const Icon(
-                        Icons.camera_alt,
+                        label: const Text(
+                          'LOGO',
+                        ),
                       ),
-                label: Text(
-                  loading
-                      ? 'Memproses...'
-                      : '+ FOTO BUKTI KIRIM',
+                    ),
+                    const SizedBox(
+                      width: 10,
+                    ),
+                    Expanded(
+                      child:
+                          ElevatedButton.icon(
+                        onPressed:
+                            openSignature,
+                        icon: const Icon(
+                          Icons.draw,
+                        ),
+                        label: const Text(
+                          'TANDA TANGAN',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child:
+                      ElevatedButton.icon(
+                    onPressed: loading
+                        ? null
+                        : captureDelivery,
+                    icon: const Icon(
+                      Icons.camera_alt,
+                    ),
+                    label: Text(
+                      loading
+                          ? 'MEMPROSES...'
+                          : '+ FOTO BUKTI',
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-
           Expanded(
             child: deliveries.isEmpty
                 ? const Center(
                     child: Text(
-                      'Belum ada kiriman',
+                      'Belum ada data',
                     ),
                   )
                 : ListView.builder(
@@ -750,7 +838,6 @@ class _DashboardScreenState
                         margin:
                             const EdgeInsets
                                 .all(12),
-                        elevation: 4,
                         child: Column(
                           children: [
                             Image.file(
@@ -758,84 +845,52 @@ class _DashboardScreenState
                                 d.imagePath,
                               ),
                             ),
-
                             Padding(
                               padding:
                                   const EdgeInsets
                                       .all(12),
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment
-                                        .start,
+                              child: Row(
                                 children: [
-                                  Text(
-                                    d.deliveryId,
-                                    style:
-                                        const TextStyle(
-                                      fontWeight:
-                                          FontWeight
-                                              .bold,
+                                  Expanded(
+                                    child:
+                                        ElevatedButton.icon(
+                                      onPressed:
+                                          () =>
+                                              saveImage(
+                                        d.imagePath,
+                                      ),
+                                      icon:
+                                          const Icon(
+                                        Icons
+                                            .save,
+                                      ),
+                                      label:
+                                          const Text(
+                                        'SAVE',
+                                      ),
                                     ),
                                   ),
-
                                   const SizedBox(
-                                    height: 6,
+                                    width: 10,
                                   ),
-
-                                  Text(
-                                    d.timestamp,
-                                  ),
-
-                                  const SizedBox(
-                                    height: 12,
-                                  ),
-
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child:
-                                            ElevatedButton.icon(
-                                          onPressed:
-                                              () =>
-                                                  saveToGallery(
-                                            d.imagePath,
-                                          ),
-                                          icon:
-                                              const Icon(
-                                            Icons
-                                                .save_alt,
-                                          ),
-                                          label:
-                                              const Text(
-                                            'SAVE',
-                                          ),
-                                        ),
+                                  Expanded(
+                                    child:
+                                        ElevatedButton.icon(
+                                      onPressed:
+                                          () =>
+                                              shareImage(
+                                        d.imagePath,
                                       ),
-
-                                      const SizedBox(
-                                        width: 10,
+                                      icon:
+                                          const Icon(
+                                        Icons
+                                            .share,
                                       ),
-
-                                      Expanded(
-                                        child:
-                                            ElevatedButton.icon(
-                                          onPressed:
-                                              () =>
-                                                  shareImage(
-                                            d.imagePath,
-                                          ),
-                                          icon:
-                                              const Icon(
-                                            Icons
-                                                .share,
-                                          ),
-                                          label:
-                                              const Text(
-                                            'SHARE',
-                                          ),
-                                        ),
+                                      label:
+                                          const Text(
+                                        'SHARE',
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ],
                               ),

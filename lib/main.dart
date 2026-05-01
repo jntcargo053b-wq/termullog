@@ -115,11 +115,9 @@ class DeliveryRecord {
 // ─── MAP TILE ─────────────────────────────────────────────────────────────────
 
 class MapTileHelper {
-  // zoom 18 = detail maksimal OSM, jalan kecil & gang terlihat jelas
-  static const int zoom       = 18;
+  static const int zoom       = 18;   // detail maksimal OSM
   static const int tileSize   = 256;
-  // 480px crop di zoom 18 ≈ radius ~75 meter dari titik lokasi
-  static const int outputSize = 480;
+  static const int outputSize = 480;  // ~75m radius di zoom 18
 
   static int _lonToTileX(double lon) =>
       ((lon + 180.0) / 360.0 * (1 << zoom)).floor();
@@ -142,21 +140,87 @@ class MapTileHelper {
     return ((world - world.floor()) * tileSize).floor();
   }
 
-  static Future<img.Image?> fetchMap(double lat, double lng) async {
+  // ── Fallback: gambar grid koordinat jika OSM tidak bisa diakses ──────────
+  static img.Image _buildFallbackMap(double lat, double lng) {
+    final out = img.Image(
+        width: outputSize, height: outputSize, numChannels: 3);
+
+    // Background abu-biru muda ala peta
+    img.fill(out, color: img.ColorRgb8(220, 232, 245));
+
+    // Grid garis setiap 80px (simulasi grid koordinat)
+    final gridColor  = img.ColorRgb8(180, 200, 220);
+    final gridColor2 = img.ColorRgb8(160, 185, 210);
+    for (int i = 0; i < outputSize; i += 80) {
+      img.drawLine(out, x1: i, y1: 0, x2: i, y2: outputSize - 1,
+          color: gridColor);
+      img.drawLine(out, x1: 0, y1: i, x2: outputSize - 1, y2: i,
+          color: gridColor);
+    }
+    // Garis tengah (posisi GPS) lebih tebal
+    for (int t = -1; t <= 1; t++) {
+      img.drawLine(out,
+          x1: outputSize ~/ 2 + t, y1: 0,
+          x2: outputSize ~/ 2 + t, y2: outputSize - 1,
+          color: gridColor2);
+      img.drawLine(out,
+          x1: 0,            y1: outputSize ~/ 2 + t,
+          x2: outputSize - 1, y2: outputSize ~/ 2 + t,
+          color: gridColor2);
+    }
+
+    // Label koordinat di tengah
+    final latStr = lat.toStringAsFixed(5);
+    final lngStr = lng.toStringAsFixed(5);
+    img.drawString(out, latStr,
+        font: img.arial14,
+        x: outputSize ~/ 2 - 48,
+        y: outputSize ~/ 2 - 26,
+        color: img.ColorRgb8(40, 80, 140));
+    img.drawString(out, lngStr,
+        font: img.arial14,
+        x: outputSize ~/ 2 - 48,
+        y: outputSize ~/ 2 - 10,
+        color: img.ColorRgb8(40, 80, 140));
+
+    // Label "GPS Only" di pojok atas
+    img.drawString(out, 'GPS Only',
+        font: img.arial14,
+        x: 6, y: 6,
+        color: img.ColorRgb8(100, 100, 130));
+
+    // Marker merah di tengah
+    final mX = outputSize ~/ 2;
+    final mY = outputSize ~/ 2;
+    img.fillCircle(out, x: mX + 2, y: mY + 2, radius: 12,
+        color: img.ColorRgb8(0, 0, 0));
+    img.fillCircle(out, x: mX,     y: mY,     radius: 12,
+        color: img.ColorRgb8(220, 30, 30));
+    img.drawCircle(out, x: mX,     y: mY,     radius: 12,
+        color: img.ColorRgb8(255, 255, 255));
+    img.fillCircle(out, x: mX,     y: mY,     radius: 4,
+        color: img.ColorRgb8(255, 255, 255));
+
+    return out;
+  }
+
+  static Future<img.Image> fetchMap(double lat, double lng) async {
     final tx = _lonToTileX(lng);
     final ty = _latToTileY(lat);
     final px = _lonPixelOffset(lng);
     final py = _latPixelOffset(lat);
 
-    // Grid 5×5 tile — cukup lebar agar crop 480px tidak kena tepi
+    // Grid 5×5 tile
     const grid     = 5;
-    const halfGrid = 2; // grid ~/ 2
+    const halfGrid = 2;
     final canvasW  = tileSize * grid;
     final canvasH  = tileSize * grid;
 
     final canvas =
         img.Image(width: canvasW, height: canvasH, numChannels: 3);
     img.fill(canvas, color: img.ColorRgb8(242, 239, 233));
+
+    int successCount = 0; // hitung tile yang berhasil di-fetch
 
     for (int dy = -halfGrid; dy <= halfGrid; dy++) {
       for (int dx = -halfGrid; dx <= halfGrid; dx++) {
@@ -166,13 +230,12 @@ class MapTileHelper {
           final res = await http
               .get(Uri.parse(url),
                   headers: {'User-Agent': 'TermulLogApp/1.0'})
-              .timeout(const Duration(seconds: 12));
+              .timeout(const Duration(seconds: 10));
 
           if (res.statusCode == 200) {
             img.Image? tile = img.decodePng(res.bodyBytes);
             if (tile == null) continue;
 
-            // Pastikan 3-channel RGB
             if (tile.numChannels != 3) {
               tile = img.copyResize(
                 img.remapColors(tile,
@@ -196,12 +259,18 @@ class MapTileHelper {
                 );
               }
             }
+            successCount++;
           }
         } catch (_) {}
       }
     }
 
-    // Titik tengah (posisi GPS) dalam canvas besar
+    // Jika tidak ada satu pun tile berhasil → pakai fallback grid
+    if (successCount == 0) {
+      return _buildFallbackMap(lat, lng);
+    }
+
+    // Crop ke area outputSize × outputSize di sekitar titik GPS
     final centerX = halfGrid * tileSize + px;
     final centerY = halfGrid * tileSize + py;
     final half    = outputSize ~/ 2;
@@ -213,19 +282,18 @@ class MapTileHelper {
     final cropped = img.copyCrop(canvas,
         x: cropX, y: cropY, width: outputSize, height: outputSize);
 
-    // Posisi marker dalam crop
     final mX = centerX - cropX;
     final mY = centerY - cropY;
 
-    // Marker kecil (radius 10) agar tidak menutupi jalan sekitar
+    // Marker kecil agar tidak menutupi nama jalan
     img.fillCircle(cropped, x: mX + 2, y: mY + 2, radius: 10,
-        color: img.ColorRgb8(0, 0, 0));        // shadow
+        color: img.ColorRgb8(0, 0, 0));
     img.fillCircle(cropped, x: mX,     y: mY,     radius: 10,
-        color: img.ColorRgb8(220, 30, 30));     // merah
+        color: img.ColorRgb8(220, 30, 30));
     img.drawCircle(cropped, x: mX,     y: mY,     radius: 10,
-        color: img.ColorRgb8(255, 255, 255));   // border putih
+        color: img.ColorRgb8(255, 255, 255));
     img.fillCircle(cropped, x: mX,     y: mY,     radius: 3,
-        color: img.ColorRgb8(255, 255, 255));   // titik putih tengah
+        color: img.ColorRgb8(255, 255, 255));
 
     return cropped;
   }
@@ -247,18 +315,11 @@ Future<String> addWatermark({
   img.Image? original = img.decodeImage(bytes);
   if (original == null) throw Exception('Gagal membaca gambar');
 
-  // ── Resize foto agar pas di layar HP ─────────────────────────────────────
-  // Landscape: max lebar 1080px
-  if (original.width > original.height && original.width > 1080) {
+  // ── Resize foto agar pas di layar HP (max 1080px) ────────────────────────
+  if (original.width > 1080) {
     original = img.copyResize(original, width: 1080,
         interpolation: img.Interpolation.linear);
   }
-  // Portrait: max lebar 1080px juga (tinggi menyesuaikan)
-  if (original.width <= original.height && original.width > 1080) {
-    original = img.copyResize(original, width: 1080,
-        interpolation: img.Interpolation.linear);
-  }
-  // Keamanan: jika tinggi masih > 1440 setelah resize
   if (original.height > 1440) {
     original = img.copyResize(original, height: 1440,
         interpolation: img.Interpolation.linear);
@@ -267,13 +328,14 @@ Future<String> addWatermark({
   final w = original.width;
   final h = original.height;
 
-  // Strip info: tinggi 260px, peta 260×260 di kiri
-  const stripH       = 260;
-  const mapDisplaySz = 260;
+  // ── Ukuran strip ─────────────────────────────────────────────────────────
+  // Semua teks pakai arial24 → perlu strip lebih tinggi: 320px
+  const stripH       = 320;
+  const mapDisplaySz = 320; // peta mengisi penuh tinggi strip
   final hasMap       = mapImage != null;
   final mapW         = hasMap ? mapDisplaySz : 0;
 
-  // ── Kanvas akhir (foto + strip bawah) ────────────────────────────────────
+  // ── Kanvas ───────────────────────────────────────────────────────────────
   final canvas =
       img.Image(width: w, height: h + stripH, numChannels: 3);
   img.compositeImage(canvas, original, dstX: 0, dstY: 0);
@@ -281,29 +343,30 @@ Future<String> addWatermark({
   // ── Background strip: gradient gelap ─────────────────────────────────────
   for (int row = 0; row < stripH; row++) {
     final t    = row / (stripH - 1);
-    final gray = (35 * (1 - t) + 8 * t).toInt();
+    final gray = (38 * (1 - t) + 8 * t).toInt();
     img.drawLine(canvas,
         x1: 0, y1: h + row, x2: w - 1, y2: h + row,
-        color: img.ColorRgb8(gray, gray, gray + 4));
+        color: img.ColorRgb8(gray, gray, gray + 5));
   }
 
-  // ── Garis aksen teal (3px) di batas foto-strip ───────────────────────────
+  // ── Garis aksen teal (4px) di batas foto-strip ───────────────────────────
   for (int x = 0; x < w; x++) {
-    canvas.setPixelRgb(x, h,     0, 200, 180);
-    canvas.setPixelRgb(x, h + 1, 0, 200, 180);
-    canvas.setPixelRgb(x, h + 2, 0, 200, 180);
+    for (int t = 0; t < 4; t++) {
+      canvas.setPixelRgb(x, h + t, 0, 195, 175);
+    }
   }
 
-  // ── Tempel peta di KIRI strip ─────────────────────────────────────────────
+  // ── Tempel peta di KIRI ───────────────────────────────────────────────────
   if (hasMap) {
     final scaled =
         img.copyResize(mapImage!, width: mapDisplaySz, height: mapDisplaySz);
     img.compositeImage(canvas, scaled, dstX: 0, dstY: h);
 
-    // Garis vertikal pemisah peta-teks (teal 2px)
+    // Garis vertikal pemisah peta-teks
     for (int row = 0; row < stripH; row++) {
-      canvas.setPixelRgb(mapW,     h + row, 0, 200, 180);
-      canvas.setPixelRgb(mapW + 1, h + row, 0, 200, 180);
+      canvas.setPixelRgb(mapW,     h + row, 0, 195, 175);
+      canvas.setPixelRgb(mapW + 1, h + row, 0, 195, 175);
+      canvas.setPixelRgb(mapW + 2, h + row, 0, 195, 175);
     }
   }
 
@@ -311,74 +374,81 @@ Future<String> addWatermark({
   final cWhite  = img.ColorRgb8(255, 255, 255);
   final cTeal   = img.ColorRgb8(0, 210, 185);
   final cYellow = img.ColorRgb8(255, 210, 0);
-  final cGrey   = img.ColorRgb8(155, 155, 155);
+  final cGrey   = img.ColorRgb8(160, 160, 160);
 
-  final fontBig   = img.arial24;
-  final fontSmall = img.arial14;
+  // Semua teks info pakai arial24 agar mudah dibaca
+  final fontTitle = img.arial24;
+  final fontInfo  = img.arial24;
 
-  final textX  = mapW + 16;
-  final maxTW  = w - textX - 12;
-  int   ty     = h + 12;
+  final textX  = mapW + 18;       // X mulai teks
+  final maxTW  = w - textX - 14;  // lebar area teks
+  int   ty     = h + 14;          // Y awal teks dalam strip
 
-  // ── Header KIRIMAN #N ────────────────────────────────────────────────────
+  // ── Header: KIRIMAN #N ───────────────────────────────────────────────────
   img.drawString(canvas, 'KIRIMAN #$deliveryNum',
-      font: fontBig, x: textX, y: ty, color: cYellow);
-  ty += 34;
+      font: fontTitle, x: textX, y: ty, color: cYellow);
+  ty += 38;
 
+  // Garis dekoratif bawah header
   img.drawLine(canvas,
-      x1: textX, y1: ty - 4, x2: textX + 180, y2: ty - 4,
+      x1: textX, y1: ty - 6,
+      x2: textX + 200, y2: ty - 6,
       color: cTeal);
-  ty += 6;
+  ty += 4;
 
   // ── Kurir ────────────────────────────────────────────────────────────────
-  img.drawString(canvas, 'Kurir   : $kurirName',
-      font: fontSmall, x: textX, y: ty, color: cWhite);
-  ty += 26;
+  img.drawString(canvas, 'Kurir : $kurirName',
+      font: fontInfo, x: textX, y: ty, color: cWhite);
+  ty += 34;
 
   // ── Waktu ────────────────────────────────────────────────────────────────
-  img.drawString(canvas, 'Waktu   : $timestamp',
-      font: fontSmall, x: textX, y: ty, color: cWhite);
-  ty += 26;
+  img.drawString(canvas, 'Waktu : $timestamp',
+      font: fontInfo, x: textX, y: ty, color: cWhite);
+  ty += 34;
 
   // ── GPS ──────────────────────────────────────────────────────────────────
   if (lat != null && lng != null) {
     img.drawString(canvas,
-        'GPS     : ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
-        font: fontSmall, x: textX, y: ty, color: cWhite);
+        'GPS   : ${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
+        font: fontInfo, x: textX, y: ty, color: cWhite);
   } else {
-    img.drawString(canvas, 'GPS     : Tidak tersedia',
-        font: fontSmall, x: textX, y: ty, color: cGrey);
+    img.drawString(canvas, 'GPS   : Tidak tersedia',
+        font: fontInfo, x: textX, y: ty, color: cGrey);
   }
-  ty += 26;
+  ty += 34;
 
-  // ── Alamat (wrap 2 baris) ────────────────────────────────────────────────
-  const charW    = 8;
+  // ── Alamat (wrap otomatis ke baris ke-2 jika perlu) ───────────────────────
+  // arial24: estimasi lebar karakter ~14px
+  const charW    = 14;
   final maxChars = maxTW ~/ charW;
 
   if (address != null && address.isNotEmpty) {
-    final line1 = address.length > maxChars
-        ? address.substring(0, maxChars)
-        : address;
-    img.drawString(canvas, 'Alamat  : $line1',
-        font: fontSmall, x: textX, y: ty, color: cWhite);
-    ty += 22;
+    final prefix = 'Alamat: ';
+    final avail  = maxChars - prefix.length;
 
-    if (address.length > maxChars) {
-      final rest  = address.substring(maxChars);
+    final line1text = address.length > avail
+        ? address.substring(0, avail)
+        : address;
+    img.drawString(canvas, '$prefix$line1text',
+        font: fontInfo, x: textX, y: ty, color: cWhite);
+    ty += 30;
+
+    if (address.length > avail) {
+      final rest  = address.substring(avail);
       final line2 = rest.length > maxChars
           ? '${rest.substring(0, maxChars - 3)}...'
           : rest;
-      img.drawString(canvas, '          $line2',
-          font: fontSmall, x: textX, y: ty, color: cWhite);
+      img.drawString(canvas, '        $line2',
+          font: fontInfo, x: textX, y: ty, color: cWhite);
     }
   } else {
-    img.drawString(canvas, 'Alamat  : Tidak tersedia',
-        font: fontSmall, x: textX, y: ty, color: cGrey);
+    img.drawString(canvas, 'Alamat: Tidak tersedia',
+        font: fontInfo, x: textX, y: ty, color: cGrey);
   }
 
-  // ── Brand pojok kanan bawah ───────────────────────────────────────────────
+  // ── Brand pojok kanan bawah strip ────────────────────────────────────────
   img.drawString(canvas, 'TermulLog',
-      font: fontSmall, x: w - 92, y: h + stripH - 22, color: cTeal);
+      font: img.arial14, x: w - 92, y: h + stripH - 20, color: cTeal);
 
   // ── Simpan ───────────────────────────────────────────────────────────────
   final dir     = await getApplicationDocumentsDirectory();
@@ -444,6 +514,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             }
           } catch (_) {}
 
+          // fetchMap sekarang selalu return img.Image (tidak nullable)
+          // karena sudah ada fallback grid jika OSM gagal
           try {
             mapImage = await MapTileHelper.fetchMap(lat, lng);
           } catch (_) {}

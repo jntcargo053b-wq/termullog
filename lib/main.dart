@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:geocoding/geocoding.dart';
 
 void main() {
   runApp(const TermulLogApp());
@@ -99,6 +100,7 @@ class DeliveryRecord {
   final String kurirName;
   final double? lat;
   final double? lng;
+  final String? address;
 
   DeliveryRecord({
     required this.number,
@@ -107,6 +109,7 @@ class DeliveryRecord {
     required this.kurirName,
     this.lat,
     this.lng,
+    this.address,
   });
 }
 
@@ -141,6 +144,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       // 2. Ambil GPS
       double? lat, lng;
+      String? address;
       try {
         LocationPermission perm = await Geolocator.checkPermission();
         if (perm == LocationPermission.denied) {
@@ -153,6 +157,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ).timeout(const Duration(seconds: 8));
           lat = pos.latitude;
           lng = pos.longitude;
+
+          // Reverse geocoding
+          try {
+            final placemarks = await placemarkFromCoordinates(lat, lng)
+                .timeout(const Duration(seconds: 6));
+            if (placemarks.isNotEmpty) {
+              final p = placemarks.first;
+              final parts = [
+                p.street,
+                p.subLocality,
+                p.locality,
+                p.subAdministrativeArea,
+              ].where((s) => s != null && s.isNotEmpty).toList();
+              address = parts.join(', ');
+            }
+          } catch (_) {}
         }
       } catch (_) {
         // GPS gagal, lanjut tanpa koordinat
@@ -170,6 +190,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         deliveryNum: deliveryNum,
         lat: lat,
         lng: lng,
+        address: address,
       );
 
       setState(() {
@@ -182,6 +203,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             kurirName: widget.name,
             lat: lat,
             lng: lng,
+            address: address,
           ),
         );
         isLoading = false;
@@ -203,6 +225,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required int deliveryNum,
     double? lat,
     double? lng,
+    String? address,
   }) async {
     // Baca gambar
     final bytes = await File(imagePath).readAsBytes();
@@ -217,8 +240,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final w = original.width;
     final h = original.height;
 
-    // Tinggi strip watermark di bawah
-    final stripHeight = (h * 0.12).clamp(80.0, 160.0).toInt();
+    // Tinggi strip watermark di bawah (lebih tinggi karena ada baris alamat)
+    final stripHeight = (h * 0.17).clamp(110.0, 200.0).toInt();
 
     // Buat kanvas baru dengan strip di bawah
     final canvas = img.Image(width: w, height: h + stripHeight);
@@ -286,11 +309,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Baris 4: GPS
     if (lat != null && lng != null) {
-      final gpsText =
-          'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}';
       img.drawString(
         canvas,
-        gpsText,
+        'GPS: \${lat.toStringAsFixed(6)}, \${lng.toStringAsFixed(6)}',
         font: font,
         x: padding,
         y: yPos,
@@ -300,6 +321,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       img.drawString(
         canvas,
         'GPS: Tidak tersedia',
+        font: font,
+        x: padding,
+        y: yPos,
+        color: img.ColorRgba8(180, 180, 180, 255),
+      );
+    }
+
+    yPos += lineGap;
+
+    // Baris 5: Alamat
+    if (address != null && address.isNotEmpty) {
+      // Potong alamat jika terlalu panjang
+      final maxLen = (w / (fontSize * 0.6)).toInt();
+      final displayAddr = address.length > maxLen
+          ? '\${address.substring(0, maxLen)}...'
+          : address;
+      img.drawString(
+        canvas,
+        'Alamat: \$displayAddr',
+        font: font,
+        x: padding,
+        y: yPos,
+        color: white,
+      );
+    } else {
+      img.drawString(
+        canvas,
+        'Alamat: Tidak tersedia',
         font: font,
         x: padding,
         y: yPos,
@@ -519,7 +568,26 @@ class _DeliveryCard extends StatelessWidget {
                             color: Colors.grey, fontSize: 13)),
                   ],
                 ),
-                if (delivery.lat != null) ...[
+                if (delivery.address != null) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.location_on,
+                          size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          delivery.address!,
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 13),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else if (delivery.lat != null) ...[
                   const SizedBox(height: 2),
                   Row(
                     children: [
@@ -527,7 +595,7 @@ class _DeliveryCard extends StatelessWidget {
                           size: 14, color: Colors.grey),
                       const SizedBox(width: 4),
                       Text(
-                        '${delivery.lat!.toStringAsFixed(5)}, ${delivery.lng!.toStringAsFixed(5)}',
+                        '\${delivery.lat!.toStringAsFixed(5)}, \${delivery.lng!.toStringAsFixed(5)}',
                         style: const TextStyle(
                             color: Colors.grey, fontSize: 13),
                       ),

@@ -21,7 +21,9 @@ dependencies:
   permission_handler: ^11.3.0
   geocoding: ^3.0.0
   http: ^1.2.1
-
+gallery_saver_plus: ^3.2.2
+  share_plus: ^10.1.2
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter

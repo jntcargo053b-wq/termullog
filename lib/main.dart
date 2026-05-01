@@ -295,12 +295,12 @@ class WeatherHelper {
   }
 }
 
-// ───────────────── MAP TILE ─────────────────
+// ───────────────── MAP TILE HELPER (FULL FIX STABLE) ─────────────────
 
 class MapTileHelper {
-  static const int zoom = 18;
+  static const int zoom = 17;
   static const int tileSize = 256;
-  static const int outputSize = 480;
+  static const int outputSize = 420;
 
   static int _lonToTileX(double lon) =>
       ((lon + 180.0) / 360.0 * (1 << zoom)).floor();
@@ -308,33 +308,36 @@ class MapTileHelper {
   static int _latToTileY(double lat) {
     final rad = lat * pi / 180.0;
 
-    return ((1.0 -
-                log(tan(rad) + 1.0 / cos(rad)) / pi) /
-            2.0 *
-            (1 << zoom))
-        .floor();
+    return (
+      (1.0 - log(tan(rad) + 1.0 / cos(rad)) / pi) /
+      2.0 *
+      (1 << zoom)
+    ).floor();
   }
 
   static int _lonPixelOffset(double lon) {
     final world =
         (lon + 180.0) / 360.0 * (1 << zoom);
 
-    return ((world - world.floor()) * tileSize)
-        .floor();
+    return (
+      (world - world.floor()) * tileSize
+    ).floor();
   }
 
   static int _latPixelOffset(double lat) {
     final rad = lat * pi / 180.0;
 
     final world =
-        (1.0 -
-                log(tan(rad) + 1.0 / cos(rad)) / pi) /
-            2.0 *
-            (1 << zoom);
+        (1.0 - log(tan(rad) + 1.0 / cos(rad)) / pi) /
+        2.0 *
+        (1 << zoom);
 
-    return ((world - world.floor()) * tileSize)
-        .floor();
+    return (
+      (world - world.floor()) * tileSize
+    ).floor();
   }
+
+  // ───────────────── FALLBACK MAP ─────────────────
 
   static img.Image _fallbackMap(
     double lat,
@@ -347,8 +350,29 @@ class MapTileHelper {
 
     img.fill(
       out,
-      color: img.ColorRgb8(220, 230, 245),
+      color: img.ColorRgb8(225, 235, 245),
     );
+
+    // GRID
+    for (int i = 0; i < outputSize; i += 60) {
+      img.drawLine(
+        out,
+        x1: i,
+        y1: 0,
+        x2: i,
+        y2: outputSize,
+        color: img.ColorRgb8(190, 205, 220),
+      );
+
+      img.drawLine(
+        out,
+        x1: 0,
+        y1: i,
+        x2: outputSize,
+        y2: i,
+        color: img.ColorRgb8(190, 205, 220),
+      );
+    }
 
     img.drawString(
       out,
@@ -356,7 +380,7 @@ class MapTileHelper {
       font: img.arial24,
       x: 20,
       y: 20,
-      color: img.ColorRgb8(50, 50, 50),
+      color: img.ColorRgb8(40, 40, 40),
     );
 
     img.drawString(
@@ -365,7 +389,7 @@ class MapTileHelper {
       font: img.arial24,
       x: 20,
       y: 80,
-      color: img.ColorRgb8(50, 50, 50),
+      color: img.ColorRgb8(40, 40, 40),
     );
 
     img.drawString(
@@ -374,23 +398,46 @@ class MapTileHelper {
       font: img.arial24,
       x: 20,
       y: 120,
-      color: img.ColorRgb8(50, 50, 50),
+      color: img.ColorRgb8(40, 40, 40),
+    );
+
+    final mx = outputSize ~/ 2;
+    final my = outputSize ~/ 2;
+
+    img.fillCircle(
+      out,
+      x: mx,
+      y: my,
+      radius: 10,
+      color: img.ColorRgb8(220, 30, 30),
+    );
+
+    img.drawCircle(
+      out,
+      x: mx,
+      y: my,
+      radius: 10,
+      color: img.ColorRgb8(255, 255, 255),
     );
 
     return out;
   }
+
+  // ───────────────── FETCH MAP ─────────────────
 
   static Future<img.Image> fetchMap(
     double lat,
     double lng,
   ) async {
     try {
+
       final tx = _lonToTileX(lng);
       final ty = _latToTileY(lat);
 
       final px = _lonPixelOffset(lng);
       final py = _latPixelOffset(lat);
 
+      // STABLE GRID
       const grid = 3;
       const half = 1;
 
@@ -399,20 +446,30 @@ class MapTileHelper {
         height: tileSize * grid,
       );
 
-      int success = 0;
+      img.fill(
+        canvas,
+        color: img.ColorRgb8(240, 240, 240),
+      );
+
+      int successCount = 0;
 
       for (int dy = -half; dy <= half; dy++) {
         for (int dx = -half; dx <= half; dx++) {
+
           try {
+
+            // ───────────────── STADIA MAPS ─────────────────
+
             final url =
-                'https://a.tile.openstreetmap.org/$zoom/${tx + dx}/${ty + dy}.png';
+                'https://tiles.stadiamaps.com/tiles/alidade_smooth/'
+                '$zoom/${tx + dx}/${ty + dy}.png';
 
             debugPrint(url);
 
-            final res = await http.get(
+            final response = await http.get(
               Uri.parse(url),
               headers: {
-                'User-Agent': 'Mozilla/5.0',
+                'User-Agent': 'TermulLog/1.0',
                 'Accept': 'image/png,image/*',
               },
             ).timeout(
@@ -420,14 +477,17 @@ class MapTileHelper {
             );
 
             debugPrint(
-                'MAP STATUS ${res.statusCode}');
+              'MAP STATUS: ${response.statusCode}',
+            );
 
-            if (res.statusCode == 200) {
+            if (response.statusCode == 200) {
+
               final tile = img.decodeImage(
-                res.bodyBytes,
+                response.bodyBytes,
               );
 
               if (tile != null) {
+
                 img.compositeImage(
                   canvas,
                   tile,
@@ -435,21 +495,40 @@ class MapTileHelper {
                   dstY: (dy + half) * tileSize,
                 );
 
-                success++;
+                successCount++;
               }
             }
+
           } catch (e) {
-            debugPrint('MAP TILE ERROR: $e');
+
+            debugPrint(
+              'MAP TILE ERROR: $e',
+            );
           }
         }
       }
 
-      if (success == 0) {
-        return _fallbackMap(lat, lng);
+      // ───────────────── FALLBACK ─────────────────
+
+      if (successCount == 0) {
+
+        debugPrint(
+          'SEMUA TILE GAGAL',
+        );
+
+        return _fallbackMap(
+          lat,
+          lng,
+        );
       }
 
-      final centerX = half * tileSize + px;
-      final centerY = half * tileSize + py;
+      // ───────────────── CROP CENTER ─────────────────
+
+      final centerX =
+          half * tileSize + px;
+
+      final centerY =
+          half * tileSize + py;
 
       final cropX =
           centerX - (outputSize ~/ 2);
@@ -474,18 +553,58 @@ class MapTileHelper {
       final mx = outputSize ~/ 2;
       final my = outputSize ~/ 2;
 
+      // ───────────────── MARKER SHADOW ─────────────────
+
+      img.fillCircle(
+        cropped,
+        x: mx + 2,
+        y: my + 2,
+        radius: 11,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+
+      // ───────────────── RED MARKER ─────────────────
+
       img.fillCircle(
         cropped,
         x: mx,
         y: my,
-        radius: 10,
-        color: img.ColorRgb8(255, 0, 0),
+        radius: 11,
+        color: img.ColorRgb8(220, 30, 30),
+      );
+
+      // ───────────────── WHITE BORDER ─────────────────
+
+      img.drawCircle(
+        cropped,
+        x: mx,
+        y: my,
+        radius: 11,
+        color: img.ColorRgb8(255, 255, 255),
+      );
+
+      // ───────────────── CENTER DOT ─────────────────
+
+      img.fillCircle(
+        cropped,
+        x: mx,
+        y: my,
+        radius: 4,
+        color: img.ColorRgb8(255, 255, 255),
       );
 
       return cropped;
+
     } catch (e) {
-      debugPrint('MAP ERROR: $e');
-      return _fallbackMap(lat, lng);
+
+      debugPrint(
+        'MAP ERROR: $e',
+      );
+
+      return _fallbackMap(
+        lat,
+        lng,
+      );
     }
   }
 }

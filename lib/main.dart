@@ -1,9 +1,3 @@
-// =======================
-// TERMULLOG FULL FIX
-// PREMIUM TIMESTAMP UI
-// SAVE + SHARE
-// STABLE MAP
-// =======================
 import 'package:flutter/services.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
@@ -45,9 +39,7 @@ class TermulLogApp extends StatelessWidget {
   }
 }
 
-// =======================
-// LOGIN
-// =======================
+// ================= LOGIN =================
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -127,9 +119,7 @@ class _LoginScreenState
   }
 }
 
-// =======================
-// MODEL
-// =======================
+// ================= MODEL =================
 
 class DeliveryRecord {
   final String deliveryId;
@@ -147,9 +137,7 @@ class DeliveryRecord {
   });
 }
 
-// =======================
-// DELIVERY ID
-// =======================
+// ================= DELIVERY ID =================
 
 class DeliveryIdGenerator {
   static String generate() {
@@ -159,9 +147,7 @@ class DeliveryIdGenerator {
   }
 }
 
-// =======================
-// WEATHER
-// =======================
+// ================= WEATHER =================
 
 class WeatherData {
   final double temperature;
@@ -216,41 +202,8 @@ class WeatherHelper {
   }
 }
 
-// =======================
-// MAP
-// =======================
+// ================= LOAD LOGO =================
 
-class MapTileHelper {
-  static Future<img.Image?> fetchMap(
-    double lat,
-    double lng,
-  ) async {
-    try {
-      final url =
-          'https://staticmap.openstreetmap.de/staticmap.php'
-          '?center=$lat,$lng'
-          '&zoom=17'
-          '&size=420x420'
-          '&markers=$lat,$lng,red-pushpin';
-
-      final response = await http.get(
-        Uri.parse(url),
-      );
-
-      if (response.statusCode == 200) {
-        return img.decodeImage(
-          response.bodyBytes,
-        );
-      }
-    } catch (_) {}
-
-    return null;
-  }
-}
-
-// =======================
-// WATERMARK PREMIUM
-// =======================
 Future<img.Image?> loadLogo() async {
   try {
     final data =
@@ -265,6 +218,41 @@ Future<img.Image?> loadLogo() async {
     return null;
   }
 }
+
+// ================= TEXT WRAP =================
+
+List<String> wrapText(
+  String text,
+  int maxLength,
+) {
+  final words = text.split(' ');
+
+  List<String> lines = [];
+
+  String currentLine = '';
+
+  for (final word in words) {
+    final testLine =
+        '$currentLine $word';
+
+    if (testLine.length > maxLength) {
+      lines.add(currentLine.trim());
+
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+
+  if (currentLine.isNotEmpty) {
+    lines.add(currentLine.trim());
+  }
+
+  return lines;
+}
+
+// ================= WATERMARK =================
+
 Future<String> addWatermark({
   required String deliveryId,
   required String imagePath,
@@ -275,7 +263,6 @@ Future<String> addWatermark({
   required double? lat,
   required double? lng,
 }) async {
-
   final bytes =
       await File(imagePath).readAsBytes();
 
@@ -293,7 +280,6 @@ Future<String> addWatermark({
     );
   }
 
-  // LOAD LOGO
   final logo = await loadLogo();
 
   const panelHeight = 420;
@@ -304,13 +290,12 @@ Future<String> addWatermark({
         original.height + panelHeight,
   );
 
-  // FOTO
   img.compositeImage(
     canvas,
     original,
   );
 
-  // BACKGROUND PANEL
+  // PANEL BG
   img.fillRect(
     canvas,
     x1: 0,
@@ -325,7 +310,7 @@ Future<String> addWatermark({
     ),
   );
 
-  // GARIS ATAS
+  // TOP LINE
   img.fillRect(
     canvas,
     x1: 0,
@@ -341,7 +326,6 @@ Future<String> addWatermark({
 
   // LOGO
   if (logo != null) {
-
     final resizedLogo =
         img.copyResize(
       logo,
@@ -374,7 +358,7 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 65;
+  y += 70;
 
   // ID
   img.drawString(
@@ -384,9 +368,9 @@ Future<String> addWatermark({
     x: textX,
     y: y,
     color: img.ColorRgb8(
-      190,
-      190,
-      190,
+      180,
+      180,
+      180,
     ),
   );
 
@@ -459,9 +443,9 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 50;
+  y += 45;
 
-  // ALAMAT TITLE
+  // ADDRESS TITLE
   img.drawString(
     canvas,
     'Alamat :',
@@ -477,51 +461,16 @@ Future<String> addWatermark({
 
   y += 35;
 
-  // WRAP TEXT ADDRESS
-  final alamat =
-      address ?? 'Tidak tersedia';
+  // WRAP ADDRESS
+  final lines = wrapText(
+    address ?? 'Tidak tersedia',
+    42,
+  );
 
-  final words =
-      alamat.split(' ');
-
-  String line = '';
-
-  for (final word in words) {
-
-    final testLine =
-        '$line $word';
-
-    if (testLine.length > 42) {
-
-      img.drawString(
-        canvas,
-        line.trim(),
-        font: img.arial24,
-        x: textX,
-        y: y,
-        color: img.ColorRgb8(
-          255,
-          255,
-          255,
-        ),
-      );
-
-      y += 32;
-
-      line = word;
-
-    } else {
-
-      line = testLine;
-    }
-  }
-
-  // LAST LINE
-  if (line.isNotEmpty) {
-
+  for (final line in lines) {
     img.drawString(
       canvas,
-      line.trim(),
+      line,
       font: img.arial24,
       x: textX,
       y: y,
@@ -531,6 +480,8 @@ Future<String> addWatermark({
         255,
       ),
     );
+
+    y += 32;
   }
 
   final dir =
@@ -549,9 +500,7 @@ Future<String> addWatermark({
   return path;
 }
 
-// =======================
-// DASHBOARD
-// =======================
+// ================= DASHBOARD =================
 
 class DashboardScreen extends StatefulWidget {
   final String name;
@@ -600,8 +549,6 @@ class _DashboardScreenState
 
       String? address;
       String? weather;
-
-      img.Image? mapImage;
 
       try {
         LocationPermission permission =
@@ -660,8 +607,7 @@ class _DashboardScreenState
           // WEATHER
           try {
             final w =
-                await WeatherHelper
-                    .fetch(
+                await WeatherHelper.fetch(
               lat,
               lng,
             );
@@ -669,16 +615,6 @@ class _DashboardScreenState
             if (w != null) {
               weather = w.text;
             }
-          } catch (_) {}
-
-          // MAP
-          try {
-            mapImage =
-                await MapTileHelper
-                    .fetchMap(
-              lat,
-              lng,
-            );
           } catch (_) {}
         }
       } catch (_) {}
@@ -843,13 +779,16 @@ class _DashboardScreenState
                                   ),
 
                                   const SizedBox(
-                                      height: 6),
+                                    height: 6,
+                                  ),
 
                                   Text(
-                                      d.timestamp),
+                                    d.timestamp,
+                                  ),
 
                                   const SizedBox(
-                                      height: 12),
+                                    height: 12,
+                                  ),
 
                                   Row(
                                     children: [
@@ -874,7 +813,8 @@ class _DashboardScreenState
                                       ),
 
                                       const SizedBox(
-                                          width: 10),
+                                        width: 10,
+                                      ),
 
                                       Expanded(
                                         child:

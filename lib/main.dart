@@ -17,8 +17,6 @@ void main() async {
   runApp(const TermulLogApp());
 }
 
-const String kUploadEndpoint = '';
-
 class TermulLogApp extends StatelessWidget {
   const TermulLogApp({super.key});
 
@@ -228,7 +226,7 @@ class MapTileHelper {
 
     img.drawString(
       out,
-      'GPS ONLY',
+      'MAP FAILED',
       font: img.arial24,
       x: 20,
       y: 20,
@@ -273,12 +271,12 @@ class MapTileHelper {
     double lng,
   ) async {
     try {
+
       final url =
           'https://staticmap.openstreetmap.de/staticmap.php'
           '?center=$lat,$lng'
           '&zoom=17'
           '&size=420x420'
-          '&maptype=mapnik'
           '&markers=$lat,$lng,red-pushpin';
 
       final response = await http.get(
@@ -290,6 +288,7 @@ class MapTileHelper {
       );
 
       if (response.statusCode == 200) {
+
         final image = img.decodeImage(
           response.bodyBytes,
         );
@@ -299,9 +298,17 @@ class MapTileHelper {
         }
       }
 
-      return _fallbackMap(lat, lng);
+      return _fallbackMap(
+        lat,
+        lng,
+      );
+
     } catch (_) {
-      return _fallbackMap(lat, lng);
+
+      return _fallbackMap(
+        lat,
+        lng,
+      );
     }
   }
 }
@@ -317,6 +324,7 @@ Future<String> addWatermark({
   required double? lat,
   required double? lng,
 }) async {
+
   final bytes =
       await File(imagePath).readAsBytes();
 
@@ -364,7 +372,9 @@ Future<String> addWatermark({
     ),
   );
 
+  // MAP
   if (mapImage != null) {
+
     final resizedMap =
         img.copyResize(
       mapImage,
@@ -380,7 +390,7 @@ Future<String> addWatermark({
     );
   }
 
-  final textX = mapSize + 16;
+  final textX = mapSize + 20;
 
   int y = original.height + 20;
 
@@ -464,9 +474,12 @@ Future<String> addWatermark({
 
   y += 40;
 
+  final alamat =
+      address ?? 'Tidak tersedia';
+
   img.drawString(
     canvas,
-    'Alamat : ${address ?? "Tidak tersedia"}',
+    'Alamat : $alamat',
     font: img.arial24,
     x: textX,
     y: y,
@@ -508,16 +521,20 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState
     extends State<DashboardScreen> {
-  final deliveries = <DeliveryRecord>[];
+
+  final deliveries =
+      <DeliveryRecord>[];
 
   bool loading = false;
 
   Future<void> captureDelivery() async {
+
     setState(() {
       loading = true;
     });
 
     try {
+
       final picker = ImagePicker();
 
       final photo =
@@ -527,6 +544,7 @@ class _DashboardScreenState
       );
 
       if (photo == null) {
+
         setState(() {
           loading = false;
         });
@@ -543,23 +561,25 @@ class _DashboardScreenState
       img.Image? mapImage;
 
       try {
+
         LocationPermission permission =
             await Geolocator
                 .checkPermission();
 
         if (permission ==
             LocationPermission.denied) {
+
           permission =
               await Geolocator
                   .requestPermission();
         }
 
         if (permission ==
-                LocationPermission
-                    .always ||
+                LocationPermission.always ||
             permission ==
                 LocationPermission
                     .whileInUse) {
+
           final pos =
               await Geolocator
                   .getCurrentPosition(
@@ -570,7 +590,9 @@ class _DashboardScreenState
           lat = pos.latitude;
           lng = pos.longitude;
 
+          // ADDRESS
           try {
+
             final marks =
                 await placemarkFromCoordinates(
               lat,
@@ -578,6 +600,7 @@ class _DashboardScreenState
             );
 
             if (marks.isNotEmpty) {
+
               final p = marks.first;
 
               address = [
@@ -592,9 +615,12 @@ class _DashboardScreenState
                   )
                   .join(', ');
             }
+
           } catch (_) {}
 
+          // WEATHER
           try {
+
             final w =
                 await WeatherHelper.fetch(
               lat,
@@ -605,17 +631,22 @@ class _DashboardScreenState
               weather =
                   w.watermarkText;
             }
+
           } catch (_) {}
 
+          // MAP
           try {
+
             mapImage =
                 await MapTileHelper
                     .fetchMap(
               lat,
               lng,
             );
+
           } catch (_) {}
         }
+
       } catch (_) {}
 
       final timestamp = DateFormat(
@@ -652,15 +683,49 @@ class _DashboardScreenState
       setState(() {
         loading = false;
       });
-    } catch (_) {
+
+    } catch (e) {
+
+      debugPrint(
+        e.toString(),
+      );
+
       setState(() {
         loading = false;
       });
     }
   }
 
+  Future<void> saveToGallery(
+    String path,
+  ) async {
+
+    await GallerySaver.saveImage(path);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Berhasil disimpan ke galeri',
+        ),
+      ),
+    );
+  }
+
+  Future<void> shareImage(
+    String path,
+  ) async {
+
+    await Share.shareXFiles([
+      XFile(path),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -669,6 +734,7 @@ class _DashboardScreenState
       ),
       body: Column(
         children: [
+
           Padding(
             padding:
                 const EdgeInsets.all(16),
@@ -712,6 +778,7 @@ class _DashboardScreenState
                         deliveries.length,
                     itemBuilder:
                         (_, index) {
+
                       final d =
                           deliveries[index];
 
@@ -721,6 +788,7 @@ class _DashboardScreenState
                                 .all(12),
                         child: Column(
                           children: [
+
                             Image.file(
                               File(
                                 d.imagePath,
@@ -737,6 +805,7 @@ class _DashboardScreenState
                                     CrossAxisAlignment
                                         .start,
                                 children: [
+
                                   Text(
                                     d.deliveryId,
                                     style:
@@ -766,6 +835,59 @@ class _DashboardScreenState
                                     Text(
                                       d.address!,
                                     ),
+
+                                  const SizedBox(
+                                    height: 12,
+                                  ),
+
+                                  Row(
+                                    children: [
+
+                                      Expanded(
+                                        child:
+                                            ElevatedButton.icon(
+                                          onPressed:
+                                              () =>
+                                                  saveToGallery(
+                                            d.imagePath,
+                                          ),
+                                          icon:
+                                              const Icon(
+                                            Icons
+                                                .save_alt,
+                                          ),
+                                          label:
+                                              const Text(
+                                            'SAVE',
+                                          ),
+                                        ),
+                                      ),
+
+                                      const SizedBox(
+                                        width: 10,
+                                      ),
+
+                                      Expanded(
+                                        child:
+                                            ElevatedButton.icon(
+                                          onPressed:
+                                              () =>
+                                                  shareImage(
+                                            d.imagePath,
+                                          ),
+                                          icon:
+                                              const Icon(
+                                            Icons
+                                                .share,
+                                          ),
+                                          label:
+                                              const Text(
+                                            'SHARE',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),

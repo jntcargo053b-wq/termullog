@@ -311,7 +311,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (lat != null && lng != null) {
       img.drawString(
         canvas,
-        'GPS: \${lat.toStringAsFixed(6)}, \${lng.toStringAsFixed(6)}',
+        'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
         font: font,
         x: padding,
         y: yPos,
@@ -335,11 +335,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Potong alamat jika terlalu panjang
       final maxLen = (w / (fontSize * 0.6)).toInt();
       final displayAddr = address.length > maxLen
-          ? '\${address.substring(0, maxLen)}...'
+          ? '${address.substring(0, maxLen)}...'
           : address;
       img.drawString(
         canvas,
-        'Alamat: \$displayAddr',
+        'Alamat: $displayAddr',
         font: font,
         x: padding,
         y: yPos,
@@ -595,7 +595,7 @@ class _DeliveryCard extends StatelessWidget {
                           size: 14, color: Colors.grey),
                       const SizedBox(width: 4),
                       Text(
-                        '\${delivery.lat!.toStringAsFixed(5)}, \${delivery.lng!.toStringAsFixed(5)}',
+                        '${delivery.lat!.toStringAsFixed(5)}, ${delivery.lng!.toStringAsFixed(5)}',
                         style: const TextStyle(
                             color: Colors.grey, fontSize: 13),
                       ),

@@ -214,11 +214,11 @@ Future<img.Image?> loadLogo() async {
     return img.decodeImage(
       data.buffer.asUint8List(),
     );
-  } catch (_) {
+  } catch (e) {
+    debugPrint('Logo tidak ditemukan');
     return null;
   }
 }
-
 // ================= TEXT WRAP =================
 
 List<String> wrapText(

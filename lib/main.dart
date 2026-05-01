@@ -115,83 +115,85 @@ class DeliveryRecord {
 // ─── MAP TILE ─────────────────────────────────────────────────────────────────
 
 class MapTileHelper {
-  static const int zoom = 17;        // zoom 17 = lebih detail, jalan kecil kelihatan
-  static const int tileSize = 256;
-  static const int outputSize = 400; // ukuran output peta (px)
+  // zoom 18 = detail maksimal OSM, jalan kecil & gang terlihat jelas
+  static const int zoom       = 18;
+  static const int tileSize   = 256;
+  // 480px crop di zoom 18 ≈ radius ~75 meter dari titik lokasi
+  static const int outputSize = 480;
 
-  static int lonToTile(double lon) =>
+  static int _lonToTileX(double lon) =>
       ((lon + 180.0) / 360.0 * (1 << zoom)).floor();
 
-  static int latToTile(double lat) {
-    final latRad = lat * pi / 180.0;
-    return ((1.0 - log(tan(latRad) + 1.0 / cos(latRad)) / pi) /
-            2.0 *
-            (1 << zoom))
+  static int _latToTileY(double lat) {
+    final rad = lat * pi / 180.0;
+    return ((1.0 - log(tan(rad) + 1.0 / cos(rad)) / pi) / 2.0 * (1 << zoom))
         .floor();
   }
 
-  static int lonToPixelOffset(double lon) {
-    final worldTile = (lon + 180.0) / 360.0 * (1 << zoom);
-    return ((worldTile - worldTile.floor()) * tileSize).floor();
+  static int _lonPixelOffset(double lon) {
+    final world = (lon + 180.0) / 360.0 * (1 << zoom);
+    return ((world - world.floor()) * tileSize).floor();
   }
 
-  static int latToPixelOffset(double lat) {
-    final latRad = lat * pi / 180.0;
-    final worldTile =
-        (1.0 - log(tan(latRad) + 1.0 / cos(latRad)) / pi) / 2.0 * (1 << zoom);
-    return ((worldTile - worldTile.floor()) * tileSize).floor();
+  static int _latPixelOffset(double lat) {
+    final rad   = lat * pi / 180.0;
+    final world =
+        (1.0 - log(tan(rad) + 1.0 / cos(rad)) / pi) / 2.0 * (1 << zoom);
+    return ((world - world.floor()) * tileSize).floor();
   }
 
   static Future<img.Image?> fetchMap(double lat, double lng) async {
-    final tx = lonToTile(lng);
-    final ty = latToTile(lat);
-    final px = lonToPixelOffset(lng);
-    final py = latToPixelOffset(lat);
+    final tx = _lonToTileX(lng);
+    final ty = _latToTileY(lat);
+    final px = _lonPixelOffset(lng);
+    final py = _latPixelOffset(lat);
 
-    // Canvas 5×5 tile agar ada cukup area untuk di-crop
-    final canvasW = tileSize * 5;
-    final canvasH = tileSize * 5;
-    final canvas = img.Image(width: canvasW, height: canvasH, numChannels: 3);
+    // Grid 5×5 tile — cukup lebar agar crop 480px tidak kena tepi
+    const grid     = 5;
+    const halfGrid = 2; // grid ~/ 2
+    final canvasW  = tileSize * grid;
+    final canvasH  = tileSize * grid;
+
+    final canvas =
+        img.Image(width: canvasW, height: canvasH, numChannels: 3);
     img.fill(canvas, color: img.ColorRgb8(242, 239, 233));
 
-    for (int dy = -2; dy <= 2; dy++) {
-      for (int dx = -2; dx <= 2; dx++) {
+    for (int dy = -halfGrid; dy <= halfGrid; dy++) {
+      for (int dx = -halfGrid; dx <= halfGrid; dx++) {
         try {
           final url =
               'https://tile.openstreetmap.org/$zoom/${tx + dx}/${ty + dy}.png';
-          final response = await http.get(
-            Uri.parse(url),
-            headers: {'User-Agent': 'TermulLogApp/1.0'},
-          ).timeout(const Duration(seconds: 10));
-          if (response.statusCode == 200) {
-            img.Image? tile = img.decodePng(response.bodyBytes);
-            if (tile != null) {
-              if (tile.numChannels != 3) {
-                tile = img.copyResize(
-                  img.remapColors(
-                    tile,
-                    red: img.Channel.red,
+          final res = await http
+              .get(Uri.parse(url),
+                  headers: {'User-Agent': 'TermulLogApp/1.0'})
+              .timeout(const Duration(seconds: 12));
+
+          if (res.statusCode == 200) {
+            img.Image? tile = img.decodePng(res.bodyBytes);
+            if (tile == null) continue;
+
+            // Pastikan 3-channel RGB
+            if (tile.numChannels != 3) {
+              tile = img.copyResize(
+                img.remapColors(tile,
+                    red:   img.Channel.red,
                     green: img.Channel.green,
-                    blue: img.Channel.blue,
-                    alpha: img.Channel.luminance,
-                  ),
-                  width: tileSize,
-                  height: tileSize,
+                    blue:  img.Channel.blue,
+                    alpha: img.Channel.luminance),
+                width:  tileSize,
+                height: tileSize,
+              );
+            }
+
+            final dstX = (dx + halfGrid) * tileSize;
+            final dstY = (dy + halfGrid) * tileSize;
+            for (int row = 0; row < tileSize; row++) {
+              for (int col = 0; col < tileSize; col++) {
+                final p = tile.getPixel(col, row);
+                canvas.setPixelRgb(
+                  dstX + col, dstY + row,
+                  p.r.toInt(), p.g.toInt(), p.b.toInt(),
                 );
-              }
-              final dstX = (dx + 2) * tileSize;
-              final dstY = (dy + 2) * tileSize;
-              for (int py2 = 0; py2 < tileSize; py2++) {
-                for (int px2 = 0; px2 < tileSize; px2++) {
-                  final pixel = tile.getPixel(px2, py2);
-                  canvas.setPixelRgb(
-                    dstX + px2,
-                    dstY + py2,
-                    pixel.r.toInt(),
-                    pixel.g.toInt(),
-                    pixel.b.toInt(),
-                  );
-                }
               }
             }
           }
@@ -199,27 +201,31 @@ class MapTileHelper {
       }
     }
 
-    // Titik center: tile (2,2) + offset piksel dalam tile tersebut
-    final centerX = 2 * tileSize + px;
-    final centerY = 2 * tileSize + py;
-    final half = outputSize ~/ 2;
+    // Titik tengah (posisi GPS) dalam canvas besar
+    final centerX = halfGrid * tileSize + px;
+    final centerY = halfGrid * tileSize + py;
+    final half    = outputSize ~/ 2;
 
-    final cropX = (centerX - half).clamp(0, canvasW - outputSize);
-    final cropY = (centerY - half).clamp(0, canvasH - outputSize);
+    final cropX =
+        (centerX - half).clamp(0, canvasW - outputSize);
+    final cropY =
+        (centerY - half).clamp(0, canvasH - outputSize);
     final cropped = img.copyCrop(canvas,
         x: cropX, y: cropY, width: outputSize, height: outputSize);
 
-    final markerX = centerX - cropX;
-    final markerY = centerY - cropY;
+    // Posisi marker dalam crop
+    final mX = centerX - cropX;
+    final mY = centerY - cropY;
 
-    // Marker dengan shadow agar kontras di atas peta terang
-    final shadow = img.ColorRgb8(0, 0, 0);
-    final red    = img.ColorRgb8(220, 30, 30);
-    final white  = img.ColorRgb8(255, 255, 255);
-    img.fillCircle(cropped, x: markerX + 2, y: markerY + 2, radius: 14, color: shadow);
-    img.fillCircle(cropped, x: markerX,     y: markerY,     radius: 14, color: red);
-    img.drawCircle(cropped, x: markerX,     y: markerY,     radius: 14, color: white);
-    img.fillCircle(cropped, x: markerX,     y: markerY,     radius: 5,  color: white);
+    // Marker kecil (radius 10) agar tidak menutupi jalan sekitar
+    img.fillCircle(cropped, x: mX + 2, y: mY + 2, radius: 10,
+        color: img.ColorRgb8(0, 0, 0));        // shadow
+    img.fillCircle(cropped, x: mX,     y: mY,     radius: 10,
+        color: img.ColorRgb8(220, 30, 30));     // merah
+    img.drawCircle(cropped, x: mX,     y: mY,     radius: 10,
+        color: img.ColorRgb8(255, 255, 255));   // border putih
+    img.fillCircle(cropped, x: mX,     y: mY,     radius: 3,
+        color: img.ColorRgb8(255, 255, 255));   // titik putih tengah
 
     return cropped;
   }
@@ -241,36 +247,47 @@ Future<String> addWatermark({
   img.Image? original = img.decodeImage(bytes);
   if (original == null) throw Exception('Gagal membaca gambar');
 
-  if (original.width > 1920) {
-    original = img.copyResize(original, width: 1920);
+  // ── Resize foto agar pas di layar HP ─────────────────────────────────────
+  // Landscape: max lebar 1080px
+  if (original.width > original.height && original.width > 1080) {
+    original = img.copyResize(original, width: 1080,
+        interpolation: img.Interpolation.linear);
+  }
+  // Portrait: max lebar 1080px juga (tinggi menyesuaikan)
+  if (original.width <= original.height && original.width > 1080) {
+    original = img.copyResize(original, width: 1080,
+        interpolation: img.Interpolation.linear);
+  }
+  // Keamanan: jika tinggi masih > 1440 setelah resize
+  if (original.height > 1440) {
+    original = img.copyResize(original, height: 1440,
+        interpolation: img.Interpolation.linear);
   }
 
   final w = original.width;
   final h = original.height;
 
-  // Strip info tinggi tetap 260px — cukup untuk peta + semua teks
+  // Strip info: tinggi 260px, peta 260×260 di kiri
   const stripH       = 260;
-  const mapDisplaySz = 260; // lebar/tinggi peta = sama dengan stripH
+  const mapDisplaySz = 260;
   final hasMap       = mapImage != null;
   final mapW         = hasMap ? mapDisplaySz : 0;
 
   // ── Kanvas akhir (foto + strip bawah) ────────────────────────────────────
-  final canvas = img.Image(width: w, height: h + stripH, numChannels: 3);
+  final canvas =
+      img.Image(width: w, height: h + stripH, numChannels: 3);
   img.compositeImage(canvas, original, dstX: 0, dstY: 0);
 
-  // ── Background strip: gradient manual abu gelap → hitam ──────────────────
+  // ── Background strip: gradient gelap ─────────────────────────────────────
   for (int row = 0; row < stripH; row++) {
     final t    = row / (stripH - 1);
     final gray = (35 * (1 - t) + 8 * t).toInt();
-    img.drawLine(
-      canvas,
-      x1: 0,     y1: h + row,
-      x2: w - 1, y2: h + row,
-      color: img.ColorRgb8(gray, gray, gray + 4),
-    );
+    img.drawLine(canvas,
+        x1: 0, y1: h + row, x2: w - 1, y2: h + row,
+        color: img.ColorRgb8(gray, gray, gray + 4));
   }
 
-  // ── Garis aksen teal di batas foto-strip (3px) ───────────────────────────
+  // ── Garis aksen teal (3px) di batas foto-strip ───────────────────────────
   for (int x = 0; x < w; x++) {
     canvas.setPixelRgb(x, h,     0, 200, 180);
     canvas.setPixelRgb(x, h + 1, 0, 200, 180);
@@ -296,94 +313,54 @@ Future<String> addWatermark({
   final cYellow = img.ColorRgb8(255, 210, 0);
   final cGrey   = img.ColorRgb8(155, 155, 155);
 
-  final fontBig   = img.arial24; // header kiriman
-  final fontSmall = img.arial14; // isi info
+  final fontBig   = img.arial24;
+  final fontSmall = img.arial14;
 
-  final textX  = mapW + 16;       // X awal teks (setelah peta + padding)
-  final maxTW  = w - textX - 12;  // lebar maksimal area teks
-  int   ty     = h + 12;          // Y awal teks
+  final textX  = mapW + 16;
+  final maxTW  = w - textX - 12;
+  int   ty     = h + 12;
 
-  // ── Header: KIRIMAN #N ───────────────────────────────────────────────────
-  img.drawString(
-    canvas,
-    'KIRIMAN #$deliveryNum',
-    font: fontBig,
-    x: textX,
-    y: ty,
-    color: cYellow,
-  );
+  // ── Header KIRIMAN #N ────────────────────────────────────────────────────
+  img.drawString(canvas, 'KIRIMAN #$deliveryNum',
+      font: fontBig, x: textX, y: ty, color: cYellow);
   ty += 34;
 
-  // Garis dekoratif bawah header
-  img.drawLine(
-    canvas,
-    x1: textX,       y1: ty - 4,
-    x2: textX + 180, y2: ty - 4,
-    color: cTeal,
-  );
+  img.drawLine(canvas,
+      x1: textX, y1: ty - 4, x2: textX + 180, y2: ty - 4,
+      color: cTeal);
   ty += 6;
 
   // ── Kurir ────────────────────────────────────────────────────────────────
-  img.drawString(
-    canvas,
-    'Kurir   : $kurirName',
-    font: fontSmall,
-    x: textX,
-    y: ty,
-    color: cWhite,
-  );
+  img.drawString(canvas, 'Kurir   : $kurirName',
+      font: fontSmall, x: textX, y: ty, color: cWhite);
   ty += 26;
 
   // ── Waktu ────────────────────────────────────────────────────────────────
-  img.drawString(
-    canvas,
-    'Waktu   : $timestamp',
-    font: fontSmall,
-    x: textX,
-    y: ty,
-    color: cWhite,
-  );
+  img.drawString(canvas, 'Waktu   : $timestamp',
+      font: fontSmall, x: textX, y: ty, color: cWhite);
   ty += 26;
 
   // ── GPS ──────────────────────────────────────────────────────────────────
   if (lat != null && lng != null) {
-    img.drawString(
-      canvas,
-      'GPS     : ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
-      font: fontSmall,
-      x: textX,
-      y: ty,
-      color: cWhite,
-    );
+    img.drawString(canvas,
+        'GPS     : ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+        font: fontSmall, x: textX, y: ty, color: cWhite);
   } else {
-    img.drawString(
-      canvas,
-      'GPS     : Tidak tersedia',
-      font: fontSmall,
-      x: textX,
-      y: ty,
-      color: cGrey,
-    );
+    img.drawString(canvas, 'GPS     : Tidak tersedia',
+        font: fontSmall, x: textX, y: ty, color: cGrey);
   }
   ty += 26;
 
   // ── Alamat (wrap 2 baris) ────────────────────────────────────────────────
-  // Estimasi lebar karakter arial14 ≈ 8px
-  const charW   = 8;
+  const charW    = 8;
   final maxChars = maxTW ~/ charW;
 
   if (address != null && address.isNotEmpty) {
     final line1 = address.length > maxChars
         ? address.substring(0, maxChars)
         : address;
-    img.drawString(
-      canvas,
-      'Alamat  : $line1',
-      font: fontSmall,
-      x: textX,
-      y: ty,
-      color: cWhite,
-    );
+    img.drawString(canvas, 'Alamat  : $line1',
+        font: fontSmall, x: textX, y: ty, color: cWhite);
     ty += 22;
 
     if (address.length > maxChars) {
@@ -391,42 +368,23 @@ Future<String> addWatermark({
       final line2 = rest.length > maxChars
           ? '${rest.substring(0, maxChars - 3)}...'
           : rest;
-      img.drawString(
-        canvas,
-        '          $line2',
-        font: fontSmall,
-        x: textX,
-        y: ty,
-        color: cWhite,
-      );
-      ty += 22;
+      img.drawString(canvas, '          $line2',
+          font: fontSmall, x: textX, y: ty, color: cWhite);
     }
   } else {
-    img.drawString(
-      canvas,
-      'Alamat  : Tidak tersedia',
-      font: fontSmall,
-      x: textX,
-      y: ty,
-      color: cGrey,
-    );
+    img.drawString(canvas, 'Alamat  : Tidak tersedia',
+        font: fontSmall, x: textX, y: ty, color: cGrey);
   }
 
-  // ── Watermark brand di pojok kanan bawah strip ───────────────────────────
-  img.drawString(
-    canvas,
-    'TermulLog',
-    font: fontSmall,
-    x: w - 92,
-    y: h + stripH - 22,
-    color: cTeal,
-  );
+  // ── Brand pojok kanan bawah ───────────────────────────────────────────────
+  img.drawString(canvas, 'TermulLog',
+      font: fontSmall, x: w - 92, y: h + stripH - 22, color: cTeal);
 
   // ── Simpan ───────────────────────────────────────────────────────────────
   final dir     = await getApplicationDocumentsDirectory();
   final ms      = DateTime.now().millisecondsSinceEpoch.toString();
   final outPath = '${dir.path}/delivery_${deliveryNum}_$ms.jpg';
-  await File(outPath).writeAsBytes(img.encodeJpg(canvas, quality: 90));
+  await File(outPath).writeAsBytes(img.encodeJpg(canvas, quality: 88));
   return outPath;
 }
 
@@ -480,7 +438,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 p.street,
                 p.subLocality,
                 p.locality,
-                p.subAdministrativeArea
+                p.subAdministrativeArea,
               ].where((s) => s != null && s.isNotEmpty).toList();
               address = parts.join(', ');
             }
@@ -525,8 +483,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (e) {
       setState(() => isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: ${e.toString()}')));
       }
     }
   }
@@ -539,16 +497,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
-            ),
+            onPressed: () => Navigator.pushReplacement(context,
+                MaterialPageRoute(builder: (_) => const LoginScreen())),
           ),
         ],
       ),
       body: Column(
         children: [
-          // ── Info kurir & total kiriman ──────────────────────────────────
           Container(
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(16),
@@ -571,8 +526,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
           ),
-
-          // ── Tombol foto ─────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -583,8 +536,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child:
-                            CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.camera_alt),
                 label: Text(
                     isLoading ? 'Memproses...' : '+ FOTO BUKTI KIRIM'),
@@ -599,8 +551,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
-          // ── Daftar kiriman ───────────────────────────────────────────────
           Expanded(
             child: deliveries.isEmpty
                 ? const Center(
@@ -662,7 +612,6 @@ class _DeliveryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Thumbnail foto (tap untuk fullscreen)
           GestureDetector(
             onTap: () => Navigator.push(
               context,
@@ -682,18 +631,14 @@ class _DeliveryCard extends StatelessWidget {
               ),
             ),
           ),
-
-          // Info kiriman
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Kiriman #${delivery.number}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15),
-                ),
+                Text('Kiriman #${delivery.number}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
                 const SizedBox(height: 4),
                 Row(children: [
                   const Icon(Icons.access_time,
@@ -712,13 +657,11 @@ class _DeliveryCard extends StatelessWidget {
                             size: 14, color: Colors.grey),
                         const SizedBox(width: 4),
                         Expanded(
-                          child: Text(
-                            delivery.address!,
-                            style: const TextStyle(
-                                color: Colors.grey, fontSize: 13),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          child: Text(delivery.address!,
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 13),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
                         ),
                       ]),
                 ] else if (delivery.lat != null) ...[

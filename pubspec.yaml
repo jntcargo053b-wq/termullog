@@ -23,7 +23,7 @@ dependencies:
   http: ^1.2.1
 
   gallery_saver_plus: ^3.2.0
-  share_plus: ^10.1.2
+  share_plus: ^9.0.0
 
 dev_dependencies:
   flutter_test:

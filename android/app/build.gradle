@@ -41,12 +41,12 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.termullog"
-        minSdkVersion flutter.minSdkVersion
-        targetSdkVersion flutter.targetSdkVersion
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
-    }
+    applicationId "com.example.termullog"
+    minSdkVersion 21
+    targetSdkVersion flutter.targetSdkVersion
+    versionCode flutterVersionCode.toInteger()
+    versionName flutterVersionName
+}
 
     buildTypes {
         release {

@@ -4,7 +4,7 @@
 // SAVE + SHARE
 // STABLE MAP
 // =======================
-
+import 'package:flutter/services.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -251,18 +251,31 @@ class MapTileHelper {
 // =======================
 // WATERMARK PREMIUM
 // =======================
+Future<img.Image?> loadLogo() async {
+  try {
+    final data =
+        await rootBundle.load(
+      'assets/logo.png',
+    );
 
+    return img.decodeImage(
+      data.buffer.asUint8List(),
+    );
+  } catch (_) {
+    return null;
+  }
+}
 Future<String> addWatermark({
   required String deliveryId,
   required String imagePath,
   required String kurirName,
   required String timestamp,
-  required img.Image? mapImage,
   required String? weather,
   required String? address,
   required double? lat,
   required double? lng,
 }) async {
+
   final bytes =
       await File(imagePath).readAsBytes();
 
@@ -270,9 +283,7 @@ Future<String> addWatermark({
       img.decodeImage(bytes);
 
   if (original == null) {
-    throw Exception(
-      'Gagal membaca gambar',
-    );
+    throw Exception('Gagal membaca gambar');
   }
 
   if (original.width > 1080) {
@@ -282,8 +293,10 @@ Future<String> addWatermark({
     );
   }
 
-  const panelHeight = 430;
-  const mapSize = 380;
+  // LOAD LOGO
+  final logo = await loadLogo();
+
+  const panelHeight = 420;
 
   final canvas = img.Image(
     width: original.width,
@@ -291,12 +304,13 @@ Future<String> addWatermark({
         original.height + panelHeight,
   );
 
+  // FOTO
   img.compositeImage(
     canvas,
     original,
   );
 
-  // BACKGROUND
+  // BACKGROUND PANEL
   img.fillRect(
     canvas,
     x1: 0,
@@ -305,37 +319,51 @@ Future<String> addWatermark({
     y2:
         original.height + panelHeight,
     color: img.ColorRgb8(
-      15,
       18,
-      25,
+      22,
+      28,
     ),
   );
 
-  // MAP
-  if (mapImage != null) {
-    final resizedMap =
+  // GARIS ATAS
+  img.fillRect(
+    canvas,
+    x1: 0,
+    y1: original.height,
+    x2: original.width,
+    y2: original.height + 8,
+    color: img.ColorRgb8(
+      255,
+      180,
+      0,
+    ),
+  );
+
+  // LOGO
+  if (logo != null) {
+
+    final resizedLogo =
         img.copyResize(
-      mapImage,
-      width: mapSize,
-      height: mapSize,
+      logo,
+      width: 220,
     );
 
     img.compositeImage(
       canvas,
-      resizedMap,
+      resizedLogo,
       dstX: 20,
-      dstY: original.height + 20,
+      dstY: original.height + 30,
     );
   }
 
-  final textX = 430;
+  final textX = 270;
 
   int y = original.height + 30;
 
   // TITLE
   img.drawString(
     canvas,
-    'DELIVERY PROOF',
+    'DELIVERY REPORT',
     font: img.arial48,
     x: textX,
     y: y,
@@ -346,7 +374,7 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 70;
+  y += 65;
 
   // ID
   img.drawString(
@@ -356,13 +384,13 @@ Future<String> addWatermark({
     x: textX,
     y: y,
     color: img.ColorRgb8(
-      200,
-      200,
-      200,
+      190,
+      190,
+      190,
     ),
   );
 
-  y += 45;
+  y += 40;
 
   // KURIR
   img.drawString(
@@ -378,9 +406,9 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 45;
+  y += 40;
 
-  // TIME
+  // WAKTU
   img.drawString(
     canvas,
     'Waktu : $timestamp',
@@ -394,7 +422,7 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 45;
+  y += 40;
 
   // GPS
   final gps =
@@ -415,7 +443,7 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 45;
+  y += 40;
 
   // WEATHER
   img.drawString(
@@ -431,21 +459,79 @@ Future<String> addWatermark({
     ),
   );
 
-  y += 45;
+  y += 50;
 
-  // ADDRESS
+  // ALAMAT TITLE
   img.drawString(
     canvas,
-    'Alamat : ${address ?? "-"}',
+    'Alamat :',
     font: img.arial24,
     x: textX,
     y: y,
     color: img.ColorRgb8(
       255,
-      255,
-      255,
+      210,
+      0,
     ),
   );
+
+  y += 35;
+
+  // WRAP TEXT ADDRESS
+  final alamat =
+      address ?? 'Tidak tersedia';
+
+  final words =
+      alamat.split(' ');
+
+  String line = '';
+
+  for (final word in words) {
+
+    final testLine =
+        '$line $word';
+
+    if (testLine.length > 42) {
+
+      img.drawString(
+        canvas,
+        line.trim(),
+        font: img.arial24,
+        x: textX,
+        y: y,
+        color: img.ColorRgb8(
+          255,
+          255,
+          255,
+        ),
+      );
+
+      y += 32;
+
+      line = word;
+
+    } else {
+
+      line = testLine;
+    }
+  }
+
+  // LAST LINE
+  if (line.isNotEmpty) {
+
+    img.drawString(
+      canvas,
+      line.trim(),
+      font: img.arial24,
+      x: textX,
+      y: y,
+      color: img.ColorRgb8(
+        255,
+        255,
+        255,
+      ),
+    );
+  }
 
   final dir =
       await getApplicationDocumentsDirectory();
@@ -610,7 +696,6 @@ class _DashboardScreenState
         imagePath: photo.path,
         kurirName: widget.name,
         timestamp: timestamp,
-        mapImage: mapImage,
         weather: weather,
         address: address,
         lat: lat,

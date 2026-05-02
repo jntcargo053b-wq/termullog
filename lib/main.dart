@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  TermulLog — main.dart (FULL FIXED VERSION)
+//  TermulLog — main.dart (FULL FIXED VERSION - READY TO COPY)
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -40,7 +40,7 @@ void main() async {
 const int kMaxOutputWidth = 1280;
 const int kJpegQuality    = 85;
 const int kSigMaxWidth    = 500;
-const int kLogoMaxWidth   = 100;  // FIX: Added logo max width constant
+const int kLogoMaxWidth   = 100;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  LAYOUT REGISTRY
@@ -72,12 +72,11 @@ const List<LayoutInfo> kLayouts = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
-//  WATERMARK ENGINE (FIXED with better error handling)
+//  WATERMARK ENGINE
 // ════════════════════════════════════════════════════════════════════════════
 
 Uint8List _processWatermark(Map<String, dynamic> p) {
   try {
-    // FIX: Validate image bytes
     final imageBytes = p['imageBytes'] as Uint8List?;
     if (imageBytes == null || imageBytes.isEmpty) {
       throw Exception('Image bytes are empty or null');
@@ -88,7 +87,6 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
       base = img.copyResize(base, width: kMaxOutputWidth, interpolation: img.Interpolation.linear);
     }
 
-    // FIX: Validate signature safely
     final sigBytes = p['sigBytes'] as Uint8List?;
     img.Image? sig;
     if (sigBytes != null && sigBytes.isNotEmpty) {
@@ -103,7 +101,6 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
       }
     }
 
-    // FIX: Validate logo safely
     final logoBytes = p['logoBytes'] as Uint8List?;
     img.Image? logo;
     if (logoBytes != null && logoBytes.isNotEmpty) {
@@ -112,7 +109,6 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
         if (logo != null && (logo.width > kLogoMaxWidth || logo.height > kLogoMaxWidth)) {
           logo = img.copyResize(logo, width: kLogoMaxWidth, interpolation: img.Interpolation.linear);
         }
-        // FIX: Validate logo dimensions
         if (logo != null && (logo.width <= 0 || logo.height <= 0)) {
           logo = null;
         }
@@ -137,7 +133,6 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
   } catch (e, stackTrace) {
     debugPrint('Watermark processing error: $e');
     debugPrint('Stack trace: $stackTrace');
-    // FIX: Return original image if watermark fails
     final originalBytes = p['imageBytes'] as Uint8List?;
     if (originalBytes != null) return originalBytes;
     throw Exception('Failed to process watermark: $e');
@@ -277,7 +272,8 @@ class App extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B4F72)),
-      useMaterial3: true, fontFamily: 'Roboto',
+      useMaterial3: true,
+      fontFamily: 'Roboto',
     ),
     home: const Login(),
   );
@@ -296,7 +292,8 @@ class Login extends StatelessWidget {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [Color(0xFF0D2137), Color(0xFF1B4F72), Color(0xFF2980B9)],
           ),
         ),
@@ -304,69 +301,91 @@ class Login extends StatelessWidget {
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(32),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Container(
-                  width: 80, height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: const Icon(Icons.photo_camera_rounded, color: Colors.white, size: 40),
                   ),
-                  child: const Icon(Icons.photo_camera_rounded, color: Colors.white, size: 40),
-                ),
-                const SizedBox(height: 24),
-                const Text('TermulLog',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800,
-                        color: Colors.white, letterSpacing: -0.5)),
-                const SizedBox(height: 6),
-                Text('Laporan Lapangan Digital',
-                    style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.7),
-                        letterSpacing: 0.5)),
-                const SizedBox(height: 48),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: TextField(
-                    controller: c,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Nama Teknisi',
-                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-                      prefixIcon: Icon(Icons.person_outline, color: Colors.white.withOpacity(0.6)),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'TermulLog',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: -0.5,
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity, height: 52,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF1B4F72),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      elevation: 0,
+                  const SizedBox(height: 6),
+                  Text(
+                    'Laporan Lapangan Digital',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withOpacity(0.7),
+                      letterSpacing: 0.5,
                     ),
-                    onPressed: () {
-                      if (c.text.trim().isEmpty) {
-                        // FIX: Show error if name is empty
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Mohon masukkan nama teknisi'), backgroundColor: Colors.orange),
+                  ),
+                  const SizedBox(height: 48),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: TextField(
+                      controller: c,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Nama Teknisi',
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                        prefixIcon: Icon(Icons.person_outline, color: Colors.white.withOpacity(0.6)),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF1B4F72),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      onPressed: () {
+                        if (c.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Mohon masukkan nama teknisi'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (_) => Dashboard(name: c.text.trim())),
                         );
-                        return;
-                      }
-                      Navigator.pushReplacement(context,
-                          MaterialPageRoute(builder: (_) => Dashboard(name: c.text.trim())));
-                    },
-                    child: const Text('Masuk',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      },
+                      child: const Text(
+                        'Masuk',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
             ),
           ),
         ),
@@ -411,7 +430,7 @@ class WatermarkLayout {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  LOGO CACHE (FIXED with better error handling)
+//  LOGO CACHE
 // ════════════════════════════════════════════════════════════════════════════
 
 class LogoCache {
@@ -440,7 +459,7 @@ class LogoCache {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  DASHBOARD (FIXED with memory management)
+//  DASHBOARD
 // ════════════════════════════════════════════════════════════════════════════
 
 class Dashboard extends StatefulWidget {
@@ -458,7 +477,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _cleanupTempFiles(); // FIX: Clean up temp files on start
+    _cleanupTempFiles();
   }
 
   @override
@@ -467,12 +486,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // FIX: Clean up orphaned temp files
   Future<void> _cleanupTempFiles() async {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final files = await dir.list().toList();
-      // Keep only last 100 files maximum
       if (files.length > 100) {
         files.sort((a, b) => a.statSync().modified.compareTo(b.statSync().modified));
         for (int i = 0; i < files.length - 100; i++) {
@@ -499,15 +516,24 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     if (paths.length == 1) {
       _goToSignature(paths.first);
     } else {
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => BurstSelectionPage(
-          paths: paths, onSelect: _goToSignature)));
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BurstSelectionPage(
+            paths: paths,
+            onSelect: _goToSignature,
+          ),
+        ),
+      );
     }
   }
 
   Future<void> _captureFallback() async {
     final file = await ImagePicker().pickImage(
-        source: ImageSource.camera, maxWidth: kMaxOutputWidth.toDouble(), imageQuality: 90);
+      source: ImageSource.camera,
+      maxWidth: kMaxOutputWidth.toDouble(),
+      imageQuality: 90,
+    );
     if (file == null || !mounted) return;
     _goToSignature(file.path);
   }
@@ -516,17 +542,22 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     final now  = DateTime.now();
     final id   = 'TRM-${now.millisecondsSinceEpoch}';
     final time = DateFormat('dd/MM HH:mm').format(now);
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => SignaturePage(
-        imagePath: imagePath, techName: widget.name,
-        itemId: id, itemTime: time,
-        onDone: (path) {
-          if (mounted) {
-            setState(() => list.add(Item(id, path, time)));
-          }
-        },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SignaturePage(
+          imagePath: imagePath,
+          techName: widget.name,
+          itemId: id,
+          itemTime: time,
+          onDone: (path) {
+            if (mounted) {
+              setState(() => list.add(Item(id, path, time)));
+            }
+          },
+        ),
       ),
-    ));
+    );
   }
 
   Future<void> _pickLogo() async {
@@ -538,13 +569,15 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   Future<void> _shareItem(Item item) async {
     try {
-      await Share.shareXFiles([XFile(item.path)],
-          subject: 'Laporan ${item.id}',
-          text: 'Laporan teknisi — ${item.id} — ${item.time}');
+      await Share.shareXFiles(
+        [XFile(item.path)],
+        subject: 'Laporan ${item.id}',
+        text: 'Laporan teknisi — ${item.id} — ${item.time}',
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal share: $e'), backgroundColor: Colors.red.shade700)
+          SnackBar(content: Text('Gagal share: $e'), backgroundColor: Colors.red.shade700),
         );
       }
     }
@@ -554,29 +587,34 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     try {
       final bool? ok = await GallerySaver.saveImage(item.path);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
-          backgroundColor: ok == true ? Colors.green.shade700 : Colors.red.shade700,
-          duration: const Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
+            backgroundColor: ok == true ? Colors.green.shade700 : Colors.red.shade700,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red.shade700)
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red.shade700),
         );
       }
     }
   }
 
   void _previewItem(Item item) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => PreviewPage(
-        item: item,
-        onShare: () => _shareItem(item),
-        onSave:  () => _saveToGallery(item),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PreviewPage(
+          item: item,
+          onShare: () => _shareItem(item),
+          onSave:  () => _saveToGallery(item),
+        ),
       ),
-    ));
+    );
   }
 
   void _deleteItem(Item item) {
@@ -589,7 +627,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     } catch (_) {}
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Laporan dihapus'), backgroundColor: Colors.grey)
+        const SnackBar(content: Text('Laporan dihapus'), backgroundColor: Colors.grey),
       );
     }
   }
@@ -600,19 +638,25 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     final todayCount = list.where((e) => e.time.startsWith(today)).length;
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
-      body: Column(children: [
-        _DashboardHeader(
-          name: widget.name, total: list.length, todayCount: todayCount,
-          logoPath: _logoPath, onPickLogo: _pickLogo,
-          onClearLogo: () { 
-            setState(() => _logoPath = null); 
-            LogoCache.clear(); 
-          },
-          onSettings: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const SettingsPage())),
-        ),
-        Expanded(
-          child: list.isEmpty
+      body: Column(
+        children: [
+          _DashboardHeader(
+            name: widget.name,
+            total: list.length,
+            todayCount: todayCount,
+            logoPath: _logoPath,
+            onPickLogo: _pickLogo,
+            onClearLogo: () { 
+              setState(() => _logoPath = null); 
+              LogoCache.clear(); 
+            },
+            onSettings: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsPage()),
+            ),
+          ),
+          Expanded(
+            child: list.isEmpty
               ? _EmptyState(onCapture: _openCamera)
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -626,81 +670,126 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                       onSave:   () => _saveToGallery(item),
                       onDelete: () => _deleteItem(item),
                     );
-                  }),
-        ),
-      ]),
+                  },
+                ),
+          ),
+        ],
+      ),
       floatingActionButton: _CameraFAB(onTap: _openCamera),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
 
-// ── Dashboard Header ──────────────────────────────────────────────────────────
 class _DashboardHeader extends StatelessWidget {
-  final String name; final int total, todayCount;
+  final String name;
+  final int total, todayCount;
   final String? logoPath;
   final VoidCallback onPickLogo, onClearLogo, onSettings;
+  
   const _DashboardHeader({
-    required this.name, required this.total, required this.todayCount,
-    required this.logoPath, required this.onPickLogo,
-    required this.onClearLogo, required this.onSettings,
+    required this.name,
+    required this.total,
+    required this.todayCount,
+    required this.logoPath,
+    required this.onPickLogo,
+    required this.onClearLogo,
+    required this.onSettings,
   });
+  
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [Color(0xFF0D2137), Color(0xFF1B4F72)]),
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0D2137), Color(0xFF1B4F72)],
+        ),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
       child: SafeArea(
         bottom: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 12, 20),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Selamat datang,',
-                    style: TextStyle(fontSize: 12.5,
-                        color: Colors.white.withOpacity(0.65), letterSpacing: 0.3)),
-                const SizedBox(height: 2),
-                Text(name,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
-                        color: Colors.white),
-                    overflow: TextOverflow.ellipsis),
-              ])),
-              if (logoPath != null)
-                GestureDetector(
-                  onTap: onClearLogo,
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Image.file(File(logoPath!), height: 30, errorBuilder: (_, __, ___) => 
-                        const Icon(Icons.broken_image, color: Colors.white70, size: 30)),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.close, size: 14, color: Colors.white70),
-                    ]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Selamat datang,',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.white.withOpacity(0.65),
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              IconButton(icon: Icon(Icons.image_outlined,
-                  color: Colors.white.withOpacity(0.85), size: 22),
-                  onPressed: onPickLogo),
-              IconButton(icon: Icon(Icons.tune_rounded,
-                  color: Colors.white.withOpacity(0.85), size: 22),
-                  onPressed: onSettings),
-            ]),
-            const SizedBox(height: 18),
-            Row(children: [
-              _StatChip(label: 'Semua',   value: '$total',      icon: Icons.photo_library_outlined),
-              const SizedBox(width: 10),
-              _StatChip(label: 'Hari ini', value: '$todayCount', icon: Icons.today_outlined),
-            ]),
-          ]),
+                  if (logoPath != null)
+                    GestureDetector(
+                      onTap: onClearLogo,
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.file(
+                              File(logoPath!),
+                              height: 30,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.broken_image,
+                                color: Colors.white70,
+                                size: 30,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.close, size: 14, color: Colors.white70),
+                          ],
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    icon: Icon(Icons.image_outlined, color: Colors.white.withOpacity(0.85), size: 22),
+                    onPressed: onPickLogo,
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.tune_rounded, color: Colors.white.withOpacity(0.85), size: 22),
+                    onPressed: onSettings,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  _StatChip(label: 'Semua', value: '$total', icon: Icons.photo_library_outlined),
+                  const SizedBox(width: 10),
+                  _StatChip(label: 'Hari ini', value: '$todayCount', icon: Icons.today_outlined),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -708,62 +797,89 @@ class _DashboardHeader extends StatelessWidget {
 }
 
 class _StatChip extends StatelessWidget {
-  final String label, value; final IconData icon;
+  final String label, value;
+  final IconData icon;
   const _StatChip({required this.label, required this.value, required this.icon});
+  
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.13),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.2))),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, color: Colors.white70, size: 16),
-      const SizedBox(width: 7),
-      Text('$value $label',
-          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-    ]),
+      color: Colors.white.withOpacity(0.13),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white.withOpacity(0.2)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: Colors.white70, size: 16),
+        const SizedBox(width: 7),
+        Text(
+          '$value $label',
+          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+      ],
+    ),
   );
 }
 
 class _EmptyState extends StatelessWidget {
   final VoidCallback onCapture;
   const _EmptyState({required this.onCapture});
+  
   @override
   Widget build(BuildContext context) => Center(
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        width: 100, height: 100,
-        decoration: BoxDecoration(
-            color: const Color(0xFF1B4F72).withOpacity(0.08), shape: BoxShape.circle),
-        child: const Icon(Icons.add_a_photo_outlined, size: 44, color: Color(0xFF1B4F72)),
-      ),
-      const SizedBox(height: 20),
-      const Text('Belum ada laporan',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF1B4F72))),
-      const SizedBox(height: 6),
-      Text('Ketuk tombol kamera untuk mulai',
-          style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
-      const SizedBox(height: 28),
-      OutlinedButton.icon(
-        onPressed: onCapture,
-        icon: const Icon(Icons.camera_alt_outlined),
-        label: const Text('Ambil Foto'),
-        style: OutlinedButton.styleFrom(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 100,
+          height: 100,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1B4F72).withOpacity(0.08),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.add_a_photo_outlined, size: 44, color: Color(0xFF1B4F72)),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Belum ada laporan',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF1B4F72)),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Ketuk tombol kamera untuk mulai',
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+        ),
+        const SizedBox(height: 28),
+        OutlinedButton.icon(
+          onPressed: onCapture,
+          icon: const Icon(Icons.camera_alt_outlined),
+          label: const Text('Ambil Foto'),
+          style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFF1B4F72),
             side: const BorderSide(color: Color(0xFF1B4F72)),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-      ),
-    ]),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+      ],
+    ),
   );
 }
 
 class _ItemCard extends StatelessWidget {
   final Item item;
   final VoidCallback onTap, onShare, onSave, onDelete;
-  const _ItemCard({required this.item, required this.onTap, required this.onShare,
-      required this.onSave, required this.onDelete});
+  
+  const _ItemCard({
+    required this.item,
+    required this.onTap,
+    required this.onShare,
+    required this.onSave,
+    required this.onDelete,
+  });
+  
   @override
   Widget build(BuildContext context) {
     return Dismissible(
@@ -774,11 +890,14 @@ class _ItemCard extends StatelessWidget {
         padding: const EdgeInsets.only(right: 20),
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(color: Colors.red.shade400, borderRadius: BorderRadius.circular(16)),
-        child: const Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.delete_outline_rounded, color: Colors.white, size: 26),
-          SizedBox(height: 4),
-          Text('Hapus', style: TextStyle(color: Colors.white, fontSize: 11)),
-        ]),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.delete_outline_rounded, color: Colors.white, size: 26),
+            SizedBox(height: 4),
+            Text('Hapus', style: TextStyle(color: Colors.white, fontSize: 11)),
+          ],
+        ),
       ),
       confirmDismiss: (_) async => await showDialog<bool>(
         context: context,
@@ -800,57 +919,94 @@ class _ItemCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
-              blurRadius: 12, offset: const Offset(0, 3))],
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 3))],
         ),
         child: InkWell(
-          onTap: onTap, borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Row(children: [
-              Hero(
-                tag: 'thumb_${item.id}',
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.file(File(item.path),
-                      width: 72, height: 72, fit: BoxFit.cover, 
+            child: Row(
+              children: [
+                Hero(
+                  tag: 'thumb_${item.id}',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.file(
+                      File(item.path),
+                      width: 72,
+                      height: 72,
+                      fit: BoxFit.cover,
                       cacheWidth: 144,
-                      errorBuilder: (_, __, ___) => 
-                        Container(color: Colors.grey.shade300, width: 72, height: 72)),
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.grey.shade300,
+                        width: 72,
+                        height: 72,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFF1B4F72).withOpacity(0.09),
-                      borderRadius: BorderRadius.circular(6)),
-                  child: Text(item.id,
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                          color: Color(0xFF1B4F72)),
-                      overflow: TextOverflow.ellipsis),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1B4F72).withOpacity(0.09),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          item.id,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1B4F72),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time_rounded, size: 13, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Text(item.time, style: const TextStyle(fontSize: 12.5, color: Colors.grey)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          _ActionBtn(
+                            icon: Icons.visibility_outlined,
+                            label: 'Preview',
+                            color: const Color(0xFF1B4F72),
+                            onTap: onTap,
+                          ),
+                          const SizedBox(width: 8),
+                          _ActionBtn(
+                            icon: Icons.share_outlined,
+                            label: 'Bagikan',
+                            color: Colors.teal,
+                            onTap: onShare,
+                          ),
+                          const SizedBox(width: 8),
+                          _ActionBtn(
+                            icon: Icons.save_alt_rounded,
+                            label: 'Simpan',
+                            color: Colors.orange,
+                            onTap: onSave,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 6),
-                Row(children: [
-                  const Icon(Icons.access_time_rounded, size: 13, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(item.time, style: const TextStyle(fontSize: 12.5, color: Colors.grey)),
-                ]),
-                const SizedBox(height: 10),
-                Row(children: [
-                  _ActionBtn(icon: Icons.visibility_outlined, label: 'Preview',
-                      color: const Color(0xFF1B4F72), onTap: onTap),
-                  const SizedBox(width: 8),
-                  _ActionBtn(icon: Icons.share_outlined, label: 'Bagikan',
-                      color: Colors.teal, onTap: onShare),
-                  const SizedBox(width: 8),
-                  _ActionBtn(icon: Icons.save_alt_rounded, label: 'Simpan',
-                      color: Colors.orange, onTap: onSave),
-                ]),
-              ])),
-            ]),
+              ],
+            ),
           ),
         ),
       ),
@@ -859,19 +1015,38 @@ class _ItemCard extends StatelessWidget {
 }
 
 class _ActionBtn extends StatelessWidget {
-  final IconData icon; final String label; final Color color; final VoidCallback onTap;
-  const _ActionBtn({required this.icon, required this.label, required this.color, required this.onTap});
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  
+  const _ActionBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+  
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(color: color.withOpacity(0.09), borderRadius: BorderRadius.circular(8)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 13, color: color),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-      ]),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.09),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -879,22 +1054,30 @@ class _ActionBtn extends StatelessWidget {
 class _CameraFAB extends StatelessWidget {
   final VoidCallback onTap;
   const _CameraFAB({required this.onTap});
+  
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
-      height: 60, padding: const EdgeInsets.symmetric(horizontal: 28),
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 28),
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [Color(0xFF1B4F72), Color(0xFF2980B9)]),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: [BoxShadow(color: const Color(0xFF1B4F72).withOpacity(0.45),
-            blurRadius: 18, offset: const Offset(0, 6))],
+        boxShadow: [BoxShadow(
+          color: const Color(0xFF1B4F72).withOpacity(0.45),
+          blurRadius: 18,
+          offset: const Offset(0, 6),
+        )],
       ),
-      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.camera_alt_rounded, color: Colors.white, size: 22),
-        SizedBox(width: 10),
-        Text('Ambil Foto', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-      ]),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.camera_alt_rounded, color: Colors.white, size: 22),
+          SizedBox(width: 10),
+          Text('Ambil Foto', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+        ],
+      ),
     ),
   );
 }
@@ -944,8 +1127,9 @@ class PreviewPage extends StatelessWidget {
             child: Image.file(
               File(item.path),
               fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => 
-                const Center(child: Icon(Icons.broken_image, color: Colors.white54, size: 64)),
+              errorBuilder: (_, __, ___) => const Center(
+                child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+              ),
             ),
           ),
         ),
@@ -953,12 +1137,13 @@ class PreviewPage extends StatelessWidget {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Row(children: [
-            const Icon(Icons.access_time_rounded, size: 14, color: Colors.white54),
-            const SizedBox(width: 6),
-            Text(item.time,
-                style: const TextStyle(color: Colors.white54, fontSize: 13)),
-          ]),
+          child: Row(
+            children: [
+              const Icon(Icons.access_time_rounded, size: 14, color: Colors.white54),
+              const SizedBox(width: 6),
+              Text(item.time, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+            ],
+          ),
         ),
       ),
     );
@@ -966,7 +1151,7 @@ class PreviewPage extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGNATURE PAGE (FIXED with loading indicator)
+//  SIGNATURE PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
 class SignaturePage extends StatefulWidget {
@@ -1009,7 +1194,6 @@ class _SignaturePageState extends State<SignaturePage> {
         }
       }
       
-      // FIX: Show loading indicator during heavy computation
       final result = await compute(_processWatermark, {
         'imageBytes': imageBytes,
         'sigBytes': sigBytes,
@@ -1040,8 +1224,10 @@ class _SignaturePageState extends State<SignaturePage> {
       debugPrint('Save error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✗ Gagal save: ${e.toString().substring(0, 100)}'), 
-            backgroundColor: Colors.red.shade700),
+          SnackBar(
+            content: Text('✗ Gagal save: ${e.toString().substring(0, 100)}'),
+            backgroundColor: Colors.red.shade700,
+          ),
         );
       }
     } finally {
@@ -1069,8 +1255,9 @@ class _SignaturePageState extends State<SignaturePage> {
                 File(widget.imagePath),
                 width: double.infinity,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => 
-                  const Center(child: Icon(Icons.broken_image, color: Colors.white54, size: 48)),
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+                ),
               ),
             ),
           ),
@@ -1083,8 +1270,10 @@ class _SignaturePageState extends State<SignaturePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Tanda Tangan Teknisi',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                const Text(
+                  'Tanda Tangan Teknisi',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 12),
                 Container(
                   height: 180,
@@ -1116,9 +1305,10 @@ class _SignaturePageState extends State<SignaturePage> {
                         onPressed: _saving ? null : _save,
                         icon: _saving
                             ? const SizedBox(
-                                width: 18, height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white))
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
                             : const Icon(Icons.save_alt_rounded),
                         label: Text(_saving ? 'Menyimpan...' : 'Simpan'),
                         style: ElevatedButton.styleFrom(
@@ -1140,7 +1330,7 @@ class _SignaturePageState extends State<SignaturePage> {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CAMERA PAGE (FIXED with memory optimization)
+//  CAMERA PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
 class CameraPage extends StatefulWidget {
@@ -1175,10 +1365,13 @@ class _CameraPageState extends State<CameraPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _shutterAnim = AnimationController(vsync: this,
-        duration: const Duration(milliseconds: 150));
+    _shutterAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
     _shutterOpacity = Tween<double>(begin: 0.0, end: 0.7).animate(
-        CurvedAnimation(parent: _shutterAnim, curve: Curves.easeOut));
+      CurvedAnimation(parent: _shutterAnim, curve: Curves.easeOut),
+    );
     _initCamera(_camIdx);
   }
 
@@ -1206,8 +1399,11 @@ class _CameraPageState extends State<CameraPage>
     if (_cameras.isEmpty) return;
     await _ctrl?.dispose();
     final controller = CameraController(
-        _cameras[idx], ResolutionPreset.high,
-        enableAudio: false, imageFormatGroup: ImageFormatGroup.jpeg);
+      _cameras[idx],
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.jpeg,
+    );
     _ctrl = controller;
     try {
       await controller.initialize();
@@ -1219,7 +1415,7 @@ class _CameraPageState extends State<CameraPage>
       debugPrint('Camera init error: $e'); 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error kamera: $e'), backgroundColor: Colors.red.shade700)
+          SnackBar(content: Text('Error kamera: $e'), backgroundColor: Colors.red.shade700),
         );
       }
     }
@@ -1278,8 +1474,11 @@ class _CameraPageState extends State<CameraPage>
       debugPrint('Capture error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error kamera: ${e.toString().substring(0, 100)}'), 
-              backgroundColor: Colors.red.shade700));
+          SnackBar(
+            content: Text('Error kamera: ${e.toString().substring(0, 100)}'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
         setState(() => _busy = false);
       }
     }
@@ -1306,7 +1505,6 @@ class _CameraPageState extends State<CameraPage>
     if (_burstPaths.isNotEmpty && mounted) {
       Navigator.pop(context, List<String>.from(_burstPaths));
     } else if (mounted) {
-      // If no photos captured, just exit burst mode
       setState(() => _burstMode = false);
     }
   }
@@ -1322,7 +1520,7 @@ class _CameraPageState extends State<CameraPage>
       : _flash == FlashMode.auto ? Icons.flash_auto_rounded : Icons.flash_off_rounded;
 
   @override
-  Widget build(BuildContext context) => PopScope(  // FIX: Handle back button during burst
+  Widget build(BuildContext context) => PopScope(
     canPop: !_burstRunning,
     onPopInvoked: (didPop) {
       if (_burstRunning && !didPop) {
@@ -1332,12 +1530,14 @@ class _CameraPageState extends State<CameraPage>
     child: Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(children: [
-          _buildTopBar(),
-          Expanded(child: _buildPreview()),
-          if (_burstPaths.isNotEmpty) _buildBurstStrip(),
-          _buildBottomBar(),
-        ]),
+        child: Column(
+          children: [
+            _buildTopBar(),
+            Expanded(child: _buildPreview()),
+            if (_burstPaths.isNotEmpty) _buildBurstStrip(),
+            _buildBottomBar(),
+          ],
+        ),
       ),
     ),
   );
@@ -1345,108 +1545,165 @@ class _CameraPageState extends State<CameraPage>
   Widget _buildTopBar() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
     color: Colors.black,
-    child: Row(children: [
-      IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-        onPressed: () {
-          if (_burstRunning) {
-            _stopBurst();
-          } else {
-            Navigator.pop(context);
-          }
-        }),
-      const Spacer(),
-      _CamBtn(icon: _flashIcon,
+    child: Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          onPressed: () {
+            if (_burstRunning) {
+              _stopBurst();
+            } else {
+              Navigator.pop(context);
+            }
+          },
+        ),
+        const Spacer(),
+        _CamBtn(
+          icon: _flashIcon,
           label: _flash == FlashMode.off ? 'Off' : _flash == FlashMode.auto ? 'Auto' : 'On',
-          onTap: _cycleFlash),
-      const SizedBox(width: 4),
-      _CamBtn(icon: Icons.burst_mode_rounded, label: 'Burst', active: _burstMode,
+          onTap: _cycleFlash,
+        ),
+        const SizedBox(width: 4),
+        _CamBtn(
+          icon: Icons.burst_mode_rounded,
+          label: 'Burst',
+          active: _burstMode,
           onTap: () => setState(() {
             _burstMode = !_burstMode;
             if (!_burstMode && _burstRunning) _stopBurst();
-          })),
-      const SizedBox(width: 4),
-      _CamBtn(icon: Icons.flip_camera_ios_rounded, label: 'Balik', onTap: _switchCamera),
-    ]),
+          }),
+        ),
+        const SizedBox(width: 4),
+        _CamBtn(icon: Icons.flip_camera_ios_rounded, label: 'Balik', onTap: _switchCamera),
+      ],
+    ),
   );
 
   Widget _buildPreview() {
     if (!_initialized || _ctrl == null) {
-      return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        CircularProgressIndicator(color: Colors.white54),
-        SizedBox(height: 16),
-        Text('Memuat kamera…', style: TextStyle(color: Colors.white54, fontSize: 13)),
-      ]));
-    }
-    return LayoutBuilder(builder: (_, constraints) => GestureDetector(
-      onTapDown:     (d) => _onTapFocus(d, constraints),
-      onScaleStart:  _onScaleStart,
-      onScaleUpdate: _onScaleUpdate,
-      child: Stack(fit: StackFit.expand, children: [
-        ClipRect(child: OverflowBox(
-          alignment: Alignment.center,
-          child: FittedBox(fit: BoxFit.cover,
-            child: SizedBox(
-              width:  _ctrl!.value.previewSize!.height,
-              height: _ctrl!.value.previewSize!.width,
-              child: CameraPreview(_ctrl!),
-            )),
-        )),
-        AnimatedBuilder(
-          animation: _shutterOpacity,
-          builder: (_, __) => Opacity(
-              opacity: _shutterOpacity.value,
-              child: Container(color: Colors.white)),
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white54),
+            SizedBox(height: 16),
+            Text('Memuat kamera…', style: TextStyle(color: Colors.white54, fontSize: 13)),
+          ],
         ),
-        if (_showFocus && _focusPoint != null)
-          Positioned(
-            left: _focusPoint!.dx - 28, top: _focusPoint!.dy - 28,
-            child: _FocusBox()),
-        if (_zoom > _minZoom + 0.05)
-          Positioned(
-            top: 14, left: 0, right: 0,
-            child: Center(child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20)),
-              child: Text('${_zoom.toStringAsFixed(1)}×',
-                  style: const TextStyle(color: Colors.white, fontSize: 13,
-                      fontWeight: FontWeight.w600)),
-            )),
-          ),
-        if (_burstRunning)
-          Positioned(
-            top: 14, right: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(color: Colors.red.shade600,
-                  borderRadius: BorderRadius.circular(20)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
-                const SizedBox(width: 5),
-                Text('${_burstPaths.length}',
-                    style: const TextStyle(color: Colors.white, fontSize: 13,
-                        fontWeight: FontWeight.w700)),
-              ]),
+      );
+    }
+    return LayoutBuilder(
+      builder: (_, constraints) => GestureDetector(
+        onTapDown: (d) => _onTapFocus(d, constraints),
+        onScaleStart: _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _ctrl!.value.previewSize!.height,
+                    height: _ctrl!.value.previewSize!.width,
+                    child: CameraPreview(_ctrl!),
+                  ),
+                ),
+              ),
             ),
-          ),
-      ]),
-    ));
+            AnimatedBuilder(
+              animation: _shutterOpacity,
+              builder: (_, __) => Opacity(
+                opacity: _shutterOpacity.value,
+                child: Container(color: Colors.white),
+              ),
+            ),
+            if (_showFocus && _focusPoint != null)
+              Positioned(
+                left: _focusPoint!.dx - 28,
+                top: _focusPoint!.dy - 28,
+                child: _FocusBox(),
+              ),
+            if (_zoom > _minZoom + 0.05)
+              Positioned(
+                top: 14,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_zoom.toStringAsFixed(1)}×',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (_burstRunning)
+              Positioned(
+                top: 14,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade600,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
+                      const SizedBox(width: 5),
+                      Text(
+                        '${_burstPaths.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildBurstStrip() => Container(
-    height: 72, color: Colors.black87,
+    height: 72,
+    color: Colors.black87,
     child: ListView.builder(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       itemCount: _burstPaths.length,
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.only(right: 6),
-        child: ClipRRect(borderRadius: BorderRadius.circular(6),
-          child: Image.file(File(_burstPaths[i]),
-              width: 56, height: 56, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => 
-                Container(color: Colors.grey, width: 56, height: 56)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.file(
+            File(_burstPaths[i]),
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: Colors.grey,
+              width: 56,
+              height: 56,
+            ),
+          ),
         ),
       ),
     ),
@@ -1455,29 +1712,39 @@ class _CameraPageState extends State<CameraPage>
   Widget _buildBottomBar() => Container(
     padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
     color: Colors.black,
-    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      _CircleBtn(icon: Icons.photo_library_outlined, size: 48, onTap: _pickFromGallery),
-      GestureDetector(
-        onTap: _burstMode ? (_burstRunning ? _stopBurst : _startBurst) : _capture,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 72, height: 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-                color: _burstRunning ? Colors.red.shade400 : Colors.white, width: 4)),
-          child: Center(child: AnimatedContainer(
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _CircleBtn(icon: Icons.photo_library_outlined, size: 48, onTap: _pickFromGallery),
+        GestureDetector(
+          onTap: _burstMode ? (_burstRunning ? _stopBurst : _startBurst) : _capture,
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            width:  _burstRunning ? 24 : 54,
-            height: _burstRunning ? 24 : 54,
+            width: 72,
+            height: 72,
             decoration: BoxDecoration(
-              color: _burstRunning ? Colors.red.shade500 : Colors.white,
-              borderRadius: BorderRadius.circular(_burstRunning ? 6 : 27)),
-          )),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _burstRunning ? Colors.red.shade400 : Colors.white,
+                width: 4,
+              ),
+            ),
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: _burstRunning ? 24 : 54,
+                height: _burstRunning ? 24 : 54,
+                decoration: BoxDecoration(
+                  color: _burstRunning ? Colors.red.shade500 : Colors.white,
+                  borderRadius: BorderRadius.circular(_burstRunning ? 6 : 27),
+                ),
+              ),
+            ),
+          ),
         ),
-      ),
-      _CircleBtn(icon: Icons.info_outline_rounded, size: 48, onTap: _showInfoSheet),
-    ]),
+        _CircleBtn(icon: Icons.info_outline_rounded, size: 48, onTap: _showInfoSheet),
+      ],
+    ),
   );
 
   void _showInfoSheet() {
@@ -1485,68 +1752,90 @@ class _CameraPageState extends State<CameraPage>
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        child: Column(mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start, children: const [
-          Text('Petunjuk Kamera',
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-          SizedBox(height: 14),
-          _InfoRow(icon: Icons.touch_app_rounded,      text: 'Ketuk layar untuk fokus'),
-          _InfoRow(icon: Icons.zoom_in_rounded,         text: 'Jepit/rentang untuk zoom'),
-          _InfoRow(icon: Icons.burst_mode_rounded,      text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
-          _InfoRow(icon: Icons.flash_auto_rounded,      text: 'Ikon kilat: Off → Auto → On'),
-          _InfoRow(icon: Icons.flip_camera_ios_rounded, text: 'Ikon flip: ganti kamera depan/belakang'),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'Petunjuk Kamera',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 14),
+            _InfoRow(icon: Icons.touch_app_rounded, text: 'Ketuk layar untuk fokus'),
+            _InfoRow(icon: Icons.zoom_in_rounded, text: 'Jepit/rentang untuk zoom'),
+            _InfoRow(icon: Icons.burst_mode_rounded, text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
+            _InfoRow(icon: Icons.flash_auto_rounded, text: 'Ikon kilat: Off → Auto → On'),
+            _InfoRow(icon: Icons.flip_camera_ios_rounded, text: 'Ikon flip: ganti kamera depan/belakang'),
+          ],
+        ),
       ),
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  BURST SELECTION PAGE (FIXED with better UI)
+//  BURST SELECTION PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
 class BurstSelectionPage extends StatelessWidget {
   final List<String> paths;
   final Function(String) onSelect;
+  
   const BurstSelectionPage({super.key, required this.paths, required this.onSelect});
   
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
     appBar: AppBar(
-      backgroundColor: Colors.black, 
+      backgroundColor: Colors.black,
       foregroundColor: Colors.white,
-      title: Text('Pilih Foto (${paths.length})',
-          style: const TextStyle(fontSize: 16)),
+      title: Text('Pilih Foto (${paths.length})', style: const TextStyle(fontSize: 16)),
     ),
     body: GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
+        crossAxisCount: 3,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 4,
+      ),
       itemCount: paths.length,
       itemBuilder: (_, i) => GestureDetector(
         onTap: () {
           Navigator.pop(context);
           onSelect(paths[i]);
         },
-        child: Stack(fit: StackFit.expand, children: [
-          ClipRRect(borderRadius: BorderRadius.circular(6),
-              child: Image.file(File(paths[i]), fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => 
-                  Container(color: Colors.grey.shade800)),
-          Positioned(bottom: 4, right: 4,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(color: Colors.black54,
-                  borderRadius: BorderRadius.circular(8)),
-              child: Text('${i + 1}',
-                  style: const TextStyle(color: Colors.white, fontSize: 11,
-                      fontWeight: FontWeight.w700)),
-            )),
-        ]),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.file(
+                File(paths[i]),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(color: Colors.grey.shade800),
+              ),
+            ),
+            Positioned(
+              bottom: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${i + 1}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -1579,26 +1868,23 @@ class _SettingsPageState extends State<SettingsPage> {
             elevation: active ? 4 : 1,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                  color: active ? l.accentColor : Colors.transparent, width: 2),
+              side: BorderSide(color: active ? l.accentColor : Colors.transparent, width: 2),
             ),
             child: ListTile(
               leading: CircleAvatar(
                 backgroundColor: l.accentColor.withOpacity(0.15),
                 child: Icon(l.icon, color: l.accentColor),
               ),
-              title: Text(l.label,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(l.label, style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text(l.description),
-              trailing: active
-                  ? Icon(Icons.check_circle, color: l.accentColor)
-                  : null,
+              trailing: active ? Icon(Icons.check_circle, color: l.accentColor) : null,
               onTap: () async {
                 setState(() => selected = l.id);
                 await WatermarkLayout.set(l.id);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('✓ ${l.label} dipilih')));
+                    SnackBar(content: Text('✓ ${l.label} dipilih')),
+                  );
                 }
               },
             ),
@@ -1609,90 +1895,4 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-//  SHARED CAMERA HELPER WIDGETS
-// ════════════════════════════════════════════════════════════════════════════
-
-class _CamBtn extends StatelessWidget {
-  final IconData icon; final String label; final bool active; final VoidCallback onTap;
-  const _CamBtn({required this.icon, required this.label, required this.onTap, this.active = false});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? Colors.white.withOpacity(0.2) : Colors.white.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: active ? Colors.white38 : Colors.transparent)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, color: active ? Colors.yellowAccent : Colors.white, size: 18),
-        const SizedBox(width: 5),
-        Text(label, style: TextStyle(
-            color: active ? Colors.yellowAccent : Colors.white70,
-            fontSize: 11, fontWeight: FontWeight.w600)),
-      ]),
-    ),
-  );
-}
-
-class _CircleBtn extends StatelessWidget {
-  final IconData icon; final double size; final VoidCallback onTap;
-  const _CircleBtn({required this.icon, required this.size, required this.onTap});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: size, height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle,
-          color: Colors.white.withOpacity(0.1)),
-      child: Icon(icon, color: Colors.white70, size: size * 0.45),
-    ),
-  );
-}
-
-class _FocusBox extends StatefulWidget {
-  @override
-  State<_FocusBox> createState() => _FocusBoxState();
-}
-
-class _FocusBoxState extends State<_FocusBox> with SingleTickerProviderStateMixin {
-  late AnimationController _ac;
-  late Animation<double> _scale, _opacity;
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
-    _scale   = Tween<double>(begin: 1.4, end: 1.0)
-        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
-    _opacity = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeIn));
-    _ac.forward();
-  }
-  @override
-  void dispose() { _ac.dispose(); super.dispose(); }
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _ac,
-    builder: (_, __) => Opacity(opacity: _opacity.value,
-      child: Transform.scale(scale: _scale.value,
-        child: Container(width: 56, height: 56,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.yellowAccent, width: 1.5),
-            borderRadius: BorderRadius.circular(4))))));
-}
-
-class _InfoRow extends StatelessWidget {
-  final IconData icon; final String text;
-  const _InfoRow({required this.icon, required this.text});
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Row(children: [
-      Icon(icon, color: Colors.white54, size: 18),
-      const SizedBox(width: 12),
-      Expanded(child: Text(text,
-          style: const TextStyle(color: Colors.white70, fontSize: 13))),
-    ]),
-  );
-}
+// ═════════════════════════════════════

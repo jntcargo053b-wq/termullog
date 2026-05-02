@@ -1354,13 +1354,91 @@ class SignaturePage extends StatelessWidget {
 //  SETTINGS PAGE (placeholder)
 // ════════════════════════════════════════════════════════════════════════════
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Pengaturan')),
-    body: const Center(child: Text('Settings Page')),
-  );
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  String selected = WatermarkLayout.get();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pilih Layout'),
+      ),
+
+      body: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: kLayouts.length,
+
+        itemBuilder: (_, i) {
+          final l = kLayouts[i];
+
+          final active = selected == l.id;
+
+          return Card(
+            elevation: active ? 4 : 1,
+
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: active
+                    ? l.accentColor
+                    : Colors.transparent,
+                width: 2,
+              ),
+            ),
+
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: l.accentColor.withOpacity(0.15),
+                child: Icon(
+                  l.icon,
+                  color: l.accentColor,
+                ),
+              ),
+
+              title: Text(
+                l.label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              subtitle: Text(l.description),
+
+              trailing: active
+                  ? Icon(
+                      Icons.check_circle,
+                      color: l.accentColor,
+                    )
+                  : null,
+
+              onTap: () async {
+                setState(() => selected = l.id);
+
+                await WatermarkLayout.set(l.id);
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${l.label} dipilih',
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

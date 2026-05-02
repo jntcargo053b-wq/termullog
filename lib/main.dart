@@ -950,11 +950,7 @@ class _CameraPageState extends State<CameraPage>
 
     widget.onCapture([file.path]);
 
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (mounted) {
-        Navigator.pop(context);
-      }
-    });
+    Navigator.pop(context);
 
   } catch (e) {
     debugPrint('Capture error: $e');

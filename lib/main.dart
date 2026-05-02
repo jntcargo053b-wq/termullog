@@ -1,15 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  TermulLog — main.dart  (complete rewrite)
-//
-//  NEW pubspec.yaml dependency required:
-//    camera: ^0.10.5+9
-//
-//  Android: add to AndroidManifest.xml inside <manifest>:
-//    <uses-permission android:name="android.permission.CAMERA"/>
-//    <uses-feature android:name="android.hardware.camera" android:required="false"/>
-//
-//  iOS: add to Info.plist:
-//    NSCameraUsageDescription → "Diperlukan untuk mengambil foto laporan"
+//  TermulLog — main.dart
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -34,9 +24,7 @@ List<CameraDescription> _cameras = [];
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    _cameras = await availableCameras();
-  } catch (_) {}
+  try { _cameras = await availableCameras(); } catch (_) {}
   await WatermarkLayout.load();
   runApp(const App());
 }
@@ -54,72 +42,54 @@ const int kSigMaxWidth    = 500;
 // ════════════════════════════════════════════════════════════════════════════
 
 class LayoutInfo {
-  final String   id;
-  final String   label;
-  final String   description;
+  final String id, label, description;
   final IconData icon;
-  final Color    accentColor;
+  final Color accentColor;
   const LayoutInfo({
-    required this.id,
-    required this.label,
-    required this.description,
-    required this.icon,
-    required this.accentColor,
+    required this.id, required this.label, required this.description,
+    required this.icon, required this.accentColor,
   });
 }
 
 const List<LayoutInfo> kLayouts = [
-  LayoutInfo(
-    id: 'layout1', label: 'Professional Report',
+  LayoutInfo(id: 'layout1', label: 'Professional Report',
     description: 'Strip navy di bawah foto, kotak info abu-abu, tanda tangan kiri.',
-    icon: Icons.article_outlined, accentColor: Color(0xFF1B4F72),
-  ),
-  LayoutInfo(
-    id: 'layout2', label: 'Compact Field',
+    icon: Icons.article_outlined, accentColor: Color(0xFF1B4F72)),
+  LayoutInfo(id: 'layout2', label: 'Compact Field',
     description: 'Strip hijau, info ringkas, cocok untuk laporan cepat di lapangan.',
-    icon: Icons.assignment_turned_in_outlined, accentColor: Color(0xFF27AE60),
-  ),
-  LayoutInfo(
-    id: 'layout3', label: 'Dark Minimal',
+    icon: Icons.assignment_turned_in_outlined, accentColor: Color(0xFF27AE60)),
+  LayoutInfo(id: 'layout3', label: 'Dark Minimal',
     description: 'Latar gelap elegan, teks putih, garis aksen emas. Kesan premium.',
-    icon: Icons.dark_mode_outlined, accentColor: Color(0xFF212121),
-  ),
-  LayoutInfo(
-    id: 'layout4', label: 'Split Side-by-Side',
+    icon: Icons.dark_mode_outlined, accentColor: Color(0xFF212121)),
+  LayoutInfo(id: 'layout4', label: 'Split Side-by-Side',
     description: 'Panel kiri: foto. Panel kanan: info & tanda tangan dua kolom ungu.',
-    icon: Icons.view_column_outlined, accentColor: Color(0xFF6C3483),
-  ),
+    icon: Icons.view_column_outlined, accentColor: Color(0xFF6C3483)),
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
-//  WATERMARK ENGINE (ISOLATE)
+//  WATERMARK ENGINE
 // ════════════════════════════════════════════════════════════════════════════
 
 Uint8List _processWatermark(Map<String, dynamic> p) {
   img.Image base = img.decodeImage(p['imageBytes'] as Uint8List)!;
-  if (base.width > kMaxOutputWidth) {
-    base = img.copyResize(base,
-        width: kMaxOutputWidth, interpolation: img.Interpolation.linear);
-  }
+  if (base.width > kMaxOutputWidth)
+    base = img.copyResize(base, width: kMaxOutputWidth, interpolation: img.Interpolation.linear);
 
   final sigBytes = p['sigBytes'] as Uint8List?;
   img.Image? sig;
   if (sigBytes != null && sigBytes.isNotEmpty) {
     sig = img.decodeImage(sigBytes);
-    if (sig != null && sig.width > kSigMaxWidth) {
-      sig = img.copyResize(sig,
-          width: kSigMaxWidth, interpolation: img.Interpolation.linear);
-    }
+    if (sig != null && sig.width > kSigMaxWidth)
+      sig = img.copyResize(sig, width: kSigMaxWidth, interpolation: img.Interpolation.linear);
   }
 
   final logoBytes = p['logoBytes'] as Uint8List?;
   final logo = logoBytes != null ? img.decodeImage(logoBytes) : null;
-
   final layout = p['layout'] as String? ?? 'layout1';
-  final name   = p['name']   as String;
-  final id     = p['id']     as String;
-  final date   = p['date']   as String;
-  final time   = p['time']   as String;
+  final name = p['name'] as String;
+  final id   = p['id']   as String;
+  final date = p['date'] as String;
+  final time = p['time'] as String;
 
   switch (layout) {
     case 'layout2': return _layout2(base, sig, logo, name, id, date, time);
@@ -129,7 +99,6 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
   }
 }
 
-// ── Layout 1 — Professional Report (Navy) ────────────────────────────────────
 Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time) {
   final W = base.width; final H = base.height;
@@ -137,9 +106,9 @@ Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
   final canvas = img.Image(width: W, height: H + S);
   img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
-  final navy = img.ColorRgb8(27, 79, 114);
+  final navy  = img.ColorRgb8(27, 79, 114);
   final white = img.ColorRgb8(255, 255, 255);
-  final gray = img.ColorRgb8(240, 240, 240);
+  final gray  = img.ColorRgb8(240, 240, 240);
   img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 90, color: navy);
   img.drawString(canvas, 'DELIVERY REPORT', font: img.arial48, x: 20, y: H + 25, color: white);
   img.drawString(canvas, '$date  $time', font: img.arial24, x: W - 280, y: H + 30, color: white);
@@ -156,7 +125,6 @@ Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
-// ── Layout 2 — Compact Field (Green) ─────────────────────────────────────────
 Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time) {
   final W = base.width; final H = base.height;
@@ -164,8 +132,7 @@ Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
   final canvas = img.Image(width: W, height: H + S);
   img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
-  final green = img.ColorRgb8(39, 174, 96);
-  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 70, color: green);
+  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 70, color: img.ColorRgb8(39, 174, 96));
   img.drawString(canvas, 'PEKERJAAN SELESAI', font: img.arial48, x: 20, y: H + 15);
   final iY = H + 90;
   img.drawString(canvas, 'Teknisi: $name', font: img.arial24, x: 20, y: iY);
@@ -179,7 +146,6 @@ Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
-// ── Layout 3 — Dark Minimal (Charcoal + Gold) ─────────────────────────────────
 Uint8List _layout3(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time) {
   final W = base.width; final H = base.height;
@@ -211,7 +177,6 @@ Uint8List _layout3(img.Image base, img.Image? sig, img.Image? logo,
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
-// ── Layout 4 — Split Side-by-Side (Purple) ───────────────────────────────────
 Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time) {
   final fW = base.width; final fH = base.height;
@@ -222,10 +187,11 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
   for (int y = 0; y < H; y++) {
     final t = y / H;
-    final r = (72  + (108 - 72)  * t).round();
-    final g = (26  + (52  - 26)  * t).round();
-    final b = (107 + (131 - 107) * t).round();
-    img.fillRect(canvas, x1: fW, y1: y, x2: W, y2: y + 1, color: img.ColorRgb8(r, g, b));
+    img.fillRect(canvas, x1: fW, y1: y, x2: W, y2: y + 1,
+        color: img.ColorRgb8(
+          (72 + (108 - 72) * t).round(),
+          (26 + (52 - 26) * t).round(),
+          (107 + (131 - 107) * t).round()));
   }
   img.fillRect(canvas, x1: fW, y1: 0, x2: fW + 5, y2: H, color: img.ColorRgb8(212, 175, 55));
   final white = img.ColorRgb8(255, 255, 255);
@@ -261,19 +227,15 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
 
 class App extends StatelessWidget {
   const App({super.key});
-
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B4F72)),
-        useMaterial3: true,
-        fontFamily: 'Roboto',
-      ),
-      home: const Login(),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B4F72)),
+      useMaterial3: true, fontFamily: 'Roboto',
+    ),
+    home: const Login(),
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -282,7 +244,6 @@ class App extends StatelessWidget {
 
 class Login extends StatelessWidget {
   const Login({super.key});
-
   @override
   Widget build(BuildContext context) {
     final c = TextEditingController();
@@ -290,8 +251,7 @@ class Login extends StatelessWidget {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
             colors: [Color(0xFF0D2137), Color(0xFF1B4F72), Color(0xFF2980B9)],
           ),
         ),
@@ -299,74 +259,63 @@ class Login extends StatelessWidget {
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 80, height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white24, width: 1),
-                    ),
-                    child: const Icon(Icons.photo_camera_rounded,
-                        color: Colors.white, size: 40),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Container(
+                  width: 80, height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white24),
                   ),
-                  const SizedBox(height: 24),
-                  const Text('TermulLog',
-                      style: TextStyle(
-                          fontSize: 32, fontWeight: FontWeight.w800,
-                          color: Colors.white, letterSpacing: -0.5)),
-                  const SizedBox(height: 6),
-                  Text('Laporan Lapangan Digital',
-                      style: TextStyle(
-                          fontSize: 14, color: Colors.white.withOpacity(0.7),
-                          letterSpacing: 0.5)),
-                  const SizedBox(height: 48),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: TextField(
-                      controller: c,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Nama Teknisi',
-                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-                        prefixIcon: Icon(Icons.person_outline,
-                            color: Colors.white.withOpacity(0.6)),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 16),
-                      ),
+                  child: const Icon(Icons.photo_camera_rounded, color: Colors.white, size: 40),
+                ),
+                const SizedBox(height: 24),
+                const Text('TermulLog',
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800,
+                        color: Colors.white, letterSpacing: -0.5)),
+                const SizedBox(height: 6),
+                Text('Laporan Lapangan Digital',
+                    style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.7),
+                        letterSpacing: 0.5)),
+                const SizedBox(height: 48),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: TextField(
+                    controller: c,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Nama Teknisi',
+                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                      prefixIcon: Icon(Icons.person_outline, color: Colors.white.withOpacity(0.6)),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF1B4F72),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
-                        elevation: 0,
-                      ),
-                      onPressed: () {
-                        if (c.text.trim().isEmpty) return;
-                        Navigator.pushReplacement(context, MaterialPageRoute(
-                            builder: (_) => Dashboard(name: c.text.trim())));
-                      },
-                      child: const Text('Masuk',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity, height: 52,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF1B4F72),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
                     ),
+                    onPressed: () {
+                      if (c.text.trim().isEmpty) return;
+                      Navigator.pushReplacement(context,
+                          MaterialPageRoute(builder: (_) => Dashboard(name: c.text.trim())));
+                    },
+                    child: const Text('Masuk',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                   ),
-                ],
-              ),
+                ),
+              ]),
             ),
           ),
         ),
@@ -380,9 +329,7 @@ class Login extends StatelessWidget {
 // ════════════════════════════════════════════════════════════════════════════
 
 class Item {
-  final String id;
-  final String path;
-  final String time;
+  final String id, path, time;
   Item(this.id, this.path, this.time);
 }
 
@@ -435,12 +382,8 @@ class _DashboardState extends State<Dashboard> {
   List<Item> list = [];
   String? _logoPath;
 
-  // ── Open camera page ──────────────────────────────────────────────────────
   Future<void> _openCamera() async {
-    if (_cameras.isEmpty) {
-      await _captureFallback();
-      return;
-    }
+    if (_cameras.isEmpty) { await _captureFallback(); return; }
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => CameraPage(
         onCapture: (paths) {
@@ -448,13 +391,9 @@ class _DashboardState extends State<Dashboard> {
           if (paths.length == 1) {
             _goToSignature(paths.first);
           } else {
-            // Burst: show selection page
             Navigator.push(context, MaterialPageRoute(
               builder: (_) => BurstSelectionPage(
-                paths: paths,
-                onSelect: _goToSignature,
-              ),
-            ));
+                paths: paths, onSelect: _goToSignature)));
           }
         },
       ),
@@ -463,9 +402,7 @@ class _DashboardState extends State<Dashboard> {
 
   Future<void> _captureFallback() async {
     final file = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-        maxWidth: kMaxOutputWidth.toDouble(),
-        imageQuality: 90);
+        source: ImageSource.camera, maxWidth: kMaxOutputWidth.toDouble(), imageQuality: 90);
     if (file == null || !mounted) return;
     _goToSignature(file.path);
   }
@@ -476,67 +413,54 @@ class _DashboardState extends State<Dashboard> {
     final time = DateFormat('dd/MM HH:mm').format(now);
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => SignaturePage(
-        imagePath: imagePath,
-        techName:  widget.name,
-        itemId:    id,
-        itemTime:  time,
+        imagePath: imagePath, techName: widget.name,
+        itemId: id, itemTime: time,
         onDone: (path) => setState(() => list.add(Item(id, path, time))),
       ),
     ));
   }
 
   Future<void> _pickLogo() async {
-    final file = await ImagePicker().pickImage(
-        source: ImageSource.gallery, maxWidth: 200);
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 200);
     if (file == null) return;
     setState(() => _logoPath = file.path);
     await LogoCache.load(file.path);
   }
 
-  // ── Share a single item ───────────────────────────────────────────────────
   Future<void> _shareItem(Item item) async {
     try {
       await Share.shareXFiles([XFile(item.path)],
           subject: 'Laporan ${item.id}',
           text: 'Laporan teknisi — ${item.id} — ${item.time}');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Gagal share: $e')));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal share: $e')));
     }
   }
 
-  // ── Save to gallery ───────────────────────────────────────────────────────
   Future<void> _saveToGallery(Item item) async {
     try {
       final ok = await GallerySaver.saveImage(item.path);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(ok == true ? 'Tersimpan ke galeri ✓' : 'Gagal menyimpan'),
-          backgroundColor: ok == true ? Colors.green.shade700 : Colors.red.shade700,
-        ));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok == true ? 'Tersimpan ke galeri ✓' : 'Gagal menyimpan'),
+        backgroundColor: ok == true ? Colors.green.shade700 : Colors.red.shade700,
+      ));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')));
     }
   }
 
-  // ── Preview full screen ───────────────────────────────────────────────────
   void _previewItem(Item item) {
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => PreviewPage(
         item: item,
         onShare: () => _shareItem(item),
-        onSave: () => _saveToGallery(item),
+        onSave:  () => _saveToGallery(item),
       ),
     ));
   }
 
-  // ── Delete item ──────────────────────────────────────────────────────────
   void _deleteItem(Item item) {
     setState(() => list.removeWhere((e) => e.id == item.id));
     try { File(item.path).deleteSync(); } catch (_) {}
@@ -546,28 +470,18 @@ class _DashboardState extends State<Dashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final today = DateFormat('dd/MM').format(DateTime.now());
+    final today      = DateFormat('dd/MM').format(DateTime.now());
     final todayCount = list.where((e) => e.time.startsWith(today)).length;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
       body: Column(children: [
-        // ── Header gradient ──────────────────────────────────────────────────
         _DashboardHeader(
-          name: widget.name,
-          total: list.length,
-          todayCount: todayCount,
-          logoPath: _logoPath,
-          onPickLogo: _pickLogo,
-          onClearLogo: () {
-            setState(() => _logoPath = null);
-            LogoCache.clear();
-          },
+          name: widget.name, total: list.length, todayCount: todayCount,
+          logoPath: _logoPath, onPickLogo: _pickLogo,
+          onClearLogo: () { setState(() => _logoPath = null); LogoCache.clear(); },
           onSettings: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => const SettingsPage())),
         ),
-
-        // ── List or empty state ──────────────────────────────────────────────
         Expanded(
           child: list.isEmpty
               ? _EmptyState(onCapture: _openCamera)
@@ -575,7 +489,7 @@ class _DashboardState extends State<Dashboard> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                   itemCount: list.length,
                   itemBuilder: (_, i) {
-                    final item = list[list.length - 1 - i]; // newest first
+                    final item = list[list.length - 1 - i];
                     return _ItemCard(
                       item: item,
                       onTap:    () => _previewItem(item),
@@ -583,47 +497,32 @@ class _DashboardState extends State<Dashboard> {
                       onSave:   () => _saveToGallery(item),
                       onDelete: () => _deleteItem(item),
                     );
-                  },
-                ),
+                  }),
         ),
       ]),
-
-      // ── FAB ────────────────────────────────────────────────────────────
       floatingActionButton: _CameraFAB(onTap: _openCamera),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
 
-// ── Dashboard Header ─────────────────────────────────────────────────────────
+// ── Dashboard Header ──────────────────────────────────────────────────────────
 class _DashboardHeader extends StatelessWidget {
-  final String  name;
-  final int     total;
-  final int     todayCount;
+  final String name; final int total, todayCount;
   final String? logoPath;
-  final VoidCallback onPickLogo;
-  final VoidCallback onClearLogo;
-  final VoidCallback onSettings;
-
+  final VoidCallback onPickLogo, onClearLogo, onSettings;
   const _DashboardHeader({
-    required this.name,
-    required this.total,
-    required this.todayCount,
-    required this.logoPath,
-    required this.onPickLogo,
-    required this.onClearLogo,
-    required this.onSettings,
+    required this.name, required this.total, required this.todayCount,
+    required this.logoPath, required this.onPickLogo,
+    required this.onClearLogo, required this.onSettings,
   });
-
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0D2137), Color(0xFF1B4F72)],
-        ),
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [Color(0xFF0D2137), Color(0xFF1B4F72)]),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
       child: SafeArea(
@@ -631,23 +530,17 @@ class _DashboardHeader extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 12, 20),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Top row
             Row(children: [
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Selamat datang,',
-                      style: TextStyle(
-                          fontSize: 12.5, color: Colors.white.withOpacity(0.65),
-                          letterSpacing: 0.3)),
-                  const SizedBox(height: 2),
-                  Text(name,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.w700,
-                          color: Colors.white),
-                      overflow: TextOverflow.ellipsis),
-                ]),
-              ),
-              // Logo & Settings
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Selamat datang,',
+                    style: TextStyle(fontSize: 12.5,
+                        color: Colors.white.withOpacity(0.65), letterSpacing: 0.3)),
+                const SizedBox(height: 2),
+                Text(name,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
+                        color: Colors.white),
+                    overflow: TextOverflow.ellipsis),
+              ])),
               if (logoPath != null)
                 GestureDetector(
                   onTap: onClearLogo,
@@ -664,13 +557,16 @@ class _DashboardHeader extends StatelessWidget {
                     ]),
                   ),
                 ),
-              _HeaderIconBtn(icon: Icons.image_outlined,    onTap: onPickLogo),
-              _HeaderIconBtn(icon: Icons.tune_rounded,      onTap: onSettings),
+              IconButton(icon: Icon(Icons.image_outlined,
+                  color: Colors.white.withOpacity(0.85), size: 22),
+                  onPressed: onPickLogo),
+              IconButton(icon: Icon(Icons.tune_rounded,
+                  color: Colors.white.withOpacity(0.85), size: 22),
+                  onPressed: onSettings),
             ]),
             const SizedBox(height: 18),
-            // Stats row
             Row(children: [
-              _StatChip(label: 'Semua',  value: '$total',      icon: Icons.photo_library_outlined),
+              _StatChip(label: 'Semua',   value: '$total',      icon: Icons.photo_library_outlined),
               const SizedBox(width: 10),
               _StatChip(label: 'Hari ini', value: '$todayCount', icon: Icons.today_outlined),
             ]),
@@ -681,20 +577,8 @@ class _DashboardHeader extends StatelessWidget {
   }
 }
 
-class _HeaderIconBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _HeaderIconBtn({required this.icon, required this.onTap});
-  @override
-  Widget build(BuildContext context) => IconButton(
-    icon: Icon(icon, color: Colors.white.withOpacity(0.85), size: 22),
-    onPressed: onTap,
-  );
-}
-
 class _StatChip extends StatelessWidget {
-  final String label, value;
-  final IconData icon;
+  final String label, value; final IconData icon;
   const _StatChip({required this.label, required this.value, required this.icon});
   @override
   Widget build(BuildContext context) => Container(
@@ -707,13 +591,11 @@ class _StatChip extends StatelessWidget {
       Icon(icon, color: Colors.white70, size: 16),
       const SizedBox(width: 7),
       Text('$value $label',
-          style: const TextStyle(
-              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
     ]),
   );
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────
 class _EmptyState extends StatelessWidget {
   final VoidCallback onCapture;
   const _EmptyState({required this.onCapture});
@@ -723,15 +605,12 @@ class _EmptyState extends StatelessWidget {
       Container(
         width: 100, height: 100,
         decoration: BoxDecoration(
-            color: const Color(0xFF1B4F72).withOpacity(0.08),
-            shape: BoxShape.circle),
-        child: const Icon(Icons.add_a_photo_outlined,
-            size: 44, color: Color(0xFF1B4F72)),
+            color: const Color(0xFF1B4F72).withOpacity(0.08), shape: BoxShape.circle),
+        child: const Icon(Icons.add_a_photo_outlined, size: 44, color: Color(0xFF1B4F72)),
       ),
       const SizedBox(height: 20),
       const Text('Belum ada laporan',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
-              color: Color(0xFF1B4F72))),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF1B4F72))),
       const SizedBox(height: 6),
       Text('Ketuk tombol kamera untuk mulai',
           style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
@@ -744,29 +623,17 @@ class _EmptyState extends StatelessWidget {
             foregroundColor: const Color(0xFF1B4F72),
             side: const BorderSide(color: Color(0xFF1B4F72)),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14))),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
       ),
     ]),
   );
 }
 
-// ── Item Card ────────────────────────────────────────────────────────────
 class _ItemCard extends StatelessWidget {
-  final Item         item;
-  final VoidCallback onTap;
-  final VoidCallback onShare;
-  final VoidCallback onSave;
-  final VoidCallback onDelete;
-
-  const _ItemCard({
-    required this.item,
-    required this.onTap,
-    required this.onShare,
-    required this.onSave,
-    required this.onDelete,
-  });
-
+  final Item item;
+  final VoidCallback onTap, onShare, onSave, onDelete;
+  const _ItemCard({required this.item, required this.onTap, required this.onShare,
+      required this.onSave, required this.onDelete});
   @override
   Widget build(BuildContext context) {
     return Dismissible(
@@ -776,108 +643,80 @@ class _ItemCard extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-            color: Colors.red.shade400,
-            borderRadius: BorderRadius.circular(16)),
+        decoration: BoxDecoration(color: Colors.red.shade400, borderRadius: BorderRadius.circular(16)),
         child: const Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.delete_outline_rounded, color: Colors.white, size: 26),
           SizedBox(height: 4),
           Text('Hapus', style: TextStyle(color: Colors.white, fontSize: 11)),
         ]),
       ),
-      confirmDismiss: (_) async {
-        return await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Hapus Laporan?'),
-            content: Text('${item.id} akan dihapus permanen.'),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Batal')),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Hapus',
-                    style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        ) ?? false;
-      },
+      confirmDismiss: (_) async => await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Hapus Laporan?'),
+          content: Text('${item.id} akan dihapus permanen.'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ) ?? false,
       onDismissed: (_) => onDelete(),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.06),
-                blurRadius: 12, offset: const Offset(0, 3)),
-          ],
+          color: Colors.white, borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
+              blurRadius: 12, offset: const Offset(0, 3))],
         ),
         child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          onTap: onTap, borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(children: [
-              // ── Thumbnail ──
               Hero(
                 tag: 'thumb_${item.id}',
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Image.file(File(item.path),
-                      width: 72, height: 72, fit: BoxFit.cover,
-                      cacheWidth: 144),
+                      width: 72, height: 72, fit: BoxFit.cover, cacheWidth: 144),
                 ),
               ),
               const SizedBox(width: 14),
-
-              // ── Info ──
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF1B4F72).withOpacity(0.09),
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Text(item.id,
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w700,
-                              color: Color(0xFF1B4F72)),
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                  ]),
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    const Icon(Icons.access_time_rounded,
-                        size: 13, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(item.time,
-                        style: const TextStyle(
-                            fontSize: 12.5, color: Colors.grey)),
-                  ]),
-                  const SizedBox(height: 10),
-                  // Action buttons
-                  Row(children: [
-                    _ActionBtn(icon: Icons.visibility_outlined,
-                        label: 'Preview', color: const Color(0xFF1B4F72),
-                        onTap: onTap),
-                    const SizedBox(width: 8),
-                    _ActionBtn(icon: Icons.share_outlined,
-                        label: 'Bagikan', color: Colors.teal.shade600,
-                        onTap: onShare),
-                    const SizedBox(width: 8),
-                    _ActionBtn(icon: Icons.save_alt_rounded,
-                        label: 'Simpan', color: Colors.orange.shade700,
-                        onTap: onSave),
-                  ]),
-                ],
-              )),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: const Color(0xFF1B4F72).withOpacity(0.09),
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Text(item.id,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                          color: Color(0xFF1B4F72)),
+                      overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(height: 6),
+                Row(children: [
+                  const Icon(Icons.access_time_rounded, size: 13, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(item.time, style: const TextStyle(fontSize: 12.5, color: Colors.grey)),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  _ActionBtn(icon: Icons.visibility_outlined, label: 'Preview',
+                      color: const Color(0xFF1B4F72), onTap: onTap),
+                  const SizedBox(width: 8),
+                  _ActionBtn(icon: Icons.share_outlined, label: 'Bagikan',
+                      color: Colors.teal, onTap: onShare),
+                  const SizedBox(width: 8),
+                  _ActionBtn(icon: Icons.save_alt_rounded, label: 'Simpan',
+                      color: Colors.orange, onTap: onSave),
+                ]),
+              ])),
             ]),
           ),
         ),
@@ -887,31 +726,23 @@ class _ItemCard extends StatelessWidget {
 }
 
 class _ActionBtn extends StatelessWidget {
-  final IconData icon;
-  final String   label;
-  final Color    color;
-  final VoidCallback onTap;
-  const _ActionBtn({required this.icon, required this.label,
-    required this.color, required this.onTap});
+  final IconData icon; final String label; final Color color; final VoidCallback onTap;
+  const _ActionBtn({required this.icon, required this.label, required this.color, required this.onTap});
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-          color: color.withOpacity(0.09),
-          borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(color: color.withOpacity(0.09), borderRadius: BorderRadius.circular(8)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 13, color: color),
         const SizedBox(width: 4),
-        Text(label, style: TextStyle(
-            fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
       ]),
     ),
   );
 }
 
-// ── Camera FAB ───────────────────────────────────────────────────────────
 class _CameraFAB extends StatelessWidget {
   final VoidCallback onTap;
   const _CameraFAB({required this.onTap});
@@ -919,23 +750,17 @@ class _CameraFAB extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      height: 60, padding: const EdgeInsets.symmetric(horizontal: 28),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-            colors: [Color(0xFF1B4F72), Color(0xFF2980B9)]),
+        gradient: const LinearGradient(colors: [Color(0xFF1B4F72), Color(0xFF2980B9)]),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(color: const Color(0xFF1B4F72).withOpacity(0.45),
-              blurRadius: 18, offset: const Offset(0, 6)),
-        ],
+        boxShadow: [BoxShadow(color: const Color(0xFF1B4F72).withOpacity(0.45),
+            blurRadius: 18, offset: const Offset(0, 6))],
       ),
       child: const Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.camera_alt_rounded, color: Colors.white, size: 22),
         SizedBox(width: 10),
-        Text('Ambil Foto',
-            style: TextStyle(color: Colors.white,
-                fontSize: 16, fontWeight: FontWeight.w700)),
+        Text('Ambil Foto', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
       ]),
     ),
   );
@@ -946,93 +771,49 @@ class _CameraFAB extends StatelessWidget {
 // ════════════════════════════════════════════════════════════════════════════
 
 class PreviewPage extends StatelessWidget {
-  final Item         item;
-  final VoidCallback onShare;
-  final VoidCallback onSave;
-
-  const PreviewPage({
-    super.key,
-    required this.item,
-    required this.onShare,
-    required this.onSave,
-  });
-
+  final Item item; final VoidCallback onShare, onSave;
+  const PreviewPage({super.key, required this.item, required this.onShare, required this.onSave});
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.white,
-        title: Text(item.id,
-            style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w600)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            onPressed: onShare,
-            tooltip: 'Bagikan',
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    extendBodyBehindAppBar: true,
+    appBar: AppBar(
+      backgroundColor: Colors.transparent, elevation: 0, foregroundColor: Colors.white,
+      title: Text(item.id, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+      actions: [
+        IconButton(icon: const Icon(Icons.share_outlined), onPressed: onShare),
+        IconButton(icon: const Icon(Icons.save_alt_rounded), onPressed: onSave),
+        const SizedBox(width: 4),
+      ],
+    ),
+    body: Stack(children: [
+      Center(
+        child: Hero(
+          tag: 'thumb_${item.id}',
+          child: InteractiveViewer(
+            minScale: 0.5, maxScale: 6.0,
+            child: Image.file(File(item.path), fit: BoxFit.contain),
           ),
-          IconButton(
-            icon: const Icon(Icons.save_alt_rounded),
-            onPressed: onSave,
-            tooltip: 'Simpan ke galeri',
-          ),
-          const SizedBox(width: 4),
-        ],
+        ),
       ),
-      body: Stack(children: [
-        // Full-screen zoomable image
-        Center(
-          child: Hero(
-            tag: 'thumb_${item.id}',
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 6.0,
-              child: Image.file(File(item.path), fit: BoxFit.contain),
-            ),
-          ),
+      Positioned(
+        bottom: 0, left: 0, right: 0,
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Colors.transparent, Colors.black54])),
+          padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(item.id, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text(item.time, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
+          ]),
         ),
-        // Bottom info strip
-        Positioned(
-          bottom: 0, left: 0, right: 0,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black54],
-              ),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(item.id, style: const TextStyle(
-                    color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 6),
-                Text(item.time, style: TextStyle(
-                    color: Colors.white.withOpacity(0.8), fontSize: 13)),
-              ],
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
+      ),
+    ]),
+  );
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-//  PETUNJUK PASTE:
-//  Di main.dart, hapus semua kode mulai dari:
-//    // ══ CAMERA PAGE (PLACEHOLDER) ══
-//  sampai akhir file (termasuk BurstSelectionPage, SignaturePage, SettingsPage).
-//  Lalu tempel seluruh isi file ini di bagian bawah main.dart.
-//  JANGAN salin bagian import — sudah ada di main.dart.
-// ════════════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════════════
 //  CAMERA PAGE
@@ -1041,39 +822,29 @@ class PreviewPage extends StatelessWidget {
 class CameraPage extends StatefulWidget {
   final Function(List<String>) onCapture;
   const CameraPage({super.key, required this.onCapture});
-
   @override
   State<CameraPage> createState() => _CameraPageState();
 }
 
 class _CameraPageState extends State<CameraPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  // ── Controller ───────────────────────────────────────────────────────────
   CameraController? _ctrl;
   int    _camIdx      = 0;
   bool   _initialized = false;
   bool   _busy        = false;
 
-  // ── Flash ─────────────────────────────────────────────────────────────────
   FlashMode _flash = FlashMode.off;
 
-  // ── Zoom ──────────────────────────────────────────────────────────────────
-  double _zoom     = 1.0;
-  double _baseZoom = 1.0;
-  double _minZoom  = 1.0;
-  double _maxZoom  = 8.0;
+  double _zoom = 1.0, _baseZoom = 1.0, _minZoom = 1.0, _maxZoom = 8.0;
 
-  // ── Focus ─────────────────────────────────────────────────────────────────
   Offset? _focusPoint;
   bool    _showFocus = false;
 
-  // ── Burst ─────────────────────────────────────────────────────────────────
   bool         _burstMode    = false;
   bool         _burstRunning = false;
   Timer?       _burstTimer;
   List<String> _burstPaths   = [];
 
-  // ── Shutter flash ─────────────────────────────────────────────────────────
   late AnimationController _shutterAnim;
   late Animation<double>   _shutterOpacity;
 
@@ -1081,10 +852,8 @@ class _CameraPageState extends State<CameraPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _shutterAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 150),
-    );
+    _shutterAnim = AnimationController(vsync: this,
+        duration: const Duration(milliseconds: 150));
     _shutterOpacity = Tween<double>(begin: 0.0, end: 0.7).animate(
         CurvedAnimation(parent: _shutterAnim, curve: Curves.easeOut));
     _initCamera(_camIdx);
@@ -1110,16 +879,12 @@ class _CameraPageState extends State<CameraPage>
     }
   }
 
-  // ── Init camera ───────────────────────────────────────────────────────────
   Future<void> _initCamera(int idx) async {
     if (_cameras.isEmpty) return;
     await _ctrl?.dispose();
     final controller = CameraController(
-      _cameras[idx],
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
+        _cameras[idx], ResolutionPreset.high,
+        enableAudio: false, imageFormatGroup: ImageFormatGroup.jpeg);
     _ctrl = controller;
     try {
       await controller.initialize();
@@ -1127,13 +892,10 @@ class _CameraPageState extends State<CameraPage>
       _minZoom = await controller.getMinZoomLevel();
       _maxZoom = await controller.getMaxZoomLevel();
       _zoom    = _minZoom;
-    } catch (e) {
-      debugPrint('Camera init error: $e');
-    }
+    } catch (e) { debugPrint('Camera init error: $e'); }
     if (mounted) setState(() => _initialized = true);
   }
 
-  // ── Switch camera ─────────────────────────────────────────────────────────
   Future<void> _switchCamera() async {
     if (_cameras.length < 2) return;
     setState(() => _initialized = false);
@@ -1141,25 +903,18 @@ class _CameraPageState extends State<CameraPage>
     await _initCamera(_camIdx);
   }
 
-  // ── Toggle flash ──────────────────────────────────────────────────────────
   Future<void> _cycleFlash() async {
-    final next = _flash == FlashMode.off
-        ? FlashMode.auto
-        : _flash == FlashMode.auto
-            ? FlashMode.always
-            : FlashMode.off;
+    final next = _flash == FlashMode.off ? FlashMode.auto
+        : _flash == FlashMode.auto ? FlashMode.always : FlashMode.off;
     setState(() => _flash = next);
     await _ctrl?.setFlashMode(next);
   }
 
-  // ── Tap to focus ──────────────────────────────────────────────────────────
-  Future<void> _onTapFocus(TapDownDetails details, BoxConstraints constraints) async {
+  Future<void> _onTapFocus(TapDownDetails d, BoxConstraints c) async {
     if (_ctrl == null || !_initialized) return;
-    final size = constraints.biggest;
-    final offset = details.localPosition;
-    final x = (offset.dx / size.width).clamp(0.0, 1.0);
-    final y = (offset.dy / size.height).clamp(0.0, 1.0);
-    setState(() { _focusPoint = offset; _showFocus = true; });
+    final x = (d.localPosition.dx / c.biggest.width).clamp(0.0, 1.0);
+    final y = (d.localPosition.dy / c.biggest.height).clamp(0.0, 1.0);
+    setState(() { _focusPoint = d.localPosition; _showFocus = true; });
     try {
       await _ctrl!.setFocusPoint(Offset(x, y));
       await _ctrl!.setExposurePoint(Offset(x, y));
@@ -1168,41 +923,30 @@ class _CameraPageState extends State<CameraPage>
     if (mounted) setState(() => _showFocus = false);
   }
 
-  // ── Pinch zoom ────────────────────────────────────────────────────────────
   void _onScaleStart(ScaleStartDetails _) => _baseZoom = _zoom;
-
   Future<void> _onScaleUpdate(ScaleUpdateDetails d) async {
     if (_ctrl == null) return;
-    final newZoom = (_baseZoom * d.scale).clamp(_minZoom, _maxZoom);
-    setState(() => _zoom = newZoom);
-    await _ctrl!.setZoomLevel(newZoom);
+    final z = (_baseZoom * d.scale).clamp(_minZoom, _maxZoom);
+    setState(() => _zoom = z);
+    await _ctrl!.setZoomLevel(z);
   }
 
-  // ── Shutter animation ─────────────────────────────────────────────────────
   Future<void> _flashShutter() async {
     await _shutterAnim.forward();
     await _shutterAnim.reverse();
   }
 
-  // ── Single capture ────────────────────────────────────────────────────────
   Future<void> _capture() async {
     if (_ctrl == null || !_initialized || _busy) return;
     setState(() => _busy = true);
     unawaited(_flashShutter());
     try {
       final file = await _ctrl!.takePicture();
-      if (mounted) {
-        widget.onCapture([file.path]);
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      debugPrint('Capture error: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+      if (mounted) { widget.onCapture([file.path]); Navigator.pop(context); }
+    } catch (e) { debugPrint('Capture error: $e'); }
+    finally { if (mounted) setState(() => _busy = false); }
   }
 
-  // ── Burst ─────────────────────────────────────────────────────────────────
   void _startBurst() {
     setState(() { _burstRunning = true; _burstPaths = []; });
     _burstTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) async {
@@ -1224,11 +968,6 @@ class _CameraPageState extends State<CameraPage>
     }
   }
 
-  void _toggleBurstCapture() {
-    if (_burstRunning) { _stopBurst(); } else { _startBurst(); }
-  }
-
-  // ── Gallery ───────────────────────────────────────────────────────────────
   Future<void> _pickFromGallery() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (file == null || !mounted) return;
@@ -1236,224 +975,151 @@ class _CameraPageState extends State<CameraPage>
     Navigator.pop(context);
   }
 
-  // ── Flash icon ────────────────────────────────────────────────────────────
   IconData get _flashIcon => _flash == FlashMode.always
       ? Icons.flash_on_rounded
-      : _flash == FlashMode.auto
-          ? Icons.flash_auto_rounded
-          : Icons.flash_off_rounded;
+      : _flash == FlashMode.auto ? Icons.flash_auto_rounded : Icons.flash_off_rounded;
 
-  // ════════════════════════════════════════════════════════════════════════
-  //  BUILD
-  // ════════════════════════════════════════════════════════════════════════
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(children: [
-          _buildTopBar(),
-          Expanded(child: _buildPreview()),
-          if (_burstPaths.isNotEmpty) _buildBurstStrip(),
-          _buildBottomBar(),
-        ]),
-      ),
-    );
-  }
-
-  // ── Top bar ───────────────────────────────────────────────────────────────
-  Widget _buildTopBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      color: Colors.black,
-      child: Row(children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        const Spacer(),
-        _TopBarBtn(icon: _flashIcon,
-            label: _flash == FlashMode.off ? 'Off'
-                : _flash == FlashMode.auto  ? 'Auto' : 'On',
-            onTap: _cycleFlash),
-        const SizedBox(width: 4),
-        _TopBarBtn(icon: Icons.burst_mode_rounded, label: 'Burst',
-            active: _burstMode,
-            onTap: () => setState(() {
-              _burstMode = !_burstMode;
-              if (!_burstMode && _burstRunning) _stopBurst();
-            })),
-        const SizedBox(width: 4),
-        _TopBarBtn(icon: Icons.flip_camera_ios_rounded, label: 'Balik',
-            onTap: _switchCamera),
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    body: SafeArea(
+      child: Column(children: [
+        _buildTopBar(),
+        Expanded(child: _buildPreview()),
+        if (_burstPaths.isNotEmpty) _buildBurstStrip(),
+        _buildBottomBar(),
       ]),
-    );
-  }
+    ),
+  );
 
-  // ── Preview ───────────────────────────────────────────────────────────────
+  Widget _buildTopBar() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    color: Colors.black,
+    child: Row(children: [
+      IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+        onPressed: () => Navigator.pop(context)),
+      const Spacer(),
+      _CamBtn(icon: _flashIcon,
+          label: _flash == FlashMode.off ? 'Off' : _flash == FlashMode.auto ? 'Auto' : 'On',
+          onTap: _cycleFlash),
+      const SizedBox(width: 4),
+      _CamBtn(icon: Icons.burst_mode_rounded, label: 'Burst', active: _burstMode,
+          onTap: () => setState(() {
+            _burstMode = !_burstMode;
+            if (!_burstMode && _burstRunning) _stopBurst();
+          })),
+      const SizedBox(width: 4),
+      _CamBtn(icon: Icons.flip_camera_ios_rounded, label: 'Balik', onTap: _switchCamera),
+    ]),
+  );
+
   Widget _buildPreview() {
     if (!_initialized || _ctrl == null) {
-      return const Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          CircularProgressIndicator(color: Colors.white54),
-          SizedBox(height: 16),
-          Text('Memuat kamera…',
-              style: TextStyle(color: Colors.white54, fontSize: 13)),
-        ]),
-      );
+      return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        CircularProgressIndicator(color: Colors.white54),
+        SizedBox(height: 16),
+        Text('Memuat kamera…', style: TextStyle(color: Colors.white54, fontSize: 13)),
+      ]));
     }
-
-    return LayoutBuilder(builder: (_, constraints) {
-      return GestureDetector(
-        onTapDown:     (d) => _onTapFocus(d, constraints),
-        onScaleStart:  _onScaleStart,
-        onScaleUpdate: _onScaleUpdate,
-        child: Stack(fit: StackFit.expand, children: [
-          // Live preview
-          ClipRect(
-            child: OverflowBox(
-              alignment: Alignment.center,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width:  _ctrl!.value.previewSize!.height,
-                  height: _ctrl!.value.previewSize!.width,
-                  child: CameraPreview(_ctrl!),
-                ),
-              ),
-            ),
-          ),
-
-          // Shutter flash overlay
-          AnimatedBuilder(
-            animation: _shutterOpacity,
-            builder: (_, __) => Opacity(
+    return LayoutBuilder(builder: (_, constraints) => GestureDetector(
+      onTapDown:     (d) => _onTapFocus(d, constraints),
+      onScaleStart:  _onScaleStart,
+      onScaleUpdate: _onScaleUpdate,
+      child: Stack(fit: StackFit.expand, children: [
+        ClipRect(child: OverflowBox(
+          alignment: Alignment.center,
+          child: FittedBox(fit: BoxFit.cover,
+            child: SizedBox(
+              width:  _ctrl!.value.previewSize!.height,
+              height: _ctrl!.value.previewSize!.width,
+              child: CameraPreview(_ctrl!),
+            )),
+        )),
+        AnimatedBuilder(
+          animation: _shutterOpacity,
+          builder: (_, __) => Opacity(
               opacity: _shutterOpacity.value,
-              child: Container(color: Colors.white),
+              child: Container(color: Colors.white)),
+        ),
+        if (_showFocus && _focusPoint != null)
+          Positioned(
+            left: _focusPoint!.dx - 28, top: _focusPoint!.dy - 28,
+            child: _FocusBox()),
+        if (_zoom > _minZoom + 0.05)
+          Positioned(
+            top: 14, left: 0, right: 0,
+            child: Center(child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20)),
+              child: Text('${_zoom.toStringAsFixed(1)}×',
+                  style: const TextStyle(color: Colors.white, fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+            )),
+          ),
+        if (_burstRunning)
+          Positioned(
+            top: 14, right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(color: Colors.red.shade600,
+                  borderRadius: BorderRadius.circular(20)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
+                const SizedBox(width: 5),
+                Text('${_burstPaths.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 13,
+                        fontWeight: FontWeight.w700)),
+              ]),
             ),
           ),
-
-          // Focus box
-          if (_showFocus && _focusPoint != null)
-            Positioned(
-              left: _focusPoint!.dx - 28,
-              top:  _focusPoint!.dy - 28,
-              child: _FocusBox(),
-            ),
-
-          // Zoom badge
-          if (_zoom > _minZoom + 0.05)
-            Positioned(
-              top: 14, left: 0, right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20)),
-                  child: Text('${_zoom.toStringAsFixed(1)}×',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13,
-                          fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ),
-
-          // Burst running badge
-          if (_burstRunning)
-            Positioned(
-              top: 14, right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                    color: Colors.red.shade600,
-                    borderRadius: BorderRadius.circular(20)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.fiber_manual_record,
-                      color: Colors.white, size: 10),
-                  const SizedBox(width: 5),
-                  Text('${_burstPaths.length}',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13,
-                          fontWeight: FontWeight.w700)),
-                ]),
-              ),
-            ),
-        ]),
-      );
-    });
+      ]),
+    ));
   }
 
-  // ── Burst strip ───────────────────────────────────────────────────────────
-  Widget _buildBurstStrip() {
-    return Container(
-      height: 72,
-      color: Colors.black87,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        itemCount: _burstPaths.length,
-        itemBuilder: (_, i) => Padding(
-          padding: const EdgeInsets.only(right: 6),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.file(File(_burstPaths[i]),
-                width: 56, height: 56, fit: BoxFit.cover),
-          ),
+  Widget _buildBurstStrip() => Container(
+    height: 72, color: Colors.black87,
+    child: ListView.builder(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      itemCount: _burstPaths.length,
+      itemBuilder: (_, i) => Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: ClipRRect(borderRadius: BorderRadius.circular(6),
+          child: Image.file(File(_burstPaths[i]),
+              width: 56, height: 56, fit: BoxFit.cover)),
+      ),
+    ),
+  );
+
+  Widget _buildBottomBar() => Container(
+    padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+    color: Colors.black,
+    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      _CircleBtn(icon: Icons.photo_library_outlined, size: 48, onTap: _pickFromGallery),
+      GestureDetector(
+        onTap: _burstMode ? (_burstRunning ? _stopBurst : _startBurst) : _capture,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 72, height: 72,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: _burstRunning ? Colors.red.shade400 : Colors.white, width: 4)),
+          child: Center(child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width:  _burstRunning ? 24 : 54,
+            height: _burstRunning ? 24 : 54,
+            decoration: BoxDecoration(
+              color: _burstRunning ? Colors.red.shade500 : Colors.white,
+              borderRadius: BorderRadius.circular(_burstRunning ? 6 : 27)),
+          )),
         ),
       ),
-    );
-  }
-
-  // ── Bottom bar ────────────────────────────────────────────────────────────
-  Widget _buildBottomBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-      color: Colors.black,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Gallery
-          _CircleBtn(icon: Icons.photo_library_outlined,
-              size: 48, onTap: _pickFromGallery),
-
-          // Shutter
-          GestureDetector(
-            onTap: _burstMode ? _toggleBurstCapture : _capture,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 72, height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: _burstRunning ? Colors.red.shade400 : Colors.white,
-                    width: 4),
-              ),
-              child: Center(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width:  _burstRunning ? 24 : 54,
-                  height: _burstRunning ? 24 : 54,
-                  decoration: BoxDecoration(
-                    color: _burstRunning ? Colors.red.shade500 : Colors.white,
-                    borderRadius: BorderRadius.circular(
-                        _burstRunning ? 6 : 27),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Info
-          _CircleBtn(icon: Icons.info_outline_rounded,
-              size: 48, onTap: _showInfoSheet),
-        ],
-      ),
-    );
-  }
+      _CircleBtn(icon: Icons.info_outline_rounded, size: 48, onTap: _showInfoSheet),
+    ]),
+  );
 
   void _showInfoSheet() {
     showModalBottomSheet(
@@ -1466,19 +1132,13 @@ class _CameraPageState extends State<CameraPage>
         child: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start, children: const [
           Text('Petunjuk Kamera',
-              style: TextStyle(color: Colors.white,
-                  fontSize: 16, fontWeight: FontWeight.w700)),
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
           SizedBox(height: 14),
-          _InfoRow(icon: Icons.touch_app_rounded,
-              text: 'Ketuk layar untuk fokus'),
-          _InfoRow(icon: Icons.zoom_in_rounded,
-              text: 'Jepit/rentang untuk zoom'),
-          _InfoRow(icon: Icons.burst_mode_rounded,
-              text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
-          _InfoRow(icon: Icons.flash_auto_rounded,
-              text: 'Ikon kilat: Off → Auto → On'),
-          _InfoRow(icon: Icons.flip_camera_ios_rounded,
-              text: 'Ikon flip: ganti kamera depan/belakang'),
+          _InfoRow(icon: Icons.touch_app_rounded,      text: 'Ketuk layar untuk fokus'),
+          _InfoRow(icon: Icons.zoom_in_rounded,         text: 'Jepit/rentang untuk zoom'),
+          _InfoRow(icon: Icons.burst_mode_rounded,      text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
+          _InfoRow(icon: Icons.flash_auto_rounded,      text: 'Ikon kilat: Off → Auto → On'),
+          _InfoRow(icon: Icons.flip_camera_ios_rounded, text: 'Ikon flip: ganti kamera depan/belakang'),
         ]),
       ),
     );
@@ -1490,158 +1150,109 @@ class _CameraPageState extends State<CameraPage>
 // ════════════════════════════════════════════════════════════════════════════
 
 class BurstSelectionPage extends StatelessWidget {
-  final List<String>   paths;
+  final List<String> paths;
   final Function(String) onSelect;
-  const BurstSelectionPage(
-      {super.key, required this.paths, required this.onSelect});
-
+  const BurstSelectionPage({super.key, required this.paths, required this.onSelect});
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text('Pilih Foto (${paths.length})',
-            style: const TextStyle(fontSize: 16)),
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: Colors.black, foregroundColor: Colors.white,
+      title: Text('Pilih Foto (${paths.length})',
+          style: const TextStyle(fontSize: 16)),
+    ),
+    body: GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
+      itemCount: paths.length,
+      itemBuilder: (_, i) => GestureDetector(
+        onTap: () { onSelect(paths[i]); Navigator.pop(context); },
+        child: Stack(fit: StackFit.expand, children: [
+          ClipRRect(borderRadius: BorderRadius.circular(6),
+              child: Image.file(File(paths[i]), fit: BoxFit.cover)),
+          Positioned(bottom: 4, right: 4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8)),
+              child: Text('${i + 1}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+            )),
+        ]),
       ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
-        itemCount: paths.length,
-        itemBuilder: (_, i) => GestureDetector(
-          onTap: () {
-            onSelect(paths[i]);
-            Navigator.pop(context);
-          },
-          child: Stack(fit: StackFit.expand, children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.file(File(paths[i]), fit: BoxFit.cover),
-            ),
-            Positioned(
-              bottom: 4, right: 4,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8)),
-                child: Text('${i + 1}',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
+    ),
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGNATURE PAGE (PLACEHOLDER — ganti sendiri)
+//  SIGNATURE PAGE (placeholder)
 // ════════════════════════════════════════════════════════════════════════════
 
 class SignaturePage extends StatelessWidget {
-  final String         imagePath;
-  final String         techName;
-  final String         itemId;
-  final String         itemTime;
+  final String imagePath, techName, itemId, itemTime;
   final Function(String) onDone;
-
   const SignaturePage({
-    super.key,
-    required this.imagePath,
-    required this.techName,
-    required this.itemId,
-    required this.itemTime,
-    required this.onDone,
+    super.key, required this.imagePath, required this.techName,
+    required this.itemId, required this.itemTime, required this.onDone,
   });
-
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Tambah Tanda Tangan')),
-      body: const Center(child: Text('Signature Page')),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Tambah Tanda Tangan')),
+    body: const Center(child: Text('Signature Page')),
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SETTINGS PAGE (PLACEHOLDER — ganti sendiri)
+//  SETTINGS PAGE (placeholder)
 // ════════════════════════════════════════════════════════════════════════════
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pengaturan')),
-      body: const Center(child: Text('Settings Page')),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Pengaturan')),
+    body: const Center(child: Text('Settings Page')),
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  HELPER WIDGETS
+//  SHARED CAMERA HELPER WIDGETS
 // ════════════════════════════════════════════════════════════════════════════
 
-class _TopBarBtn extends StatelessWidget {
-  final IconData     icon;
-  final String       label;
-  final bool         active;
-  final VoidCallback onTap;
-  const _TopBarBtn({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.active = false,
-  });
+class _CamBtn extends StatelessWidget {
+  final IconData icon; final String label; final bool active; final VoidCallback onTap;
+  const _CamBtn({required this.icon, required this.label, required this.onTap, this.active = false});
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: active
-            ? Colors.white.withOpacity(0.2)
-            : Colors.white.withOpacity(0.08),
+        color: active ? Colors.white.withOpacity(0.2) : Colors.white.withOpacity(0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: active ? Colors.white38 : Colors.transparent),
-      ),
+        border: Border.all(color: active ? Colors.white38 : Colors.transparent)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon,
-            color: active ? Colors.yellowAccent : Colors.white,
-            size: 18),
+        Icon(icon, color: active ? Colors.yellowAccent : Colors.white, size: 18),
         const SizedBox(width: 5),
-        Text(label,
-            style: TextStyle(
-                color: active ? Colors.yellowAccent : Colors.white70,
-                fontSize: 11,
-                fontWeight: FontWeight.w600)),
+        Text(label, style: TextStyle(
+            color: active ? Colors.yellowAccent : Colors.white70,
+            fontSize: 11, fontWeight: FontWeight.w600)),
       ]),
     ),
   );
 }
 
 class _CircleBtn extends StatelessWidget {
-  final IconData     icon;
-  final double       size;
-  final VoidCallback onTap;
-  const _CircleBtn(
-      {required this.icon, required this.size, required this.onTap});
+  final IconData icon; final double size; final VoidCallback onTap;
+  const _CircleBtn({required this.icon, required this.size, required this.onTap});
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
       width: size, height: size,
-      decoration: BoxDecoration(
-          shape: BoxShape.circle,
+      decoration: BoxDecoration(shape: BoxShape.circle,
           color: Colors.white.withOpacity(0.1)),
       child: Icon(icon, color: Colors.white70, size: size * 0.45),
     ),
@@ -1653,49 +1264,34 @@ class _FocusBox extends StatefulWidget {
   State<_FocusBox> createState() => _FocusBoxState();
 }
 
-class _FocusBoxState extends State<_FocusBox>
-    with SingleTickerProviderStateMixin {
+class _FocusBoxState extends State<_FocusBox> with SingleTickerProviderStateMixin {
   late AnimationController _ac;
-  late Animation<double>   _scale;
-  late Animation<double>   _opacity;
-
+  late Animation<double> _scale, _opacity;
   @override
   void initState() {
     super.initState();
-    _ac = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 400));
+    _ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
     _scale   = Tween<double>(begin: 1.4, end: 1.0)
         .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
     _opacity = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _ac, curve: Curves.easeIn));
     _ac.forward();
   }
-
   @override
   void dispose() { _ac.dispose(); super.dispose(); }
-
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _ac,
-    builder: (_, __) => Opacity(
-      opacity: _opacity.value,
-      child: Transform.scale(
-        scale: _scale.value,
-        child: Container(
-          width: 56, height: 56,
+    builder: (_, __) => Opacity(opacity: _opacity.value,
+      child: Transform.scale(scale: _scale.value,
+        child: Container(width: 56, height: 56,
           decoration: BoxDecoration(
             border: Border.all(color: Colors.yellowAccent, width: 1.5),
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-      ),
-    ),
-  );
+            borderRadius: BorderRadius.circular(4))))));
 }
 
 class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String   text;
+  final IconData icon; final String text;
   const _InfoRow({required this.icon, required this.text});
   @override
   Widget build(BuildContext context) => Padding(
@@ -1707,464 +1303,4 @@ class _InfoRow extends StatelessWidget {
           style: const TextStyle(color: Colors.white70, fontSize: 13))),
     ]),
   );
-}
-  // ════════════════════════════════════════════════════════════════════════
-  //  BUILD
-  // ════════════════════════════════════════════════════════════════════════
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(children: [
-          // ── Top bar ───────────────────────────────────────────────────────
-          _buildTopBar(),
-          // ── Preview ───────────────────────────────────────────────────────
-          Expanded(child: _buildPreview()),
-          // ── Burst thumbnails ─────────────────────────────────────────────
-          if (_burstPaths.isNotEmpty) _buildBurstStrip(),
-          // ── Bottom controls ───────────────────────────────────────────────
-          _buildBottomBar(),
-        ]),
-      ),
-    );
-  }
-
-  // ── Top bar ───────────────────────────────────────────────────────────────
-  Widget _buildTopBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      color: Colors.black,
-      child: Row(children: [
-        // Back
-        IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        const Spacer(),
-
-        // Flash
-        _TopBarBtn(
-          icon: _flashIcon,
-          label: _flash == FlashMode.off
-              ? 'Off'
-              : _flash == FlashMode.auto
-                  ? 'Auto'
-                  : 'On',
-          onTap: _cycleFlash,
-        ),
-        const SizedBox(width: 4),
-
-        // Burst toggle
-        _TopBarBtn(
-          icon: Icons.burst_mode_rounded,
-          label: 'Burst',
-          active: _burstMode,
-          onTap: () => setState(() {
-            _burstMode = !_burstMode;
-            if (!_burstMode && _burstRunning) _stopBurst();
-          }),
-        ),
-        const SizedBox(width: 4),
-
-        // Switch camera
-        _TopBarBtn(
-          icon: Icons.flip_camera_ios_rounded,
-          label: 'Balik',
-          onTap: _switchCamera,
-        ),
-      ]),
-    );
-  }
-
-  // ── Preview area ──────────────────────────────────────────────────────────
-  Widget _buildPreview() {
-    if (!_initialized || _ctrl == null) {
-      return const Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          CircularProgressIndicator(color: Colors.white54),
-          SizedBox(height: 16),
-          Text('Memuat kamera…',
-              style: TextStyle(color: Colors.white54, fontSize: 13)),
-        ]),
-      );
-    }
-
-    return LayoutBuilder(builder: (_, constraints) {
-      return GestureDetector(
-        onTapDown: (d) => _onTapFocus(d, constraints),
-        onScaleStart:  _onScaleStart,
-        onScaleUpdate: _onScaleUpdate,
-        child: Stack(fit: StackFit.expand, children: [
-          // Camera preview — fill the box, centered
-          ClipRect(
-            child: OverflowBox(
-              alignment: Alignment.center,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width:  _ctrl!.value.previewSize!.height,
-                  height: _ctrl!.value.previewSize!.width,
-                  child: CameraPreview(_ctrl!),
-                ),
-              ),
-            ),
-          ),
-
-          // Shutter flash overlay
-          AnimatedBuilder(
-            animation: _shutterOpacity,
-            builder: (_, __) => Opacity(
-              opacity: _shutterOpacity.value,
-              child: Container(color: Colors.white),
-            ),
-          ),
-
-          // Focus box
-          if (_showFocus && _focusPoint != null)
-            Positioned(
-              left:  _focusPoint!.dx - 28,
-              top:   _focusPoint!.dy - 28,
-              child: _FocusBox(),
-            ),
-
-          // Zoom indicator
-          if (_zoom > _minZoom + 0.05)
-            Positioned(
-              top: 14, left: 0, right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${_zoom.toStringAsFixed(1)}×',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ),
-
-          // Burst running badge
-          if (_burstRunning)
-            Positioned(
-              top: 14, right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade600,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.fiber_manual_record,
-                      color: Colors.white, size: 10),
-                  const SizedBox(width: 5),
-                  Text('${_burstPaths.length}',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700)),
-                ]),
-              ),
-            ),
-        ]),
-      );
-    });
-  }
-
-  // ── Burst thumbnail strip ─────────────────────────────────────────────────
-  Widget _buildBurstStrip() {
-    return Container(
-      height: 72,
-      color: Colors.black87,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        itemCount: _burstPaths.length,
-        itemBuilder: (_, i) => Padding(
-          padding: const EdgeInsets.only(right: 6),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.file(File(_burstPaths[i]),
-                width: 56, height: 56, fit: BoxFit.cover),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Bottom controls ───────────────────────────────────────────────────────
-  Widget _buildBottomBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-      color: Colors.black,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Gallery
-          _CircleBtn(
-            icon: Icons.photo_library_outlined,
-            size: 48,
-            onTap: _pickFromGallery,
-          ),
-
-          // Shutter
-          GestureDetector(
-            onTap: _burstMode
-                ? (_burstRunning ? _stopBurst : _startBurst)
-                : _capture,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 72, height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.transparent,
-                border: Border.all(
-                    color: _burstRunning
-                        ? Colors.red.shade400
-                        : Colors.white,
-                    width: 4),
-              ),
-              child: Center(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: _burstRunning ? 24 : 54,
-                  height: _burstRunning ? 24 : 54,
-                  decoration: BoxDecoration(
-                    color: _burstRunning
-                        ? Colors.red.shade500
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(
-                        _burstRunning ? 6 : 27),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Placeholder (keeps shutter centered)
-          _CircleBtn(
-            icon: Icons.info_outline_rounded,
-            size: 48,
-            onTap: () => _showInfoDialog(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showInfoDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        child: Column(mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start, children: const [
-          Text('Petunjuk Kamera',
-              style: TextStyle(color: Colors.white,
-                  fontSize: 16, fontWeight: FontWeight.w700)),
-          SizedBox(height: 14),
-          _InfoRow(icon: Icons.touch_app_rounded,     text: 'Ketuk layar untuk fokus'),
-          _InfoRow(icon: Icons.zoom_in_rounded,        text: 'Jepit/rentang untuk zoom'),
-          _InfoRow(icon: Icons.burst_mode_rounded,     text: 'Burst: aktifkan lalu tekan shutter — berhenti saat ditekan lagi'),
-          _InfoRow(icon: Icons.flash_auto_rounded,     text: 'Ikon kilat: Off → Auto → On'),
-          _InfoRow(icon: Icons.flip_camera_ios_rounded,text: 'Ikon flip: ganti kamera'),
-        ]),
-      ),
-    );
-  }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-//  HELPER WIDGETS
-// ════════════════════════════════════════════════════════════════════════════
-
-class _TopBarBtn extends StatelessWidget {
-  final IconData icon;
-  final String   label;
-  final bool     active;
-  final VoidCallback onTap;
-  const _TopBarBtn({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.active = false,
-  });
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: active
-            ? Colors.white.withOpacity(0.2)
-            : Colors.white.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: active ? Colors.white38 : Colors.transparent),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon,
-            color: active ? Colors.yellowAccent : Colors.white,
-            size: 18),
-        const SizedBox(width: 5),
-        Text(label,
-            style: TextStyle(
-                color: active ? Colors.yellowAccent : Colors.white70,
-                fontSize: 11,
-                fontWeight: FontWeight.w600)),
-      ]),
-    ),
-  );
-}
-
-class _CircleBtn extends StatelessWidget {
-  final IconData     icon;
-  final double       size;
-  final VoidCallback onTap;
-  const _CircleBtn({required this.icon, required this.size, required this.onTap});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: size, height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.1),
-      ),
-      child: Icon(icon, color: Colors.white70, size: size * 0.45),
-    ),
-  );
-}
-
-class _FocusBox extends StatefulWidget {
-  @override
-  State<_FocusBox> createState() => _FocusBoxState();
-}
-
-class _FocusBoxState extends State<_FocusBox>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ac;
-  late Animation<double>   _scale;
-  late Animation<double>   _opacity;
-
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 400));
-    _scale   = Tween<double>(begin: 1.4, end: 1.0).animate(
-        CurvedAnimation(parent: _ac, curve: Curves.easeOut));
-    _opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _ac, curve: Curves.easeIn));
-    _ac.forward();
-  }
-
-  @override
-  void dispose() { _ac.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _ac,
-    builder: (_, __) => Opacity(
-      opacity: _opacity.value,
-      child: Transform.scale(
-        scale: _scale.value,
-        child: Container(
-          width: 56, height: 56,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.yellowAccent, width: 1.5),
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String   text;
-  const _InfoRow({required this.icon, required this.text});
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Row(children: [
-      Icon(icon, color: Colors.white54, size: 18),
-      const SizedBox(width: 12),
-      Expanded(child: Text(text,
-          style: const TextStyle(color: Colors.white70, fontSize: 13))),
-    ]),
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-//  BURST SELECTION PAGE (PLACEHOLDER)
-// ════════════════════════════════════════════════════════════════════════════
-
-class BurstSelectionPage extends StatelessWidget {
-  final List<String> paths;
-  final Function(String) onSelect;
-  const BurstSelectionPage({required this.paths, required this.onSelect});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Select Photo')),
-      body: const Center(child: Text('Burst Selection Page')),
-    );
-  }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-//  SIGNATURE PAGE (PLACEHOLDER)
-// ════════════════════════════════════════════════════════════════════════════
-
-class SignaturePage extends StatelessWidget {
-  final String imagePath;
-  final String techName;
-  final String itemId;
-  final String itemTime;
-  final Function(String) onDone;
-
-  const SignaturePage({
-    required this.imagePath,
-    required this.techName,
-    required this.itemId,
-    required this.itemTime,
-    required this.onDone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Add Signature')),
-      body: const Center(child: Text('Signature Page')),
-    );
-  }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-//  SETTINGS PAGE (PLACEHOLDER)
-// ════════════════════════════════════════════════════════════════════════════
-
-class SettingsPage extends StatelessWidget {
-  const SettingsPage();
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: const Center(child: Text('Settings Page')),
-    );
-  }
 }

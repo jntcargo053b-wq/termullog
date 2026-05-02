@@ -937,15 +937,41 @@ class _CameraPageState extends State<CameraPage>
   }
 
   Future<void> _capture() async {
-    if (_ctrl == null || !_initialized || _busy) return;
-    setState(() => _busy = true);
-    unawaited(_flashShutter());
-    try {
-      final file = await _ctrl!.takePicture();
-      if (mounted) { widget.onCapture([file.path]); Navigator.pop(context); }
-    } catch (e) { debugPrint('Capture error: $e'); }
-    finally { if (mounted) setState(() => _busy = false); }
+  if (_ctrl == null || !_initialized || _busy) return;
+
+  setState(() => _busy = true);
+
+  unawaited(_flashShutter());
+
+  try {
+    final file = await _ctrl!.takePicture();
+
+    if (!mounted) return;
+
+    widget.onCapture([file.path]);
+
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    });
+
+  } catch (e) {
+    debugPrint('Capture error: $e');
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error kamera: $e'),
+        ),
+      );
+    }
   }
+
+  if (mounted) {
+    setState(() => _busy = false);
+  }
+}
 
   void _startBurst() {
     setState(() { _burstRunning = true; _burstPaths = []; });
@@ -960,13 +986,21 @@ class _CameraPageState extends State<CameraPage>
   }
 
   void _stopBurst() {
-    _burstTimer?.cancel();
-    setState(() => _burstRunning = false);
-    if (_burstPaths.isNotEmpty && mounted) {
-      widget.onCapture(List.from(_burstPaths));
-      Navigator.pop(context);
-    }
+  _burstTimer?.cancel();
+
+  setState(() => _burstRunning = false);
+
+  if (_burstPaths.isNotEmpty && mounted) {
+
+    widget.onCapture(List.from(_burstPaths));
+
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    });
   }
+}
 
   Future<void> _pickFromGallery() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery);

@@ -415,9 +415,9 @@ Future<String> addWatermark({
   final infoY = divY + 18;
   const col1X = headerPad;
   final col2X = W ~/ 2 + 10;
-  const labelColor = img.ColorRgb8(255, 200, 60);
-  const valueColor = img.ColorRgb8(230, 235, 245);
-  const dimColor = img.ColorRgb8(140, 155, 175);
+  final labelColor = img.ColorRgb8(255, 200, 60);
+  final valueColor = img.ColorRgb8(230, 235, 245);
+  final dimColor = img.ColorRgb8(140, 155, 175);
 
   // ── KOLOM KIRI ────────────────────────────────
   img.drawString(canvas, 'ID KIRIMAN', font: img.arial24, x: col1X, y: infoY,

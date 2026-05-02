@@ -1333,23 +1333,217 @@ class BurstSelectionPage extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGNATURE PAGE (placeholder)
+//  SIGNATURE PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
-class SignaturePage extends StatelessWidget {
+class SignaturePage extends StatefulWidget {
   final String imagePath, techName, itemId, itemTime;
   final Function(String) onDone;
+
   const SignaturePage({
-    super.key, required this.imagePath, required this.techName,
-    required this.itemId, required this.itemTime, required this.onDone,
+    super.key,
+    required this.imagePath,
+    required this.techName,
+    required this.itemId,
+    required this.itemTime,
+    required this.onDone,
   });
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Tambah Tanda Tangan')),
-    body: const Center(child: Text('Signature Page')),
-  );
+  State<SignaturePage> createState() => _SignaturePageState();
 }
 
+class _SignaturePageState extends State<SignaturePage> {
+  final SignatureController _signature = SignatureController(
+    penStrokeWidth: 3,
+    penColor: Colors.black,
+  );
+
+  bool _saving = false;
+
+  Future<void> _save() async {
+    if (_saving) return;
+
+    setState(() => _saving = true);
+
+    try {
+      final imageBytes = await File(widget.imagePath).readAsBytes();
+
+      Uint8List? sigBytes;
+
+      if (_signature.isNotEmpty) {
+        sigBytes = await _signature.toPngBytes();
+      }
+
+      final result = await compute(_processWatermark, {
+        'imageBytes': imageBytes,
+        'sigBytes': sigBytes,
+        'logoBytes': LogoCache.bytes,
+        'layout': WatermarkLayout.get(),
+        'name': widget.techName,
+        'id': widget.itemId,
+        'date': DateFormat('dd/MM/yyyy').format(DateTime.now()),
+        'time': DateFormat('HH:mm').format(DateTime.now()),
+      });
+
+      final dir = await getApplicationDocumentsDirectory();
+
+      final file = File(
+        '${dir.path}/${widget.itemId}.jpg',
+      );
+
+      await file.writeAsBytes(result);
+
+      widget.onDone(file.path);
+
+      if (mounted) {
+        Navigator.pop(context);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Laporan berhasil dibuat'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Save error: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal save: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+
+    if (mounted) {
+      setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _signature.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6F9),
+
+      appBar: AppBar(
+        title: const Text('Tambah Tanda Tangan'),
+      ),
+
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              color: Colors.black,
+              child: Image.file(
+                File(widget.imagePath),
+                width: double.infinity,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Tanda Tangan Teknisi',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                Container(
+                  height: 180,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.grey.shade300,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Signature(
+                      controller: _signature,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _signature.clear(),
+                        icon: const Icon(Icons.clear),
+                        label: const Text('Hapus'),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _saving ? null : _save,
+
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_alt_rounded),
+
+                        label: Text(
+                          _saving ? 'Menyimpan...' : 'Simpan',
+                        ),
+
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1B4F72),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 // ════════════════════════════════════════════════════════════════════════════
 //  SETTINGS PAGE (placeholder)
 // ════════════════════════════════════════════════════════════════════════════

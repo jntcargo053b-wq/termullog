@@ -1026,36 +1026,17 @@ class PreviewPage extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CameraPage — TermulLog
-//
-//  Ganti class CameraPage placeholder di main.dart dengan kode ini.
-//  Tidak ada perubahan lain yang diperlukan.
+//  PETUNJUK PASTE:
+//  Di main.dart, hapus semua kode mulai dari:
+//    // ══ CAMERA PAGE (PLACEHOLDER) ══
+//  sampai akhir file (termasuk BurstSelectionPage, SignaturePage, SettingsPage).
+//  Lalu tempel seluruh isi file ini di bagian bawah main.dart.
+//  JANGAN salin bagian import — sudah ada di main.dart.
 // ════════════════════════════════════════════════════════════════════════════
-//
-//  Fitur:
-//   • Live camera preview dengan aspect-ratio native
-//   • Flash: off / auto / on (ikon berubah)
-//   • Switch kamera depan ↔ belakang
-//   • Pinch-to-zoom
-//   • Single capture (tap tombol)
-//   • Burst mode: aktifkan toggle → foto diambil tiap 1 detik,
-//     hasil ditampilkan di strip bawah, lalu dikirim sekaligus ke onCapture
-//   • Gallery picker (ikon di kiri bawah)
-//   • Shutter animation (flash putih sesaat)
-//   • Focus tap: ketuk layar → kotak fokus berkedip
 
-import 'dart:async';
-import 'dart:io';
-
-import 'package:camera/camera.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-
-// _cameras dideklarasikan di main.dart sebagai global
-// Pastikan tidak re-deklarasi di sini
-// ignore: avoid_classes_with_only_static_members
+// ════════════════════════════════════════════════════════════════════════════
+//  CAMERA PAGE
+// ════════════════════════════════════════════════════════════════════════════
 
 class CameraPage extends StatefulWidget {
   final Function(List<String>) onCapture;
@@ -1067,39 +1048,34 @@ class CameraPage extends StatefulWidget {
 
 class _CameraPageState extends State<CameraPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  // ── Controller ──────────────────────────────────────────────────────────
+  // ── Controller ───────────────────────────────────────────────────────────
   CameraController? _ctrl;
-  int    _camIdx      = 0;       // indeks kamera aktif
+  int    _camIdx      = 0;
   bool   _initialized = false;
-  bool   _busy        = false;   // sedang mengambil foto
+  bool   _busy        = false;
 
-  // ── Flash ────────────────────────────────────────────────────────────────
+  // ── Flash ─────────────────────────────────────────────────────────────────
   FlashMode _flash = FlashMode.off;
 
-  // ── Zoom ─────────────────────────────────────────────────────────────────
+  // ── Zoom ──────────────────────────────────────────────────────────────────
   double _zoom     = 1.0;
   double _baseZoom = 1.0;
   double _minZoom  = 1.0;
   double _maxZoom  = 8.0;
 
-  // ── Focus ────────────────────────────────────────────────────────────────
+  // ── Focus ─────────────────────────────────────────────────────────────────
   Offset? _focusPoint;
   bool    _showFocus = false;
 
-  // ── Burst ────────────────────────────────────────────────────────────────
-  bool          _burstMode    = false;
-  bool          _burstRunning = false;
-  Timer?        _burstTimer;
-  List<String>  _burstPaths   = [];
+  // ── Burst ─────────────────────────────────────────────────────────────────
+  bool         _burstMode    = false;
+  bool         _burstRunning = false;
+  Timer?       _burstTimer;
+  List<String> _burstPaths   = [];
 
-  // ── Shutter flash ────────────────────────────────────────────────────────
+  // ── Shutter flash ─────────────────────────────────────────────────────────
   late AnimationController _shutterAnim;
   late Animation<double>   _shutterOpacity;
-
-  // ── Cameras list (from main.dart global) ─────────────────────────────────
-  // Diakses lewat variable global _cameras yang ada di main.dart
-  // Untuk menghindari coupling, kita terima via constructor jika perlu,
-  // tapi karena global sudah ada, akses langsung.
 
   @override
   void initState() {
@@ -1109,8 +1085,8 @@ class _CameraPageState extends State<CameraPage>
       vsync: this,
       duration: const Duration(milliseconds: 150),
     );
-    _shutterOpacity = Tween<double>(begin: 0.0, end: 0.7)
-        .animate(CurvedAnimation(parent: _shutterAnim, curve: Curves.easeOut));
+    _shutterOpacity = Tween<double>(begin: 0.0, end: 0.7).animate(
+        CurvedAnimation(parent: _shutterAnim, curve: Curves.easeOut));
     _initCamera(_camIdx);
   }
 
@@ -1136,19 +1112,15 @@ class _CameraPageState extends State<CameraPage>
 
   // ── Init camera ───────────────────────────────────────────────────────────
   Future<void> _initCamera(int idx) async {
-    // Akses global _cameras dari main.dart
-    final cameras = _getAvailableCameras();
-    if (cameras.isEmpty) return;
-
+    if (_cameras.isEmpty) return;
     await _ctrl?.dispose();
     final controller = CameraController(
-      cameras[idx],
+      _cameras[idx],
       ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
     _ctrl = controller;
-
     try {
       await controller.initialize();
       await controller.setFlashMode(_flash);
@@ -1158,29 +1130,14 @@ class _CameraPageState extends State<CameraPage>
     } catch (e) {
       debugPrint('Camera init error: $e');
     }
-
     if (mounted) setState(() => _initialized = true);
   }
 
-  /// Ambil list kamera dari global main.dart (injected via static access)
-  List<CameraDescription> _getAvailableCameras() {
-    // Referensi ke global _cameras di main.dart
-    // Pada runtime Flutter, kita akses via binding
-    // Karena _cameras adalah top-level var di main.dart,
-    // kita import file yang sama (sudah 1 file) — akses langsung.
-    try {
-      return _cameras; // global dari main.dart
-    } catch (_) {
-      return [];
-    }
-  }
-
-  // ── Switch kamera ─────────────────────────────────────────────────────────
+  // ── Switch camera ─────────────────────────────────────────────────────────
   Future<void> _switchCamera() async {
-    final cameras = _getAvailableCameras();
-    if (cameras.length < 2) return;
+    if (_cameras.length < 2) return;
     setState(() => _initialized = false);
-    _camIdx = (_camIdx + 1) % cameras.length;
+    _camIdx = (_camIdx + 1) % _cameras.length;
     await _initCamera(_camIdx);
   }
 
@@ -1195,10 +1152,10 @@ class _CameraPageState extends State<CameraPage>
     await _ctrl?.setFlashMode(next);
   }
 
-  // ── Tap to focus ─────────────────────────────────────────────────────────
+  // ── Tap to focus ──────────────────────────────────────────────────────────
   Future<void> _onTapFocus(TapDownDetails details, BoxConstraints constraints) async {
     if (_ctrl == null || !_initialized) return;
-    final size   = constraints.biggest;
+    final size = constraints.biggest;
     final offset = details.localPosition;
     final x = (offset.dx / size.width).clamp(0.0, 1.0);
     final y = (offset.dy / size.height).clamp(0.0, 1.0);
@@ -1245,9 +1202,8 @@ class _CameraPageState extends State<CameraPage>
     }
   }
 
-  // ── Burst capture ─────────────────────────────────────────────────────────
+  // ── Burst ─────────────────────────────────────────────────────────────────
   void _startBurst() {
-    if (_burstRunning) { _stopBurst(); return; }
     setState(() { _burstRunning = true; _burstPaths = []; });
     _burstTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) async {
       if (!mounted || _ctrl == null) return;
@@ -1268,7 +1224,11 @@ class _CameraPageState extends State<CameraPage>
     }
   }
 
-  // ── Gallery picker ────────────────────────────────────────────────────────
+  void _toggleBurstCapture() {
+    if (_burstRunning) { _stopBurst(); } else { _startBurst(); }
+  }
+
+  // ── Gallery ───────────────────────────────────────────────────────────────
   Future<void> _pickFromGallery() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (file == null || !mounted) return;
@@ -1276,15 +1236,478 @@ class _CameraPageState extends State<CameraPage>
     Navigator.pop(context);
   }
 
-  // ── Flash icon helper ─────────────────────────────────────────────────────
-  IconData get _flashIcon {
-    switch (_flash) {
-      case FlashMode.always: return Icons.flash_on_rounded;
-      case FlashMode.auto:   return Icons.flash_auto_rounded;
-      default:               return Icons.flash_off_rounded;
-    }
+  // ── Flash icon ────────────────────────────────────────────────────────────
+  IconData get _flashIcon => _flash == FlashMode.always
+      ? Icons.flash_on_rounded
+      : _flash == FlashMode.auto
+          ? Icons.flash_auto_rounded
+          : Icons.flash_off_rounded;
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  BUILD
+  // ════════════════════════════════════════════════════════════════════════
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(children: [
+          _buildTopBar(),
+          Expanded(child: _buildPreview()),
+          if (_burstPaths.isNotEmpty) _buildBurstStrip(),
+          _buildBottomBar(),
+        ]),
+      ),
+    );
   }
 
+  // ── Top bar ───────────────────────────────────────────────────────────────
+  Widget _buildTopBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      color: Colors.black,
+      child: Row(children: [
+        IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        const Spacer(),
+        _TopBarBtn(icon: _flashIcon,
+            label: _flash == FlashMode.off ? 'Off'
+                : _flash == FlashMode.auto  ? 'Auto' : 'On',
+            onTap: _cycleFlash),
+        const SizedBox(width: 4),
+        _TopBarBtn(icon: Icons.burst_mode_rounded, label: 'Burst',
+            active: _burstMode,
+            onTap: () => setState(() {
+              _burstMode = !_burstMode;
+              if (!_burstMode && _burstRunning) _stopBurst();
+            })),
+        const SizedBox(width: 4),
+        _TopBarBtn(icon: Icons.flip_camera_ios_rounded, label: 'Balik',
+            onTap: _switchCamera),
+      ]),
+    );
+  }
+
+  // ── Preview ───────────────────────────────────────────────────────────────
+  Widget _buildPreview() {
+    if (!_initialized || _ctrl == null) {
+      return const Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          CircularProgressIndicator(color: Colors.white54),
+          SizedBox(height: 16),
+          Text('Memuat kamera…',
+              style: TextStyle(color: Colors.white54, fontSize: 13)),
+        ]),
+      );
+    }
+
+    return LayoutBuilder(builder: (_, constraints) {
+      return GestureDetector(
+        onTapDown:     (d) => _onTapFocus(d, constraints),
+        onScaleStart:  _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        child: Stack(fit: StackFit.expand, children: [
+          // Live preview
+          ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.center,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width:  _ctrl!.value.previewSize!.height,
+                  height: _ctrl!.value.previewSize!.width,
+                  child: CameraPreview(_ctrl!),
+                ),
+              ),
+            ),
+          ),
+
+          // Shutter flash overlay
+          AnimatedBuilder(
+            animation: _shutterOpacity,
+            builder: (_, __) => Opacity(
+              opacity: _shutterOpacity.value,
+              child: Container(color: Colors.white),
+            ),
+          ),
+
+          // Focus box
+          if (_showFocus && _focusPoint != null)
+            Positioned(
+              left: _focusPoint!.dx - 28,
+              top:  _focusPoint!.dy - 28,
+              child: _FocusBox(),
+            ),
+
+          // Zoom badge
+          if (_zoom > _minZoom + 0.05)
+            Positioned(
+              top: 14, left: 0, right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20)),
+                  child: Text('${_zoom.toStringAsFixed(1)}×',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ),
+
+          // Burst running badge
+          if (_burstRunning)
+            Positioned(
+              top: 14, right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                    color: Colors.red.shade600,
+                    borderRadius: BorderRadius.circular(20)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.fiber_manual_record,
+                      color: Colors.white, size: 10),
+                  const SizedBox(width: 5),
+                  Text('${_burstPaths.length}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 13,
+                          fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ),
+        ]),
+      );
+    });
+  }
+
+  // ── Burst strip ───────────────────────────────────────────────────────────
+  Widget _buildBurstStrip() {
+    return Container(
+      height: 72,
+      color: Colors.black87,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        itemCount: _burstPaths.length,
+        itemBuilder: (_, i) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.file(File(_burstPaths[i]),
+                width: 56, height: 56, fit: BoxFit.cover),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Bottom bar ────────────────────────────────────────────────────────────
+  Widget _buildBottomBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+      color: Colors.black,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Gallery
+          _CircleBtn(icon: Icons.photo_library_outlined,
+              size: 48, onTap: _pickFromGallery),
+
+          // Shutter
+          GestureDetector(
+            onTap: _burstMode ? _toggleBurstCapture : _capture,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 72, height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: _burstRunning ? Colors.red.shade400 : Colors.white,
+                    width: 4),
+              ),
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width:  _burstRunning ? 24 : 54,
+                  height: _burstRunning ? 24 : 54,
+                  decoration: BoxDecoration(
+                    color: _burstRunning ? Colors.red.shade500 : Colors.white,
+                    borderRadius: BorderRadius.circular(
+                        _burstRunning ? 6 : 27),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Info
+          _CircleBtn(icon: Icons.info_outline_rounded,
+              size: 48, onTap: _showInfoSheet),
+        ],
+      ),
+    );
+  }
+
+  void _showInfoSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: const [
+          Text('Petunjuk Kamera',
+              style: TextStyle(color: Colors.white,
+                  fontSize: 16, fontWeight: FontWeight.w700)),
+          SizedBox(height: 14),
+          _InfoRow(icon: Icons.touch_app_rounded,
+              text: 'Ketuk layar untuk fokus'),
+          _InfoRow(icon: Icons.zoom_in_rounded,
+              text: 'Jepit/rentang untuk zoom'),
+          _InfoRow(icon: Icons.burst_mode_rounded,
+              text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
+          _InfoRow(icon: Icons.flash_auto_rounded,
+              text: 'Ikon kilat: Off → Auto → On'),
+          _InfoRow(icon: Icons.flip_camera_ios_rounded,
+              text: 'Ikon flip: ganti kamera depan/belakang'),
+        ]),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  BURST SELECTION PAGE
+// ════════════════════════════════════════════════════════════════════════════
+
+class BurstSelectionPage extends StatelessWidget {
+  final List<String>   paths;
+  final Function(String) onSelect;
+  const BurstSelectionPage(
+      {super.key, required this.paths, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text('Pilih Foto (${paths.length})',
+            style: const TextStyle(fontSize: 16)),
+      ),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(8),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
+        itemCount: paths.length,
+        itemBuilder: (_, i) => GestureDetector(
+          onTap: () {
+            onSelect(paths[i]);
+            Navigator.pop(context);
+          },
+          child: Stack(fit: StackFit.expand, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.file(File(paths[i]), fit: BoxFit.cover),
+            ),
+            Positioned(
+              bottom: 4, right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text('${i + 1}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SIGNATURE PAGE (PLACEHOLDER — ganti sendiri)
+// ════════════════════════════════════════════════════════════════════════════
+
+class SignaturePage extends StatelessWidget {
+  final String         imagePath;
+  final String         techName;
+  final String         itemId;
+  final String         itemTime;
+  final Function(String) onDone;
+
+  const SignaturePage({
+    super.key,
+    required this.imagePath,
+    required this.techName,
+    required this.itemId,
+    required this.itemTime,
+    required this.onDone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Tambah Tanda Tangan')),
+      body: const Center(child: Text('Signature Page')),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SETTINGS PAGE (PLACEHOLDER — ganti sendiri)
+// ════════════════════════════════════════════════════════════════════════════
+
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Pengaturan')),
+      body: const Center(child: Text('Settings Page')),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  HELPER WIDGETS
+// ════════════════════════════════════════════════════════════════════════════
+
+class _TopBarBtn extends StatelessWidget {
+  final IconData     icon;
+  final String       label;
+  final bool         active;
+  final VoidCallback onTap;
+  const _TopBarBtn({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: active
+            ? Colors.white.withOpacity(0.2)
+            : Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: active ? Colors.white38 : Colors.transparent),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon,
+            color: active ? Colors.yellowAccent : Colors.white,
+            size: 18),
+        const SizedBox(width: 5),
+        Text(label,
+            style: TextStyle(
+                color: active ? Colors.yellowAccent : Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.w600)),
+      ]),
+    ),
+  );
+}
+
+class _CircleBtn extends StatelessWidget {
+  final IconData     icon;
+  final double       size;
+  final VoidCallback onTap;
+  const _CircleBtn(
+      {required this.icon, required this.size, required this.onTap});
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: size, height: size,
+      decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withOpacity(0.1)),
+      child: Icon(icon, color: Colors.white70, size: size * 0.45),
+    ),
+  );
+}
+
+class _FocusBox extends StatefulWidget {
+  @override
+  State<_FocusBox> createState() => _FocusBoxState();
+}
+
+class _FocusBoxState extends State<_FocusBox>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ac;
+  late Animation<double>   _scale;
+  late Animation<double>   _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _ac = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 400));
+    _scale   = Tween<double>(begin: 1.4, end: 1.0)
+        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
+    _opacity = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeIn));
+    _ac.forward();
+  }
+
+  @override
+  void dispose() { _ac.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _ac,
+    builder: (_, __) => Opacity(
+      opacity: _opacity.value,
+      child: Transform.scale(
+        scale: _scale.value,
+        child: Container(
+          width: 56, height: 56,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.yellowAccent, width: 1.5),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String   text;
+  const _InfoRow({required this.icon, required this.text});
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(children: [
+      Icon(icon, color: Colors.white54, size: 18),
+      const SizedBox(width: 12),
+      Expanded(child: Text(text,
+          style: const TextStyle(color: Colors.white70, fontSize: 13))),
+    ]),
+  );
+}
   // ════════════════════════════════════════════════════════════════════════
   //  BUILD
   // ════════════════════════════════════════════════════════════════════════

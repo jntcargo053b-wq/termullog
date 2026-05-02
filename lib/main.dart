@@ -225,6 +225,7 @@ Future<String> addWatermark({
   required String? logoPath,
   required String? signaturePath,
 }) async {
+
   final bytes =
       await File(imagePath).readAsBytes();
 
@@ -244,7 +245,7 @@ Future<String> addWatermark({
     );
   }
 
-  const panelHeight = 430;
+  const panelHeight = 450;
 
   final canvas = img.Image(
     width: original.width,
@@ -252,11 +253,13 @@ Future<String> addWatermark({
         original.height + panelHeight,
   );
 
+  // FOTO
   img.compositeImage(
     canvas,
     original,
   );
 
+  // BACKGROUND PUTIH
   img.fillRect(
     canvas,
     x1: 0,
@@ -265,16 +268,32 @@ Future<String> addWatermark({
     y2:
         original.height + panelHeight,
     color: img.ColorRgb8(
-      20,
-      20,
-      20,
+      250,
+      250,
+      250,
     ),
   );
 
+  // GARIS ATAS
+  img.fillRect(
+    canvas,
+    x1: 0,
+    y1: original.height,
+    x2: original.width,
+    y2: original.height + 8,
+    color: img.ColorRgb8(
+      255,
+      180,
+      0,
+    ),
+  );
+
+  // LOAD LOGO
   final logo =
       await loadLogo(logoPath);
 
   if (logo != null) {
+
     final resized =
         img.copyResize(
       logo,
@@ -289,10 +308,11 @@ Future<String> addWatermark({
     );
   }
 
-  int y = original.height + 30;
-
   const textX = 280;
 
+  int y = original.height + 30;
+
+  // TITLE
   img.drawString(
     canvas,
     'DELIVERY REPORT',
@@ -301,7 +321,7 @@ Future<String> addWatermark({
     y: y,
     color: img.ColorRgb8(
       255,
-      200,
+      180,
       0,
     ),
   );
@@ -316,7 +336,9 @@ Future<String> addWatermark({
     'Cuaca : ${weather ?? '-'}',
   ];
 
+  // INFO
   for (final item in items) {
+
     img.drawString(
       canvas,
       item,
@@ -324,15 +346,16 @@ Future<String> addWatermark({
       x: textX,
       y: y,
       color: img.ColorRgb8(
-        255,
-        255,
-        255,
+        25,
+        25,
+        25,
       ),
     );
 
     y += 40;
   }
 
+  // ALAMAT TITLE
   img.drawString(
     canvas,
     'Alamat :',
@@ -341,25 +364,29 @@ Future<String> addWatermark({
     y: y,
     color: img.ColorRgb8(
       255,
-      200,
+      180,
       0,
     ),
   );
 
   y += 35;
 
+  // WRAP ADDRESS
   final addr =
       address ?? 'Tidak tersedia';
 
-  final words = addr.split(' ');
+  final words =
+      addr.split(' ');
 
   String line = '';
 
   for (final word in words) {
+
     final test =
         '$line $word';
 
-    if (test.length > 40) {
+    if (test.length > 42) {
+
       img.drawString(
         canvas,
         line.trim(),
@@ -367,21 +394,24 @@ Future<String> addWatermark({
         x: textX,
         y: y,
         color: img.ColorRgb8(
-          255,
-          255,
-          255,
+          25,
+          25,
+          25,
         ),
       );
 
-      y += 30;
+      y += 32;
 
       line = word;
+
     } else {
+
       line = test;
     }
   }
 
   if (line.isNotEmpty) {
+
     img.drawString(
       canvas,
       line.trim(),
@@ -389,17 +419,20 @@ Future<String> addWatermark({
       x: textX,
       y: y,
       color: img.ColorRgb8(
-        255,
-        255,
-        255,
+        25,
+        25,
+        25,
       ),
     );
   }
 
+  // =====================
   // SIGNATURE
+  // =====================
 
   if (signaturePath != null &&
       File(signaturePath).existsSync()) {
+
     final sigBytes =
         await File(signaturePath)
             .readAsBytes();
@@ -408,23 +441,72 @@ Future<String> addWatermark({
         img.decodeImage(sigBytes);
 
     if (sig != null) {
+
       final resizedSig =
           img.copyResize(
         sig,
         width: 220,
       );
 
+      final signatureX =
+          original.width - 260;
+
+      final signatureY =
+          original.height + 260;
+
+      // BOX PUTIH
+      img.fillRect(
+        canvas,
+        x1: signatureX - 10,
+        y1: signatureY - 10,
+        x2: signatureX + 230,
+        y2: signatureY + 110,
+        color: img.ColorRgb8(
+          255,
+          255,
+          255,
+        ),
+      );
+
+      // BORDER
+      img.drawRect(
+        canvas,
+        x1: signatureX - 10,
+        y1: signatureY - 10,
+        x2: signatureX + 230,
+        y2: signatureY + 110,
+        color: img.ColorRgb8(
+          220,
+          220,
+          220,
+        ),
+      );
+
+      // LABEL
+      img.drawString(
+        canvas,
+        'Tanda Tangan',
+        font: img.arial24,
+        x: signatureX,
+        y: signatureY - 35,
+        color: img.ColorRgb8(
+          255,
+          180,
+          0,
+        ),
+      );
+
+      // SIGNATURE IMAGE
       img.compositeImage(
         canvas,
         resizedSig,
-        dstX:
-            original.width - 260,
-        dstY:
-            original.height + 250,
+        dstX: signatureX,
+        dstY: signatureY,
       );
     }
   }
 
+  // SAVE FILE
   final dir =
       await getApplicationDocumentsDirectory();
 

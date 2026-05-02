@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
@@ -43,7 +45,8 @@ class Login extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text("TermulLog", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+              const Text("TermulLog",
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
               TextField(controller: c),
               const SizedBox(height: 20),
@@ -106,26 +109,38 @@ class _DashboardState extends State<Dashboard> {
     load();
   }
 
+  // ================= LOAD FIX =================
+
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
+
     logo = p.getString('logo');
 
     final data = p.getStringList('data') ?? [];
-    list = data.map((e) => Item.fromJson(Map<String, dynamic>.from(await decode(e)))).toList();
+
+    list = [];
+
+    for (final e in data) {
+      try {
+        final decoded = jsonDecode(e);
+        list.add(Item.fromJson(Map<String, dynamic>.from(decoded)));
+      } catch (_) {}
+    }
 
     setState(() {});
   }
 
-  Future<Map<String, dynamic>> decode(String e) async {
-    return Map<String, dynamic>.from(await Future.value(e.isNotEmpty ? {} : {}));
-  }
+  // ================= SAVE FIX =================
 
   Future<void> save() async {
     final p = await SharedPreferences.getInstance();
-    p.setStringList('data', list.map((e) => e.toJson().toString()).toList());
+
+    final encoded = list.map((e) => jsonEncode(e.toJson())).toList();
+
+    await p.setStringList('data', encoded);
   }
 
-  // ================= CAPTURE (STEP 1 ONLY) =================
+  // ================= CAPTURE =================
 
   Future<void> capture() async {
     final picker = ImagePicker();
@@ -174,7 +189,8 @@ class _DashboardState extends State<Dashboard> {
             icon: const Icon(Icons.settings),
             onPressed: () async {
               final picker = ImagePicker();
-              final f = await picker.pickImage(source: ImageSource.gallery);
+              final f =
+                  await picker.pickImage(source: ImageSource.gallery);
               if (f == null) return;
 
               final p = await SharedPreferences.getInstance();
@@ -246,8 +262,8 @@ class SignaturePage extends StatefulWidget {
   const SignaturePage({
     super.key,
     required this.imagePath,
-    required this.onDone,
     required this.logoPath,
+    required this.onDone,
   });
 
   @override
@@ -269,19 +285,24 @@ class _SignaturePageState extends State<SignaturePage> {
     final imgBytes = await File(widget.imagePath).readAsBytes();
     final base = img.decodeImage(imgBytes)!;
 
-    final canvas = img.Image(width: base.width, height: base.height + 300);
+    final canvas =
+        img.Image(width: base.width, height: base.height + 300);
+
     img.compositeImage(canvas, base);
 
-    // logo
+    // LOGO
     if (widget.logoPath != null) {
-      final l = img.decodeImage(await File(widget.logoPath!).readAsBytes());
+      final l = img.decodeImage(
+        await File(widget.logoPath!).readAsBytes(),
+      );
       if (l != null) {
         final r = img.copyResize(l, width: 80);
-        img.compositeImage(canvas, r, dstX: 20, dstY: base.height + 20);
+        img.compositeImage(canvas, r,
+            dstX: 20, dstY: base.height + 20);
       }
     }
 
-    // signature PROPORTIONAL
+    // SIGNATURE (PROPORSIONAL)
     if (sig != null) {
       final ratio = base.width / sig.width;
       final resized = img.copyResize(

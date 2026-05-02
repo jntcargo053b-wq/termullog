@@ -1,6 +1,6 @@
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  TermulLog â€” main.dart (FULL FIXED VERSION)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
+//  TermulLog — main.dart (FULL FIXED VERSION)
+// ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
 import 'dart:io';
@@ -19,7 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 
-// â”€â”€â”€ Global cameras list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Global cameras list ─────────────────────────────────────────────────────
 List<CameraDescription> _cameras = [];
 
 void main() async {
@@ -33,18 +33,18 @@ void main() async {
   runApp(const App());
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  CONSTANTS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 const int kMaxOutputWidth = 1280;
 const int kJpegQuality    = 85;
 const int kSigMaxWidth    = 500;
 const int kLogoMaxWidth   = 100;
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  LAYOUT REGISTRY
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class LayoutInfo {
   final String id, label, description;
@@ -90,9 +90,9 @@ const List<LayoutInfo> kLayouts = [
   ),
 ];
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  WATERMARK ENGINE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 Uint8List _processWatermark(Map<String, dynamic> p) {
   try {
@@ -329,9 +329,9 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  APP
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -347,9 +347,9 @@ class App extends StatelessWidget {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  LOGIN
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class Login extends StatelessWidget {
   const Login({super.key});
@@ -467,18 +467,18 @@ class Login extends StatelessWidget {
   }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  ITEM MODEL
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class Item {
   final String id, path, time;
   Item(this.id, this.path, this.time);
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  WATERMARK SETTING
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class WatermarkLayout {
   static String _layout = 'layout1';
@@ -504,9 +504,9 @@ class WatermarkLayout {
   static String get() => _layout;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  LOGO CACHE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class LogoCache {
   static Uint8List? _bytes;
@@ -536,9 +536,9 @@ class LogoCache {
   }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  DASHBOARD
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class Dashboard extends StatefulWidget {
   final String name;
@@ -648,7 +648,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       await Share.shareXFiles(
         [XFile(item.path)],
         subject: 'Laporan ${item.id}',
-        text: 'Laporan teknisi â€” ${item.id} â€” ${item.time}',
+        text: 'Laporan teknisi — ${item.id} — ${item.time}',
       );
     } catch (e) {
       if (mounted) {
@@ -667,7 +667,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ok == true ? 'âœ“ Tersimpan ke galeri' : 'âœ— Gagal menyimpan'),
+            content: Text(ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
             backgroundColor:
                 ok == true ? Colors.green.shade700 : Colors.red.shade700,
             duration: const Duration(seconds: 2),
@@ -762,7 +762,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   }
 }
 
-// â”€â”€â”€ Dashboard Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Dashboard Header ────────────────────────────────────────────────────────
 
 class _DashboardHeader extends StatelessWidget {
   final String name;
@@ -1211,9 +1211,9 @@ class _CameraFAB extends StatelessWidget {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  PREVIEW PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class PreviewPage extends StatelessWidget {
   final Item item;
@@ -1283,9 +1283,9 @@ class PreviewPage extends StatelessWidget {
   }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  SIGNATURE PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class SignaturePage extends StatefulWidget {
   final String imagePath, techName, itemId, itemTime;
@@ -1347,7 +1347,7 @@ class _SignaturePageState extends State<SignaturePage> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('âœ“ Laporan berhasil dibuat'),
+            content: Text('✓ Laporan berhasil dibuat'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
@@ -1359,7 +1359,7 @@ class _SignaturePageState extends State<SignaturePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                'âœ— Gagal save: ${e.toString().substring(0, e.toString().length.clamp(0, 100))}'),
+                '✗ Gagal save: ${e.toString().substring(0, e.toString().length.clamp(0, 100))}'),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -1468,9 +1468,9 @@ class _SignaturePageState extends State<SignaturePage> {
   }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  CAMERA PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -1748,7 +1748,7 @@ class _CameraPageState extends State<CameraPage>
           children: [
             CircularProgressIndicator(color: Colors.white54),
             SizedBox(height: 16),
-            Text('Memuat kameraâ€¦',
+            Text('Memuat kamera…',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
           ],
         ),
@@ -1802,7 +1802,7 @@ class _CameraPageState extends State<CameraPage>
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '${_zoom.toStringAsFixed(1)}Ã—',
+                      '${_zoom.toStringAsFixed(1)}×',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13,
@@ -1956,10 +1956,10 @@ class _CameraPageState extends State<CameraPage>
             _InfoRow(
                 icon: Icons.burst_mode_rounded,
                 text:
-                    'Burst: aktifkan toggle â†’ tekan shutter mulai, tekan lagi berhenti'),
+                    'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
             _InfoRow(
                 icon: Icons.flash_auto_rounded,
-                text: 'Ikon kilat: Off â†’ Auto â†’ On'),
+                text: 'Ikon kilat: Off → Auto → On'),
             _InfoRow(
                 icon: Icons.flip_camera_ios_rounded,
                 text: 'Ikon flip: ganti kamera depan/belakang'),
@@ -1970,9 +1970,9 @@ class _CameraPageState extends State<CameraPage>
   }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 //  BURST SELECTION PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════════════════
 
 class BurstSelectionPage extends StatelessWidget {
   final List<String> paths;
@@ -2006,224 +2006,4 @@ class BurstSelectionPage extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.file(
-                File(paths[i]),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    Container(color: Colors.grey.shade800),
-              ),
-            ),
-            Positioned(
-              bottom: 4,
-              right: 4,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${i + 1}',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  SETTINGS PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
-}
-
-class _SettingsPageState extends State<SettingsPage> {
-  String selected = WatermarkLayout.get();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pilih Layout')),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: kLayouts.length,
-        itemBuilder: (_, i) {
-          final l      = kLayouts[i];
-          final active = selected == l.id;
-          return Card(
-            elevation: active ? 4 : 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                  color: active ? l.accentColor : Colors.transparent,
-                  width: 2),
-            ),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: l.accentColor.withValues(alpha: 0.15),
-                child: Icon(l.icon, color: l.accentColor),
-              ),
-              title: Text(l.label,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(l.description),
-              trailing: active
-                  ? Icon(Icons.check_circle, color: l.accentColor)
-                  : null,
-              onTap: () async {
-                setState(() => selected = l.id);
-                await WatermarkLayout.set(l.id);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('âœ“ ${l.label} dipilih')),
-                  );
-                }
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  CAMERA HELPER WIDGETS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-class _CamBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool active;
-
-  const _CamBtn({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.active = false,
-  });
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: active
-            ? Colors.amber.withValues(alpha: 0.25)
-            : Colors.white.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: active ? Colors.amber : Colors.white24,
-          width: 1,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon,
-              color: active ? Colors.amber : Colors.white, size: 20),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              color: active ? Colors.amber : Colors.white70,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _CircleBtn extends StatelessWidget {
-  final IconData icon;
-  final double size;
-  final VoidCallback onTap;
-
-  const _CircleBtn({
-    required this.icon,
-    required this.size,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: 0.12),
-        border: Border.all(color: Colors.white30, width: 1),
-      ),
-      child: Icon(icon, color: Colors.white, size: size * 0.45),
-    ),
-  );
-}
-
-class _FocusBox extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween(begin: 1.3, end: 1.0),
-    duration: const Duration(milliseconds: 250),
-    curve: Curves.easeOut,
-    builder: (_, scale, child) =>
-        Transform.scale(scale: scale, child: child),
-    child: Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.amber, width: 1.8),
-        borderRadius: BorderRadius.circular(6),
-      ),
-    ),
-  );
-}
-
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _InfoRow({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: Colors.amber, size: 18),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 13.5,
-              height: 1.4,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
+            Cli

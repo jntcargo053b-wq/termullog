@@ -1,8 +1,8 @@
 // =======================
-// TERMULLOG PREMIUM FULL
-// CUSTOM LOGO
-// SIGNATURE
-// PREMIUM WATERMARK
+// TERMULLOG PREMIUM FULL FIX
+// CUSTOM LOGO PERSISTENT
+// SIGNATURE WHITE BACKGROUND
+// HISTORY PHOTO
 // SAVE + SHARE
 // =======================
 
@@ -37,6 +37,10 @@ void main() async {
 
   runApp(const TermulLogApp());
 }
+
+// =======================
+// APP
+// =======================
 
 class TermulLogApp extends StatelessWidget {
   const TermulLogApp({super.key});
@@ -99,10 +103,12 @@ class _LoginScreenState
           children: [
             const Icon(
               Icons.local_shipping,
-              size: 100,
+              size: 110,
               color: Colors.orange,
             ),
+
             const SizedBox(height: 30),
+
             TextField(
               controller: controller,
               decoration:
@@ -111,7 +117,9 @@ class _LoginScreenState
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 20),
+
             SizedBox(
               width: double.infinity,
               height: 55,
@@ -119,6 +127,9 @@ class _LoginScreenState
                 onPressed: login,
                 child: const Text(
                   'MASUK',
+                  style: TextStyle(
+                    fontSize: 18,
+                  ),
                 ),
               ),
             ),
@@ -143,6 +154,24 @@ class DeliveryRecord {
     required this.imagePath,
     required this.timestamp,
   });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'deliveryId': deliveryId,
+      'imagePath': imagePath,
+      'timestamp': timestamp,
+    };
+  }
+
+  factory DeliveryRecord.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return DeliveryRecord(
+      deliveryId: json['deliveryId'],
+      imagePath: json['imagePath'],
+      timestamp: json['timestamp'],
+    );
+  }
 }
 
 // =======================
@@ -195,18 +224,9 @@ Future<img.Image?> loadLogo(
 
       return img.decodeImage(bytes);
     }
+  } catch (_) {}
 
-    final data =
-        await rootBundle.load(
-      'assets/logo.png',
-    );
-
-    return img.decodeImage(
-      data.buffer.asUint8List(),
-    );
-  } catch (_) {
-    return null;
-  }
+  return null;
 }
 
 // =======================
@@ -225,7 +245,6 @@ Future<String> addWatermark({
   required String? logoPath,
   required String? signaturePath,
 }) async {
-
   final bytes =
       await File(imagePath).readAsBytes();
 
@@ -245,7 +264,7 @@ Future<String> addWatermark({
     );
   }
 
-  const panelHeight = 450;
+  const panelHeight = 430;
 
   final canvas = img.Image(
     width: original.width,
@@ -254,12 +273,14 @@ Future<String> addWatermark({
   );
 
   // FOTO
+
   img.compositeImage(
     canvas,
     original,
   );
 
-  // BACKGROUND PUTIH
+  // PANEL
+
   img.fillRect(
     canvas,
     x1: 0,
@@ -268,13 +289,14 @@ Future<String> addWatermark({
     y2:
         original.height + panelHeight,
     color: img.ColorRgb8(
-      250,
-      250,
-      250,
+      20,
+      20,
+      20,
     ),
   );
 
   // GARIS ATAS
+
   img.fillRect(
     canvas,
     x1: 0,
@@ -288,12 +310,12 @@ Future<String> addWatermark({
     ),
   );
 
-  // LOAD LOGO
+  // LOGO
+
   final logo =
       await loadLogo(logoPath);
 
   if (logo != null) {
-
     final resized =
         img.copyResize(
       logo,
@@ -308,11 +330,12 @@ Future<String> addWatermark({
     );
   }
 
-  const textX = 280;
-
   int y = original.height + 30;
 
+  const textX = 280;
+
   // TITLE
+
   img.drawString(
     canvas,
     'DELIVERY REPORT',
@@ -321,7 +344,7 @@ Future<String> addWatermark({
     y: y,
     color: img.ColorRgb8(
       255,
-      180,
+      210,
       0,
     ),
   );
@@ -336,9 +359,7 @@ Future<String> addWatermark({
     'Cuaca : ${weather ?? '-'}',
   ];
 
-  // INFO
   for (final item in items) {
-
     img.drawString(
       canvas,
       item,
@@ -346,16 +367,17 @@ Future<String> addWatermark({
       x: textX,
       y: y,
       color: img.ColorRgb8(
-        25,
-        25,
-        25,
+        255,
+        255,
+        255,
       ),
     );
 
     y += 40;
   }
 
-  // ALAMAT TITLE
+  // ALAMAT
+
   img.drawString(
     canvas,
     'Alamat :',
@@ -364,29 +386,25 @@ Future<String> addWatermark({
     y: y,
     color: img.ColorRgb8(
       255,
-      180,
+      210,
       0,
     ),
   );
 
   y += 35;
 
-  // WRAP ADDRESS
   final addr =
       address ?? 'Tidak tersedia';
 
-  final words =
-      addr.split(' ');
+  final words = addr.split(' ');
 
   String line = '';
 
   for (final word in words) {
-
     final test =
         '$line $word';
 
     if (test.length > 42) {
-
       img.drawString(
         canvas,
         line.trim(),
@@ -394,24 +412,21 @@ Future<String> addWatermark({
         x: textX,
         y: y,
         color: img.ColorRgb8(
-          25,
-          25,
-          25,
+          255,
+          255,
+          255,
         ),
       );
 
-      y += 32;
+      y += 30;
 
       line = word;
-
     } else {
-
       line = test;
     }
   }
 
   if (line.isNotEmpty) {
-
     img.drawString(
       canvas,
       line.trim(),
@@ -419,20 +434,19 @@ Future<String> addWatermark({
       x: textX,
       y: y,
       color: img.ColorRgb8(
-        25,
-        25,
-        25,
+        255,
+        255,
+        255,
       ),
     );
   }
 
-  // =====================
+  // =======================
   // SIGNATURE
-  // =====================
+  // =======================
 
   if (signaturePath != null &&
       File(signaturePath).existsSync()) {
-
     final sigBytes =
         await File(signaturePath)
             .readAsBytes();
@@ -441,7 +455,6 @@ Future<String> addWatermark({
         img.decodeImage(sigBytes);
 
     if (sig != null) {
-
       final resizedSig =
           img.copyResize(
         sig,
@@ -452,15 +465,16 @@ Future<String> addWatermark({
           original.width - 260;
 
       final signatureY =
-          original.height + 260;
+          original.height + 250;
 
-      // BOX PUTIH
+      // BACKGROUND PUTIH
+
       img.fillRect(
         canvas,
         x1: signatureX - 10,
         y1: signatureY - 10,
         x2: signatureX + 230,
-        y2: signatureY + 110,
+        y2: signatureY + 120,
         color: img.ColorRgb8(
           255,
           255,
@@ -468,35 +482,6 @@ Future<String> addWatermark({
         ),
       );
 
-      // BORDER
-      img.drawRect(
-        canvas,
-        x1: signatureX - 10,
-        y1: signatureY - 10,
-        x2: signatureX + 230,
-        y2: signatureY + 110,
-        color: img.ColorRgb8(
-          220,
-          220,
-          220,
-        ),
-      );
-
-      // LABEL
-      img.drawString(
-        canvas,
-        'Tanda Tangan',
-        font: img.arial24,
-        x: signatureX,
-        y: signatureY - 35,
-        color: img.ColorRgb8(
-          255,
-          180,
-          0,
-        ),
-      );
-
-      // SIGNATURE IMAGE
       img.compositeImage(
         canvas,
         resizedSig,
@@ -506,7 +491,6 @@ Future<String> addWatermark({
     }
   }
 
-  // SAVE FILE
   final dir =
       await getApplicationDocumentsDirectory();
 
@@ -562,26 +546,73 @@ class _DashboardScreenState
   void initState() {
     super.initState();
 
-    loadSettings();
+    loadData();
   }
 
-  Future<void> loadSettings() async {
+  // =======================
+  // LOAD DATA
+  // =======================
+
+  Future<void> loadData() async {
     final prefs =
         await SharedPreferences
             .getInstance();
 
-    setState(() {
-      customLogoPath =
-          prefs.getString(
-        'custom_logo',
-      );
+    customLogoPath =
+        prefs.getString(
+      'custom_logo',
+    );
 
-      signaturePath =
-          prefs.getString(
-        'signature',
+    signaturePath =
+        prefs.getString(
+      'signature',
+    );
+
+    final history =
+        prefs.getStringList(
+              'history',
+            ) ??
+            [];
+
+    deliveries.clear();
+
+    for (final item in history) {
+      deliveries.add(
+        DeliveryRecord.fromJson(
+          jsonDecode(item),
+        ),
       );
-    });
+    }
+
+    setState(() {});
   }
+
+  // =======================
+  // SAVE HISTORY
+  // =======================
+
+  Future<void> saveHistory() async {
+    final prefs =
+        await SharedPreferences
+            .getInstance();
+
+    final list = deliveries
+        .map(
+          (e) => jsonEncode(
+            e.toJson(),
+          ),
+        )
+        .toList();
+
+    await prefs.setStringList(
+      'history',
+      list,
+    );
+  }
+
+  // =======================
+  // PICK LOGO
+  // =======================
 
   Future<void> pickLogo() async {
     final picker = ImagePicker();
@@ -607,6 +638,10 @@ class _DashboardScreenState
     });
   }
 
+  // =======================
+  // SIGNATURE
+  // =======================
+
   Future<void> openSignature() async {
     await Navigator.push(
       context,
@@ -626,6 +661,7 @@ class _DashboardScreenState
                       Colors.white,
                 ),
               ),
+
               Row(
                 children: [
                   Expanded(
@@ -639,6 +675,7 @@ class _DashboardScreenState
                       ),
                     ),
                   ),
+
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () async {
@@ -695,6 +732,10 @@ class _DashboardScreenState
       ),
     );
   }
+
+  // =======================
+  // CAPTURE
+  // =======================
 
   Future<void> captureDelivery() async {
     setState(() {
@@ -786,14 +827,19 @@ class _DashboardScreenState
             signaturePath,
       );
 
+      final record =
+          DeliveryRecord(
+        deliveryId: deliveryId,
+        imagePath: finalPath,
+        timestamp: timestamp,
+      );
+
       deliveries.insert(
         0,
-        DeliveryRecord(
-          deliveryId: deliveryId,
-          imagePath: finalPath,
-          timestamp: timestamp,
-        ),
+        record,
       );
+
+      await saveHistory();
 
       setState(() {
         loading = false;
@@ -806,6 +852,10 @@ class _DashboardScreenState
       });
     }
   }
+
+  // =======================
+  // SAVE IMAGE
+  // =======================
 
   Future<void> saveImage(
     String path,
@@ -824,6 +874,10 @@ class _DashboardScreenState
     );
   }
 
+  // =======================
+  // SHARE
+  // =======================
+
   Future<void> shareImage(
     String path,
   ) async {
@@ -832,6 +886,10 @@ class _DashboardScreenState
     ]);
   }
 
+  // =======================
+  // UI
+  // =======================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -839,6 +897,7 @@ class _DashboardScreenState
         title:
             const Text('TermulLog Dashboard'),
       ),
+
       body: Column(
         children: [
           Padding(
@@ -857,13 +916,15 @@ class _DashboardScreenState
                           Icons.image,
                         ),
                         label: const Text(
-                          'LOGO',
+                          'GANTI LOGO',
                         ),
                       ),
                     ),
+
                     const SizedBox(
                       width: 10,
                     ),
+
                     Expanded(
                       child:
                           ElevatedButton.icon(
@@ -879,7 +940,9 @@ class _DashboardScreenState
                     ),
                   ],
                 ),
+
                 const SizedBox(height: 12),
+
                 SizedBox(
                   width: double.infinity,
                   height: 55,
@@ -888,9 +951,18 @@ class _DashboardScreenState
                     onPressed: loading
                         ? null
                         : captureDelivery,
-                    icon: const Icon(
-                      Icons.camera_alt,
-                    ),
+                    icon: loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child:
+                                CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.camera_alt,
+                          ),
                     label: Text(
                       loading
                           ? 'MEMPROSES...'
@@ -901,6 +973,7 @@ class _DashboardScreenState
               ],
             ),
           ),
+
           Expanded(
             child: deliveries.isEmpty
                 ? const Center(
@@ -920,6 +993,7 @@ class _DashboardScreenState
                         margin:
                             const EdgeInsets
                                 .all(12),
+
                         child: Column(
                           children: [
                             Image.file(
@@ -927,52 +1001,83 @@ class _DashboardScreenState
                                 d.imagePath,
                               ),
                             ),
+
                             Padding(
                               padding:
                                   const EdgeInsets
                                       .all(12),
-                              child: Row(
+
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment
+                                        .start,
+
                                 children: [
-                                  Expanded(
-                                    child:
-                                        ElevatedButton.icon(
-                                      onPressed:
-                                          () =>
-                                              saveImage(
-                                        d.imagePath,
-                                      ),
-                                      icon:
-                                          const Icon(
-                                        Icons
-                                            .save,
-                                      ),
-                                      label:
-                                          const Text(
-                                        'SAVE',
-                                      ),
+                                  Text(
+                                    d.deliveryId,
+                                    style:
+                                        const TextStyle(
+                                      fontWeight:
+                                          FontWeight
+                                              .bold,
                                     ),
                                   ),
+
                                   const SizedBox(
-                                    width: 10,
-                                  ),
-                                  Expanded(
-                                    child:
-                                        ElevatedButton.icon(
-                                      onPressed:
-                                          () =>
-                                              shareImage(
-                                        d.imagePath,
+                                      height: 5),
+
+                                  Text(
+                                      d.timestamp),
+
+                                  const SizedBox(
+                                      height: 12),
+
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child:
+                                            ElevatedButton.icon(
+                                          onPressed:
+                                              () =>
+                                                  saveImage(
+                                            d.imagePath,
+                                          ),
+                                          icon:
+                                              const Icon(
+                                            Icons
+                                                .save,
+                                          ),
+                                          label:
+                                              const Text(
+                                            'SAVE',
+                                          ),
+                                        ),
                                       ),
-                                      icon:
-                                          const Icon(
-                                        Icons
-                                            .share,
+
+                                      const SizedBox(
+                                        width: 10,
                                       ),
-                                      label:
-                                          const Text(
-                                        'SHARE',
+
+                                      Expanded(
+                                        child:
+                                            ElevatedButton.icon(
+                                          onPressed:
+                                              () =>
+                                                  shareImage(
+                                            d.imagePath,
+                                          ),
+                                          icon:
+                                              const Icon(
+                                            Icons
+                                                .share,
+                                          ),
+                                          label:
+                                              const Text(
+                                            'SHARE',
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ),
                                 ],
                               ),

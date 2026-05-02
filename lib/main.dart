@@ -770,49 +770,165 @@ class _CameraFAB extends StatelessWidget {
 //  PREVIEW PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
-class PreviewPage extends StatelessWidget {
-  final Item item; final VoidCallback onShare, onSave;
-  const PreviewPage({super.key, required this.item, required this.onShare, required this.onSave});
+class SignaturePage extends StatefulWidget {
+  final String imagePath, techName, itemId, itemTime;
+  final Function(String) onDone;
+
+  const SignaturePage({
+    super.key,
+    required this.imagePath,
+    required this.techName,
+    required this.itemId,
+    required this.itemTime,
+    required this.onDone,
+  });
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.black,
-    extendBodyBehindAppBar: true,
-    appBar: AppBar(
-      backgroundColor: Colors.transparent, elevation: 0, foregroundColor: Colors.white,
-      title: Text(item.id, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-      actions: [
-        IconButton(icon: const Icon(Icons.share_outlined), onPressed: onShare),
-        IconButton(icon: const Icon(Icons.save_alt_rounded), onPressed: onSave),
-        const SizedBox(width: 4),
-      ],
-    ),
-    body: Stack(children: [
-      Center(
-        child: Hero(
-          tag: 'thumb_${item.id}',
-          child: InteractiveViewer(
-            minScale: 0.5, maxScale: 6.0,
-            child: Image.file(File(item.path), fit: BoxFit.contain),
-          ),
-        ),
-      ),
-      Positioned(
-        bottom: 0, left: 0, right: 0,
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter, end: Alignment.bottomCenter,
-              colors: [Colors.transparent, Colors.black54])),
-          padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(item.id, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            Text(item.time, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
-          ]),
-        ),
-      ),
-    ]),
+  State<SignaturePage> createState() => _SignaturePageState();
+}
+
+class _SignaturePageState extends State<SignaturePage> {
+  final SignatureController _signature = SignatureController(
+    penStrokeWidth: 3,
+    penColor: Colors.black,
   );
+
+  bool _saving = false;
+
+  Future<void> _save() async {
+    if (_saving) return;
+
+    setState(() => _saving = true);
+
+    try {
+      final imageBytes = await File(widget.imagePath).readAsBytes();
+
+      Uint8List? sigBytes;
+
+      if (_signature.isNotEmpty) {
+        sigBytes = await _signature.toPngBytes();
+      }
+
+      final result = await compute(_processWatermark, {
+        'imageBytes': imageBytes,
+        'sigBytes': sigBytes,
+        'logoBytes': LogoCache.bytes,
+        'layout': WatermarkLayout.get(),
+        'name': widget.techName,
+        'id': widget.itemId,
+        'date': DateFormat('dd/MM/yyyy').format(DateTime.now()),
+        'time': DateFormat('HH:mm').format(DateTime.now()),
+      });
+
+      final dir = await getApplicationDocumentsDirectory();
+
+      final file = File('${dir.path}/${widget.itemId}.jpg');
+
+      await file.writeAsBytes(result);
+
+      widget.onDone(file.path);
+
+      if (mounted) {
+        Navigator.pop(context);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Laporan berhasil dibuat'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Save error: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal save: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+
+    if (mounted) {
+      setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _signature.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+
+      appBar: AppBar(
+        title: const Text('Tanda Tangan'),
+      ),
+
+      body: Column(
+        children: [
+          Expanded(
+            child: Image.file(
+              File(widget.imagePath),
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+          ),
+
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Container(
+                  height: 180,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade400),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Signature(
+                    controller: _signature,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => _signature.clear(),
+                        child: const Text('Hapus'),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _saving ? null : _save,
+                        child: _saving
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text('Simpan'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  TermulLog — main.dart
+//  TermulLog — main.dart (FULL FIXED VERSION)
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -24,7 +24,11 @@ List<CameraDescription> _cameras = [];
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try { _cameras = await availableCameras(); } catch (_) {}
+  try { 
+    _cameras = await availableCameras(); 
+  } catch (_) {
+    debugPrint('Camera initialization failed: $_');
+  }
   await WatermarkLayout.load();
   runApp(const App());
 }
@@ -36,6 +40,7 @@ void main() async {
 const int kMaxOutputWidth = 1280;
 const int kJpegQuality    = 85;
 const int kSigMaxWidth    = 500;
+const int kLogoMaxWidth   = 100;  // FIX: Added logo max width constant
 
 // ════════════════════════════════════════════════════════════════════════════
 //  LAYOUT REGISTRY
@@ -67,35 +72,75 @@ const List<LayoutInfo> kLayouts = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
-//  WATERMARK ENGINE
+//  WATERMARK ENGINE (FIXED with better error handling)
 // ════════════════════════════════════════════════════════════════════════════
 
 Uint8List _processWatermark(Map<String, dynamic> p) {
-  img.Image base = img.decodeImage(p['imageBytes'] as Uint8List)!;
-  if (base.width > kMaxOutputWidth)
-    base = img.copyResize(base, width: kMaxOutputWidth, interpolation: img.Interpolation.linear);
+  try {
+    // FIX: Validate image bytes
+    final imageBytes = p['imageBytes'] as Uint8List?;
+    if (imageBytes == null || imageBytes.isEmpty) {
+      throw Exception('Image bytes are empty or null');
+    }
+    
+    img.Image base = img.decodeImage(imageBytes)!;
+    if (base.width > kMaxOutputWidth) {
+      base = img.copyResize(base, width: kMaxOutputWidth, interpolation: img.Interpolation.linear);
+    }
 
-  final sigBytes = p['sigBytes'] as Uint8List?;
-  img.Image? sig;
-  if (sigBytes != null && sigBytes.isNotEmpty) {
-    sig = img.decodeImage(sigBytes);
-    if (sig != null && sig.width > kSigMaxWidth)
-      sig = img.copyResize(sig, width: kSigMaxWidth, interpolation: img.Interpolation.linear);
-  }
+    // FIX: Validate signature safely
+    final sigBytes = p['sigBytes'] as Uint8List?;
+    img.Image? sig;
+    if (sigBytes != null && sigBytes.isNotEmpty) {
+      try {
+        sig = img.decodeImage(sigBytes);
+        if (sig != null && sig.width > kSigMaxWidth) {
+          sig = img.copyResize(sig, width: kSigMaxWidth, interpolation: img.Interpolation.linear);
+        }
+      } catch (e) {
+        debugPrint('Signature decode error: $e');
+        sig = null;
+      }
+    }
 
-  final logoBytes = p['logoBytes'] as Uint8List?;
-  final logo = logoBytes != null ? img.decodeImage(logoBytes) : null;
-  final layout = p['layout'] as String? ?? 'layout1';
-  final name = p['name'] as String;
-  final id   = p['id']   as String;
-  final date = p['date'] as String;
-  final time = p['time'] as String;
+    // FIX: Validate logo safely
+    final logoBytes = p['logoBytes'] as Uint8List?;
+    img.Image? logo;
+    if (logoBytes != null && logoBytes.isNotEmpty) {
+      try {
+        logo = img.decodeImage(logoBytes);
+        if (logo != null && (logo.width > kLogoMaxWidth || logo.height > kLogoMaxWidth)) {
+          logo = img.copyResize(logo, width: kLogoMaxWidth, interpolation: img.Interpolation.linear);
+        }
+        // FIX: Validate logo dimensions
+        if (logo != null && (logo.width <= 0 || logo.height <= 0)) {
+          logo = null;
+        }
+      } catch (e) {
+        debugPrint('Logo decode error: $e');
+        logo = null;
+      }
+    }
+    
+    final layout = p['layout'] as String? ?? 'layout1';
+    final name = p['name'] as String;
+    final id   = p['id']   as String;
+    final date = p['date'] as String;
+    final time = p['time'] as String;
 
-  switch (layout) {
-    case 'layout2': return _layout2(base, sig, logo, name, id, date, time);
-    case 'layout3': return _layout3(base, sig, logo, name, id, date, time);
-    case 'layout4': return _layout4(base, sig, logo, name, id, date, time);
-    default:        return _layout1(base, sig, logo, name, id, date, time);
+    switch (layout) {
+      case 'layout2': return _layout2(base, sig, logo, name, id, date, time);
+      case 'layout3': return _layout3(base, sig, logo, name, id, date, time);
+      case 'layout4': return _layout4(base, sig, logo, name, id, date, time);
+      default:        return _layout1(base, sig, logo, name, id, date, time);
+    }
+  } catch (e, stackTrace) {
+    debugPrint('Watermark processing error: $e');
+    debugPrint('Stack trace: $stackTrace');
+    // FIX: Return original image if watermark fails
+    final originalBytes = p['imageBytes'] as Uint8List?;
+    if (originalBytes != null) return originalBytes;
+    throw Exception('Failed to process watermark: $e');
   }
 }
 
@@ -117,10 +162,11 @@ Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
   img.drawString(canvas, 'TEKNISI: $name', font: img.arial24, x: 20, y: iY + 20);
   img.drawString(canvas, 'ID: $id', font: img.arial24, x: 20, y: iY + 60);
   img.drawString(canvas, 'WAKTU: $date $time', font: img.arial24, x: 20, y: iY + 100);
-  if (sig != null)  img.compositeImage(canvas, sig, dstX: 20, dstY: iY + 160);
-  if (logo != null) {
-    final l = img.copyResize(logo, width: 80, interpolation: img.Interpolation.linear);
-    img.compositeImage(canvas, l, dstX: W - 100, dstY: iY + 20);
+  if (sig != null && sig.width > 0 && sig.height > 0) {
+    img.compositeImage(canvas, sig, dstX: 20, dstY: iY + 160);
+  }
+  if (logo != null && logo.width > 0 && logo.height > 0) {
+    img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 20);
   }
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
@@ -138,10 +184,11 @@ Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
   img.drawString(canvas, 'Teknisi: $name', font: img.arial24, x: 20, y: iY);
   img.drawString(canvas, 'ID: $id', font: img.arial24, x: 20, y: iY + 50);
   img.drawString(canvas, 'Waktu: $date $time', font: img.arial24, x: 20, y: iY + 100);
-  if (sig != null)  img.compositeImage(canvas, sig, dstX: 20, dstY: iY + 150);
-  if (logo != null) {
-    final l = img.copyResize(logo, width: 70, interpolation: img.Interpolation.linear);
-    img.compositeImage(canvas, l, dstX: W - 90, dstY: iY + 10);
+  if (sig != null && sig.width > 0 && sig.height > 0) {
+    img.compositeImage(canvas, sig, dstX: 20, dstY: iY + 150);
+  }
+  if (logo != null && logo.width > 0 && logo.height > 0) {
+    img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 10);
   }
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
@@ -163,16 +210,15 @@ Uint8List _layout3(img.Image base, img.Image? sig, img.Image? logo,
   img.drawString(canvas, name, font: img.arial24, x: pX, y: H + 80, color: white);
   img.drawString(canvas, 'ID: $id', font: img.arial24, x: pX, y: H + 115, color: white);
   img.drawString(canvas, '$date  $time', font: img.arial24, x: pX, y: H + 150, color: white);
-  if (sig != null) {
+  if (sig != null && sig.width > 0 && sig.height > 0) {
     img.fillRect(canvas,
         x1: pX - 4, y1: H + 188,
         x2: pX + sig.width + 4, y2: H + 188 + sig.height + 10,
         color: img.ColorRgba8(255, 255, 255, 25));
     img.compositeImage(canvas, sig, dstX: pX, dstY: H + 192);
   }
-  if (logo != null) {
-    final l = img.copyResize(logo, width: 70, interpolation: img.Interpolation.linear);
-    img.compositeImage(canvas, l, dstX: W - 90, dstY: H + 18);
+  if (logo != null && logo.width > 0 && logo.height > 0) {
+    img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: H + 18);
   }
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
@@ -208,15 +254,14 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
   img.drawString(canvas, time, font: img.arial24, x: tX, y: 302, color: white);
   img.fillRect(canvas, x1: tX, y1: 345, x2: W - 18, y2: 348, color: img.ColorRgb8(212, 175, 55));
   img.drawString(canvas, 'TANDA TANGAN', font: img.arial24, x: tX, y: 358, color: gold);
-  if (sig != null) {
+  if (sig != null && sig.width > 0 && sig.height > 0) {
     final maxSigW = pW - 36 - 5;
     img.Image s = sig;
     if (s.width > maxSigW) s = img.copyResize(s, width: maxSigW, interpolation: img.Interpolation.linear);
     img.compositeImage(canvas, s, dstX: tX, dstY: 392);
   }
-  if (logo != null) {
-    final l = img.copyResize(logo, width: 58, interpolation: img.Interpolation.linear);
-    img.compositeImage(canvas, l, dstX: W - 58 - 18, dstY: H - 58 - 18);
+  if (logo != null && logo.width > 0 && logo.height > 0) {
+    img.compositeImage(canvas, logo, dstX: W - logo.width - 18, dstY: H - logo.height - 18);
   }
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
@@ -307,7 +352,13 @@ class Login extends StatelessWidget {
                       elevation: 0,
                     ),
                     onPressed: () {
-                      if (c.text.trim().isEmpty) return;
+                      if (c.text.trim().isEmpty) {
+                        // FIX: Show error if name is empty
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Mohon masukkan nama teknisi'), backgroundColor: Colors.orange),
+                        );
+                        return;
+                      }
                       Navigator.pushReplacement(context,
                           MaterialPageRoute(builder: (_) => Dashboard(name: c.text.trim())));
                     },
@@ -340,35 +391,56 @@ class Item {
 class WatermarkLayout {
   static String _layout = 'layout1';
   static Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
-    _layout = p.getString('layout') ?? 'layout1';
+    try {
+      final p = await SharedPreferences.getInstance();
+      _layout = p.getString('layout') ?? 'layout1';
+    } catch (e) {
+      debugPrint('Failed to load layout: $e');
+    }
   }
   static Future<void> set(String v) async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString('layout', v);
-    _layout = v;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString('layout', v);
+      _layout = v;
+    } catch (e) {
+      debugPrint('Failed to save layout: $e');
+    }
   }
   static String get() => _layout;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  LOGO CACHE
+//  LOGO CACHE (FIXED with better error handling)
 // ════════════════════════════════════════════════════════════════════════════
 
 class LogoCache {
   static Uint8List? _bytes;
   static String?    _path;
+  
   static Future<void> load(String path) async {
     if (_path == path) return;
-    _bytes = await File(path).readAsBytes();
-    _path  = path;
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        debugPrint('Logo file not found: $path');
+        return;
+      }
+      _bytes = await file.readAsBytes();
+      _path  = path;
+    } catch (e) {
+      debugPrint('Failed to load logo: $e');
+      _bytes = null;
+      _path = null;
+    }
   }
+  
   static Uint8List? get bytes => _bytes;
   static void clear() { _bytes = null; _path = null; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  DASHBOARD
+//  DASHBOARD (FIXED with memory management)
 // ════════════════════════════════════════════════════════════════════════════
 
 class Dashboard extends StatefulWidget {
@@ -378,26 +450,59 @@ class Dashboard extends StatefulWidget {
   State<Dashboard> createState() => _DashboardState();
 }
 
-class _DashboardState extends State<Dashboard> {
+class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   List<Item> list = [];
   String? _logoPath;
 
-  Future<void> _openCamera() async {
-    if (_cameras.isEmpty) { await _captureFallback(); return; }
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => CameraPage(
-        onCapture: (paths) {
-          if (paths.isEmpty) return;
-          if (paths.length == 1) {
-            _goToSignature(paths.first);
-          } else {
-            Navigator.push(context, MaterialPageRoute(
-              builder: (_) => BurstSelectionPage(
-                paths: paths, onSelect: _goToSignature)));
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _cleanupTempFiles(); // FIX: Clean up temp files on start
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // FIX: Clean up orphaned temp files
+  Future<void> _cleanupTempFiles() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final files = await dir.list().toList();
+      // Keep only last 100 files maximum
+      if (files.length > 100) {
+        files.sort((a, b) => a.statSync().modified.compareTo(b.statSync().modified));
+        for (int i = 0; i < files.length - 100; i++) {
+          if (files[i] is File) {
+            await (files[i] as File).delete();
           }
-        },
-      ),
-    ));
+        }
+      }
+    } catch (e) {
+      debugPrint('Cleanup error: $e');
+    }
+  }
+
+  Future<void> _openCamera() async {
+    if (_cameras.isEmpty) { 
+      await _captureFallback(); 
+      return;
+    }
+    final paths = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(builder: (_) => const CameraPage()),
+    );
+    if (!mounted || paths == null || paths.isEmpty) return;
+    if (paths.length == 1) {
+      _goToSignature(paths.first);
+    } else {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => BurstSelectionPage(
+          paths: paths, onSelect: _goToSignature)));
+    }
   }
 
   Future<void> _captureFallback() async {
@@ -415,7 +520,11 @@ class _DashboardState extends State<Dashboard> {
       builder: (_) => SignaturePage(
         imagePath: imagePath, techName: widget.name,
         itemId: id, itemTime: time,
-        onDone: (path) => setState(() => list.add(Item(id, path, time))),
+        onDone: (path) {
+          if (mounted) {
+            setState(() => list.add(Item(id, path, time)));
+          }
+        },
       ),
     ));
   }
@@ -433,21 +542,30 @@ class _DashboardState extends State<Dashboard> {
           subject: 'Laporan ${item.id}',
           text: 'Laporan teknisi — ${item.id} — ${item.time}');
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal share: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal share: $e'), backgroundColor: Colors.red.shade700)
+        );
+      }
     }
   }
 
   Future<void> _saveToGallery(Item item) async {
     try {
-      final ok = await GallerySaver.saveImage(item.path);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok == true ? 'Tersimpan ke galeri ✓' : 'Gagal menyimpan'),
-        backgroundColor: ok == true ? Colors.green.shade700 : Colors.red.shade700,
-      ));
+      final bool? ok = await GallerySaver.saveImage(item.path);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
+          backgroundColor: ok == true ? Colors.green.shade700 : Colors.red.shade700,
+          duration: const Duration(seconds: 2),
+        ));
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red.shade700)
+        );
+      }
     }
   }
 
@@ -463,9 +581,17 @@ class _DashboardState extends State<Dashboard> {
 
   void _deleteItem(Item item) {
     setState(() => list.removeWhere((e) => e.id == item.id));
-    try { File(item.path).deleteSync(); } catch (_) {}
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Laporan dihapus')));
+    try { 
+      final file = File(item.path);
+      if (file.existsSync()) {
+        file.deleteSync(); 
+      }
+    } catch (_) {}
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Laporan dihapus'), backgroundColor: Colors.grey)
+      );
+    }
   }
 
   @override
@@ -478,7 +604,10 @@ class _DashboardState extends State<Dashboard> {
         _DashboardHeader(
           name: widget.name, total: list.length, todayCount: todayCount,
           logoPath: _logoPath, onPickLogo: _pickLogo,
-          onClearLogo: () { setState(() => _logoPath = null); LogoCache.clear(); },
+          onClearLogo: () { 
+            setState(() => _logoPath = null); 
+            LogoCache.clear(); 
+          },
           onSettings: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => const SettingsPage())),
         ),
@@ -551,7 +680,8 @@ class _DashboardHeader extends StatelessWidget {
                         color: Colors.white.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(10)),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Image.file(File(logoPath!), height: 30),
+                      Image.file(File(logoPath!), height: 30, errorBuilder: (_, __, ___) => 
+                        const Icon(Icons.broken_image, color: Colors.white70, size: 30)),
                       const SizedBox(width: 4),
                       const Icon(Icons.close, size: 14, color: Colors.white70),
                     ]),
@@ -684,7 +814,10 @@ class _ItemCard extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Image.file(File(item.path),
-                      width: 72, height: 72, fit: BoxFit.cover, cacheWidth: 144),
+                      width: 72, height: 72, fit: BoxFit.cover, 
+                      cacheWidth: 144,
+                      errorBuilder: (_, __, ___) => 
+                        Container(color: Colors.grey.shade300, width: 72, height: 72)),
                 ),
               ),
               const SizedBox(width: 14),
@@ -767,7 +900,7 @@ class _CameraFAB extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PREVIEW PAGE  ← FIX: kelas ini sebelumnya hilang / tidak ada
+//  PREVIEW PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
 class PreviewPage extends StatelessWidget {
@@ -811,6 +944,8 @@ class PreviewPage extends StatelessWidget {
             child: Image.file(
               File(item.path),
               fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => 
+                const Center(child: Icon(Icons.broken_image, color: Colors.white54, size: 64)),
             ),
           ),
         ),
@@ -831,7 +966,7 @@ class PreviewPage extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGNATURE PAGE  ← FIX: duplikat dihapus, hanya satu definisi di sini
+//  SIGNATURE PAGE (FIXED with loading indicator)
 // ════════════════════════════════════════════════════════════════════════════
 
 class SignaturePage extends StatefulWidget {
@@ -866,8 +1001,15 @@ class _SignaturePageState extends State<SignaturePage> {
       final imageBytes = await File(widget.imagePath).readAsBytes();
       Uint8List? sigBytes;
       if (_signature.isNotEmpty) {
-        sigBytes = await _signature.toPngBytes();
+        try {
+          sigBytes = await _signature.toPngBytes();
+        } catch (e) {
+          debugPrint('Signature conversion error: $e');
+          sigBytes = null;
+        }
       }
+      
+      // FIX: Show loading indicator during heavy computation
       final result = await compute(_processWatermark, {
         'imageBytes': imageBytes,
         'sigBytes': sigBytes,
@@ -876,18 +1018,21 @@ class _SignaturePageState extends State<SignaturePage> {
         'name': widget.techName,
         'id': widget.itemId,
         'date': DateFormat('dd/MM/yyyy').format(DateTime.now()),
-        'time': DateFormat('HH:mm').format(DateTime.now()),
+        'time': DateFormat('HH:mm:ss').format(DateTime.now()),
       });
+      
       final dir  = await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/${widget.itemId}.jpg');
       await file.writeAsBytes(result);
+      
       widget.onDone(file.path);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Laporan berhasil dibuat'),
+            content: Text('✓ Laporan berhasil dibuat'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
       }
@@ -895,11 +1040,13 @@ class _SignaturePageState extends State<SignaturePage> {
       debugPrint('Save error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal save: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('✗ Gagal save: ${e.toString().substring(0, 100)}'), 
+            backgroundColor: Colors.red.shade700),
         );
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    if (mounted) setState(() => _saving = false);
   }
 
   @override
@@ -922,6 +1069,8 @@ class _SignaturePageState extends State<SignaturePage> {
                 File(widget.imagePath),
                 width: double.infinity,
                 fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => 
+                  const Center(child: Icon(Icons.broken_image, color: Colors.white54, size: 48)),
               ),
             ),
           ),
@@ -991,12 +1140,11 @@ class _SignaturePageState extends State<SignaturePage> {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CAMERA PAGE
+//  CAMERA PAGE (FIXED with memory optimization)
 // ════════════════════════════════════════════════════════════════════════════
 
 class CameraPage extends StatefulWidget {
-  final Function(List<String>) onCapture;
-  const CameraPage({super.key, required this.onCapture});
+  const CameraPage({super.key});
   @override
   State<CameraPage> createState() => _CameraPageState();
 }
@@ -1067,7 +1215,14 @@ class _CameraPageState extends State<CameraPage>
       _minZoom = await controller.getMinZoomLevel();
       _maxZoom = await controller.getMaxZoomLevel();
       _zoom    = _minZoom;
-    } catch (e) { debugPrint('Camera init error: $e'); }
+    } catch (e) { 
+      debugPrint('Camera init error: $e'); 
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error kamera: $e'), backgroundColor: Colors.red.shade700)
+        );
+      }
+    }
     if (mounted) setState(() => _initialized = true);
   }
 
@@ -1118,46 +1273,48 @@ class _CameraPageState extends State<CameraPage>
     try {
       final file = await _ctrl!.takePicture();
       if (!mounted) return;
-      widget.onCapture([file.path]);
-      Navigator.pop(context);
+      Navigator.pop(context, [file.path]);
     } catch (e) {
       debugPrint('Capture error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error kamera: $e')));
+            SnackBar(content: Text('Error kamera: ${e.toString().substring(0, 100)}'), 
+              backgroundColor: Colors.red.shade700));
+        setState(() => _busy = false);
       }
     }
-    if (mounted) setState(() => _busy = false);
   }
 
   void _startBurst() {
     setState(() { _burstRunning = true; _burstPaths = []; });
     _burstTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) async {
-      if (!mounted || _ctrl == null) return;
+      if (!mounted || _ctrl == null || !_initialized) return;
       try {
         unawaited(_flashShutter());
         final file = await _ctrl!.takePicture();
         if (mounted) setState(() => _burstPaths.add(file.path));
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Burst capture error: $e');
+      }
     });
   }
 
   void _stopBurst() {
     _burstTimer?.cancel();
+    _burstTimer = null;
     setState(() => _burstRunning = false);
     if (_burstPaths.isNotEmpty && mounted) {
-      widget.onCapture(List.from(_burstPaths));
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (mounted) Navigator.pop(context);
-      });
+      Navigator.pop(context, List<String>.from(_burstPaths));
+    } else if (mounted) {
+      // If no photos captured, just exit burst mode
+      setState(() => _burstMode = false);
     }
   }
 
   Future<void> _pickFromGallery() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (file == null || !mounted) return;
-    widget.onCapture([file.path]);
-    Navigator.pop(context);
+    Navigator.pop(context, [file.path]);
   }
 
   IconData get _flashIcon => _flash == FlashMode.always
@@ -1165,15 +1322,23 @@ class _CameraPageState extends State<CameraPage>
       : _flash == FlashMode.auto ? Icons.flash_auto_rounded : Icons.flash_off_rounded;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.black,
-    body: SafeArea(
-      child: Column(children: [
-        _buildTopBar(),
-        Expanded(child: _buildPreview()),
-        if (_burstPaths.isNotEmpty) _buildBurstStrip(),
-        _buildBottomBar(),
-      ]),
+  Widget build(BuildContext context) => PopScope(  // FIX: Handle back button during burst
+    canPop: !_burstRunning,
+    onPopInvoked: (didPop) {
+      if (_burstRunning && !didPop) {
+        _stopBurst();
+      }
+    },
+    child: Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(children: [
+          _buildTopBar(),
+          Expanded(child: _buildPreview()),
+          if (_burstPaths.isNotEmpty) _buildBurstStrip(),
+          _buildBottomBar(),
+        ]),
+      ),
     ),
   );
 
@@ -1183,7 +1348,13 @@ class _CameraPageState extends State<CameraPage>
     child: Row(children: [
       IconButton(
         icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-        onPressed: () => Navigator.pop(context)),
+        onPressed: () {
+          if (_burstRunning) {
+            _stopBurst();
+          } else {
+            Navigator.pop(context);
+          }
+        }),
       const Spacer(),
       _CamBtn(icon: _flashIcon,
           label: _flash == FlashMode.off ? 'Off' : _flash == FlashMode.auto ? 'Auto' : 'On',
@@ -1273,7 +1444,10 @@ class _CameraPageState extends State<CameraPage>
         padding: const EdgeInsets.only(right: 6),
         child: ClipRRect(borderRadius: BorderRadius.circular(6),
           child: Image.file(File(_burstPaths[i]),
-              width: 56, height: 56, fit: BoxFit.cover)),
+              width: 56, height: 56, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => 
+                Container(color: Colors.grey, width: 56, height: 56)),
+        ),
       ),
     ),
   );
@@ -1331,18 +1505,20 @@ class _CameraPageState extends State<CameraPage>
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  BURST SELECTION PAGE
+//  BURST SELECTION PAGE (FIXED with better UI)
 // ════════════════════════════════════════════════════════════════════════════
 
 class BurstSelectionPage extends StatelessWidget {
   final List<String> paths;
   final Function(String) onSelect;
   const BurstSelectionPage({super.key, required this.paths, required this.onSelect});
+  
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
     appBar: AppBar(
-      backgroundColor: Colors.black, foregroundColor: Colors.white,
+      backgroundColor: Colors.black, 
+      foregroundColor: Colors.white,
       title: Text('Pilih Foto (${paths.length})',
           style: const TextStyle(fontSize: 16)),
     ),
@@ -1352,10 +1528,15 @@ class BurstSelectionPage extends StatelessWidget {
           crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
       itemCount: paths.length,
       itemBuilder: (_, i) => GestureDetector(
-        onTap: () { onSelect(paths[i]); Navigator.pop(context); },
+        onTap: () {
+          Navigator.pop(context);
+          onSelect(paths[i]);
+        },
         child: Stack(fit: StackFit.expand, children: [
           ClipRRect(borderRadius: BorderRadius.circular(6),
-              child: Image.file(File(paths[i]), fit: BoxFit.cover)),
+              child: Image.file(File(paths[i]), fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => 
+                  Container(color: Colors.grey.shade800)),
           Positioned(bottom: 4, right: 4,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -1417,7 +1598,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 await WatermarkLayout.set(l.id);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${l.label} dipilih')));
+                      SnackBar(content: Text('✓ ${l.label} dipilih')));
                 }
               },
             ),

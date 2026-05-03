@@ -424,7 +424,7 @@ class Login extends StatelessWidget {
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
+                      color: Colors.white.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(color: Colors.white24),
                     ),
@@ -446,14 +446,14 @@ class Login extends StatelessWidget {
                     'Laporan Lapangan Digital',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: Colors.white.withOpacity(0.7),
                       letterSpacing: 0.5,
                     ),
                   ),
                   const SizedBox(height: 48),
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
+                      color: Colors.white.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.white24),
                     ),
@@ -463,9 +463,9 @@ class Login extends StatelessWidget {
                       decoration: InputDecoration(
                         hintText: 'Nama Teknisi',
                         hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5)),
+                            color: Colors.white.withOpacity(0.5)),
                         prefixIcon: Icon(Icons.person_outline,
-                            color: Colors.white.withValues(alpha: 0.6)),
+                            color: Colors.white.withOpacity(0.6)),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 16),
@@ -967,7 +967,7 @@ class _DashboardHeader extends StatelessWidget {
                           'Selamat datang,',
                           style: TextStyle(
                             fontSize: 12.5,
-                            color: Colors.white.withValues(alpha: 0.65),
+                            color: Colors.white.withOpacity(0.65),
                             letterSpacing: 0.3,
                           ),
                         ),
@@ -991,7 +991,7 @@ class _DashboardHeader extends StatelessWidget {
                         margin: const EdgeInsets.only(right: 8),
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
+                          color: Colors.white.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
@@ -1015,12 +1015,12 @@ class _DashboardHeader extends StatelessWidget {
                     ),
                   IconButton(
                     icon: Icon(Icons.image_outlined,
-                        color: Colors.white.withValues(alpha: 0.85), size: 22),
+                        color: Colors.white.withOpacity(0.85), size: 22),
                     onPressed: onPickLogo,
                   ),
                   IconButton(
                     icon: Icon(Icons.tune_rounded,
-                        color: Colors.white.withValues(alpha: 0.85), size: 22),
+                        color: Colors.white.withOpacity(0.85), size: 22),
                     onPressed: onSettings,
                   ),
                 ],
@@ -1057,9 +1057,9 @@ class _StatChip extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.13),
+      color: Colors.white.withOpacity(0.13),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      border: Border.all(color: Colors.white.withOpacity(0.2)),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -1091,7 +1091,7 @@ class _EmptyState extends StatelessWidget {
           width: 100,
           height: 100,
           decoration: BoxDecoration(
-            color: const Color(0xFF1B4F72).withValues(alpha: 0.08),
+            color: const Color(0xFF1B4F72).withOpacity(0.08),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.add_a_photo_outlined,
@@ -1194,7 +1194,7 @@ class _ItemCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
+                color: Colors.black.withOpacity(0.06),
                 blurRadius: 12,
                 offset: const Offset(0, 3))
           ],
@@ -1233,7 +1233,7 @@ class _ItemCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1B4F72).withValues(alpha: 0.09),
+                          color: const Color(0xFF1B4F72).withOpacity(0.09),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -1313,7 +1313,7 @@ class _ActionBtn extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
+        color: color.withOpacity(0.09),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -1348,7 +1348,7 @@ class _CameraFAB extends StatelessWidget {
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1B4F72).withValues(alpha: 0.45),
+            color: const Color(0xFF1B4F72).withOpacity(0.45),
             blurRadius: 18,
             offset: const Offset(0, 6),
           )
@@ -1914,7 +1914,7 @@ class _CameraPageState extends State<CameraPage>
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !_burstRunning,
-    onPopInvokedWithResult: (didPop, _) {
+    onPopInvoked: (didPop) {
       if (_burstRunning && !didPop) _stopBurst();
     },
     child: Scaffold(
@@ -2311,7 +2311,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: l.accentColor.withValues(alpha: 0.15),
+                backgroundColor: l.accentColor.withOpacity(0.15),
                 child: Icon(l.icon, color: l.accentColor),
               ),
               title: Text(l.label,
@@ -2362,8 +2362,8 @@ class _CamBtn extends StatelessWidget {
           const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: active
-            ? Colors.amber.withValues(alpha: 0.25)
-            : Colors.white.withValues(alpha: 0.10),
+            ? Colors.amber.withOpacity(0.25)
+            : Colors.white.withOpacity(0.10),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: active ? Colors.amber : Colors.white24,
@@ -2409,7 +2409,7 @@ class _CircleBtn extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: 0.12),
+        color: Colors.white.withOpacity(0.12),
         border: Border.all(color: Colors.white30, width: 1),
       ),
       child: Icon(icon, color: Colors.white, size: size * 0.45),

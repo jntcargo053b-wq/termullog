@@ -22,12 +22,6 @@ import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
-// pubspec.yaml dependencies yang perlu ditambahkan:
-//   geolocator: ^12.0.0
-//   http: ^1.2.0
-// Android: tambahkan ACCESS_FINE_LOCATION & ACCESS_COARSE_LOCATION di AndroidManifest.xml
-// iOS: tambahkan NSLocationWhenInUseUsageDescription di Info.plist
-
 // ─── Global cameras list ─────────────────────────────────────────────────────
 List<CameraDescription> _cameras = [];
 
@@ -103,7 +97,6 @@ const List<LayoutInfo> kLayouts = [
 //  WATERMARK ENGINE
 // ════════════════════════════════════════════════════════════════════════════
 
-// Helper: truncate text agar tidak melebihi lebar canvas
 String _trunc(String s, int maxLen) =>
     s.length > maxLen ? '${s.substring(0, maxLen - 1)}.' : s;
 
@@ -135,11 +128,13 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
       }
     }
 
+    // Logo: sudah pre-resized (PNG kecil max 100px), decode ringan
     final logoBytes = p['logoBytes'] as Uint8List?;
     img.Image? logo;
     if (logoBytes != null && logoBytes.isNotEmpty) {
       try {
         logo = img.decodeImage(logoBytes);
+        // Guard: jika masih > max (seharusnya tidak terjadi), resize lagi
         if (logo != null &&
             (logo.width > kLogoMaxWidth || logo.height > kLogoMaxWidth)) {
           logo = img.copyResize(logo,
@@ -177,41 +172,75 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
   }
 }
 
+// ── Layout helpers ────────────────────────────────────────────────────────────
+
+/// Tempatkan signature dengan guard overflow. Jika tidak muat, scale down.
+void _compositeSigSafe(img.Image canvas, img.Image sig,
+    int dstX, int dstY, int canvasH) {
+  if (sig.width <= 0 || sig.height <= 0) return;
+  if (dstY + sig.height <= canvasH) {
+    img.compositeImage(canvas, sig, dstX: dstX, dstY: dstY);
+  } else {
+    final maxH = canvasH - dstY - 8;
+    if (maxH < 16) return;
+    final ratio = maxH / sig.height;
+    final scaled = img.copyResize(sig,
+        width: (sig.width * ratio).toInt(),
+        interpolation: img.Interpolation.linear);
+    img.compositeImage(canvas, scaled, dstX: dstX, dstY: dstY);
+  }
+}
+
 Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time,
     String address, String weather) {
   final W = base.width;
   final H = base.height;
-  // S diperbesar sedikit untuk menampung baris alamat & cuaca
-  final S = (W * 0.26).clamp(340.0, 900.0).toInt();
+
+  // Hitung S berdasarkan kebutuhan konten minimum:
+  // header strip 88 + info box 220 + sig area 140 + padding 40 = 488
+  const int minS = 488;
+  final int S = (W * 0.38).clamp(minS.toDouble(), 1100.0).toInt();
+
   final canvas = img.Image(width: W, height: H + S);
   img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
+
   final navy  = img.ColorRgb8(27, 79, 114);
   final white = img.ColorRgb8(255, 255, 255);
   final gray  = img.ColorRgb8(240, 240, 240);
   final blue2 = img.ColorRgb8(52, 120, 170);
+
+  // Header strip
   img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 88, color: navy);
   img.drawString(canvas, 'DELIVERY REPORT',
       font: img.arial48, x: 20, y: H + 22, color: white);
   img.drawString(canvas, '$date  $time',
       font: img.arial24, x: W - 285, y: H + 32, color: white);
+
+  // Info box — diperluas hingga 220px untuk 6 baris
   final iY = H + 98;
-  img.fillRect(canvas, x1: 0, y1: iY, x2: W, y2: iY + 170, color: gray);
-  img.drawString(canvas, 'TEKNISI: $name',       font: img.arial24, x: 20, y: iY + 14);
-  img.drawString(canvas, 'ID      : $id',         font: img.arial24, x: 20, y: iY + 48);
-  img.drawString(canvas, 'WAKTU  : $date $time', font: img.arial24, x: 20, y: iY + 82);
-  // Alamat & cuaca
-  final adr = _trunc(address, 65);
-  final wth = _trunc(weather, 40);
-  img.drawString(canvas, 'LOKASI : $adr', font: img.arial24, x: 20, y: iY + 116, color: blue2);
-  img.drawString(canvas, 'CUACA  : $wth', font: img.arial24, x: 20, y: iY + 148, color: blue2);
-  if (sig != null && sig.width > 0 && sig.height > 0) {
-    img.compositeImage(canvas, sig, dstX: 20, dstY: iY + 182);
-  }
+  img.fillRect(canvas, x1: 0, y1: iY, x2: W, y2: iY + 220, color: gray);
+  img.drawString(canvas, 'TEKNISI: $name',
+      font: img.arial24, x: 20, y: iY + 14);
+  img.drawString(canvas, 'ID      : $id',
+      font: img.arial24, x: 20, y: iY + 48);
+  img.drawString(canvas, 'WAKTU  : $date $time',
+      font: img.arial24, x: 20, y: iY + 82);
+  img.drawString(canvas, 'LOKASI : ${_trunc(address, 65)}',
+      font: img.arial24, x: 20, y: iY + 116, color: blue2);
+  img.drawString(canvas, 'CUACA  : ${_trunc(weather, 40)}',
+      font: img.arial24, x: 20, y: iY + 150, color: blue2);
+
+  // Logo di pojok kanan info box
   if (logo != null && logo.width > 0 && logo.height > 0) {
     img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 14);
   }
+
+  // Tanda tangan — mulai setelah info box + margin
+  final sigY = iY + 232;
+  if (sig != null) _compositeSigSafe(canvas, sig, 20, sigY, H + S);
+
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
@@ -220,30 +249,41 @@ Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
     String address, String weather) {
   final W = base.width;
   final H = base.height;
-  final S = (W * 0.24).clamp(300.0, 820.0).toInt();
+
+  // min: header 68 + 5 baris info (5×36=180) + sig 140 + padding 50 = 438
+  const int minS = 438;
+  final int S = (W * 0.38).clamp(minS.toDouble(), 1000.0).toInt();
+
   final canvas = img.Image(width: W, height: H + S);
   img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
+
   final green = img.ColorRgb8(39, 174, 96);
   final teal  = img.ColorRgb8(22, 160, 133);
-  img.fillRect(canvas,
-      x1: 0, y1: H, x2: W, y2: H + 68, color: green);
+
+  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 68, color: green);
   img.drawString(canvas, 'PEKERJAAN SELESAI',
       font: img.arial48, x: 20, y: H + 13);
+
   final iY = H + 82;
-  img.drawString(canvas, 'Teknisi : $name',       font: img.arial24, x: 20, y: iY);
-  img.drawString(canvas, 'ID      : $id',          font: img.arial24, x: 20, y: iY + 36);
-  img.drawString(canvas, 'Waktu   : $date $time', font: img.arial24, x: 20, y: iY + 72);
-  final adr = _trunc(address, 65);
-  final wth = _trunc(weather, 40);
-  img.drawString(canvas, 'Lokasi  : $adr', font: img.arial24, x: 20, y: iY + 108, color: teal);
-  img.drawString(canvas, 'Cuaca   : $wth', font: img.arial24, x: 20, y: iY + 142, color: teal);
-  if (sig != null && sig.width > 0 && sig.height > 0) {
-    img.compositeImage(canvas, sig, dstX: 20, dstY: iY + 182);
-  }
+  img.drawString(canvas, 'Teknisi : $name',
+      font: img.arial24, x: 20, y: iY);
+  img.drawString(canvas, 'ID      : $id',
+      font: img.arial24, x: 20, y: iY + 36);
+  img.drawString(canvas, 'Waktu   : $date $time',
+      font: img.arial24, x: 20, y: iY + 72);
+  img.drawString(canvas, 'Lokasi  : ${_trunc(address, 65)}',
+      font: img.arial24, x: 20, y: iY + 108, color: teal);
+  img.drawString(canvas, 'Cuaca   : ${_trunc(weather, 40)}',
+      font: img.arial24, x: 20, y: iY + 144, color: teal);
+
   if (logo != null && logo.width > 0 && logo.height > 0) {
     img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 8);
   }
+
+  final sigY = iY + 192;
+  if (sig != null) _compositeSigSafe(canvas, sig, 20, sigY, H + S);
+
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
@@ -252,45 +292,54 @@ Uint8List _layout3(img.Image base, img.Image? sig, img.Image? logo,
     String address, String weather) {
   final W = base.width;
   final H = base.height;
-  final S = (W * 0.28).clamp(360.0, 950.0).toInt();
+
+  // min: judul 60 + 4 baris info 160 + alamat+cuaca 64 + sig 140 + padding 60 = 484
+  const int minS = 484;
+  final int S = (W * 0.40).clamp(minS.toDouble(), 1100.0).toInt();
+
   final canvas = img.Image(width: W, height: H + S);
   img.fill(canvas, color: img.ColorRgb8(33, 33, 33));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
-  img.fillRect(canvas,
-      x1: 0, y1: H, x2: W, y2: H + S,
+  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + S,
       color: img.ColorRgb8(33, 33, 33));
-  img.fillRect(canvas,
-      x1: 0, y1: H, x2: W, y2: H + 4,
+  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 4,
       color: img.ColorRgb8(212, 175, 55));
-  img.fillRect(canvas,
-      x1: 0, y1: H + 4, x2: 6, y2: H + S,
+  img.fillRect(canvas, x1: 0, y1: H + 4, x2: 6, y2: H + S,
       color: img.ColorRgb8(212, 175, 55));
+
   final white = img.ColorRgb8(255, 255, 255);
   final gold  = img.ColorRgb8(212, 175, 55);
   final cyan  = img.ColorRgb8(100, 210, 210);
   const pX = 26;
+
   img.drawString(canvas, 'LAPORAN TEKNIS',
       font: img.arial48, x: pX, y: H + 18, color: gold);
-  img.drawString(canvas, name,          font: img.arial24, x: pX, y: H + 80,  color: white);
-  img.drawString(canvas, 'ID: $id',     font: img.arial24, x: pX, y: H + 112, color: white);
-  img.drawString(canvas, '$date  $time',font: img.arial24, x: pX, y: H + 144, color: white);
-  // Alamat & cuaca
-  final adr = _trunc(address, 65);
-  final wth = _trunc(weather, 40);
-  img.drawString(canvas, adr, font: img.arial24, x: pX, y: H + 178, color: cyan);
-  img.drawString(canvas, wth, font: img.arial24, x: pX, y: H + 210, color: cyan);
-  if (sig != null && sig.width > 0 && sig.height > 0) {
-    img.fillRect(canvas,
-        x1: pX - 4,
-        y1: H + 246,
-        x2: pX + sig.width + 4,
-        y2: H + 246 + sig.height + 10,
-        color: img.ColorRgba8(255, 255, 255, 25));
-    img.compositeImage(canvas, sig, dstX: pX, dstY: H + 250);
-  }
+  img.drawString(canvas, name,
+      font: img.arial24, x: pX, y: H + 80,  color: white);
+  img.drawString(canvas, 'ID: $id',
+      font: img.arial24, x: pX, y: H + 114, color: white);
+  img.drawString(canvas, '$date  $time',
+      font: img.arial24, x: pX, y: H + 148, color: white);
+  img.drawString(canvas, _trunc(address, 65),
+      font: img.arial24, x: pX, y: H + 184, color: cyan);
+  img.drawString(canvas, _trunc(weather, 40),
+      font: img.arial24, x: pX, y: H + 218, color: cyan);
+
   if (logo != null && logo.width > 0 && logo.height > 0) {
     img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: H + 18);
   }
+
+  final sigY = H + 262;
+  if (sig != null) {
+    // Background transparan untuk area tanda tangan
+    img.fillRect(canvas,
+        x1: pX - 4, y1: sigY - 4,
+        x2: pX + (sig.width > 0 ? sig.width : 200) + 4,
+        y2: sigY + (sig.height > 0 ? sig.height : 80) + 10,
+        color: img.ColorRgba8(255, 255, 255, 25));
+    _compositeSigSafe(canvas, sig, pX, sigY, H + S);
+  }
+
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
@@ -299,13 +348,16 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
     String address, String weather) {
   final fW = base.width;
   final fH = base.height;
-  // Panel dipersempit: 28% lebar foto (max 420px) agar tidak terlalu lebar
-  final pW = (fW * 0.28).clamp(220.0, 420.0).toInt();
+
+  // Panel lebih lebar: 32% (max 460px) agar teks tidak terpotong
+  final pW = (fW * 0.32).clamp(260.0, 460.0).toInt();
   final W  = fW + pW;
   final H  = fH;
   final canvas = img.Image(width: W, height: H);
   img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
+
+  // Gradient ungu pada panel kanan
   for (int y = 0; y < H; y++) {
     final t = y / H;
     img.fillRect(canvas,
@@ -316,64 +368,100 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
           (107 + (131 - 107) * t).round(),
         ));
   }
-  img.fillRect(canvas,
-      x1: fW, y1: 0, x2: fW + 4, y2: H,
+  img.fillRect(canvas, x1: fW, y1: 0, x2: fW + 4, y2: H,
       color: img.ColorRgb8(212, 175, 55));
+
   final white = img.ColorRgb8(255, 255, 255);
   final gold  = img.ColorRgb8(212, 175, 55);
   final cyan  = img.ColorRgb8(100, 210, 210);
   final tX    = fW + 4 + 14;
 
-  // Distribusi vertikal proporsional berdasarkan tinggi panel (H)
-  final step = (H / 12).clamp(36.0, 72.0).toInt();
-  int yy = 22;
+  // Max chars berdasarkan lebar panel (font arial14 ~7px/char)
+  final maxC = ((pW - 28) / 7).floor().clamp(18, 38);
 
-  void _safeText14(String text, int x, int y, img.Color color) {
-    if (y + 16 < H) img.drawString(canvas, text, font: img.arial14, x: x, y: y, color: color);
+  // Step vertikal proporsional berdasarkan tinggi foto
+  // Bagi H menjadi zona: nama, tiket, tanggal, jam, lokasi, cuaca, ttd
+  // Total zona = 7, sisakan ruang tanda tangan ~H*0.18
+  final availH  = (H * 0.82).toInt();
+  final zoneH   = (availH / 8).clamp(28.0, 60.0).toInt();
+  final labelH  = 16; // tinggi font arial14
+  final valueH  = zoneH - labelH - 4;
+
+  int yy = 18;
+
+  void safeLabel(String text, int y) {
+    if (y + labelH < H) {
+      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: gold);
+    }
   }
-  void _safeText24(String text, int x, int y, img.Color color) {
-    if (y + 26 < H) img.drawString(canvas, text, font: img.arial24, x: x, y: y, color: color);
+
+  void safeValue14(String text, int y, img.Color color) {
+    if (y + labelH < H) {
+      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: color);
+    }
   }
 
-  // Max chars disesuaikan lebar panel
-  final maxC = ((pW - 28) / 8).floor().clamp(14, 30);
+  void safeDivider(int y) {
+    if (y + 2 < H) {
+      img.fillRect(canvas, x1: tX, y1: y, x2: W - 10, y2: y + 2, color: gold);
+    }
+  }
 
-  _safeText14('TEKNISI',     tX, yy, gold); yy += 16;
-  _safeText24(_trunc(name, maxC), tX, yy, white); yy += step;
-  if (yy < H) img.fillRect(canvas, x1: tX, y1: yy, x2: W - 14, y2: yy + 2, color: gold);
-  yy += 10;
-  _safeText14('NO. TIKET',   tX, yy, gold); yy += 16;
-  _safeText14(_trunc(id, maxC), tX, yy, white); yy += step ~/ 2 + 14;
-  _safeText14('TANGGAL',     tX, yy, gold); yy += 16;
-  _safeText14(date,          tX, yy, white); yy += step ~/ 2 + 6;
-  _safeText14('JAM',         tX, yy, gold); yy += 16;
-  _safeText14(time,          tX, yy, white); yy += step ~/ 2 + 6;
-  if (yy + 2 < H) img.fillRect(canvas, x1: tX, y1: yy, x2: W - 14, y2: yy + 2, color: gold);
-  yy += 10;
-  // Alamat & cuaca
-  _safeText14('LOKASI',      tX, yy, gold); yy += 16;
-  _safeText14(_trunc(address, maxC), tX, yy, cyan); yy += step ~/ 2 + 4;
-  _safeText14('CUACA',       tX, yy, gold); yy += 16;
-  _safeText14(_trunc(weather, maxC), tX, yy, cyan); yy += step ~/ 2 + 4;
-  if (yy + 2 < H) img.fillRect(canvas, x1: tX, y1: yy, x2: W - 14, y2: yy + 2, color: gold);
-  yy += 10;
-  _safeText14('TANDA TANGAN', tX, yy, gold); yy += 18;
+  // TEKNISI
+  safeLabel('TEKNISI', yy); yy += labelH + 2;
+  safeValue14(_trunc(name, maxC), yy, white); yy += valueH + 4;
+  safeDivider(yy); yy += 8;
+
+  // NO. TIKET
+  safeLabel('NO. TIKET', yy); yy += labelH + 2;
+  safeValue14(_trunc(id, maxC), yy, white); yy += (valueH * 0.75).toInt() + 4;
+
+  // TANGGAL
+  safeLabel('TANGGAL', yy); yy += labelH + 2;
+  safeValue14(date, yy, white); yy += (valueH * 0.75).toInt() + 2;
+
+  // JAM
+  safeLabel('JAM', yy); yy += labelH + 2;
+  safeValue14(time, yy, white); yy += (valueH * 0.75).toInt() + 4;
+  safeDivider(yy); yy += 8;
+
+  // LOKASI
+  safeLabel('LOKASI', yy); yy += labelH + 2;
+  safeValue14(_trunc(address, maxC), yy, cyan); yy += (valueH * 0.75).toInt() + 2;
+
+  // CUACA
+  safeLabel('CUACA', yy); yy += labelH + 2;
+  safeValue14(_trunc(weather, maxC), yy, cyan); yy += (valueH * 0.75).toInt() + 4;
+  safeDivider(yy); yy += 8;
+
+  // TANDA TANGAN
+  safeLabel('TANDA TANGAN', yy); yy += labelH + 4;
 
   if (sig != null && sig.width > 0 && sig.height > 0) {
-    final maxSigW = pW - 28 - 4;
+    final maxSigW = pW - 28;
     img.Image s = sig;
     if (s.width > maxSigW) {
       s = img.copyResize(s,
           width: maxSigW, interpolation: img.Interpolation.linear);
     }
+    // Scale down jika tinggi melebihi ruang tersisa
+    final roomH = H - yy - 16;
+    if (roomH > 16 && s.height > roomH) {
+      final ratio = roomH / s.height;
+      s = img.copyResize(s,
+          width: (s.width * ratio).toInt(),
+          interpolation: img.Interpolation.linear);
+    }
     if (yy + s.height < H) {
       img.compositeImage(canvas, s, dstX: tX, dstY: yy);
     }
   }
+
   if (logo != null && logo.width > 0 && logo.height > 0) {
     img.compositeImage(canvas, logo,
         dstX: W - logo.width - 14, dstY: H - logo.height - 14);
   }
+
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
@@ -432,24 +520,20 @@ class Login extends StatelessWidget {
                         color: Colors.white, size: 40),
                   ),
                   const SizedBox(height: 24),
-                  const Text(
-                    'TermulLog',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
+                  const Text('TermulLog',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
+                      )),
                   const SizedBox(height: 6),
-                  Text(
-                    'Laporan Lapangan Digital',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withOpacity(0.7),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
+                  Text('Laporan Lapangan Digital',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.7),
+                        letterSpacing: 0.5,
+                      )),
                   const SizedBox(height: 48),
                   Container(
                     decoration: BoxDecoration(
@@ -462,8 +546,8 @@ class Login extends StatelessWidget {
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         hintText: 'Nama Teknisi',
-                        hintStyle: TextStyle(
-                            color: Colors.white.withOpacity(0.5)),
+                        hintStyle:
+                            TextStyle(color: Colors.white.withOpacity(0.5)),
                         prefixIcon: Icon(Icons.person_outline,
                             color: Colors.white.withOpacity(0.6)),
                         border: InputBorder.none,
@@ -497,7 +581,8 @@ class Login extends StatelessWidget {
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => Dashboard(name: c.text.trim())),
+                              builder: (_) =>
+                                  Dashboard(name: c.text.trim())),
                         );
                       },
                       child: const Text('Masuk',
@@ -577,12 +662,11 @@ class LocationWeatherService {
         desiredAccuracy: LocationAccuracy.medium,
       ).timeout(const Duration(seconds: 12));
 
-      final lat = pos.latitude;
-      final lon = pos.longitude;
+      final lat    = pos.latitude;
+      final lon    = pos.longitude;
       final latStr = lat.toStringAsFixed(6);
       final lonStr = lon.toStringAsFixed(6);
 
-      // Reverse geocode via Nominatim (gratis, tanpa API key)
       try {
         final geoUri = Uri.parse(
           'https://nominatim.openstreetmap.org/reverse'
@@ -595,22 +679,19 @@ class LocationWeatherService {
           final data = jsonDecode(geoRes.body) as Map<String, dynamic>;
           final addr = data['address'] as Map<String, dynamic>?;
           if (addr != null) {
-            final parts = <String>[];
-            final road   = addr['road']    as String?;
-            final suburb = addr['suburb']  as String? ?? addr['village'] as String?;
-            final city   = addr['city']    as String?
-                        ?? addr['town']    as String?
-                        ?? addr['county']  as String?;
+            final parts  = <String>[];
+            final road   = addr['road']   as String?;
+            final suburb = addr['suburb'] as String? ?? addr['village'] as String?;
+            final city   = addr['city']   as String?
+                        ?? addr['town']   as String?
+                        ?? addr['county'] as String?;
             if (road   != null && road.isNotEmpty)   parts.add(road);
             if (suburb != null && suburb.isNotEmpty) parts.add(suburb);
             if (city   != null && city.isNotEmpty)   parts.add(city);
             address = parts.take(3).join(', ');
             if (address.isEmpty) {
               address = ((data['display_name'] as String?) ?? '')
-                  .split(',')
-                  .take(2)
-                  .join(',')
-                  .trim();
+                  .split(',').take(2).join(',').trim();
             }
           }
         }
@@ -619,24 +700,21 @@ class LocationWeatherService {
         address = 'GPS: ${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}';
       }
 
-      // Cuaca via Open-Meteo (gratis, tanpa API key)
       try {
         final wUri = Uri.parse(
           'https://api.open-meteo.com/v1/forecast'
           '?latitude=$latStr&longitude=$lonStr'
           '&current=temperature_2m,weathercode&timezone=auto',
         );
-        final wRes =
-            await http.get(wUri).timeout(const Duration(seconds: 8));
+        final wRes = await http.get(wUri).timeout(const Duration(seconds: 8));
         if (wRes.statusCode == 200) {
-          final wData = jsonDecode(wRes.body) as Map<String, dynamic>;
+          final wData   = jsonDecode(wRes.body) as Map<String, dynamic>;
           final current = wData['current'] as Map<String, dynamic>?;
           if (current != null) {
             final temp = (current['temperature_2m'] as num?)
-                    ?.toStringAsFixed(0) ??
-                '--';
+                    ?.toStringAsFixed(0) ?? '--';
             final code = (current['weathercode'] as num?)?.toInt() ?? 0;
-            weather = '${_wmoDesc(code)} ${temp}C';
+            weather = '${_wmoDesc(code)} ${temp}°C';
           }
         }
       } catch (e) {
@@ -649,43 +727,52 @@ class LocationWeatherService {
   }
 
   static String _wmoDesc(int c) {
-    if (c == 0)    return 'Cerah';
-    if (c <= 3)    return 'Berawan';
-    if (c <= 49)   return 'Berkabut';
-    if (c <= 59)   return 'Gerimis';
-    if (c <= 67)   return 'Hujan';
-    if (c <= 77)   return 'Bersalju';
-    if (c <= 82)   return 'Hujan Lebat';
-    if (c <= 86)   return 'Salju Lebat';
-    if (c == 95)   return 'Badai Petir';
-    if (c <= 99)   return 'Badai+Hujan Es';
+    if (c == 0)  return 'Cerah';
+    if (c <= 3)  return 'Berawan';
+    if (c <= 49) return 'Berkabut';
+    if (c <= 59) return 'Gerimis';
+    if (c <= 67) return 'Hujan';
+    if (c <= 77) return 'Bersalju';
+    if (c <= 82) return 'Hujan Lebat';
+    if (c <= 86) return 'Salju Lebat';
+    if (c == 95) return 'Badai Petir';
+    if (c <= 99) return 'Badai+Hujan Es';
     return 'Tidak diketahui';
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  LOGO CACHE
+//  LOGO CACHE  ← PERBAIKAN UTAMA: pre-decode & resize sekali saat dipilih
 // ════════════════════════════════════════════════════════════════════════════
 
 class LogoCache {
-  static Uint8List? _bytes;
-  static img.Image? _decoded; // ← tambah cache decoded
-  static String?    _path;
+  static Uint8List?  _bytes;
+  static img.Image?  _decoded; // cache hasil decode+resize
+  static String?     _path;
 
+  /// Load, decode, dan resize logo SEKALI di main isolate.
+  /// Isolate compute() hanya menerima PNG kecil (max 100px).
   static Future<void> load(String path) async {
-    if (_path == path) return;
+    if (_path == path) return; // sudah di-cache, skip
     try {
       final file = File(path);
-      if (!await file.exists()) return;
+      if (!await file.exists()) {
+        debugPrint('Logo file not found: $path');
+        return;
+      }
       final raw = await file.readAsBytes();
-      // Decode & resize sekali di sini, bukan di isolate
       img.Image? decoded = img.decodeImage(raw);
-      if (decoded != null &&
-          (decoded.width > kLogoMaxWidth || decoded.height > kLogoMaxWidth)) {
+      if (decoded == null) return;
+
+      // Resize ke max kLogoMaxWidth sekali di sini
+      if (decoded.width > kLogoMaxWidth || decoded.height > kLogoMaxWidth) {
         decoded = img.copyResize(decoded,
             width: kLogoMaxWidth, interpolation: img.Interpolation.linear);
       }
-      _bytes   = raw;
+      if (decoded.width <= 0 || decoded.height <= 0) return;
+
+      // Encode kembali ke PNG kecil — ini yang dikirim ke isolate
+      _bytes   = Uint8List.fromList(img.encodePng(decoded));
       _decoded = decoded;
       _path    = path;
     } catch (e) {
@@ -694,9 +781,12 @@ class LogoCache {
     }
   }
 
-  static Uint8List? get bytes   => _bytes;
-  static img.Image? get decoded => _decoded;
-  static void clear() { _bytes = null; _decoded = null; _path = null; }
+  static Uint8List?  get bytes   => _bytes;
+  static img.Image?  get decoded => _decoded;
+
+  static void clear() {
+    _bytes = null; _decoded = null; _path = null;
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -816,8 +906,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Gagal share: $e'),
+          SnackBar(content: Text('Gagal share: $e'),
               backgroundColor: Colors.red.shade700),
         );
       }
@@ -830,7 +919,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
+            content: Text(
+                ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
             backgroundColor:
                 ok == true ? Colors.green.shade700 : Colors.red.shade700,
             duration: const Duration(seconds: 2),
@@ -840,8 +930,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'),
+          SnackBar(content: Text('Error: $e'),
               backgroundColor: Colors.red.shade700),
         );
       }
@@ -869,8 +958,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     } catch (_) {}
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Laporan dihapus'),
+        const SnackBar(content: Text('Laporan dihapus'),
             backgroundColor: Colors.grey),
       );
     }
@@ -967,24 +1055,20 @@ class _DashboardHeader extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Selamat datang,',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: Colors.white.withOpacity(0.65),
-                            letterSpacing: 0.3,
-                          ),
-                        ),
+                        Text('Selamat datang,',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.white.withOpacity(0.65),
+                              letterSpacing: 0.3,
+                            )),
                         const SizedBox(height: 2),
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Text(name,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),
@@ -1001,15 +1085,12 @@ class _DashboardHeader extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Image.file(
-                              File(logoPath!),
-                              height: 30,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.broken_image,
-                                color: Colors.white70,
-                                size: 30,
-                              ),
-                            ),
+                            Image.file(File(logoPath!),
+                                height: 30,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.broken_image,
+                                    color: Colors.white70,
+                                    size: 30)),
                             const SizedBox(width: 4),
                             const Icon(Icons.close,
                                 size: 14, color: Colors.white70),
@@ -1070,13 +1151,11 @@ class _StatChip extends StatelessWidget {
       children: [
         Icon(icon, color: Colors.white70, size: 16),
         const SizedBox(width: 7),
-        Text(
-          '$value $label',
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600),
-        ),
+        Text('$value $label',
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600)),
       ],
     ),
   );
@@ -1102,18 +1181,14 @@ class _EmptyState extends StatelessWidget {
               size: 44, color: Color(0xFF1B4F72)),
         ),
         const SizedBox(height: 20),
-        const Text(
-          'Belum ada laporan',
-          style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1B4F72)),
-        ),
+        const Text('Belum ada laporan',
+            style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1B4F72))),
         const SizedBox(height: 6),
-        Text(
-          'Ketuk tombol kamera untuk mulai',
-          style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-        ),
+        Text('Ketuk tombol kamera untuk mulai',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
         const SizedBox(height: 28),
         OutlinedButton.icon(
           onPressed: onCapture,
@@ -1122,8 +1197,7 @@ class _EmptyState extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFF1B4F72),
             side: const BorderSide(color: Color(0xFF1B4F72)),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14)),
           ),
@@ -1160,15 +1234,15 @@ class _ItemCard extends StatelessWidget {
         child: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.delete_outline_rounded,
-                color: Colors.white, size: 26),
+            Icon(Icons.delete_outline_rounded, color: Colors.white, size: 26),
             SizedBox(height: 4),
             Text('Hapus',
                 style: TextStyle(color: Colors.white, fontSize: 11)),
           ],
         ),
       ),
-      confirmDismiss: (_) async => await showDialog<bool>(
+      confirmDismiss: (_) async =>
+          await showDialog<bool>(
             context: context,
             builder: (_) => AlertDialog(
               title: const Text('Hapus Laporan?'),
@@ -1181,8 +1255,8 @@ class _ItemCard extends StatelessWidget {
                     child: const Text('Batal')),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context, true),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Colors.red),
                   child: const Text('Hapus',
                       style: TextStyle(color: Colors.white)),
                 ),
@@ -1237,18 +1311,17 @@ class _ItemCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1B4F72).withOpacity(0.09),
+                          color:
+                              const Color(0xFF1B4F72).withOpacity(0.09),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text(
-                          item.id,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1B4F72),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        child: Text(item.id,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1B4F72),
+                            ),
+                            overflow: TextOverflow.ellipsis),
                       ),
                       const SizedBox(height: 6),
                       Row(
@@ -1399,15 +1472,13 @@ class PreviewPage extends StatelessWidget {
         title: Text(item.id, style: const TextStyle(fontSize: 14)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.share_outlined),
-            onPressed: onShare,
-            tooltip: 'Bagikan',
-          ),
+              icon: const Icon(Icons.share_outlined),
+              onPressed: onShare,
+              tooltip: 'Bagikan'),
           IconButton(
-            icon: const Icon(Icons.save_alt_rounded),
-            onPressed: onSave,
-            tooltip: 'Simpan ke galeri',
-          ),
+              icon: const Icon(Icons.save_alt_rounded),
+              onPressed: onSave,
+              tooltip: 'Simpan ke galeri'),
         ],
       ),
       body: Center(
@@ -1499,6 +1570,7 @@ class _SignaturePageState extends State<SignaturePage> {
     setState(() => _saving = true);
     try {
       final imageBytes = await File(widget.imagePath).readAsBytes();
+
       Uint8List? sigBytes;
       if (_signature.isNotEmpty) {
         try {
@@ -1509,17 +1581,20 @@ class _SignaturePageState extends State<SignaturePage> {
         }
       }
 
+      // ── PERBAIKAN: kirim LogoCache.bytes yang sudah pre-resized (PNG kecil)
+      // LogoCache.load() sudah decode+resize+encode ke PNG max 100px,
+      // sehingga isolate compute() tidak perlu kerja berat lagi.
       final result = await compute(_processWatermark, {
         'imageBytes': imageBytes,
-        'sigBytes': sigBytes,
-        'logoBytes': LogoCache.bytes,
-        'layout': WatermarkLayout.get(),
-        'name': widget.techName,
-        'id': widget.itemId,
-        'date': DateFormat('dd/MM/yyyy').format(DateTime.now()),
-        'time': DateFormat('HH:mm:ss').format(DateTime.now()),
-        'address': _address,
-        'weather': _weather,
+        'sigBytes':   sigBytes,
+        'logoBytes':  LogoCache.bytes, // ← PNG kecil pre-resized, bukan raw file
+        'layout':     WatermarkLayout.get(),
+        'name':       widget.techName,
+        'id':         widget.itemId,
+        'date':       DateFormat('dd/MM/yyyy').format(DateTime.now()),
+        'time':       DateFormat('HH:mm:ss').format(DateTime.now()),
+        'address':    _address,
+        'weather':    _weather,
       });
 
       final dir  = await getApplicationDocumentsDirectory();
@@ -1580,11 +1655,12 @@ class _SignaturePageState extends State<SignaturePage> {
               ),
             ),
           ),
-          // ── Info lokasi & cuaca ──────────────────────────────────────────
+          // ── Info lokasi & cuaca ─────────────────────────────────────────
           Container(
             width: double.infinity,
             color: const Color(0xFF0D2137),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: _locationLoading
                 ? const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1597,8 +1673,8 @@ class _SignaturePageState extends State<SignaturePage> {
                       ),
                       SizedBox(width: 10),
                       Text('Mengambil lokasi & cuaca...',
-                          style:
-                              TextStyle(color: Colors.white54, fontSize: 11)),
+                          style: TextStyle(
+                              color: Colors.white54, fontSize: 11)),
                     ],
                   )
                 : Column(
@@ -1610,13 +1686,11 @@ class _SignaturePageState extends State<SignaturePage> {
                               size: 13, color: Colors.amber),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(
-                              _address,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 11),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            child: Text(_address,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 11),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
                           ),
                         ],
                       ),
@@ -1626,11 +1700,9 @@ class _SignaturePageState extends State<SignaturePage> {
                           const Icon(Icons.wb_sunny_outlined,
                               size: 13, color: Colors.amber),
                           const SizedBox(width: 6),
-                          Text(
-                            _weather,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 11),
-                          ),
+                          Text(_weather,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11)),
                         ],
                       ),
                     ],
@@ -1646,11 +1718,9 @@ class _SignaturePageState extends State<SignaturePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Tanda Tangan Teknisi',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700),
-                ),
+                const Text('Tanda Tangan Teknisi',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 12),
                 Container(
                   height: 160,
@@ -1685,16 +1755,15 @@ class _SignaturePageState extends State<SignaturePage> {
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white),
+                                    strokeWidth: 2, color: Colors.white),
                               )
                             : const Icon(Icons.save_alt_rounded),
-                        label: Text(_saving ? 'Menyimpan...' : 'Simpan'),
+                        label:
+                            Text(_saving ? 'Menyimpan...' : 'Simpan'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1B4F72),
                           foregroundColor: Colors.white,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
                     ),
@@ -1795,8 +1864,7 @@ class _CameraPageState extends State<CameraPage>
       debugPrint('Camera init error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error kamera: $e'),
+          SnackBar(content: Text('Error kamera: $e'),
               backgroundColor: Colors.red.shade700),
         );
       }
@@ -1864,8 +1932,8 @@ class _CameraPageState extends State<CameraPage>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Error kamera: ${e.toString().substring(0, e.toString().length.clamp(0, 100))}'),
+            content: Text('Error kamera: ${e.toString().substring(
+                0, e.toString().length.clamp(0, 100))}'),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -2070,14 +2138,12 @@ class _CameraPageState extends State<CameraPage>
                       const Icon(Icons.fiber_manual_record,
                           color: Colors.white, size: 10),
                       const SizedBox(width: 5),
-                      Text(
-                        '${_burstPaths.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      Text('${_burstPaths.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          )),
                     ],
                   ),
                 ),
@@ -2093,8 +2159,7 @@ class _CameraPageState extends State<CameraPage>
     color: Colors.black87,
     child: ListView.builder(
       scrollDirection: Axis.horizontal,
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       itemCount: _burstPaths.length,
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.only(right: 6),
@@ -2105,11 +2170,8 @@ class _CameraPageState extends State<CameraPage>
             width: 56,
             height: 56,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              color: Colors.grey,
-              width: 56,
-              height: 56,
-            ),
+            errorBuilder: (_, __, ___) =>
+                Container(color: Colors.grey, width: 56, height: 56),
           ),
         ),
       ),
@@ -2137,9 +2199,7 @@ class _CameraPageState extends State<CameraPage>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: _burstRunning
-                    ? Colors.red.shade400
-                    : Colors.white,
+                color: _burstRunning ? Colors.red.shade400 : Colors.white,
                 width: 4,
               ),
             ),
@@ -2152,8 +2212,8 @@ class _CameraPageState extends State<CameraPage>
                   color: _burstRunning
                       ? Colors.red.shade500
                       : Colors.white,
-                  borderRadius: BorderRadius.circular(
-                      _burstRunning ? 6 : 27),
+                  borderRadius:
+                      BorderRadius.circular(_burstRunning ? 6 : 27),
                 ),
               ),
             ),
@@ -2180,13 +2240,11 @@ class _CameraPageState extends State<CameraPage>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
-            Text(
-              'Petunjuk Kamera',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700),
-            ),
+            Text('Petunjuk Kamera',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
             SizedBox(height: 14),
             _InfoRow(
                 icon: Icons.touch_app_rounded,
@@ -2266,13 +2324,11 @@ class BurstSelectionPage extends StatelessWidget {
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  '${i + 1}',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700),
-                ),
+                child: Text('${i + 1}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
               ),
             ),
           ],
@@ -2319,7 +2375,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Icon(l.icon, color: l.accentColor),
               ),
               title: Text(l.label,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                  style:
+                      const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text(l.description),
               trailing: active
                   ? Icon(Icons.check_circle, color: l.accentColor)
@@ -2329,7 +2386,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 await WatermarkLayout.set(l.id);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('✓ ${l.label} dipilih')),
+                    SnackBar(
+                        content: Text('✓ ${l.label} dipilih')),
                   );
                 }
               },
@@ -2362,8 +2420,7 @@ class _CamBtn extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: active
             ? Colors.amber.withOpacity(0.25)
@@ -2380,14 +2437,12 @@ class _CamBtn extends StatelessWidget {
           Icon(icon,
               color: active ? Colors.amber : Colors.white, size: 20),
           const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              color: active ? Colors.amber : Colors.white70,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(label,
+              style: TextStyle(
+                color: active ? Colors.amber : Colors.white70,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              )),
         ],
       ),
     ),
@@ -2455,14 +2510,12 @@ class _InfoRow extends StatelessWidget {
         Icon(icon, color: Colors.amber, size: 18),
         const SizedBox(width: 12),
         Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 13.5,
-              height: 1.4,
-            ),
-          ),
+          child: Text(text,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13.5,
+                height: 1.4,
+              )),
         ),
       ],
     ),

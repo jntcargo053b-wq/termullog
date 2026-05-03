@@ -47,3 +47,8 @@ flutter:
 
   assets:
     - assets/logo.png
+
+dependency_overrides:
+  geolocator_android: ^5.0.0
+  geolocator_web: ^4.1.0
+  geolocator_platform_interface: ^4.2.0

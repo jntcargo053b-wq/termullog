@@ -669,30 +669,34 @@ class LocationWeatherService {
 
 class LogoCache {
   static Uint8List? _bytes;
+  static img.Image? _decoded; // ← tambah cache decoded
   static String?    _path;
 
   static Future<void> load(String path) async {
     if (_path == path) return;
     try {
       final file = File(path);
-      if (!await file.exists()) {
-        debugPrint('Logo file not found: $path');
-        return;
+      if (!await file.exists()) return;
+      final raw = await file.readAsBytes();
+      // Decode & resize sekali di sini, bukan di isolate
+      img.Image? decoded = img.decodeImage(raw);
+      if (decoded != null &&
+          (decoded.width > kLogoMaxWidth || decoded.height > kLogoMaxWidth)) {
+        decoded = img.copyResize(decoded,
+            width: kLogoMaxWidth, interpolation: img.Interpolation.linear);
       }
-      _bytes = await file.readAsBytes();
-      _path  = path;
+      _bytes   = raw;
+      _decoded = decoded;
+      _path    = path;
     } catch (e) {
       debugPrint('Failed to load logo: $e');
-      _bytes = null;
-      _path  = null;
+      _bytes = null; _decoded = null; _path = null;
     }
   }
 
-  static Uint8List? get bytes => _bytes;
-  static void clear() {
-    _bytes = null;
-    _path  = null;
-  }
+  static Uint8List? get bytes   => _bytes;
+  static img.Image? get decoded => _decoded;
+  static void clear() { _bytes = null; _decoded = null; _path = null; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

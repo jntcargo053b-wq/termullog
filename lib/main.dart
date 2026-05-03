@@ -288,27 +288,27 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
   final gold  = img.ColorRgb8(212, 175, 55);
   final tX    = fW + 5 + 18;
 
-  void _safeText(String text, img.BitmapFont font, int x, int y, img.Color color) {
+  void safeText(String text, img.BitmapFont font, int x, int y, img.Color color) {
     if (y + 60 < H) img.drawString(canvas, text, font: font, x: x, y: y, color: color);
   }
 
-  _safeText('TEKNISI',  img.arial24, tX, 30,  gold);
-  _safeText(name,       img.arial48, tX, 58,  white);
+  safeText('TEKNISI',  img.arial24, tX, 30,  gold);
+  safeText(name,       img.arial48, tX, 58,  white);
   if (118 < H) {
     img.fillRect(canvas, x1: tX, y1: 118, x2: W - 18, y2: 121,
         color: img.ColorRgb8(212, 175, 55));
   }
-  _safeText('NO. TIKET', img.arial24, tX, 132, gold);
-  _safeText(id,           img.arial24, tX, 160, white);
-  _safeText('TANGGAL',    img.arial24, tX, 203, gold);
-  _safeText(date,         img.arial24, tX, 231, white);
-  _safeText('JAM',        img.arial24, tX, 274, gold);
-  _safeText(time,         img.arial24, tX, 302, white);
+  safeText('NO. TIKET', img.arial24, tX, 132, gold);
+  safeText(id,           img.arial24, tX, 160, white);
+  safeText('TANGGAL',    img.arial24, tX, 203, gold);
+  safeText(date,         img.arial24, tX, 231, white);
+  safeText('JAM',        img.arial24, tX, 274, gold);
+  safeText(time,         img.arial24, tX, 302, white);
   if (345 < H) {
     img.fillRect(canvas, x1: tX, y1: 345, x2: W - 18, y2: 348,
         color: img.ColorRgb8(212, 175, 55));
   }
-  _safeText('TANDA TANGAN', img.arial24, tX, 358, gold);
+  safeText('TANDA TANGAN', img.arial24, tX, 358, gold);
 
   if (sig != null && sig.width > 0 && sig.height > 0) {
     final maxSigW = pW - 36 - 5;
@@ -375,7 +375,7 @@ class Login extends StatelessWidget {
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
+                      color: Colors.white.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(color: Colors.white24),
                     ),
@@ -397,14 +397,14 @@ class Login extends StatelessWidget {
                     'Laporan Lapangan Digital',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: Colors.white.withOpacity(0.7),
                       letterSpacing: 0.5,
                     ),
                   ),
                   const SizedBox(height: 48),
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
+                      color: Colors.white.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.white24),
                     ),
@@ -414,9 +414,9 @@ class Login extends StatelessWidget {
                       decoration: InputDecoration(
                         hintText: 'Nama Teknisi',
                         hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5)),
+                            color: Colors.white.withOpacity(0.5)),
                         prefixIcon: Icon(Icons.person_outline,
-                            color: Colors.white.withValues(alpha: 0.6)),
+                            color: Colors.white.withOpacity(0.6)),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 16),
@@ -807,7 +807,7 @@ class _DashboardHeader extends StatelessWidget {
                           'Selamat datang,',
                           style: TextStyle(
                             fontSize: 12.5,
-                            color: Colors.white.withValues(alpha: 0.65),
+                            color: Colors.white.withOpacity(0.65),
                             letterSpacing: 0.3,
                           ),
                         ),
@@ -831,7 +831,7 @@ class _DashboardHeader extends StatelessWidget {
                         margin: const EdgeInsets.only(right: 8),
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
+                          color: Colors.white.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
@@ -855,12 +855,12 @@ class _DashboardHeader extends StatelessWidget {
                     ),
                   IconButton(
                     icon: Icon(Icons.image_outlined,
-                        color: Colors.white.withValues(alpha: 0.85), size: 22),
+                        color: Colors.white.withOpacity(0.85), size: 22),
                     onPressed: onPickLogo,
                   ),
                   IconButton(
                     icon: Icon(Icons.tune_rounded,
-                        color: Colors.white.withValues(alpha: 0.85), size: 22),
+                        color: Colors.white.withOpacity(0.85), size: 22),
                     onPressed: onSettings,
                   ),
                 ],
@@ -897,9 +897,9 @@ class _StatChip extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.13),
+      color: Colors.white.withOpacity(0.13),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      border: Border.all(color: Colors.white.withOpacity(0.2)),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -931,7 +931,7 @@ class _EmptyState extends StatelessWidget {
           width: 100,
           height: 100,
           decoration: BoxDecoration(
-            color: const Color(0xFF1B4F72).withValues(alpha: 0.08),
+            color: const Color(0xFF1B4F72).withOpacity(0.08),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.add_a_photo_outlined,
@@ -1034,7 +1034,7 @@ class _ItemCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
+                color: Colors.black.withOpacity(0.06),
                 blurRadius: 12,
                 offset: const Offset(0, 3))
           ],
@@ -1073,7 +1073,7 @@ class _ItemCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1B4F72).withValues(alpha: 0.09),
+                          color: const Color(0xFF1B4F72).withOpacity(0.09),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -1153,7 +1153,7 @@ class _ActionBtn extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
+        color: color.withOpacity(0.09),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -1188,7 +1188,7 @@ class _CameraFAB extends StatelessWidget {
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1B4F72).withValues(alpha: 0.45),
+            color: const Color(0xFF1B4F72).withOpacity(0.45),
             blurRadius: 18,
             offset: const Offset(0, 6),
           )
@@ -1468,6 +1468,122 @@ class _SignaturePageState extends State<SignaturePage> {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+//  SETTINGS PAGE
+// ════════════════════════════════════════════════════════════════════════════
+
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key});
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  String _selected = WatermarkLayout.get();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pengaturan Layout'),
+        backgroundColor: const Color(0xFF1B4F72),
+        foregroundColor: Colors.white,
+      ),
+      backgroundColor: const Color(0xFFF4F6F9),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Pilih Template Watermark',
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1B4F72)),
+            ),
+          ),
+          ...kLayouts.map((layout) => _LayoutCard(
+                layout: layout,
+                selected: _selected == layout.id,
+                onTap: () async {
+                  await WatermarkLayout.set(layout.id);
+                  setState(() => _selected = layout.id);
+                },
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class _LayoutCard extends StatelessWidget {
+  final LayoutInfo layout;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _LayoutCard({
+    required this.layout,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: selected ? layout.accentColor : Colors.transparent,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: layout.accentColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(layout.icon, color: layout.accentColor, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(layout.label,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text(layout.description,
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade600)),
+              ],
+            ),
+          ),
+          if (selected)
+            Icon(Icons.check_circle_rounded,
+                color: layout.accentColor, size: 24),
+        ],
+      ),
+    ),
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 //  CAMERA PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -1676,7 +1792,7 @@ class _CameraPageState extends State<CameraPage>
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !_burstRunning,
-    onPopInvokedWithResult: (didPop, _) {
+    onPopInvoked: (didPop) {
       if (_burstRunning && !didPop) _stopBurst();
     },
     child: Scaffold(
@@ -1785,7 +1901,7 @@ class _CameraPageState extends State<CameraPage>
               Positioned(
                 left: _focusPoint!.dx - 28,
                 top:  _focusPoint!.dy - 28,
-                child: _FocusBox(),
+                child: const _FocusBox(),
               ),
             if (_zoom > _minZoom + 0.05)
               Positioned(
@@ -1932,12 +2048,12 @@ class _CameraPageState extends State<CameraPage>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      builder: (_) => const Padding(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text(
               'Petunjuk Kamera',
               style: TextStyle(
@@ -1954,8 +2070,7 @@ class _CameraPageState extends State<CameraPage>
                 text: 'Jepit/rentang untuk zoom'),
             _InfoRow(
                 icon: Icons.burst_mode_rounded,
-                text:
-                    'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
+                text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
             _InfoRow(
                 icon: Icons.flash_auto_rounded,
                 text: 'Ikon kilat: Off → Auto → On'),
@@ -1993,7 +2108,7 @@ class _CamBtn extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: active
-            ? Colors.white.withValues(alpha: 0.2)
+            ? Colors.white.withOpacity(0.2)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -2005,8 +2120,7 @@ class _CamBtn extends StatelessWidget {
           const SizedBox(height: 2),
           Text(label,
               style: TextStyle(
-                  color:
-                      active ? Colors.amber : Colors.white70,
+                  color: active ? Colors.amber : Colors.white70,
                   fontSize: 9)),
         ],
       ),
@@ -2014,4 +2128,119 @@ class _CamBtn extends StatelessWidget {
   );
 }
 
-class
+class _FocusBox extends StatelessWidget {
+  const _FocusBox();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 56,
+    height: 56,
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.amber, width: 1.5),
+      borderRadius: BorderRadius.circular(4),
+    ),
+  );
+}
+
+class _CircleBtn extends StatelessWidget {
+  final IconData icon;
+  final double size;
+  final VoidCallback onTap;
+
+  const _CircleBtn({
+    required this.icon,
+    required this.size,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withOpacity(0.12),
+      ),
+      child: Icon(icon, color: Colors.white70, size: size * 0.45),
+    ),
+  );
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _InfoRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(
+      children: [
+        Icon(icon, color: Colors.white60, size: 18),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  BURST SELECTION PAGE
+// ════════════════════════════════════════════════════════════════════════════
+
+class BurstSelectionPage extends StatelessWidget {
+  final List<String> paths;
+  final Function(String) onSelect;
+
+  const BurstSelectionPage({
+    super.key,
+    required this.paths,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      title: Text('Pilih Foto (${paths.length})',
+          style: const TextStyle(fontSize: 15)),
+    ),
+    body: GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
+      ),
+      itemCount: paths.length,
+      itemBuilder: (_, i) => GestureDetector(
+        onTap: () {
+          onSelect(paths[i]);
+          Navigator.pop(context);
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.file(
+            File(paths[i]),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: Colors.grey.shade800,
+              child: const Icon(Icons.broken_image,
+                  color: Colors.white38, size: 32),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}

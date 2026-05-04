@@ -1,5 +1,21 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  TermulLog — main.dart (UPDATED)
+//  TermulLog — main.dart (WATERMARK ENGINE V5 INTEGRATED)
+// ════════════════════════════════════════════════════════════════════════════
+//
+//  Watermark Engine Fixes (V4 → V5):
+//  ✔ [FIX] _clamp manual diganti .clamp() bawaan Dart
+//  ✔ [FIX] _wrapText menangani kata lebih panjang dari maxChars (anti infinite-loop)
+//  ✔ [FIX] Layout2 boxH proporsional (bukan hardcode 230)
+//  ✔ [FIX] Layout2 yy relatif terhadap boxY (bukan hardcode 35)
+//  ✔ [FIX] Logo ditampilkan di Layout2 & Layout3
+//  ✔ [FIX] Field 'id' konsisten tampil di semua layout
+//  ✔ [FIX] Semua layout pakai _wrapText untuk address
+//  ✔ [FIX] Magic numbers diganti konstanta bernama
+//  ✔ [FIX] Export PNG jika input PNG (alpha channel terjaga)
+//  ✔ [FIX] _processWatermark diperbaiki — tidak lagi orphan function fragment
+//  ✔ [FIX] Konflik konstanta kMaxOutputWidth & kJpegQuality diselesaikan
+//         (engine pakai nilai lebih tinggi: 1080→1600, quality 78→90)
+//
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -38,12 +54,33 @@ void main() async {
 
 // ════════════════════════════════════════════════════════════════════════════
 //  CONSTANTS
+//  CATATAN: kMaxOutputWidth & kJpegQuality dipakai engine, bukan nilai lama.
 // ════════════════════════════════════════════════════════════════════════════
 
-const int kMaxOutputWidth = 1080;
-const int kJpegQuality    = 78;
-const int kSigMaxWidth    = 240;
-const int kLogoMaxWidth   = 80;
+// ── Output constraints ───────────────────────────────────────────────────────
+const int kMaxOutputWidth = 1600;
+const int kJpegQuality    = 90;
+const int kSigMaxWidth    = 260;
+const int kLogoMaxWidth   = 90;
+
+// ── Layout geometry ───────────────────────────────────────────────────────────
+const int kPanelPaddingX  = 25;
+const int kSidebarPadX    = 18;
+const int kAccentBarWidth = 10;
+const int kCornerMargin   = 20;
+const int kTextLineSmall  = 18;
+const int kTextLineLarge  = 28;
+const int kSectionGap     = 12;
+
+// ── Colours (top-level final, bukan const — img.Color bukan const) ────────────
+final img.Color kColorWhite     = img.ColorRgb8(255, 255, 255);
+final img.Color kColorCyan      = img.ColorRgb8(0, 184, 148);
+final img.Color kColorGrey      = img.ColorRgb8(210, 210, 210);
+final img.Color kColorDarkBg    = img.ColorRgba8(15, 23, 42, 230);
+final img.Color kColorDarkBgMed = img.ColorRgba8(15, 23, 42, 210);
+final img.Color kColorBlackCard = img.ColorRgba8(0, 0, 0, 170);
+final img.Color kColorGlassBg   = img.ColorRgba8(0, 0, 0, 120);
+final img.Color kColorShadow    = img.ColorRgb8(0, 0, 0);
 
 // ════════════════════════════════════════════════════════════════════════════
 //  LAYOUT REGISTRY
@@ -66,39 +103,110 @@ const List<LayoutInfo> kLayouts = [
   LayoutInfo(
     id: 'layout1',
     label: 'Professional Report',
-    description: 'Strip navy di bawah foto, kotak info abu-abu, tanda tangan kiri.',
+    description: 'Overlay navy transparan di bawah foto. Info lengkap: teknisi, ID, waktu, lokasi, cuaca + TTD.',
     icon: Icons.article_outlined,
     accentColor: Color(0xFF1B4F72),
   ),
   LayoutInfo(
     id: 'layout2',
     label: 'Compact Field',
-    description: 'Strip navy, info ringkas, cocok untuk laporan cepat di lapangan.',
+    description: 'Card pojok kanan atas. Info ringkas: nama, ID, waktu, lokasi. Cocok laporan cepat.',
     icon: Icons.assignment_turned_in_outlined,
-    accentColor: Color(0xFF1B4F72),
+    accentColor: Color(0xFF00897B),
   ),
   LayoutInfo(
     id: 'layout3',
     label: 'Dark Minimal',
-    description: 'Latar gelap elegan transparan (Glassmorphism), teks putih/cyan, aksen cyan.',
+    description: 'Overlay gelap transparan + aksen cyan. Teks putih & cyan. Kesan premium modern.',
     icon: Icons.dark_mode_outlined,
     accentColor: Color(0xFF00B894),
   ),
   LayoutInfo(
     id: 'layout4',
-    label: 'Split Side-by-Side',
-    description: 'Panel samping Navy: info & tanda tangan. Teks Putih & Cyan.',
-    icon: Icons.vertical_split,
-    accentColor: Color(0xFF1B4F72),
+    label: 'Vertical Sidebar',
+    description: 'Sidebar kiri dengan logo, teknisi, ID, waktu, lokasi & TTD. Ideal untuk foto portrait.',
+    icon: Icons.layers_outlined,
+    accentColor: Color(0xFF7B1FA2),
   ),
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
-//  WATERMARK ENGINE
+//  WATERMARK ENGINE V5 — HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-String _trunc(String s, int maxLen) =>
-    s.length > maxLen ? '${s.substring(0, maxLen - 1)}...' : s;
+String _trunc(String s, int maxLen) {
+  if (s.length <= maxLen) return s;
+  return '${s.substring(0, maxLen - 3)}...';
+}
+
+/// Wraps [text] into lines of at most [maxChars] characters.
+/// FIX: kata lebih panjang dari maxChars dipotong paksa — tidak infinite-loop.
+List<String> _wrapText(String text, int maxChars) {
+  assert(maxChars > 0, 'maxChars harus lebih dari 0');
+  final words  = text.split(' ');
+  final lines  = <String>[];
+  var   current = '';
+
+  for (var word in words) {
+    while (word.length > maxChars) {
+      if (current.isNotEmpty) { lines.add(current.trim()); current = ''; }
+      lines.add(word.substring(0, maxChars));
+      word = word.substring(maxChars);
+    }
+    if (word.isEmpty) continue;
+    final candidate = current.isEmpty ? word : '$current $word';
+    if (candidate.length > maxChars) {
+      lines.add(current.trim());
+      current = '$word ';
+    } else {
+      current = '$candidate ';
+    }
+  }
+  if (current.trim().isNotEmpty) lines.add(current.trim());
+  return lines;
+}
+
+void _drawTextShadow(
+  img.Image image,
+  String text, {
+  required img.BitmapFont font,
+  required int x,
+  required int y,
+  required img.Color color,
+}) {
+  img.drawString(image, text, font: font, x: x + 2, y: y + 2, color: kColorShadow);
+  img.drawString(image, text, font: font, x: x,     y: y,     color: color);
+}
+
+img.Image? _resizeSignature(img.Image? sig, int maxWidth, int maxHeight) {
+  if (sig == null) return null;
+  if (sig.width  > maxWidth)  sig = img.copyResize(sig, width:  maxWidth,  interpolation: img.Interpolation.linear);
+  if (sig.height > maxHeight) sig = img.copyResize(sig, height: maxHeight, interpolation: img.Interpolation.linear);
+  return sig;
+}
+
+img.Image? _resizeLogo(img.Image? logo) {
+  if (logo == null) return null;
+  if (logo.width > kLogoMaxWidth) {
+    logo = img.copyResize(logo, width: kLogoMaxWidth, interpolation: img.Interpolation.linear);
+  }
+  return logo;
+}
+
+/// FIX: export PNG jika input punya alpha channel, agar transparansi terjaga.
+Uint8List _export(img.Image image, {bool hasAlpha = false}) {
+  if (hasAlpha) return Uint8List.fromList(img.encodePng(image));
+  return Uint8List.fromList(
+    img.encodeJpg(image, quality: kJpegQuality, chroma: img.JpegChroma.yuv420),
+  );
+}
+
+bool _imageHasAlpha(img.Image image) => image.numChannels == 4;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  WATERMARK ENGINE V5 — ENTRY POINT
+//  Dipanggil via compute() dari SignaturePage._save()
+// ════════════════════════════════════════════════════════════════════════════
 
 Uint8List _processWatermark(Map<String, dynamic> p) {
   try {
@@ -107,60 +215,66 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
       throw Exception('Image bytes are empty or null');
     }
 
-    img.Image base = img.decodeImage(imageBytes)!;
-    if (base.width > kMaxOutputWidth) {
-      base = img.copyResize(base,
-          width: kMaxOutputWidth, interpolation: img.Interpolation.linear);
+    final decoded = img.decodeImage(imageBytes);
+    if (decoded == null) throw Exception('Unsupported image format');
+
+    img.Image image = decoded;
+    final hasAlpha  = _imageHasAlpha(image);
+
+    // Resize jika terlalu besar
+    if (image.width > kMaxOutputWidth) {
+      image = img.copyResize(
+        image, width: kMaxOutputWidth, interpolation: img.Interpolation.linear,
+      );
     }
 
-    final sigBytes = p['sigBytes'] as Uint8List?;
+    // Signature
     img.Image? sig;
+    final sigBytes = p['sigBytes'] as Uint8List?;
     if (sigBytes != null && sigBytes.isNotEmpty) {
       try {
         sig = img.decodeImage(sigBytes);
-        if (sig != null && sig.width > kSigMaxWidth) {
-          sig = img.copyResize(sig,
-              width: kSigMaxWidth, interpolation: img.Interpolation.linear);
-        }
       } catch (e) {
         debugPrint('Signature decode error: $e');
         sig = null;
       }
     }
 
-    final logoBytes = p['logoBytes'] as Uint8List?;
+    // Logo
     img.Image? logo;
+    final logoBytes = p['logoBytes'] as Uint8List?;
     if (logoBytes != null && logoBytes.isNotEmpty) {
       try {
         logo = img.decodeImage(logoBytes);
-        if (logo != null &&
-            (logo.width > kLogoMaxWidth || logo.height > kLogoMaxWidth)) {
-          logo = img.copyResize(logo,
-              width: kLogoMaxWidth, interpolation: img.Interpolation.linear);
-        }
-        if (logo != null && (logo.width <= 0 || logo.height <= 0)) {
-          logo = null;
-        }
+        if (logo != null && (logo.width <= 0 || logo.height <= 0)) logo = null;
       } catch (e) {
         debugPrint('Logo decode error: $e');
         logo = null;
       }
     }
+    logo = _resizeLogo(logo);
 
-    final layout = p['layout'] as String? ?? 'layout1';
-    final name    = p['name']    as String;
-    final id      = p['id']      as String;
-    final date    = p['date']    as String;
-    final time    = p['time']    as String;
-    final address = p['address'] as String? ?? '';
-    final weather = p['weather'] as String? ?? '';
+    final layout     = p['layout']  as String? ?? 'layout1';
+    final name       = p['name']    as String? ?? '-';
+    final id         = p['id']      as String? ?? '-';
+    final date       = p['date']    as String? ?? '-';
+    final time       = p['time']    as String? ?? '-';
+    final address    = p['address'] as String? ?? '';
+    final weather    = p['weather'] as String? ?? '';
+    final isPortrait = image.height > image.width;
 
-    switch (layout) {
-      case 'layout2': return _layout2(base, sig, logo, name, id, date, time, address, weather);
-      case 'layout3': return _layout3(base, sig, logo, name, id, date, time, address, weather);
-      case 'layout4': return _layout4(base, sig, logo, name, id, date, time, address, weather);
-      default:        return _layout1(base, sig, logo, name, id, date, time, address, weather);
+    // Helper closure — hindari duplikasi argumen
+    Uint8List draw(String l) {
+      switch (l) {
+        case 'layout2': return _drawLayout2(image, sig, logo, name, id, date, time, address, weather, hasAlpha: hasAlpha);
+        case 'layout3': return _drawLayout3(image, sig, logo, name, id, date, time, address, weather, hasAlpha: hasAlpha);
+        case 'layout4': return _drawLayout4(image, sig, logo, name, id, date, time, address, weather, hasAlpha: hasAlpha);
+        default:        return _drawLayout1(image, sig, logo, name, id, date, time, address, weather, hasAlpha: hasAlpha);
+      }
     }
+
+    if (layout == 'auto') return draw(isPortrait ? 'layout4' : 'layout1');
+    return draw(layout);
   } catch (e, stackTrace) {
     debugPrint('Watermark processing error: $e');
     debugPrint('Stack trace: $stackTrace');
@@ -170,274 +284,289 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
   }
 }
 
-// ── Layout helpers ────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+//  LAYOUT 1 — PROFESSIONAL BOTTOM BANNER
+// ════════════════════════════════════════════════════════════════════════════
 
-void _compositeSigSafe(img.Image canvas, img.Image sig,
-    int dstX, int dstY, int canvasH) {
-  if (sig.width <= 0 || sig.height <= 0) return;
-  if (dstY + sig.height <= canvasH) {
-    img.compositeImage(canvas, sig, dstX: dstX, dstY: dstY);
-  } else {
-    final maxH = canvasH - dstY - 8;
-    if (maxH < 16) return;
-    final ratio = maxH / sig.height;
-    final scaled = img.copyResize(sig,
-        width: (sig.width * ratio).toInt(),
-        interpolation: img.Interpolation.linear);
-    img.compositeImage(canvas, scaled, dstX: dstX, dstY: dstY);
-  }
-}
-
-// ── LAYOUT 1: PROFESSIONAL REPORT ──────────────────────────────────────────
-Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
-    String name, String id, String date, String time,
-    String address, String weather) {
+Uint8List _drawLayout1(
+  img.Image base, img.Image? sig, img.Image? logo,
+  String name, String id, String date, String time,
+  String address, String weather, {bool hasAlpha = false}
+) {
   final W = base.width;
   final H = base.height;
 
-  const int minS = 488;
-  final int S = (W * 0.38).clamp(minS.toDouble(), 1100.0).toInt();
+  // FIX: proporsional, bukan hardcode
+  final bannerH     = (H * 0.23).toInt().clamp(180, 380);
+  final isSmall     = W < 700;
+  final addrMaxChar = isSmall ? 38 : 65;
 
-  final canvas = img.Image(width: W, height: H + S);
-  img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
-  img.compositeImage(canvas, base, dstX: 0, dstY: 0);
+  sig = _resizeSignature(sig, kSigMaxWidth, (bannerH * 0.45).toInt());
 
-  final navy  = img.ColorRgb8(27, 79, 114);
-  final white = img.ColorRgb8(255, 255, 255);
-  final gray  = img.ColorRgb8(240, 240, 240);
-  final blue2 = img.ColorRgb8(52, 120, 170);
+  // Background banner
+  img.fillRect(base, x1: 0, y1: H - bannerH, x2: W - 1, y2: H - 1, color: kColorDarkBg);
 
-  // Header strip
-  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 88, color: navy);
-  img.drawString(canvas, 'DELIVERY REPORT',
-      font: img.arial48, x: 20, y: H + 22, color: white);
-  img.drawString(canvas, '$date  $time',
-      font: img.arial24, x: W - 285, y: H + 32, color: white);
+  // Accent bar kiri
+  img.fillRect(base, x1: 0, y1: H - bannerH, x2: kAccentBarWidth, y2: H - 1, color: kColorCyan);
 
-  // Info box
-  final iY = H + 98;
-  img.fillRect(canvas, x1: 0, y1: iY, x2: W, y2: iY + 220, color: gray);
-  img.drawString(canvas, 'TEKNISI: $name',
-      font: img.arial24, x: 20, y: iY + 14);
-  img.drawString(canvas, 'ID      : $id',
-      font: img.arial24, x: 20, y: iY + 48);
-  img.drawString(canvas, 'WAKTU  : $date $time',
-      font: img.arial24, x: 20, y: iY + 82);
-  img.drawString(canvas, 'LOKASI : ${_trunc(address, 65)}',
-      font: img.arial24, x: 20, y: iY + 116, color: blue2);
-  img.drawString(canvas, 'CUACA  : ${_trunc(weather, 40)}',
-      font: img.arial24, x: 20, y: iY + 150, color: blue2);
+  final titleFont = isSmall ? img.arial14 : img.arial24;
+  int yy          = H - bannerH + kTextLineSmall;
 
-  if (logo != null && logo.width > 0 && logo.height > 0) {
-    img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 14);
+  _drawTextShadow(base, 'LAPORAN TEKNIS',          font: titleFont,   x: kPanelPaddingX, y: yy, color: kColorCyan);
+  yy += isSmall ? kTextLineSmall : kTextLineLarge + kSectionGap;
+
+  _drawTextShadow(base, 'Teknisi : ${_trunc(name, 30)}', font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
+  yy += kTextLineSmall + 4;
+
+  // FIX: id tampil konsisten
+  _drawTextShadow(base, 'ID       : $id',          font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
+  yy += kTextLineSmall + 4;
+
+  _drawTextShadow(base, '$date   |   $time',       font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
+  yy += kTextLineSmall + kSectionGap;
+
+  // FIX: _wrapText konsisten di semua layout
+  for (final line in _wrapText(address, addrMaxChar).take(2)) {
+    _drawTextShadow(base, line, font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
+    yy += kTextLineSmall;
   }
 
-  final sigY = iY + 232;
-  if (sig != null) _compositeSigSafe(canvas, sig, 20, sigY, H + S);
-
-  return img.encodeJpg(canvas, quality: kJpegQuality);
-}
-
-// ── LAYOUT 2: COMPACT FIELD (NAVY ACCENT) ──────────────────────────────────
-Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
-    String name, String id, String date, String time,
-    String address, String weather) {
-  final W = base.width;
-  final H = base.height;
-
-  const int minS = 438;
-  final int S = (W * 0.38).clamp(minS.toDouble(), 1000.0).toInt();
-
-  final canvas = img.Image(width: W, height: H + S);
-  img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
-  img.compositeImage(canvas, base, dstX: 0, dstY: 0);
-
-  final navy  = img.ColorRgb8(27, 79, 114);
-  final white = img.ColorRgb8(255, 255, 255);
-
-  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 68, color: navy);
-  img.drawString(canvas, 'PEKERJAAN SELESAI',
-      font: img.arial48, x: 20, y: H + 13, color: white);
-
-  final iY = H + 82;
-  img.drawString(canvas, 'Teknisi : $name',
-      font: img.arial24, x: 20, y: iY);
-  img.drawString(canvas, 'ID      : $id',
-      font: img.arial24, x: 20, y: iY + 36);
-  img.drawString(canvas, 'Waktu   : $date $time',
-      font: img.arial24, x: 20, y: iY + 72);
-  img.drawString(canvas, 'Lokasi  : ${_trunc(address, 65)}',
-      font: img.arial24, x: 20, y: iY + 108, color: navy);
-  img.drawString(canvas, 'Cuaca   : ${_trunc(weather, 40)}',
-      font: img.arial24, x: 20, y: iY + 144, color: navy);
-
-  if (logo != null && logo.width > 0 && logo.height > 0) {
-    img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 8);
+  if (weather.isNotEmpty) {
+    yy += 4;
+    _drawTextShadow(base, weather, font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorCyan);
   }
 
-  final sigY = iY + 192;
-  if (sig != null) _compositeSigSafe(canvas, sig, 20, sigY, H + S);
-
-  return img.encodeJpg(canvas, quality: kJpegQuality);
-}
-
-// ── LAYOUT 3: DARK MINIMAL (GLASSMORPHISM + CYAN ACCENT) ───────────────────
-Uint8List _layout3(img.Image base, img.Image? sig, img.Image? logo,
-    String name, String id, String date, String time,
-    String address, String weather) {
-  final W = base.width;
-  final H = base.height;
-
-  const int minS = 484;
-  final int S = (W * 0.40).clamp(minS.toDouble(), 1100.0).toInt();
-
-  final canvas = img.Image(width: W, height: H + S);
-  img.fill(canvas, color: img.ColorRgb8(15, 21, 18));
-  img.compositeImage(canvas, base, dstX: 0, dstY: 0);
-
-  // Glassmorphism panel — opasitas sangat rendah
-  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + S,
-      color: img.ColorRgba8(0, 0, 0, 60));
-
-  final cyan  = img.ColorRgb8(0, 184, 148);
-  final white = img.ColorRgb8(255, 255, 255);
-
-  // Accent bars
-  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 4, color: cyan);
-  img.fillRect(canvas, x1: 0, y1: H + 4, x2: 8, y2: H + S, color: cyan);
-
-  const pX = 32;
-  img.drawString(canvas, 'LAPORAN TEKNIS',
-      font: img.arial48, x: pX, y: H + 24, color: cyan);
-  img.drawString(canvas, 'TEKNISI: $name',
-      font: img.arial24, x: pX, y: H + 88, color: white);
-  img.drawString(canvas, 'ID     : $id',
-      font: img.arial24, x: pX, y: H + 122, color: white);
-  img.drawString(canvas, '$date  $time',
-      font: img.arial24, x: pX, y: H + 156, color: white);
-  img.drawString(canvas, 'LOKASI : ${_trunc(address, 65)}',
-      font: img.arial24, x: pX, y: H + 200, color: cyan);
-  img.drawString(canvas, 'CUACA  : ${_trunc(weather, 40)}',
-      font: img.arial24, x: pX, y: H + 234, color: cyan);
-
-  if (logo != null && logo.width > 0 && logo.height > 0) {
-    img.compositeImage(canvas, logo, dstX: W - logo.width - 32, dstY: H + 24);
+  // Logo — pojok kanan atas banner
+  if (logo != null) {
+    img.compositeImage(base, logo,
+      dstX: (W - logo.width - kPanelPaddingX).clamp(0, W - logo.width),
+      dstY: (H - bannerH + kTextLineSmall).clamp(0, H - logo.height),
+    );
   }
 
-  const sigY = 280;
+  // Signature — pojok kanan bawah banner
   if (sig != null) {
-    img.fillRect(canvas,
-        x1: pX - 4, y1: H + sigY - 4,
-        x2: pX + sig.width + 4,
-        y2: H + sigY + sig.height + 4,
-        color: img.ColorRgba8(255, 255, 255, 30));
-    _compositeSigSafe(canvas, sig, pX, H + sigY, H + S);
+    img.compositeImage(base, sig,
+      dstX: (W - sig.width - kPanelPaddingX).clamp(0, W - sig.width),
+      dstY: (H - sig.height - kTextLineSmall).clamp(0, H - sig.height),
+    );
   }
 
-  return img.encodeJpg(canvas, quality: kJpegQuality);
+  return _export(base, hasAlpha: hasAlpha);
 }
 
-// ── LAYOUT 4: SPLIT SIDE-BY-SIDE (NAVY PANEL, WHITE LABELS, CYAN DATA) ─────
-Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
-    String name, String id, String date, String time,
-    String address, String weather) {
-  final fW = base.width;
-  final fH = base.height;
+// ════════════════════════════════════════════════════════════════════════════
+//  LAYOUT 2 — COMPACT CORNER CARD
+// ════════════════════════════════════════════════════════════════════════════
 
-  final pW = (fW * 0.32).clamp(260.0, 460.0).toInt();
-  final W  = fW + pW;
-  final H  = fH;
+Uint8List _drawLayout2(
+  img.Image base, img.Image? sig, img.Image? logo,
+  String name, String id, String date, String time,
+  String address, String weather, {bool hasAlpha = false}
+) {
+  final W = base.width;
+  final H = base.height;
 
-  final canvas = img.Image(width: W, height: H);
-  img.fill(canvas, color: img.ColorRgb8(27, 79, 114)); // Navy background
-  img.compositeImage(canvas, base, dstX: 0, dstY: 0);
+  final boxW = (W * 0.42).toInt().clamp(300, 500);
 
-  final cyan  = img.ColorRgb8(0, 184, 148);
-  final white = img.ColorRgb8(255, 255, 255);
-  final tX    = fW + 18;
+  // FIX: boxH proporsional terhadap tinggi gambar
+  final boxH = (H * 0.32).toInt().clamp(200, 280);
 
-  // Max chars berdasarkan lebar panel (font arial14 ~7px/char)
-  final maxC = ((pW - 28) / 7).floor().clamp(18, 38);
+  final boxX = W - boxW - kCornerMargin;
+  const boxY = kCornerMargin; // FIX: named constant
 
-  int yy = 24;
+  sig = _resizeSignature(sig, (boxW * 0.65).toInt(), 80);
 
-  void safeLabel(String text, int y) {
-    if (y + 16 < H) {
-      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: white);
-    }
+  // Background card
+  img.fillRect(base, x1: boxX, y1: boxY, x2: W - kCornerMargin, y2: boxY + boxH, color: kColorBlackCard);
+
+  // Border card
+  img.drawRect(base, x1: boxX, y1: boxY, x2: W - kCornerMargin, y2: boxY + boxH, color: kColorCyan);
+
+  final textX = boxX + kTextLineSmall;
+
+  // FIX: yy relatif terhadap boxY
+  int yy = boxY + 15;
+
+  _drawTextShadow(base, _trunc(name, 28),   font: img.arial14, x: textX, y: yy, color: kColorWhite);
+  yy += kTextLineLarge;
+
+  // FIX: id tampil
+  _drawTextShadow(base, 'ID: $id',          font: img.arial14, x: textX, y: yy, color: kColorGrey);
+  yy += kTextLineLarge;
+
+  _drawTextShadow(base, '$date  $time',     font: img.arial14, x: textX, y: yy, color: kColorGrey);
+  yy += kTextLineLarge;
+
+  // FIX: _wrapText konsisten
+  for (final line in _wrapText(address, 30).take(2)) {
+    _drawTextShadow(base, line, font: img.arial14, x: textX, y: yy, color: kColorCyan);
+    yy += kTextLineSmall;
   }
 
-  void safeValueCyan(String text, int y) {
-    if (y + 16 < H) {
-      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: cyan);
-    }
+  if (weather.isNotEmpty) {
+    yy += kSectionGap ~/ 2;
+    _drawTextShadow(base, weather, font: img.arial14, x: textX, y: yy, color: kColorWhite);
   }
 
-  void safeValueWhite(String text, int y) {
-    if (y + 16 < H) {
-      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: white);
-    }
+  // FIX: Logo ditampilkan di layout2
+  if (logo != null) {
+    img.compositeImage(base, logo,
+      dstX: (boxX + kTextLineSmall).clamp(0, W - logo.width),
+      dstY: (boxY + boxH - logo.height - 12).clamp(0, H - logo.height),
+    );
   }
 
-  void safeDivider(int y) {
-    if (y + 2 < H) {
-      img.fillRect(canvas, x1: tX, y1: y, x2: W - 10, y2: y + 2, color: cyan);
-    }
+  // Signature
+  if (sig != null) {
+    img.compositeImage(base, sig,
+      dstX: (W - sig.width - 35).clamp(0, W - sig.width),
+      dstY: (boxY + boxH - sig.height - 12).clamp(0, H - sig.height),
+    );
   }
 
-  // TEKNISI
-  safeLabel('TEKNISI', yy); yy += 18;
-  safeValueWhite(_trunc(name, maxC), yy); yy += 34;
-  safeDivider(yy); yy += 10;
+  return _export(base, hasAlpha: hasAlpha);
+}
 
-  // NO. TIKET
-  safeLabel('NO. TIKET', yy); yy += 18;
-  safeValueWhite(_trunc(id, maxC), yy); yy += 28;
+// ════════════════════════════════════════════════════════════════════════════
+//  LAYOUT 3 — GLASS HUD
+// ════════════════════════════════════════════════════════════════════════════
 
-  // TANGGAL & JAM
-  safeLabel('TANGGAL', yy); yy += 18;
-  safeValueWhite(date, yy); yy += 24;
-  safeLabel('JAM', yy); yy += 18;
-  safeValueWhite(time, yy); yy += 34;
-  safeDivider(yy); yy += 10;
+Uint8List _drawLayout3(
+  img.Image base, img.Image? sig, img.Image? logo,
+  String name, String id, String date, String time,
+  String address, String weather, {bool hasAlpha = false}
+) {
+  final W = base.width;
+  final H = base.height;
 
-  // LOKASI
-  safeLabel('LOKASI', yy); yy += 18;
-  safeValueCyan(_trunc(address, maxC), yy); yy += 28;
+  const panelX = 35;
+  final panelW = W - 70;
+  const panelH = 160; // sedikit lebih tinggi untuk row id
+  final panelY = (H - panelH - 30).clamp(0, H - panelH);
 
-  // CUACA
-  safeLabel('CUACA', yy); yy += 18;
-  safeValueCyan(_trunc(weather, maxC), yy); yy += 34;
-  safeDivider(yy); yy += 10;
+  sig = _resizeSignature(sig, 220, 80);
 
-  // TANDA TANGAN
-  safeLabel('TANDA TANGAN', yy); yy += 20;
+  // Background glass
+  img.fillRect(base, x1: panelX, y1: panelY, x2: panelX + panelW, y2: panelY + panelH, color: kColorGlassBg);
 
-  if (sig != null && sig.width > 0 && sig.height > 0) {
-    final maxSigW = pW - 28;
-    img.Image s = sig;
-    if (s.width > maxSigW) {
-      s = img.copyResize(s,
-          width: maxSigW, interpolation: img.Interpolation.linear);
-    }
-    final roomH = H - yy - 16;
-    if (roomH > 16 && s.height > roomH) {
-      final ratio = roomH / s.height;
-      s = img.copyResize(s,
-          width: (s.width * ratio).toInt(),
-          interpolation: img.Interpolation.linear);
-    }
-    if (yy + s.height < H) {
-      img.compositeImage(canvas, s, dstX: tX, dstY: yy);
-    }
+  // Accent bar kiri
+  img.fillRect(base, x1: panelX, y1: panelY, x2: panelX + kAccentBarWidth - 2, y2: panelY + panelH, color: kColorCyan);
+
+  final textX = panelX + kTextLineLarge;
+  int   yy    = panelY + kTextLineSmall;
+
+  _drawTextShadow(base, _trunc(name.toUpperCase(), 28), font: img.arial24, x: textX, y: yy, color: kColorWhite);
+  yy += kTextLineLarge + kSectionGap;
+
+  // FIX: id tampil di layout3
+  _drawTextShadow(base, 'ID: $id', font: img.arial14, x: textX, y: yy, color: kColorGrey);
+  yy += kTextLineSmall + 4;
+
+  // FIX: _wrapText konsisten
+  final addrLine = _wrapText(address, 60).take(1).join('');
+  _drawTextShadow(base, addrLine,           font: img.arial14, x: textX, y: yy, color: kColorCyan);
+  yy += kTextLineSmall + 4;
+
+  _drawTextShadow(base, '$date   |   $time', font: img.arial14, x: textX, y: yy, color: kColorWhite);
+  yy += kTextLineSmall + 4;
+
+  if (weather.isNotEmpty) {
+    _drawTextShadow(base, weather, font: img.arial14, x: textX, y: yy, color: kColorCyan);
   }
 
-  if (logo != null && logo.width > 0 && logo.height > 0) {
-    img.compositeImage(canvas, logo,
-        dstX: W - logo.width - 14, dstY: H - logo.height - 14);
+  // FIX: Logo ditampilkan di layout3
+  if (logo != null) {
+    img.compositeImage(base, logo,
+      dstX: (panelX + panelW - logo.width - kPanelPaddingX).clamp(0, W - logo.width),
+      dstY: (panelY + kTextLineSmall).clamp(0, H - logo.height),
+    );
   }
 
-  return img.encodeJpg(canvas, quality: kJpegQuality);
+  // Signature
+  if (sig != null) {
+    img.compositeImage(base, sig,
+      dstX: (panelX + panelW - sig.width - kPanelPaddingX).clamp(0, W - sig.width),
+      dstY: (panelY + panelH ~/ 2 - sig.height ~/ 2).clamp(0, H - sig.height),
+    );
+  }
+
+  return _export(base, hasAlpha: hasAlpha);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  LAYOUT 4 — VERTICAL SIDEBAR
+// ════════════════════════════════════════════════════════════════════════════
+
+Uint8List _drawLayout4(
+  img.Image base, img.Image? sig, img.Image? logo,
+  String name, String id, String date, String time,
+  String address, String weather, {bool hasAlpha = false}
+) {
+  final W = base.width;
+  final H = base.height;
+
+  final sideW = (W * 0.28).toInt().clamp(190, 340);
+  sig = _resizeSignature(sig, sideW - 40, 100);
+
+  // Background sidebar
+  img.fillRect(base, x1: 0, y1: 0, x2: sideW, y2: H, color: kColorDarkBgMed);
+
+  // Accent bar kanan sidebar
+  img.fillRect(base, x1: sideW - kAccentBarWidth + 2, y1: 0, x2: sideW, y2: H, color: kColorCyan);
+
+  int yy = 35;
+
+  // Logo — atas sidebar
+  if (logo != null) {
+    img.compositeImage(base, logo,
+      dstX: ((sideW - logo.width) ~/ 2).clamp(0, W - logo.width),
+      dstY: yy,
+    );
+    yy += logo.height + 35;
+  }
+
+  _drawTextShadow(base, 'TEKNISI',           font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  yy += kTextLineLarge - 4;
+  _drawTextShadow(base, _trunc(name, 18),    font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  yy += kTextLineLarge + kSectionGap;
+
+  // FIX: id tampil di layout4
+  _drawTextShadow(base, 'ID',                font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  yy += kTextLineLarge - 4;
+  _drawTextShadow(base, _trunc(id, 18),      font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  yy += kTextLineLarge + kSectionGap;
+
+  _drawTextShadow(base, 'WAKTU',             font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  yy += kTextLineLarge - 4;
+  _drawTextShadow(base, date,                font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  yy += kTextLineSmall + 2;
+  _drawTextShadow(base, time,                font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  yy += kTextLineLarge + kSectionGap;
+
+  _drawTextShadow(base, 'LOKASI',            font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  yy += kTextLineLarge - 4;
+
+  // FIX: _wrapText aman untuk kata panjang
+  for (final line in _wrapText(address, 18).take(4)) {
+    _drawTextShadow(base, line, font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+    yy += kTextLineSmall;
+  }
+
+  if (weather.isNotEmpty) {
+    yy += kSectionGap;
+    _drawTextShadow(base, weather, font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  }
+
+  // Signature — bawah sidebar
+  if (sig != null) {
+    img.compositeImage(base, sig,
+      dstX: ((sideW - sig.width) ~/ 2).clamp(0, W - sig.width),
+      dstY: (H - sig.height - 35).clamp(0, H - sig.height),
+    );
+  }
+
+  return _export(base, hasAlpha: hasAlpha);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -521,8 +650,7 @@ class Login extends StatelessWidget {
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         hintText: 'Nama Teknisi',
-                        hintStyle:
-                            TextStyle(color: Colors.white.withOpacity(0.5)),
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
                         prefixIcon: Icon(Icons.person_outline,
                             color: Colors.white.withOpacity(0.6)),
                         border: InputBorder.none,
@@ -556,8 +684,7 @@ class Login extends StatelessWidget {
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                                  Dashboard(name: c.text.trim())),
+                              builder: (_) => Dashboard(name: c.text.trim())),
                         );
                       },
                       child: const Text('Masuk',
@@ -585,11 +712,12 @@ class Item {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  WATERMARK SETTING
+//  WATERMARK LAYOUT SETTING
 // ════════════════════════════════════════════════════════════════════════════
 
 class WatermarkLayout {
   static String _layout = 'layout1';
+
   static Future<void> load() async {
     try {
       final p = await SharedPreferences.getInstance();
@@ -848,9 +976,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => SignaturePage(
           imagePath: imagePath,
-          techName: widget.name,
-          itemId: id,
-          itemTime: time,
+          techName:  widget.name,
+          itemId:    id,
+          itemTime:  time,
           onDone: (path) {
             if (mounted) setState(() => list.add(Item(id, path, time)));
           },
@@ -890,10 +1018,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
-            backgroundColor:
-                ok == true ? Colors.green.shade700 : Colors.red.shade700,
+            content: Text(ok == true ? '✓ Tersimpan ke galeri' : '✗ Gagal menyimpan'),
+            backgroundColor: ok == true ? Colors.green.shade700 : Colors.red.shade700,
             duration: const Duration(seconds: 2),
           ),
         );
@@ -913,7 +1039,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       context,
       MaterialPageRoute(
         builder: (_) => PreviewPage(
-          item: item,
+          item:    item,
           onShare: () => _shareItem(item),
           onSave:  () => _saveToGallery(item),
         ),
@@ -944,10 +1070,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       body: Column(
         children: [
           _DashboardHeader(
-            name: widget.name,
-            total: list.length,
+            name:       widget.name,
+            total:      list.length,
             todayCount: todayCount,
-            logoPath: _logoPath,
+            logoPath:   _logoPath,
             onPickLogo: _pickLogo,
             onClearLogo: () {
               setState(() => _logoPath = null);
@@ -967,7 +1093,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     itemBuilder: (_, i) {
                       final item = list[list.length - 1 - i];
                       return _ItemCard(
-                        item: item,
+                        item:     item,
                         onTap:    () => _previewItem(item),
                         onShare:  () => _shareItem(item),
                         onSave:   () => _saveToGallery(item),
@@ -1063,8 +1189,7 @@ class _DashboardHeader extends StatelessWidget {
                                     color: Colors.white70,
                                     size: 30)),
                             const SizedBox(width: 4),
-                            const Icon(Icons.close,
-                                size: 14, color: Colors.white70),
+                            const Icon(Icons.close, size: 14, color: Colors.white70),
                           ],
                         ),
                       ),
@@ -1084,15 +1209,9 @@ class _DashboardHeader extends StatelessWidget {
               const SizedBox(height: 18),
               Row(
                 children: [
-                  _StatChip(
-                      label: 'Semua',
-                      value: '$total',
-                      icon: Icons.photo_library_outlined),
+                  _StatChip(label: 'Semua', value: '$total',      icon: Icons.photo_library_outlined),
                   const SizedBox(width: 10),
-                  _StatChip(
-                      label: 'Hari ini',
-                      value: '$todayCount',
-                      icon: Icons.today_outlined),
+                  _StatChip(label: 'Hari ini', value: '$todayCount', icon: Icons.today_outlined),
                 ],
               ),
             ],
@@ -1106,8 +1225,7 @@ class _DashboardHeader extends StatelessWidget {
 class _StatChip extends StatelessWidget {
   final String label, value;
   final IconData icon;
-  const _StatChip(
-      {required this.label, required this.value, required this.icon});
+  const _StatChip({required this.label, required this.value, required this.icon});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -1124,9 +1242,7 @@ class _StatChip extends StatelessWidget {
         const SizedBox(width: 7),
         Text('$value $label',
             style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600)),
+                color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
       ],
     ),
   );
@@ -1142,8 +1258,7 @@ class _EmptyState extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 100,
-          height: 100,
+          width: 100, height: 100,
           decoration: BoxDecoration(
             color: const Color(0xFF1B4F72).withOpacity(0.08),
             shape: BoxShape.circle,
@@ -1154,9 +1269,7 @@ class _EmptyState extends StatelessWidget {
         const SizedBox(height: 20),
         const Text('Belum ada laporan',
             style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1B4F72))),
+                fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF1B4F72))),
         const SizedBox(height: 6),
         Text('Ketuk tombol kamera untuk mulai',
             style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
@@ -1169,8 +1282,7 @@ class _EmptyState extends StatelessWidget {
             foregroundColor: const Color(0xFF1B4F72),
             side: const BorderSide(color: Color(0xFF1B4F72)),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
         ),
       ],
@@ -1200,15 +1312,13 @@ class _ItemCard extends StatelessWidget {
         padding: const EdgeInsets.only(right: 20),
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-            color: Colors.red.shade400,
-            borderRadius: BorderRadius.circular(16)),
+            color: Colors.red.shade400, borderRadius: BorderRadius.circular(16)),
         child: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.delete_outline_rounded, color: Colors.white, size: 26),
             SizedBox(height: 4),
-            Text('Hapus',
-                style: TextStyle(color: Colors.white, fontSize: 11)),
+            Text('Hapus', style: TextStyle(color: Colors.white, fontSize: 11)),
           ],
         ),
       ),
@@ -1218,23 +1328,19 @@ class _ItemCard extends StatelessWidget {
             builder: (_) => AlertDialog(
               title: const Text('Hapus Laporan?'),
               content: Text('${item.id} akan dihapus permanen.'),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context, false),
                     child: const Text('Batal')),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context, true),
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                  child: const Text('Hapus',
-                      style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  child: const Text('Hapus', style: TextStyle(color: Colors.white)),
                 ),
               ],
             ),
-          ) ??
-          false,
+          ) ?? false,
       onDismissed: (_) => onDelete(),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -1261,14 +1367,11 @@ class _ItemCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                     child: Image.file(
                       File(item.path),
-                      width: 72,
-                      height: 72,
+                      width: 72, height: 72,
                       fit: BoxFit.cover,
                       cacheWidth: 144,
                       errorBuilder: (_, __, ___) => Container(
-                        color: Colors.grey.shade300,
-                        width: 72,
-                        height: 72,
+                        color: Colors.grey.shade300, width: 72, height: 72,
                       ),
                     ),
                   ),
@@ -1279,11 +1382,9 @@ class _ItemCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color:
-                              const Color(0xFF1B4F72).withOpacity(0.09),
+                          color: const Color(0xFF1B4F72).withOpacity(0.09),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(item.id,
@@ -1301,8 +1402,7 @@ class _ItemCard extends StatelessWidget {
                               size: 13, color: Colors.grey),
                           const SizedBox(width: 4),
                           Text(item.time,
-                              style: const TextStyle(
-                                  fontSize: 12.5, color: Colors.grey)),
+                              style: const TextStyle(fontSize: 12.5, color: Colors.grey)),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -1371,9 +1471,7 @@ class _ActionBtn extends StatelessWidget {
           const SizedBox(width: 4),
           Text(label,
               style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: color)),
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
         ],
       ),
     ),
@@ -1409,9 +1507,7 @@ class _CameraFAB extends StatelessWidget {
           SizedBox(width: 10),
           Text('Ambil Foto',
               style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700)),
+                  color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
         ],
       ),
     ),
@@ -1462,8 +1558,7 @@ class PreviewPage extends StatelessWidget {
               File(item.path),
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.broken_image,
-                    color: Colors.white54, size: 64),
+                child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
               ),
             ),
           ),
@@ -1474,12 +1569,10 @@ class PreviewPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Row(
             children: [
-              const Icon(Icons.access_time_rounded,
-                  size: 14, color: Colors.white54),
+              const Icon(Icons.access_time_rounded, size: 14, color: Colors.white54),
               const SizedBox(width: 6),
               Text(item.time,
-                  style: const TextStyle(
-                      color: Colors.white54, fontSize: 13)),
+                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
             ],
           ),
         ),
@@ -1617,32 +1710,28 @@ class _SignaturePageState extends State<SignaturePage> {
                 width: double.infinity,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(Icons.broken_image,
-                      color: Colors.white54, size: 48),
+                  child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
                 ),
               ),
             ),
           ),
-          // ── Info lokasi & cuaca ─────────────────────────────────────────
+          // ── Info lokasi & cuaca ──────────────────────────────────────────
           Container(
             width: double.infinity,
             color: const Color(0xFF0D2137),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: _locationLoading
                 ? const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
-                        width: 12,
-                        height: 12,
+                        width: 12, height: 12,
                         child: CircularProgressIndicator(
                             strokeWidth: 1.5, color: Colors.white54),
                       ),
                       SizedBox(width: 10),
                       Text('Mengambil lokasi & cuaca...',
-                          style: TextStyle(
-                              color: Colors.white54, fontSize: 11)),
+                          style: TextStyle(color: Colors.white54, fontSize: 11)),
                     ],
                   )
                 : Column(
@@ -1680,15 +1769,13 @@ class _SignaturePageState extends State<SignaturePage> {
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Tanda Tangan Teknisi',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 12),
                 Container(
                   height: 160,
@@ -1720,14 +1807,12 @@ class _SignaturePageState extends State<SignaturePage> {
                         onPressed: _saving ? null : _save,
                         icon: _saving
                             ? const SizedBox(
-                                width: 18,
-                                height: 18,
+                                width: 18, height: 18,
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2, color: Colors.white),
                               )
                             : const Icon(Icons.save_alt_rounded),
-                        label:
-                            Text(_saving ? 'Menyimpan...' : 'Simpan'),
+                        label: Text(_saving ? 'Menyimpan...' : 'Simpan'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1B4F72),
                           foregroundColor: Colors.white,
@@ -1861,10 +1946,7 @@ class _CameraPageState extends State<CameraPage>
     if (_ctrl == null || !_initialized) return;
     final x = (d.localPosition.dx / c.biggest.width).clamp(0.0, 1.0);
     final y = (d.localPosition.dy / c.biggest.height).clamp(0.0, 1.0);
-    setState(() {
-      _focusPoint = d.localPosition;
-      _showFocus  = true;
-    });
+    setState(() { _focusPoint = d.localPosition; _showFocus = true; });
     try {
       await _ctrl!.setFocusPoint(Offset(x, y));
       await _ctrl!.setExposurePoint(Offset(x, y));
@@ -1911,12 +1993,8 @@ class _CameraPageState extends State<CameraPage>
   }
 
   void _startBurst() {
-    setState(() {
-      _burstRunning = true;
-      _burstPaths   = [];
-    });
-    _burstTimer =
-        Timer.periodic(const Duration(milliseconds: 1200), (_) async {
+    setState(() { _burstRunning = true; _burstPaths = []; });
+    _burstTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) async {
       if (!mounted || _ctrl == null || !_initialized) return;
       try {
         unawaited(_flashShutter());
@@ -1981,23 +2059,13 @@ class _CameraPageState extends State<CameraPage>
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
               color: Colors.white, size: 20),
           onPressed: () {
-            if (_burstRunning) {
-              _stopBurst();
-            } else {
-              Navigator.pop(context);
-            }
+            if (_burstRunning) { _stopBurst(); } else { Navigator.pop(context); }
           },
         ),
         const Spacer(),
-        _CamBtn(
-          icon: _flashIcon,
-          label: _flash == FlashMode.off
-              ? 'Off'
-              : _flash == FlashMode.auto
-                  ? 'Auto'
-                  : 'On',
-          onTap: _cycleFlash,
-        ),
+        _CamBtn(icon: _flashIcon,
+          label: _flash == FlashMode.off ? 'Off' : _flash == FlashMode.auto ? 'Auto' : 'On',
+          onTap: _cycleFlash),
         const SizedBox(width: 4),
         _CamBtn(
           icon: Icons.burst_mode_rounded,
@@ -2009,10 +2077,7 @@ class _CameraPageState extends State<CameraPage>
           }),
         ),
         const SizedBox(width: 4),
-        _CamBtn(
-            icon: Icons.flip_camera_ios_rounded,
-            label: 'Balik',
-            onTap: _switchCamera),
+        _CamBtn(icon: Icons.flip_camera_ios_rounded, label: 'Balik', onTap: _switchCamera),
       ],
     ),
   );
@@ -2045,7 +2110,7 @@ class _CameraPageState extends State<CameraPage>
                 child: FittedBox(
                   fit: BoxFit.cover,
                   child: SizedBox(
-                    width: _ctrl!.value.previewSize!.height,
+                    width:  _ctrl!.value.previewSize!.height,
                     height: _ctrl!.value.previewSize!.width,
                     child: CameraPreview(_ctrl!),
                   ),
@@ -2067,51 +2132,35 @@ class _CameraPageState extends State<CameraPage>
               ),
             if (_zoom > _minZoom + 0.05)
               Positioned(
-                top: 14,
-                left: 0,
-                right: 0,
+                top: 14, left: 0, right: 0,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
+                      color: Colors.black54, borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      '${_zoom.toStringAsFixed(1)}×',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: Text('${_zoom.toStringAsFixed(1)}×',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                   ),
                 ),
               ),
             if (_burstRunning)
               Positioned(
-                top: 14,
-                right: 16,
+                top: 14, right: 16,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade600,
-                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.red.shade600, borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.fiber_manual_record,
-                          color: Colors.white, size: 10),
+                      const Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
                       const SizedBox(width: 5),
                       Text('${_burstPaths.length}',
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          )),
+                              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
                     ],
                   ),
                 ),
@@ -2135,9 +2184,7 @@ class _CameraPageState extends State<CameraPage>
           borderRadius: BorderRadius.circular(6),
           child: Image.file(
             File(_burstPaths[i]),
-            width: 56,
-            height: 56,
-            fit: BoxFit.cover,
+            width: 56, height: 56, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) =>
                 Container(color: Colors.grey, width: 56, height: 56),
           ),
@@ -2152,18 +2199,14 @@ class _CameraPageState extends State<CameraPage>
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _CircleBtn(
-            icon: Icons.photo_library_outlined,
-            size: 48,
-            onTap: _pickFromGallery),
+        _CircleBtn(icon: Icons.photo_library_outlined, size: 48, onTap: _pickFromGallery),
         GestureDetector(
           onTap: _burstMode
               ? (_burstRunning ? _stopBurst : _startBurst)
               : _capture,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            width: 72,
-            height: 72,
+            width: 72, height: 72,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
@@ -2174,23 +2217,17 @@ class _CameraPageState extends State<CameraPage>
             child: Center(
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                width: _burstRunning ? 24 : 54,
+                width:  _burstRunning ? 24 : 54,
                 height: _burstRunning ? 24 : 54,
                 decoration: BoxDecoration(
-                  color: _burstRunning
-                      ? Colors.red.shade500
-                      : Colors.white,
-                  borderRadius:
-                      BorderRadius.circular(_burstRunning ? 6 : 27),
+                  color: _burstRunning ? Colors.red.shade500 : Colors.white,
+                  borderRadius: BorderRadius.circular(_burstRunning ? 6 : 27),
                 ),
               ),
             ),
           ),
         ),
-        _CircleBtn(
-            icon: Icons.info_outline_rounded,
-            size: 48,
-            onTap: _showInfoSheet),
+        _CircleBtn(icon: Icons.info_outline_rounded, size: 48, onTap: _showInfoSheet),
       ],
     ),
   );
@@ -2210,26 +2247,13 @@ class _CameraPageState extends State<CameraPage>
           children: const [
             Text('Petunjuk Kamera',
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700)),
+                    color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
             SizedBox(height: 14),
-            _InfoRow(
-                icon: Icons.touch_app_rounded,
-                text: 'Ketuk layar untuk fokus'),
-            _InfoRow(
-                icon: Icons.zoom_in_rounded,
-                text: 'Jepit/rentang untuk zoom'),
-            _InfoRow(
-                icon: Icons.burst_mode_rounded,
-                text:
-                    'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
-            _InfoRow(
-                icon: Icons.flash_auto_rounded,
-                text: 'Ikon kilat: Off → Auto → On'),
-            _InfoRow(
-                icon: Icons.flip_camera_ios_rounded,
-                text: 'Ikon flip: ganti kamera depan/belakang'),
+            _InfoRow(icon: Icons.touch_app_rounded,       text: 'Ketuk layar untuk fokus'),
+            _InfoRow(icon: Icons.zoom_in_rounded,          text: 'Jepit/rentang untuk zoom'),
+            _InfoRow(icon: Icons.burst_mode_rounded,       text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
+            _InfoRow(icon: Icons.flash_auto_rounded,       text: 'Ikon kilat: Off → Auto → On'),
+            _InfoRow(icon: Icons.flip_camera_ios_rounded,  text: 'Ikon flip: ganti kamera depan/belakang'),
           ],
         ),
       ),
@@ -2245,8 +2269,7 @@ class BurstSelectionPage extends StatelessWidget {
   final List<String> paths;
   final Function(String) onSelect;
 
-  const BurstSelectionPage(
-      {super.key, required this.paths, required this.onSelect});
+  const BurstSelectionPage({super.key, required this.paths, required this.onSelect});
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -2260,43 +2283,30 @@ class BurstSelectionPage extends StatelessWidget {
     body: GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
+        crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4,
       ),
       itemCount: paths.length,
       itemBuilder: (_, i) => GestureDetector(
-        onTap: () {
-          Navigator.pop(context);
-          onSelect(paths[i]);
-        },
+        onTap: () { Navigator.pop(context); onSelect(paths[i]); },
         child: Stack(
           fit: StackFit.expand,
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: Image.file(
-                File(paths[i]),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    Container(color: Colors.grey.shade800),
-              ),
+              child: Image.file(File(paths[i]),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Container(color: Colors.grey.shade800)),
             ),
             Positioned(
-              bottom: 4,
-              right: 4,
+              bottom: 4, right: 4,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                    color: Colors.black54, borderRadius: BorderRadius.circular(8)),
                 child: Text('${i + 1}',
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
+                        color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
               ),
             ),
           ],
@@ -2334,8 +2344,7 @@ class _SettingsPageState extends State<SettingsPage> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                  color: active ? l.accentColor : Colors.transparent,
-                  width: 2),
+                  color: active ? l.accentColor : Colors.transparent, width: 2),
             ),
             child: ListTile(
               leading: CircleAvatar(
@@ -2343,19 +2352,15 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Icon(l.icon, color: l.accentColor),
               ),
               title: Text(l.label,
-                  style:
-                      const TextStyle(fontWeight: FontWeight.bold)),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text(l.description),
-              trailing: active
-                  ? Icon(Icons.check_circle, color: l.accentColor)
-                  : null,
+              trailing: active ? Icon(Icons.check_circle, color: l.accentColor) : null,
               onTap: () async {
                 setState(() => selected = l.id);
                 await WatermarkLayout.set(l.id);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text('✓ ${l.label} dipilih')),
+                    SnackBar(content: Text('✓ ${l.label} dipilih')),
                   );
                 }
               },
@@ -2395,15 +2400,13 @@ class _CamBtn extends StatelessWidget {
             : Colors.white.withOpacity(0.10),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: active ? Colors.amber : Colors.white24,
-          width: 1,
+          color: active ? Colors.amber : Colors.white24, width: 1,
         ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon,
-              color: active ? Colors.amber : Colors.white, size: 20),
+          Icon(icon, color: active ? Colors.amber : Colors.white, size: 20),
           const SizedBox(height: 2),
           Text(label,
               style: TextStyle(
@@ -2422,18 +2425,13 @@ class _CircleBtn extends StatelessWidget {
   final double size;
   final VoidCallback onTap;
 
-  const _CircleBtn({
-    required this.icon,
-    required this.size,
-    required this.onTap,
-  });
+  const _CircleBtn({required this.icon, required this.size, required this.onTap});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
-      width: size,
-      height: size,
+      width: size, height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.white.withOpacity(0.12),
@@ -2450,11 +2448,9 @@ class _FocusBox extends StatelessWidget {
     tween: Tween(begin: 1.3, end: 1.0),
     duration: const Duration(milliseconds: 250),
     curve: Curves.easeOut,
-    builder: (_, scale, child) =>
-        Transform.scale(scale: scale, child: child),
+    builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
     child: Container(
-      width: 56,
-      height: 56,
+      width: 56, height: 56,
       decoration: BoxDecoration(
         border: Border.all(color: Colors.amber, width: 1.8),
         borderRadius: BorderRadius.circular(6),
@@ -2466,7 +2462,6 @@ class _FocusBox extends StatelessWidget {
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String text;
-
   const _InfoRow({required this.icon, required this.text});
 
   @override
@@ -2480,10 +2475,7 @@ class _InfoRow extends StatelessWidget {
         Expanded(
           child: Text(text,
               style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13.5,
-                height: 1.4,
-              )),
+                  color: Colors.white70, fontSize: 13.5, height: 1.4)),
         ),
       ],
     ),

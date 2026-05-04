@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  TermulLog — main.dart (FULL FIXED VERSION)
+//  TermulLog — main.dart (UPDATED)
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -40,10 +40,10 @@ void main() async {
 //  CONSTANTS
 // ════════════════════════════════════════════════════════════════════════════
 
-const int kMaxOutputWidth = 1280;
-const int kJpegQuality    = 85;
-const int kSigMaxWidth    = 500;
-const int kLogoMaxWidth   = 100;
+const int kMaxOutputWidth = 1080;
+const int kJpegQuality    = 78;
+const int kSigMaxWidth    = 240;
+const int kLogoMaxWidth   = 80;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  LAYOUT REGISTRY
@@ -73,23 +73,23 @@ const List<LayoutInfo> kLayouts = [
   LayoutInfo(
     id: 'layout2',
     label: 'Compact Field',
-    description: 'Strip hijau, info ringkas, cocok untuk laporan cepat di lapangan.',
+    description: 'Strip navy, info ringkas, cocok untuk laporan cepat di lapangan.',
     icon: Icons.assignment_turned_in_outlined,
-    accentColor: Color(0xFF27AE60),
+    accentColor: Color(0xFF1B4F72),
   ),
   LayoutInfo(
     id: 'layout3',
     label: 'Dark Minimal',
-    description: 'Latar gelap elegan, teks putih, garis aksen emas. Kesan premium.',
+    description: 'Latar gelap elegan transparan (Glassmorphism), teks putih/cyan, aksen cyan.',
     icon: Icons.dark_mode_outlined,
-    accentColor: Color(0xFF212121),
+    accentColor: Color(0xFF00B894),
   ),
   LayoutInfo(
     id: 'layout4',
     label: 'Split Side-by-Side',
-    description: 'Panel kiri: foto. Panel kanan: info & tanda tangan dua kolom ungu.',
-    icon: Icons.view_column_outlined,
-    accentColor: Color(0xFF6C3483),
+    description: 'Panel samping Navy: info & tanda tangan. Teks Putih & Cyan.',
+    icon: Icons.vertical_split,
+    accentColor: Color(0xFF1B4F72),
   ),
 ];
 
@@ -98,7 +98,7 @@ const List<LayoutInfo> kLayouts = [
 // ════════════════════════════════════════════════════════════════════════════
 
 String _trunc(String s, int maxLen) =>
-    s.length > maxLen ? '${s.substring(0, maxLen - 1)}.' : s;
+    s.length > maxLen ? '${s.substring(0, maxLen - 1)}...' : s;
 
 Uint8List _processWatermark(Map<String, dynamic> p) {
   try {
@@ -128,13 +128,11 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
       }
     }
 
-    // Logo: sudah pre-resized (PNG kecil max 100px), decode ringan
     final logoBytes = p['logoBytes'] as Uint8List?;
     img.Image? logo;
     if (logoBytes != null && logoBytes.isNotEmpty) {
       try {
         logo = img.decodeImage(logoBytes);
-        // Guard: jika masih > max (seharusnya tidak terjadi), resize lagi
         if (logo != null &&
             (logo.width > kLogoMaxWidth || logo.height > kLogoMaxWidth)) {
           logo = img.copyResize(logo,
@@ -174,7 +172,6 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
 
-/// Tempatkan signature dengan guard overflow. Jika tidak muat, scale down.
 void _compositeSigSafe(img.Image canvas, img.Image sig,
     int dstX, int dstY, int canvasH) {
   if (sig.width <= 0 || sig.height <= 0) return;
@@ -191,14 +188,13 @@ void _compositeSigSafe(img.Image canvas, img.Image sig,
   }
 }
 
+// ── LAYOUT 1: PROFESSIONAL REPORT ──────────────────────────────────────────
 Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time,
     String address, String weather) {
   final W = base.width;
   final H = base.height;
 
-  // Hitung S berdasarkan kebutuhan konten minimum:
-  // header strip 88 + info box 220 + sig area 140 + padding 40 = 488
   const int minS = 488;
   final int S = (W * 0.38).clamp(minS.toDouble(), 1100.0).toInt();
 
@@ -218,7 +214,7 @@ Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
   img.drawString(canvas, '$date  $time',
       font: img.arial24, x: W - 285, y: H + 32, color: white);
 
-  // Info box — diperluas hingga 220px untuk 6 baris
+  // Info box
   final iY = H + 98;
   img.fillRect(canvas, x1: 0, y1: iY, x2: W, y2: iY + 220, color: gray);
   img.drawString(canvas, 'TEKNISI: $name',
@@ -232,25 +228,23 @@ Uint8List _layout1(img.Image base, img.Image? sig, img.Image? logo,
   img.drawString(canvas, 'CUACA  : ${_trunc(weather, 40)}',
       font: img.arial24, x: 20, y: iY + 150, color: blue2);
 
-  // Logo di pojok kanan info box
   if (logo != null && logo.width > 0 && logo.height > 0) {
     img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 14);
   }
 
-  // Tanda tangan — mulai setelah info box + margin
   final sigY = iY + 232;
   if (sig != null) _compositeSigSafe(canvas, sig, 20, sigY, H + S);
 
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
+// ── LAYOUT 2: COMPACT FIELD (NAVY ACCENT) ──────────────────────────────────
 Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time,
     String address, String weather) {
   final W = base.width;
   final H = base.height;
 
-  // min: header 68 + 5 baris info (5×36=180) + sig 140 + padding 50 = 438
   const int minS = 438;
   final int S = (W * 0.38).clamp(minS.toDouble(), 1000.0).toInt();
 
@@ -258,12 +252,12 @@ Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
   img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
 
-  final green = img.ColorRgb8(39, 174, 96);
-  final teal  = img.ColorRgb8(22, 160, 133);
+  final navy  = img.ColorRgb8(27, 79, 114);
+  final white = img.ColorRgb8(255, 255, 255);
 
-  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 68, color: green);
+  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 68, color: navy);
   img.drawString(canvas, 'PEKERJAAN SELESAI',
-      font: img.arial48, x: 20, y: H + 13);
+      font: img.arial48, x: 20, y: H + 13, color: white);
 
   final iY = H + 82;
   img.drawString(canvas, 'Teknisi : $name',
@@ -273,9 +267,9 @@ Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
   img.drawString(canvas, 'Waktu   : $date $time',
       font: img.arial24, x: 20, y: iY + 72);
   img.drawString(canvas, 'Lokasi  : ${_trunc(address, 65)}',
-      font: img.arial24, x: 20, y: iY + 108, color: teal);
+      font: img.arial24, x: 20, y: iY + 108, color: navy);
   img.drawString(canvas, 'Cuaca   : ${_trunc(weather, 40)}',
-      font: img.arial24, x: 20, y: iY + 144, color: teal);
+      font: img.arial24, x: 20, y: iY + 144, color: navy);
 
   if (logo != null && logo.width > 0 && logo.height > 0) {
     img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: iY + 8);
@@ -287,155 +281,137 @@ Uint8List _layout2(img.Image base, img.Image? sig, img.Image? logo,
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
+// ── LAYOUT 3: DARK MINIMAL (GLASSMORPHISM + CYAN ACCENT) ───────────────────
 Uint8List _layout3(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time,
     String address, String weather) {
   final W = base.width;
   final H = base.height;
 
-  // min: judul 60 + 4 baris info 160 + alamat+cuaca 64 + sig 140 + padding 60 = 484
   const int minS = 484;
   final int S = (W * 0.40).clamp(minS.toDouble(), 1100.0).toInt();
 
   final canvas = img.Image(width: W, height: H + S);
-  img.fill(canvas, color: img.ColorRgb8(33, 33, 33));
+  img.fill(canvas, color: img.ColorRgb8(15, 21, 18));
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
+
+  // Glassmorphism panel — opasitas sangat rendah
   img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + S,
-      color: img.ColorRgb8(33, 33, 33));
-  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 4,
-      color: img.ColorRgb8(212, 175, 55));
-  img.fillRect(canvas, x1: 0, y1: H + 4, x2: 6, y2: H + S,
-      color: img.ColorRgb8(212, 175, 55));
+      color: img.ColorRgba8(0, 0, 0, 60));
 
+  final cyan  = img.ColorRgb8(0, 184, 148);
   final white = img.ColorRgb8(255, 255, 255);
-  final gold  = img.ColorRgb8(212, 175, 55);
-  final cyan  = img.ColorRgb8(100, 210, 210);
-  const pX = 26;
 
+  // Accent bars
+  img.fillRect(canvas, x1: 0, y1: H, x2: W, y2: H + 4, color: cyan);
+  img.fillRect(canvas, x1: 0, y1: H + 4, x2: 8, y2: H + S, color: cyan);
+
+  const pX = 32;
   img.drawString(canvas, 'LAPORAN TEKNIS',
-      font: img.arial48, x: pX, y: H + 18, color: gold);
-  img.drawString(canvas, name,
-      font: img.arial24, x: pX, y: H + 80,  color: white);
-  img.drawString(canvas, 'ID: $id',
-      font: img.arial24, x: pX, y: H + 114, color: white);
+      font: img.arial48, x: pX, y: H + 24, color: cyan);
+  img.drawString(canvas, 'TEKNISI: $name',
+      font: img.arial24, x: pX, y: H + 88, color: white);
+  img.drawString(canvas, 'ID     : $id',
+      font: img.arial24, x: pX, y: H + 122, color: white);
   img.drawString(canvas, '$date  $time',
-      font: img.arial24, x: pX, y: H + 148, color: white);
-  img.drawString(canvas, _trunc(address, 65),
-      font: img.arial24, x: pX, y: H + 184, color: cyan);
-  img.drawString(canvas, _trunc(weather, 40),
-      font: img.arial24, x: pX, y: H + 218, color: cyan);
+      font: img.arial24, x: pX, y: H + 156, color: white);
+  img.drawString(canvas, 'LOKASI : ${_trunc(address, 65)}',
+      font: img.arial24, x: pX, y: H + 200, color: cyan);
+  img.drawString(canvas, 'CUACA  : ${_trunc(weather, 40)}',
+      font: img.arial24, x: pX, y: H + 234, color: cyan);
 
   if (logo != null && logo.width > 0 && logo.height > 0) {
-    img.compositeImage(canvas, logo, dstX: W - logo.width - 20, dstY: H + 18);
+    img.compositeImage(canvas, logo, dstX: W - logo.width - 32, dstY: H + 24);
   }
 
-  final sigY = H + 262;
+  const sigY = 280;
   if (sig != null) {
-    // Background transparan untuk area tanda tangan
     img.fillRect(canvas,
-        x1: pX - 4, y1: sigY - 4,
-        x2: pX + (sig.width > 0 ? sig.width : 200) + 4,
-        y2: sigY + (sig.height > 0 ? sig.height : 80) + 10,
-        color: img.ColorRgba8(255, 255, 255, 25));
-    _compositeSigSafe(canvas, sig, pX, sigY, H + S);
+        x1: pX - 4, y1: H + sigY - 4,
+        x2: pX + sig.width + 4,
+        y2: H + sigY + sig.height + 4,
+        color: img.ColorRgba8(255, 255, 255, 30));
+    _compositeSigSafe(canvas, sig, pX, H + sigY, H + S);
   }
 
   return img.encodeJpg(canvas, quality: kJpegQuality);
 }
 
+// ── LAYOUT 4: SPLIT SIDE-BY-SIDE (NAVY PANEL, WHITE LABELS, CYAN DATA) ─────
 Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
     String name, String id, String date, String time,
     String address, String weather) {
   final fW = base.width;
   final fH = base.height;
 
-  // Panel lebih lebar: 32% (max 460px) agar teks tidak terpotong
   final pW = (fW * 0.32).clamp(260.0, 460.0).toInt();
   final W  = fW + pW;
   final H  = fH;
+
   final canvas = img.Image(width: W, height: H);
-  img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
+  img.fill(canvas, color: img.ColorRgb8(27, 79, 114)); // Navy background
   img.compositeImage(canvas, base, dstX: 0, dstY: 0);
 
-  // Gradient ungu pada panel kanan
-  for (int y = 0; y < H; y++) {
-    final t = y / H;
-    img.fillRect(canvas,
-        x1: fW, y1: y, x2: W, y2: y + 1,
-        color: img.ColorRgb8(
-          (72  + (108 - 72)  * t).round(),
-          (26  + (52  - 26)  * t).round(),
-          (107 + (131 - 107) * t).round(),
-        ));
-  }
-  img.fillRect(canvas, x1: fW, y1: 0, x2: fW + 4, y2: H,
-      color: img.ColorRgb8(212, 175, 55));
-
+  final cyan  = img.ColorRgb8(0, 184, 148);
   final white = img.ColorRgb8(255, 255, 255);
-  final gold  = img.ColorRgb8(212, 175, 55);
-  final cyan  = img.ColorRgb8(100, 210, 210);
-  final tX    = fW + 4 + 14;
+  final tX    = fW + 18;
 
   // Max chars berdasarkan lebar panel (font arial14 ~7px/char)
   final maxC = ((pW - 28) / 7).floor().clamp(18, 38);
 
-  // Step vertikal proporsional berdasarkan tinggi foto
-  // Bagi H menjadi zona: nama, tiket, tanggal, jam, lokasi, cuaca, ttd
-  // Total zona = 7, sisakan ruang tanda tangan ~H*0.18
-  final availH  = (H * 0.82).toInt();
-  final zoneH   = (availH / 8).clamp(28.0, 60.0).toInt();
-  final labelH  = 16; // tinggi font arial14
-  final valueH  = zoneH - labelH - 4;
-
-  int yy = 18;
+  int yy = 24;
 
   void safeLabel(String text, int y) {
-    if (y + labelH < H) {
-      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: gold);
+    if (y + 16 < H) {
+      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: white);
     }
   }
 
-  void safeValue14(String text, int y, img.Color color) {
-    if (y + labelH < H) {
-      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: color);
+  void safeValueCyan(String text, int y) {
+    if (y + 16 < H) {
+      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: cyan);
+    }
+  }
+
+  void safeValueWhite(String text, int y) {
+    if (y + 16 < H) {
+      img.drawString(canvas, text, font: img.arial14, x: tX, y: y, color: white);
     }
   }
 
   void safeDivider(int y) {
     if (y + 2 < H) {
-      img.fillRect(canvas, x1: tX, y1: y, x2: W - 10, y2: y + 2, color: gold);
+      img.fillRect(canvas, x1: tX, y1: y, x2: W - 10, y2: y + 2, color: cyan);
     }
   }
 
   // TEKNISI
-  safeLabel('TEKNISI', yy); yy += labelH + 2;
-  safeValue14(_trunc(name, maxC), yy, white); yy += valueH + 4;
-  safeDivider(yy); yy += 8;
+  safeLabel('TEKNISI', yy); yy += 18;
+  safeValueWhite(_trunc(name, maxC), yy); yy += 34;
+  safeDivider(yy); yy += 10;
 
   // NO. TIKET
-  safeLabel('NO. TIKET', yy); yy += labelH + 2;
-  safeValue14(_trunc(id, maxC), yy, white); yy += (valueH * 0.75).toInt() + 4;
+  safeLabel('NO. TIKET', yy); yy += 18;
+  safeValueWhite(_trunc(id, maxC), yy); yy += 28;
 
-  // TANGGAL
-  safeLabel('TANGGAL', yy); yy += labelH + 2;
-  safeValue14(date, yy, white); yy += (valueH * 0.75).toInt() + 2;
-
-  // JAM
-  safeLabel('JAM', yy); yy += labelH + 2;
-  safeValue14(time, yy, white); yy += (valueH * 0.75).toInt() + 4;
-  safeDivider(yy); yy += 8;
+  // TANGGAL & JAM
+  safeLabel('TANGGAL', yy); yy += 18;
+  safeValueWhite(date, yy); yy += 24;
+  safeLabel('JAM', yy); yy += 18;
+  safeValueWhite(time, yy); yy += 34;
+  safeDivider(yy); yy += 10;
 
   // LOKASI
-  safeLabel('LOKASI', yy); yy += labelH + 2;
-  safeValue14(_trunc(address, maxC), yy, cyan); yy += (valueH * 0.75).toInt() + 2;
+  safeLabel('LOKASI', yy); yy += 18;
+  safeValueCyan(_trunc(address, maxC), yy); yy += 28;
 
   // CUACA
-  safeLabel('CUACA', yy); yy += labelH + 2;
-  safeValue14(_trunc(weather, maxC), yy, cyan); yy += (valueH * 0.75).toInt() + 4;
-  safeDivider(yy); yy += 8;
+  safeLabel('CUACA', yy); yy += 18;
+  safeValueCyan(_trunc(weather, maxC), yy); yy += 34;
+  safeDivider(yy); yy += 10;
 
   // TANDA TANGAN
-  safeLabel('TANDA TANGAN', yy); yy += labelH + 4;
+  safeLabel('TANDA TANGAN', yy); yy += 20;
 
   if (sig != null && sig.width > 0 && sig.height > 0) {
     final maxSigW = pW - 28;
@@ -444,7 +420,6 @@ Uint8List _layout4(img.Image base, img.Image? sig, img.Image? logo,
       s = img.copyResize(s,
           width: maxSigW, interpolation: img.Interpolation.linear);
     }
-    // Scale down jika tinggi melebihi ruang tersisa
     final roomH = H - yy - 16;
     if (roomH > 16 && s.height > roomH) {
       final ratio = roomH / s.height;
@@ -742,18 +717,16 @@ class LocationWeatherService {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  LOGO CACHE  ← PERBAIKAN UTAMA: pre-decode & resize sekali saat dipilih
+//  LOGO CACHE  ← Pre-decode & resize sekali saat dipilih
 // ════════════════════════════════════════════════════════════════════════════
 
 class LogoCache {
   static Uint8List?  _bytes;
-  static img.Image?  _decoded; // cache hasil decode+resize
+  static img.Image?  _decoded;
   static String?     _path;
 
-  /// Load, decode, dan resize logo SEKALI di main isolate.
-  /// Isolate compute() hanya menerima PNG kecil (max 100px).
   static Future<void> load(String path) async {
-    if (_path == path) return; // sudah di-cache, skip
+    if (_path == path) return;
     try {
       final file = File(path);
       if (!await file.exists()) {
@@ -764,14 +737,12 @@ class LogoCache {
       img.Image? decoded = img.decodeImage(raw);
       if (decoded == null) return;
 
-      // Resize ke max kLogoMaxWidth sekali di sini
       if (decoded.width > kLogoMaxWidth || decoded.height > kLogoMaxWidth) {
         decoded = img.copyResize(decoded,
             width: kLogoMaxWidth, interpolation: img.Interpolation.linear);
       }
       if (decoded.width <= 0 || decoded.height <= 0) return;
 
-      // Encode kembali ke PNG kecil — ini yang dikirim ke isolate
       _bytes   = Uint8List.fromList(img.encodePng(decoded));
       _decoded = decoded;
       _path    = path;
@@ -1581,13 +1552,10 @@ class _SignaturePageState extends State<SignaturePage> {
         }
       }
 
-      // ── PERBAIKAN: kirim LogoCache.bytes yang sudah pre-resized (PNG kecil)
-      // LogoCache.load() sudah decode+resize+encode ke PNG max 100px,
-      // sehingga isolate compute() tidak perlu kerja berat lagi.
       final result = await compute(_processWatermark, {
         'imageBytes': imageBytes,
         'sigBytes':   sigBytes,
-        'logoBytes':  LogoCache.bytes, // ← PNG kecil pre-resized, bukan raw file
+        'logoBytes':  LogoCache.bytes,
         'layout':     WatermarkLayout.get(),
         'name':       widget.techName,
         'id':         widget.itemId,

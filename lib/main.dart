@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  TermulLog — main.dart (WATERMARK ENGINE V5 INTEGRATED)
+//  TermulLog — main.dart (WATERMARK ENGINE V5 + MINI MAP)
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Watermark Engine Fixes (V4 → V5):
@@ -15,6 +15,17 @@
 //  ✔ [FIX] _processWatermark diperbaiki — tidak lagi orphan function fragment
 //  ✔ [FIX] Konflik konstanta kMaxOutputWidth & kJpegQuality diselesaikan
 //         (engine pakai nilai lebih tinggi: 1080→1600, quality 78→90)
+//
+//  Mini Map Update:
+//  ✔ [NEW] Realtime GPS mini map overlay di CameraPage
+//  ✔ [NEW] Tap mini map untuk toggle ukuran kecil ↔ besar
+//  ✔ [NEW] Indikator akurasi GPS (hijau < 30m, kuning ≥ 30m)
+//  ✔ [NEW] Loading state saat GPS belum tersedia
+//  ✔ [NEW] Tombol refresh GPS manual
+//
+//  Dependency tambahan di pubspec.yaml:
+//    flutter_map: ^7.0.2
+//    latlong2: ^0.9.1
 //
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -37,6 +48,8 @@ import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 // ─── Global cameras list ─────────────────────────────────────────────────────
 List<CameraDescription> _cameras = [];
@@ -54,16 +67,13 @@ void main() async {
 
 // ════════════════════════════════════════════════════════════════════════════
 //  CONSTANTS
-//  CATATAN: kMaxOutputWidth & kJpegQuality dipakai engine, bukan nilai lama.
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── Output constraints ───────────────────────────────────────────────────────
 const int kMaxOutputWidth = 1600;
 const int kJpegQuality    = 90;
 const int kSigMaxWidth    = 260;
 const int kLogoMaxWidth   = 90;
 
-// ── Layout geometry ───────────────────────────────────────────────────────────
 const int kPanelPaddingX  = 25;
 const int kSidebarPadX    = 18;
 const int kAccentBarWidth = 10;
@@ -72,7 +82,6 @@ const int kTextLineSmall  = 18;
 const int kTextLineLarge  = 28;
 const int kSectionGap     = 12;
 
-// ── Colours (top-level final, bukan const — img.Color bukan const) ────────────
 final img.Color kColorWhite     = img.ColorRgb8(255, 255, 255);
 final img.Color kColorCyan      = img.ColorRgb8(0, 184, 148);
 final img.Color kColorGrey      = img.ColorRgb8(210, 210, 210);
@@ -139,12 +148,10 @@ String _trunc(String s, int maxLen) {
   return '${s.substring(0, maxLen - 3)}...';
 }
 
-/// Wraps [text] into lines of at most [maxChars] characters.
-/// FIX: kata lebih panjang dari maxChars dipotong paksa — tidak infinite-loop.
 List<String> _wrapText(String text, int maxChars) {
   assert(maxChars > 0, 'maxChars harus lebih dari 0');
-  final words  = text.split(' ');
-  final lines  = <String>[];
+  final words   = text.split(' ');
+  final lines   = <String>[];
   var   current = '';
 
   for (var word in words) {
@@ -193,7 +200,6 @@ img.Image? _resizeLogo(img.Image? logo) {
   return logo;
 }
 
-/// FIX: export PNG jika input punya alpha channel, agar transparansi terjaga.
 Uint8List _export(img.Image image, {bool hasAlpha = false}) {
   if (hasAlpha) return Uint8List.fromList(img.encodePng(image));
   return Uint8List.fromList(
@@ -205,7 +211,6 @@ bool _imageHasAlpha(img.Image image) => image.numChannels == 4;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  WATERMARK ENGINE V5 — ENTRY POINT
-//  Dipanggil via compute() dari SignaturePage._save()
 // ════════════════════════════════════════════════════════════════════════════
 
 Uint8List _processWatermark(Map<String, dynamic> p) {
@@ -221,36 +226,25 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
     img.Image image = decoded;
     final hasAlpha  = _imageHasAlpha(image);
 
-    // Resize jika terlalu besar
     if (image.width > kMaxOutputWidth) {
       image = img.copyResize(
         image, width: kMaxOutputWidth, interpolation: img.Interpolation.linear,
       );
     }
 
-    // Signature
     img.Image? sig;
     final sigBytes = p['sigBytes'] as Uint8List?;
     if (sigBytes != null && sigBytes.isNotEmpty) {
-      try {
-        sig = img.decodeImage(sigBytes);
-      } catch (e) {
-        debugPrint('Signature decode error: $e');
-        sig = null;
-      }
+      try { sig = img.decodeImage(sigBytes); } catch (e) { sig = null; }
     }
 
-    // Logo
     img.Image? logo;
     final logoBytes = p['logoBytes'] as Uint8List?;
     if (logoBytes != null && logoBytes.isNotEmpty) {
       try {
         logo = img.decodeImage(logoBytes);
         if (logo != null && (logo.width <= 0 || logo.height <= 0)) logo = null;
-      } catch (e) {
-        debugPrint('Logo decode error: $e');
-        logo = null;
-      }
+      } catch (e) { logo = null; }
     }
     logo = _resizeLogo(logo);
 
@@ -263,7 +257,6 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
     final weather    = p['weather'] as String? ?? '';
     final isPortrait = image.height > image.width;
 
-    // Helper closure — hindari duplikasi argumen
     Uint8List draw(String l) {
       switch (l) {
         case 'layout2': return _drawLayout2(image, sig, logo, name, id, date, time, address, weather, hasAlpha: hasAlpha);
@@ -276,8 +269,7 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
     if (layout == 'auto') return draw(isPortrait ? 'layout4' : 'layout1');
     return draw(layout);
   } catch (e, stackTrace) {
-    debugPrint('Watermark processing error: $e');
-    debugPrint('Stack trace: $stackTrace');
+    debugPrint('Watermark processing error: $e\n$stackTrace');
     final originalBytes = p['imageBytes'] as Uint8List?;
     if (originalBytes != null) return originalBytes;
     throw Exception('Failed to process watermark: $e');
@@ -296,36 +288,30 @@ Uint8List _drawLayout1(
   final W = base.width;
   final H = base.height;
 
-  // FIX: proporsional, bukan hardcode
   final bannerH     = (H * 0.23).toInt().clamp(180, 380);
   final isSmall     = W < 700;
   final addrMaxChar = isSmall ? 38 : 65;
 
   sig = _resizeSignature(sig, kSigMaxWidth, (bannerH * 0.45).toInt());
 
-  // Background banner
   img.fillRect(base, x1: 0, y1: H - bannerH, x2: W - 1, y2: H - 1, color: kColorDarkBg);
-
-  // Accent bar kiri
   img.fillRect(base, x1: 0, y1: H - bannerH, x2: kAccentBarWidth, y2: H - 1, color: kColorCyan);
 
   final titleFont = isSmall ? img.arial14 : img.arial24;
   int yy          = H - bannerH + kTextLineSmall;
 
-  _drawTextShadow(base, 'LAPORAN TEKNIS',          font: titleFont,   x: kPanelPaddingX, y: yy, color: kColorCyan);
+  _drawTextShadow(base, 'LAPORAN TEKNIS',               font: titleFont,   x: kPanelPaddingX, y: yy, color: kColorCyan);
   yy += isSmall ? kTextLineSmall : kTextLineLarge + kSectionGap;
 
   _drawTextShadow(base, 'Teknisi : ${_trunc(name, 30)}', font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
   yy += kTextLineSmall + 4;
 
-  // FIX: id tampil konsisten
-  _drawTextShadow(base, 'ID       : $id',          font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
+  _drawTextShadow(base, 'ID       : $id',               font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
   yy += kTextLineSmall + 4;
 
-  _drawTextShadow(base, '$date   |   $time',       font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
+  _drawTextShadow(base, '$date   |   $time',            font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
   yy += kTextLineSmall + kSectionGap;
 
-  // FIX: _wrapText konsisten di semua layout
   for (final line in _wrapText(address, addrMaxChar).take(2)) {
     _drawTextShadow(base, line, font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
     yy += kTextLineSmall;
@@ -336,7 +322,6 @@ Uint8List _drawLayout1(
     _drawTextShadow(base, weather, font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorCyan);
   }
 
-  // Logo — pojok kanan atas banner
   if (logo != null) {
     img.compositeImage(base, logo,
       dstX: (W - logo.width - kPanelPaddingX).clamp(0, W - logo.width),
@@ -344,7 +329,6 @@ Uint8List _drawLayout1(
     );
   }
 
-  // Signature — pojok kanan bawah banner
   if (sig != null) {
     img.compositeImage(base, sig,
       dstX: (W - sig.width - kPanelPaddingX).clamp(0, W - sig.width),
@@ -368,37 +352,25 @@ Uint8List _drawLayout2(
   final H = base.height;
 
   final boxW = (W * 0.42).toInt().clamp(300, 500);
-
-  // FIX: boxH proporsional terhadap tinggi gambar
   final boxH = (H * 0.32).toInt().clamp(200, 280);
-
   final boxX = W - boxW - kCornerMargin;
-  const boxY = kCornerMargin; // FIX: named constant
+  const boxY = kCornerMargin;
 
   sig = _resizeSignature(sig, (boxW * 0.65).toInt(), 80);
 
-  // Background card
   img.fillRect(base, x1: boxX, y1: boxY, x2: W - kCornerMargin, y2: boxY + boxH, color: kColorBlackCard);
-
-  // Border card
   img.drawRect(base, x1: boxX, y1: boxY, x2: W - kCornerMargin, y2: boxY + boxH, color: kColorCyan);
 
   final textX = boxX + kTextLineSmall;
-
-  // FIX: yy relatif terhadap boxY
-  int yy = boxY + 15;
+  int   yy    = boxY + 15;
 
   _drawTextShadow(base, _trunc(name, 28),   font: img.arial14, x: textX, y: yy, color: kColorWhite);
   yy += kTextLineLarge;
-
-  // FIX: id tampil
   _drawTextShadow(base, 'ID: $id',          font: img.arial14, x: textX, y: yy, color: kColorGrey);
   yy += kTextLineLarge;
-
   _drawTextShadow(base, '$date  $time',     font: img.arial14, x: textX, y: yy, color: kColorGrey);
   yy += kTextLineLarge;
 
-  // FIX: _wrapText konsisten
   for (final line in _wrapText(address, 30).take(2)) {
     _drawTextShadow(base, line, font: img.arial14, x: textX, y: yy, color: kColorCyan);
     yy += kTextLineSmall;
@@ -409,7 +381,6 @@ Uint8List _drawLayout2(
     _drawTextShadow(base, weather, font: img.arial14, x: textX, y: yy, color: kColorWhite);
   }
 
-  // FIX: Logo ditampilkan di layout2
   if (logo != null) {
     img.compositeImage(base, logo,
       dstX: (boxX + kTextLineSmall).clamp(0, W - logo.width),
@@ -417,7 +388,6 @@ Uint8List _drawLayout2(
     );
   }
 
-  // Signature
   if (sig != null) {
     img.compositeImage(base, sig,
       dstX: (W - sig.width - 35).clamp(0, W - sig.width),
@@ -442,15 +412,12 @@ Uint8List _drawLayout3(
 
   const panelX = 35;
   final panelW = W - 70;
-  const panelH = 160; // sedikit lebih tinggi untuk row id
+  const panelH = 160;
   final panelY = (H - panelH - 30).clamp(0, H - panelH);
 
   sig = _resizeSignature(sig, 220, 80);
 
-  // Background glass
   img.fillRect(base, x1: panelX, y1: panelY, x2: panelX + panelW, y2: panelY + panelH, color: kColorGlassBg);
-
-  // Accent bar kiri
   img.fillRect(base, x1: panelX, y1: panelY, x2: panelX + kAccentBarWidth - 2, y2: panelY + panelH, color: kColorCyan);
 
   final textX = panelX + kTextLineLarge;
@@ -459,13 +426,11 @@ Uint8List _drawLayout3(
   _drawTextShadow(base, _trunc(name.toUpperCase(), 28), font: img.arial24, x: textX, y: yy, color: kColorWhite);
   yy += kTextLineLarge + kSectionGap;
 
-  // FIX: id tampil di layout3
   _drawTextShadow(base, 'ID: $id', font: img.arial14, x: textX, y: yy, color: kColorGrey);
   yy += kTextLineSmall + 4;
 
-  // FIX: _wrapText konsisten
   final addrLine = _wrapText(address, 60).take(1).join('');
-  _drawTextShadow(base, addrLine,           font: img.arial14, x: textX, y: yy, color: kColorCyan);
+  _drawTextShadow(base, addrLine,            font: img.arial14, x: textX, y: yy, color: kColorCyan);
   yy += kTextLineSmall + 4;
 
   _drawTextShadow(base, '$date   |   $time', font: img.arial14, x: textX, y: yy, color: kColorWhite);
@@ -475,7 +440,6 @@ Uint8List _drawLayout3(
     _drawTextShadow(base, weather, font: img.arial14, x: textX, y: yy, color: kColorCyan);
   }
 
-  // FIX: Logo ditampilkan di layout3
   if (logo != null) {
     img.compositeImage(base, logo,
       dstX: (panelX + panelW - logo.width - kPanelPaddingX).clamp(0, W - logo.width),
@@ -483,7 +447,6 @@ Uint8List _drawLayout3(
     );
   }
 
-  // Signature
   if (sig != null) {
     img.compositeImage(base, sig,
       dstX: (panelX + panelW - sig.width - kPanelPaddingX).clamp(0, W - sig.width),
@@ -509,15 +472,11 @@ Uint8List _drawLayout4(
   final sideW = (W * 0.28).toInt().clamp(190, 340);
   sig = _resizeSignature(sig, sideW - 40, 100);
 
-  // Background sidebar
   img.fillRect(base, x1: 0, y1: 0, x2: sideW, y2: H, color: kColorDarkBgMed);
-
-  // Accent bar kanan sidebar
   img.fillRect(base, x1: sideW - kAccentBarWidth + 2, y1: 0, x2: sideW, y2: H, color: kColorCyan);
 
   int yy = 35;
 
-  // Logo — atas sidebar
   if (logo != null) {
     img.compositeImage(base, logo,
       dstX: ((sideW - logo.width) ~/ 2).clamp(0, W - logo.width),
@@ -526,28 +485,26 @@ Uint8List _drawLayout4(
     yy += logo.height + 35;
   }
 
-  _drawTextShadow(base, 'TEKNISI',           font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  _drawTextShadow(base, 'TEKNISI',          font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
   yy += kTextLineLarge - 4;
-  _drawTextShadow(base, _trunc(name, 18),    font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  _drawTextShadow(base, _trunc(name, 18),   font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
   yy += kTextLineLarge + kSectionGap;
 
-  // FIX: id tampil di layout4
-  _drawTextShadow(base, 'ID',                font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  _drawTextShadow(base, 'ID',               font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
   yy += kTextLineLarge - 4;
-  _drawTextShadow(base, _trunc(id, 18),      font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  _drawTextShadow(base, _trunc(id, 18),     font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
   yy += kTextLineLarge + kSectionGap;
 
-  _drawTextShadow(base, 'WAKTU',             font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  _drawTextShadow(base, 'WAKTU',            font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
   yy += kTextLineLarge - 4;
-  _drawTextShadow(base, date,                font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  _drawTextShadow(base, date,               font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
   yy += kTextLineSmall + 2;
-  _drawTextShadow(base, time,                font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+  _drawTextShadow(base, time,               font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
   yy += kTextLineLarge + kSectionGap;
 
-  _drawTextShadow(base, 'LOKASI',            font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+  _drawTextShadow(base, 'LOKASI',           font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
   yy += kTextLineLarge - 4;
 
-  // FIX: _wrapText aman untuk kata panjang
   for (final line in _wrapText(address, 18).take(4)) {
     _drawTextShadow(base, line, font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
     yy += kTextLineSmall;
@@ -558,7 +515,6 @@ Uint8List _drawLayout4(
     _drawTextShadow(base, weather, font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
   }
 
-  // Signature — bawah sidebar
   if (sig != null) {
     img.compositeImage(base, sig,
       dstX: ((sideW - sig.width) ~/ 2).clamp(0, W - sig.width),
@@ -613,8 +569,7 @@ class Login extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 80,
-                    height: 80,
+                    width: 80, height: 80,
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(24),
@@ -626,10 +581,8 @@ class Login extends StatelessWidget {
                   const SizedBox(height: 24),
                   const Text('TermulLog',
                       style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
+                        fontSize: 32, fontWeight: FontWeight.w800,
+                        color: Colors.white, letterSpacing: -0.5,
                       )),
                   const SizedBox(height: 6),
                   Text('Laporan Lapangan Digital',
@@ -661,8 +614,7 @@ class Login extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   SizedBox(
-                    width: double.infinity,
-                    height: 52,
+                    width: double.infinity, height: 52,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
@@ -845,7 +797,7 @@ class LocationWeatherService {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  LOGO CACHE  ← Pre-decode & resize sekali saat dipilih
+//  LOGO CACHE
 // ════════════════════════════════════════════════════════════════════════════
 
 class LogoCache {
@@ -857,10 +809,7 @@ class LogoCache {
     if (_path == path) return;
     try {
       final file = File(path);
-      if (!await file.exists()) {
-        debugPrint('Logo file not found: $path');
-        return;
-      }
+      if (!await file.exists()) { debugPrint('Logo file not found: $path'); return; }
       final raw = await file.readAsBytes();
       img.Image? decoded = img.decodeImage(raw);
       if (decoded == null) return;
@@ -883,9 +832,7 @@ class LogoCache {
   static Uint8List?  get bytes   => _bytes;
   static img.Image?  get decoded => _decoded;
 
-  static void clear() {
-    _bytes = null; _decoded = null; _path = null;
-  }
+  static void clear() { _bytes = null; _decoded = null; _path = null; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -933,10 +880,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   }
 
   Future<void> _openCamera() async {
-    if (_cameras.isEmpty) {
-      await _captureFallback();
-      return;
-    }
+    if (_cameras.isEmpty) { await _captureFallback(); return; }
     final paths = await Navigator.push<List<String>>(
       context,
       MaterialPageRoute(builder: (_) => const CameraPage()),
@@ -1209,7 +1153,7 @@ class _DashboardHeader extends StatelessWidget {
               const SizedBox(height: 18),
               Row(
                 children: [
-                  _StatChip(label: 'Semua', value: '$total',      icon: Icons.photo_library_outlined),
+                  _StatChip(label: 'Semua',    value: '$total',      icon: Icons.photo_library_outlined),
                   const SizedBox(width: 10),
                   _StatChip(label: 'Hari ini', value: '$todayCount', icon: Icons.today_outlined),
                 ],
@@ -1715,7 +1659,6 @@ class _SignaturePageState extends State<SignaturePage> {
               ),
             ),
           ),
-          // ── Info lokasi & cuaca ──────────────────────────────────────────
           Container(
             width: double.infinity,
             color: const Color(0xFF0D2137),
@@ -1832,7 +1775,7 @@ class _SignaturePageState extends State<SignaturePage> {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CAMERA PAGE
+//  CAMERA PAGE  ← MINI MAP TERINTEGRASI
 // ════════════════════════════════════════════════════════════════════════════
 
 class CameraPage extends StatefulWidget {
@@ -1863,6 +1806,12 @@ class _CameraPageState extends State<CameraPage>
   late AnimationController _shutterAnim;
   late Animation<double>   _shutterOpacity;
 
+  // ── MINI MAP STATE ────────────────────────────────────────────────────────
+  Position? _position;
+  bool      _mapExpanded    = false;
+  bool      _gpsLoading     = true;
+  // ─────────────────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
@@ -1875,6 +1824,7 @@ class _CameraPageState extends State<CameraPage>
       CurvedAnimation(parent: _shutterAnim, curve: Curves.easeOut),
     );
     _initCamera(_camIdx);
+    _fetchGps(); // ← ambil GPS untuk mini map
   }
 
   @override
@@ -1924,6 +1874,202 @@ class _CameraPageState extends State<CameraPage>
     }
     if (mounted) setState(() => _initialized = true);
   }
+
+  // ── MINI MAP: Fetch GPS ──────────────────────────────────────────────────
+  Future<void> _fetchGps() async {
+    setState(() => _gpsLoading = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) { setState(() => _gpsLoading = false); return; }
+
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        if (mounted) setState(() => _gpsLoading = false);
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      ).timeout(const Duration(seconds: 12));
+
+      if (mounted) setState(() { _position = pos; _gpsLoading = false; });
+    } catch (e) {
+      debugPrint('MiniMap GPS error: $e');
+      if (mounted) setState(() => _gpsLoading = false);
+    }
+  }
+
+  // ── MINI MAP: Widget ─────────────────────────────────────────────────────
+  Widget _buildMiniMap() {
+    // Loading state
+    if (_gpsLoading) {
+      return Positioned(
+        left: 14, top: 14,
+        child: Container(
+          width: 160, height: 80,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.65),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 1.5, color: Colors.white54),
+                ),
+                SizedBox(height: 6),
+                Text('GPS…',
+                    style: TextStyle(color: Colors.white38, fontSize: 10)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // GPS tidak tersedia
+    if (_position == null) {
+      return Positioned(
+        left: 14, top: 14,
+        child: GestureDetector(
+          onTap: _fetchGps,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.65),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.red.shade400.withOpacity(0.6)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.location_off, size: 14, color: Colors.red.shade300),
+                const SizedBox(width: 6),
+                const Text('GPS off — Coba lagi',
+                    style: TextStyle(color: Colors.white54, fontSize: 10)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final lat = _position!.latitude;
+    final lon = _position!.longitude;
+    final acc = _position!.accuracy;
+    final accColor = acc < 30 ? Colors.greenAccent : Colors.amber;
+    final mapSize  = _mapExpanded ? 260.0 : 150.0;
+
+    return Positioned(
+      left: 14, top: 14,
+      child: GestureDetector(
+        onTap: () => setState(() => _mapExpanded = !_mapExpanded),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeInOut,
+          width: mapSize,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white70, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 12, offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.hardEdge,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Peta OSM ──────────────────────────────────────────────
+              SizedBox(
+                height: mapSize,
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: LatLng(lat, lon),
+                    initialZoom: 17,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.none,
+                    ),
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.termullog.app',
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(lat, lon),
+                          width: 36, height: 36,
+                          child: const Icon(
+                            Icons.location_pin,
+                            color: Colors.red,
+                            size: 36,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Info GPS di bawah peta ────────────────────────────────
+              Container(
+                width: double.infinity,
+                color: Colors.black.withOpacity(0.80),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _GpsRow('LAT', lat.toStringAsFixed(5)),
+                    _GpsRow('LNG', lon.toStringAsFixed(5)),
+                    _GpsRow('±',   '${acc.toStringAsFixed(0)} m', color: accColor),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Tombol refresh
+                        GestureDetector(
+                          onTap: _fetchGps,
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.refresh, size: 11, color: Colors.white38),
+                              SizedBox(width: 3),
+                              Text('Refresh',
+                                  style: TextStyle(
+                                      color: Colors.white38, fontSize: 9)),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          _mapExpanded ? 'Tutup ▲' : 'Buka ▼',
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 9),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _switchCamera() async {
     if (_cameras.length < 2) return;
@@ -2063,9 +2209,11 @@ class _CameraPageState extends State<CameraPage>
           },
         ),
         const Spacer(),
-        _CamBtn(icon: _flashIcon,
+        _CamBtn(
+          icon: _flashIcon,
           label: _flash == FlashMode.off ? 'Off' : _flash == FlashMode.auto ? 'Auto' : 'On',
-          onTap: _cycleFlash),
+          onTap: _cycleFlash,
+        ),
         const SizedBox(width: 4),
         _CamBtn(
           icon: Icons.burst_mode_rounded,
@@ -2104,6 +2252,7 @@ class _CameraPageState extends State<CameraPage>
         child: Stack(
           fit: StackFit.expand,
           children: [
+            // ── Camera preview ──────────────────────────────────────────
             ClipRect(
               child: OverflowBox(
                 alignment: Alignment.center,
@@ -2117,6 +2266,8 @@ class _CameraPageState extends State<CameraPage>
                 ),
               ),
             ),
+
+            // ── Shutter flash ───────────────────────────────────────────
             AnimatedBuilder(
               animation: _shutterOpacity,
               builder: (_, __) => Opacity(
@@ -2124,47 +2275,66 @@ class _CameraPageState extends State<CameraPage>
                 child: Container(color: Colors.white),
               ),
             ),
+
+            // ── Focus indicator ─────────────────────────────────────────
             if (_showFocus && _focusPoint != null)
               Positioned(
                 left: _focusPoint!.dx - 28,
                 top:  _focusPoint!.dy - 28,
                 child: _FocusBox(),
               ),
+
+            // ── Zoom badge ──────────────────────────────────────────────
             if (_zoom > _minZoom + 0.05)
               Positioned(
                 top: 14, left: 0, right: 0,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.black54, borderRadius: BorderRadius.circular(20),
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text('${_zoom.toStringAsFixed(1)}×',
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
                   ),
                 ),
               ),
+
+            // ── Burst counter ───────────────────────────────────────────
             if (_burstRunning)
               Positioned(
                 top: 14, right: 16,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade600, borderRadius: BorderRadius.circular(20),
+                    color: Colors.red.shade600,
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
+                      const Icon(Icons.fiber_manual_record,
+                          color: Colors.white, size: 10),
                       const SizedBox(width: 5),
                       Text('${_burstPaths.length}',
                           style: const TextStyle(
-                              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700)),
                     ],
                   ),
                 ),
               ),
+
+            // ── MINI MAP OVERLAY ────────────────────────────────────────
+            _buildMiniMap(),
+            // ────────────────────────────────────────────────────────────
           ],
         ),
       ),
@@ -2249,11 +2419,12 @@ class _CameraPageState extends State<CameraPage>
                 style: TextStyle(
                     color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
             SizedBox(height: 14),
-            _InfoRow(icon: Icons.touch_app_rounded,       text: 'Ketuk layar untuk fokus'),
-            _InfoRow(icon: Icons.zoom_in_rounded,          text: 'Jepit/rentang untuk zoom'),
-            _InfoRow(icon: Icons.burst_mode_rounded,       text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
-            _InfoRow(icon: Icons.flash_auto_rounded,       text: 'Ikon kilat: Off → Auto → On'),
-            _InfoRow(icon: Icons.flip_camera_ios_rounded,  text: 'Ikon flip: ganti kamera depan/belakang'),
+            _InfoRow(icon: Icons.touch_app_rounded,      text: 'Ketuk layar untuk fokus'),
+            _InfoRow(icon: Icons.zoom_in_rounded,         text: 'Jepit/rentang untuk zoom'),
+            _InfoRow(icon: Icons.burst_mode_rounded,      text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
+            _InfoRow(icon: Icons.flash_auto_rounded,      text: 'Ikon kilat: Off → Auto → On'),
+            _InfoRow(icon: Icons.flip_camera_ios_rounded, text: 'Ikon flip: ganti kamera depan/belakang'),
+            _InfoRow(icon: Icons.map_outlined,            text: 'Mini map pojok kiri: tap untuk perbesar/perkecil, tap Refresh untuk perbarui GPS'),
           ],
         ),
       ),
@@ -2476,6 +2647,41 @@ class _InfoRow extends StatelessWidget {
           child: Text(text,
               style: const TextStyle(
                   color: Colors.white70, fontSize: 13.5, height: 1.4)),
+        ),
+      ],
+    ),
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  GPS ROW WIDGET  ← helper untuk info di bawah mini map
+// ════════════════════════════════════════════════════════════════════════════
+
+class _GpsRow extends StatelessWidget {
+  final String label, value;
+  final Color color;
+
+  const _GpsRow(this.label, this.value, {this.color = Colors.white70});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 26,
+          child: Text(label,
+              style: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700)),
+        ),
+        Expanded(
+          child: Text(value,
+              style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600)),
         ),
       ],
     ),

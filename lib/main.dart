@@ -1,31 +1,20 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  TermulLog — main.dart (WATERMARK ENGINE V5 + MINI MAP)
+//  TermulLog — main.dart (WATERMARK ENGINE V5 + MINI MAP V2)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  Watermark Engine Fixes (V4 → V5):
-//  ✔ [FIX] _clamp manual diganti .clamp() bawaan Dart
-//  ✔ [FIX] _wrapText menangani kata lebih panjang dari maxChars (anti infinite-loop)
-//  ✔ [FIX] Layout2 boxH proporsional (bukan hardcode 230)
-//  ✔ [FIX] Layout2 yy relatif terhadap boxY (bukan hardcode 35)
-//  ✔ [FIX] Logo ditampilkan di Layout2 & Layout3
-//  ✔ [FIX] Field 'id' konsisten tampil di semua layout
-//  ✔ [FIX] Semua layout pakai _wrapText untuk address
-//  ✔ [FIX] Magic numbers diganti konstanta bernama
-//  ✔ [FIX] Export PNG jika input PNG (alpha channel terjaga)
-//  ✔ [FIX] _processWatermark diperbaiki — tidak lagi orphan function fragment
-//  ✔ [FIX] Konflik konstanta kMaxOutputWidth & kJpegQuality diselesaikan
-//         (engine pakai nilai lebih tinggi: 1080→1600, quality 78→90)
-//
-//  Mini Map Update:
-//  ✔ [NEW] Realtime GPS mini map overlay di CameraPage
-//  ✔ [NEW] Tap mini map untuk toggle ukuran kecil ↔ besar
-//  ✔ [NEW] Indikator akurasi GPS (hijau < 30m, kuning ≥ 30m)
-//  ✔ [NEW] Loading state saat GPS belum tersedia
-//  ✔ [NEW] Tombol refresh GPS manual
-//
-//  Dependency tambahan di pubspec.yaml:
-//    flutter_map: ^7.0.2
-//    latlong2: ^0.9.1
+//  CHANGELOG V5 → V5.1:
+//  ✔ [FIX] Mini map lebih ringan:
+//      - FlutterMap hanya dirender sekali, tidak rebuild tiap setState kamera
+//      - Tile dibatasi dengan TileLayer maxNativeZoom + keepBuffer minimal
+//      - Map hanya rebuild saat posisi GPS benar-benar berubah (ValueNotifier)
+//      - InteractiveFlag.none → tidak ada gesture processing di map
+//  ✔ [FIX] Alamat & cuaca tidak pernah tampil "tidak tersedia":
+//      - Fallback: jika geocoding gagal → pakai "GPS: lat, lon"
+//      - Fallback: jika cuaca gagal → string kosong (tidak tampil di watermark)
+//      - _address & _weather di SignaturePage default ke string kosong, bukan "tidak tersedia"
+//  ✔ [NEW] Tombol simpan foto + timestamp langsung dari CameraPage (sebelum watermark)
+//      - Foto disimpan ke galeri dengan nama TRM-<timestamp>.jpg
+//      - Snackbar konfirmasi setelah disimpan
 //
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -253,6 +242,7 @@ Uint8List _processWatermark(Map<String, dynamic> p) {
     final id         = p['id']      as String? ?? '-';
     final date       = p['date']    as String? ?? '-';
     final time       = p['time']    as String? ?? '-';
+    // [FIX] Jika alamat kosong, tidak tampilkan apapun (bukan "tidak tersedia")
     final address    = p['address'] as String? ?? '';
     final weather    = p['weather'] as String? ?? '';
     final isPortrait = image.height > image.width;
@@ -312,11 +302,15 @@ Uint8List _drawLayout1(
   _drawTextShadow(base, '$date   |   $time',            font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
   yy += kTextLineSmall + kSectionGap;
 
-  for (final line in _wrapText(address, addrMaxChar).take(2)) {
-    _drawTextShadow(base, line, font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
-    yy += kTextLineSmall;
+  // [FIX] Hanya tampilkan alamat jika tidak kosong
+  if (address.isNotEmpty) {
+    for (final line in _wrapText(address, addrMaxChar).take(2)) {
+      _drawTextShadow(base, line, font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorWhite);
+      yy += kTextLineSmall;
+    }
   }
 
+  // [FIX] Hanya tampilkan cuaca jika tidak kosong
   if (weather.isNotEmpty) {
     yy += 4;
     _drawTextShadow(base, weather, font: img.arial14, x: kPanelPaddingX, y: yy, color: kColorCyan);
@@ -371,9 +365,11 @@ Uint8List _drawLayout2(
   _drawTextShadow(base, '$date  $time',     font: img.arial14, x: textX, y: yy, color: kColorGrey);
   yy += kTextLineLarge;
 
-  for (final line in _wrapText(address, 30).take(2)) {
-    _drawTextShadow(base, line, font: img.arial14, x: textX, y: yy, color: kColorCyan);
-    yy += kTextLineSmall;
+  if (address.isNotEmpty) {
+    for (final line in _wrapText(address, 30).take(2)) {
+      _drawTextShadow(base, line, font: img.arial14, x: textX, y: yy, color: kColorCyan);
+      yy += kTextLineSmall;
+    }
   }
 
   if (weather.isNotEmpty) {
@@ -429,9 +425,11 @@ Uint8List _drawLayout3(
   _drawTextShadow(base, 'ID: $id', font: img.arial14, x: textX, y: yy, color: kColorGrey);
   yy += kTextLineSmall + 4;
 
-  final addrLine = _wrapText(address, 60).take(1).join('');
-  _drawTextShadow(base, addrLine,            font: img.arial14, x: textX, y: yy, color: kColorCyan);
-  yy += kTextLineSmall + 4;
+  if (address.isNotEmpty) {
+    final addrLine = _wrapText(address, 60).take(1).join('');
+    _drawTextShadow(base, addrLine, font: img.arial14, x: textX, y: yy, color: kColorCyan);
+    yy += kTextLineSmall + 4;
+  }
 
   _drawTextShadow(base, '$date   |   $time', font: img.arial14, x: textX, y: yy, color: kColorWhite);
   yy += kTextLineSmall + 4;
@@ -502,12 +500,13 @@ Uint8List _drawLayout4(
   _drawTextShadow(base, time,               font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
   yy += kTextLineLarge + kSectionGap;
 
-  _drawTextShadow(base, 'LOKASI',           font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
-  yy += kTextLineLarge - 4;
-
-  for (final line in _wrapText(address, 18).take(4)) {
-    _drawTextShadow(base, line, font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
-    yy += kTextLineSmall;
+  if (address.isNotEmpty) {
+    _drawTextShadow(base, 'LOKASI',         font: img.arial14, x: kSidebarPadX, y: yy, color: kColorCyan);
+    yy += kTextLineLarge - 4;
+    for (final line in _wrapText(address, 18).take(4)) {
+      _drawTextShadow(base, line, font: img.arial14, x: kSidebarPadX, y: yy, color: kColorWhite);
+      yy += kTextLineSmall;
+    }
   }
 
   if (weather.isNotEmpty) {
@@ -694,12 +693,18 @@ class WatermarkLayout {
 
 // ════════════════════════════════════════════════════════════════════════════
 //  LOCATION & WEATHER SERVICE
+//  [FIX] Fallback address → koordinat GPS, bukan "tidak tersedia"
+//        Fallback weather → string kosong, tidak tampil di watermark
 // ════════════════════════════════════════════════════════════════════════════
 
 class LocationWeatherService {
+  /// Mengembalikan address & weather.
+  /// Jika gagal: address = "GPS: lat, lon" (bukan "tidak tersedia"),
+  ///             weather = "" (tidak ditampilkan di watermark).
   static Future<Map<String, String>> fetch() async {
-    String address = 'Lokasi tidak tersedia';
-    String weather  = 'Cuaca tidak tersedia';
+    String address = '';
+    String weather  = '';
+
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return {'address': address, 'weather': weather};
@@ -715,13 +720,17 @@ class LocationWeatherService {
 
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
-      ).timeout(const Duration(seconds: 12));
+      ).timeout(const Duration(seconds: 15));
 
       final lat    = pos.latitude;
       final lon    = pos.longitude;
       final latStr = lat.toStringAsFixed(6);
       final lonStr = lon.toStringAsFixed(6);
 
+      // Default address = koordinat, bukan "tidak tersedia"
+      address = 'GPS: ${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
+
+      // Coba geocoding
       try {
         final geoUri = Uri.parse(
           'https://nominatim.openstreetmap.org/reverse'
@@ -729,7 +738,7 @@ class LocationWeatherService {
         );
         final geoRes = await http
             .get(geoUri, headers: {'User-Agent': 'TermulLog/1.0'})
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 10));
         if (geoRes.statusCode == 200) {
           final data = jsonDecode(geoRes.body) as Map<String, dynamic>;
           final addr = data['address'] as Map<String, dynamic>?;
@@ -743,25 +752,30 @@ class LocationWeatherService {
             if (road   != null && road.isNotEmpty)   parts.add(road);
             if (suburb != null && suburb.isNotEmpty) parts.add(suburb);
             if (city   != null && city.isNotEmpty)   parts.add(city);
-            address = parts.take(3).join(', ');
-            if (address.isEmpty) {
-              address = ((data['display_name'] as String?) ?? '')
-                  .split(',').take(2).join(',').trim();
+            final resolved = parts.take(3).join(', ');
+            if (resolved.isNotEmpty) {
+              address = resolved; // Ganti koordinat dengan alamat asli
+            } else {
+              final displayName = (data['display_name'] as String?) ?? '';
+              final short = displayName.split(',').take(2).join(',').trim();
+              if (short.isNotEmpty) address = short;
+              // else tetap pakai "GPS: lat, lon"
             }
           }
         }
       } catch (e) {
         debugPrint('Geocoding error: $e');
-        address = 'GPS: ${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}';
+        // address tetap "GPS: lat, lon" — tidak tampil "tidak tersedia"
       }
 
+      // Coba cuaca
       try {
         final wUri = Uri.parse(
           'https://api.open-meteo.com/v1/forecast'
           '?latitude=$latStr&longitude=$lonStr'
           '&current=temperature_2m,weathercode&timezone=auto',
         );
-        final wRes = await http.get(wUri).timeout(const Duration(seconds: 8));
+        final wRes = await http.get(wUri).timeout(const Duration(seconds: 10));
         if (wRes.statusCode == 200) {
           final wData   = jsonDecode(wRes.body) as Map<String, dynamic>;
           final current = wData['current'] as Map<String, dynamic>?;
@@ -772,6 +786,7 @@ class LocationWeatherService {
             weather = '${_wmoDesc(code)} ${temp}°C';
           }
         }
+        // Jika gagal → weather tetap '' (tidak tampil di watermark)
       } catch (e) {
         debugPrint('Weather error: $e');
       }
@@ -792,7 +807,7 @@ class LocationWeatherService {
     if (c <= 86) return 'Salju Lebat';
     if (c == 95) return 'Badai Petir';
     if (c <= 99) return 'Badai+Hujan Es';
-    return 'Tidak diketahui';
+    return '';
   }
 }
 
@@ -1527,6 +1542,7 @@ class PreviewPage extends StatelessWidget {
 
 // ════════════════════════════════════════════════════════════════════════════
 //  SIGNATURE PAGE
+//  [FIX] _address & _weather default kosong, bukan "tidak tersedia"
 // ════════════════════════════════════════════════════════════════════════════
 
 class SignaturePage extends StatefulWidget {
@@ -1553,8 +1569,9 @@ class _SignaturePageState extends State<SignaturePage> {
   );
 
   bool   _saving          = false;
-  String _address         = 'Mengambil lokasi...';
-  String _weather         = 'Mengambil cuaca...';
+  // [FIX] Default kosong — tidak tampil "tidak tersedia" di watermark
+  String _address         = '';
+  String _weather         = '';
   bool   _locationLoading = true;
 
   @override
@@ -1567,8 +1584,8 @@ class _SignaturePageState extends State<SignaturePage> {
     final result = await LocationWeatherService.fetch();
     if (!mounted) return;
     setState(() {
-      _address         = result['address'] ?? 'Lokasi tidak tersedia';
-      _weather         = result['weather'] ?? 'Cuaca tidak tersedia';
+      _address         = result['address'] ?? '';
+      _weather         = result['weather'] ?? '';
       _locationLoading = false;
     });
   }
@@ -1686,25 +1703,29 @@ class _SignaturePageState extends State<SignaturePage> {
                               size: 13, color: Colors.amber),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(_address,
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 11),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
+                            child: Text(
+                              _address.isNotEmpty ? _address : 'Lokasi tidak didapat',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          const Icon(Icons.wb_sunny_outlined,
-                              size: 13, color: Colors.amber),
-                          const SizedBox(width: 6),
-                          Text(_weather,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 11)),
-                        ],
-                      ),
+                      if (_weather.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            const Icon(Icons.wb_sunny_outlined,
+                                size: 13, color: Colors.amber),
+                            const SizedBox(width: 6),
+                            Text(_weather,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 11)),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
           ),
@@ -1775,7 +1796,226 @@ class _SignaturePageState extends State<SignaturePage> {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CAMERA PAGE  ← MINI MAP TERINTEGRASI
+//  MINI MAP WIDGET — dipisahkan sebagai StatefulWidget sendiri
+//  [FIX] Tidak rebuild bersamaan dengan setState kamera
+//        FlutterMap hanya rebuild saat posisi GPS berubah
+// ════════════════════════════════════════════════════════════════════════════
+
+class _MiniMapWidget extends StatefulWidget {
+  final ValueNotifier<Position?> positionNotifier;
+  final ValueNotifier<bool> loadingNotifier;
+  final VoidCallback onRefresh;
+
+  const _MiniMapWidget({
+    required this.positionNotifier,
+    required this.loadingNotifier,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_MiniMapWidget> createState() => _MiniMapWidgetState();
+}
+
+class _MiniMapWidgetState extends State<_MiniMapWidget> {
+  bool _expanded = false;
+  // MapController agar map bisa pindah center tanpa rebuild full widget
+  final MapController _mapCtrl = MapController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.positionNotifier.addListener(_onPositionChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.positionNotifier.removeListener(_onPositionChanged);
+    super.dispose();
+  }
+
+  void _onPositionChanged() {
+    final pos = widget.positionNotifier.value;
+    if (pos != null && mounted) {
+      // Geser center map tanpa rebuild seluruh widget
+      _mapCtrl.move(LatLng(pos.latitude, pos.longitude), 17);
+      setState(() {}); // hanya perbarui info panel kecil
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 14, top: 14,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: widget.loadingNotifier,
+        builder: (_, loading, __) {
+          if (loading) return _buildLoading();
+
+          final pos = widget.positionNotifier.value;
+          if (pos == null) return _buildGpsOff();
+          return _buildMap(pos);
+        },
+      ),
+    );
+  }
+
+  Widget _buildLoading() => Container(
+    width: 160, height: 80,
+    decoration: BoxDecoration(
+      color: Colors.black.withOpacity(0.65),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: Colors.white24),
+    ),
+    child: const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 16, height: 16,
+            child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white54),
+          ),
+          SizedBox(height: 6),
+          Text('GPS…', style: TextStyle(color: Colors.white38, fontSize: 10)),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildGpsOff() => GestureDetector(
+    onTap: widget.onRefresh,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.65),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.red.shade400.withOpacity(0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.location_off, size: 14, color: Colors.red.shade300),
+          const SizedBox(width: 6),
+          const Text('GPS off — Coba lagi',
+              style: TextStyle(color: Colors.white54, fontSize: 10)),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildMap(Position pos) {
+    final lat      = pos.latitude;
+    final lon      = pos.longitude;
+    final acc      = pos.accuracy;
+    final accColor = acc < 30 ? Colors.greenAccent : Colors.amber;
+    final mapSize  = _expanded ? 260.0 : 150.0;
+
+    return GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeInOut,
+        width: mapSize,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white70, width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.5),
+              blurRadius: 12, offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.hardEdge,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Peta OSM — tidak rebuild saat kamera setState ──────────
+            SizedBox(
+              height: mapSize,
+              child: FlutterMap(
+                mapController: _mapCtrl,
+                options: MapOptions(
+                  initialCenter: LatLng(lat, lon),
+                  initialZoom: 17,
+                  // Nonaktifkan semua gesture → hemat CPU
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.none,
+                  ),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.termullog.app',
+                    // [FIX] Kurangi tile yang diunduh → lebih ringan
+                    maxNativeZoom: 19,
+                    keepBuffer: 0,          // jangan simpan tile luar viewport
+                    panBuffer: 0,
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: LatLng(lat, lon),
+                        width: 36, height: 36,
+                        child: const Icon(
+                          Icons.location_pin,
+                          color: Colors.red,
+                          size: 36,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Info GPS di bawah peta ────────────────────────────────
+            Container(
+              width: double.infinity,
+              color: Colors.black.withOpacity(0.80),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _GpsRow('LAT', lat.toStringAsFixed(5)),
+                  _GpsRow('LNG', lon.toStringAsFixed(5)),
+                  _GpsRow('±',   '${acc.toStringAsFixed(0)} m', color: accColor),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      GestureDetector(
+                        onTap: widget.onRefresh,
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.refresh, size: 11, color: Colors.white38),
+                            SizedBox(width: 3),
+                            Text('Refresh',
+                                style: TextStyle(
+                                    color: Colors.white38, fontSize: 9)),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        _expanded ? 'Tutup ▲' : 'Buka ▼',
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 9),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CAMERA PAGE  ← MINI MAP V2 TERINTEGRASI (lebih ringan)
 // ════════════════════════════════════════════════════════════════════════════
 
 class CameraPage extends StatefulWidget {
@@ -1806,10 +2046,9 @@ class _CameraPageState extends State<CameraPage>
   late AnimationController _shutterAnim;
   late Animation<double>   _shutterOpacity;
 
-  // ── MINI MAP STATE ────────────────────────────────────────────────────────
-  Position? _position;
-  bool      _mapExpanded    = false;
-  bool      _gpsLoading     = true;
+  // ── MINI MAP: ValueNotifier agar update tidak trigger rebuild kamera ──────
+  final ValueNotifier<Position?> _positionNotifier = ValueNotifier(null);
+  final ValueNotifier<bool>      _loadingNotifier  = ValueNotifier(true);
   // ─────────────────────────────────────────────────────────────────────────
 
   @override
@@ -1824,7 +2063,7 @@ class _CameraPageState extends State<CameraPage>
       CurvedAnimation(parent: _shutterAnim, curve: Curves.easeOut),
     );
     _initCamera(_camIdx);
-    _fetchGps(); // ← ambil GPS untuk mini map
+    _fetchGps();
   }
 
   @override
@@ -1833,6 +2072,8 @@ class _CameraPageState extends State<CameraPage>
     _burstTimer?.cancel();
     _shutterAnim.dispose();
     _ctrl?.dispose();
+    _positionNotifier.dispose();
+    _loadingNotifier.dispose();
     super.dispose();
   }
 
@@ -1875,12 +2116,12 @@ class _CameraPageState extends State<CameraPage>
     if (mounted) setState(() => _initialized = true);
   }
 
-  // ── MINI MAP: Fetch GPS ──────────────────────────────────────────────────
+  // ── GPS fetch — update ValueNotifier, TIDAK trigger setState kamera ───────
   Future<void> _fetchGps() async {
-    setState(() => _gpsLoading = true);
+    _loadingNotifier.value = true;
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) { setState(() => _gpsLoading = false); return; }
+      if (!serviceEnabled) { _loadingNotifier.value = false; return; }
 
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -1888,186 +2129,20 @@ class _CameraPageState extends State<CameraPage>
       }
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        if (mounted) setState(() => _gpsLoading = false);
+        _loadingNotifier.value = false;
         return;
       }
 
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
-      ).timeout(const Duration(seconds: 12));
+      ).timeout(const Duration(seconds: 15));
 
-      if (mounted) setState(() { _position = pos; _gpsLoading = false; });
+      _positionNotifier.value = pos;
+      _loadingNotifier.value  = false;
     } catch (e) {
       debugPrint('MiniMap GPS error: $e');
-      if (mounted) setState(() => _gpsLoading = false);
+      _loadingNotifier.value = false;
     }
-  }
-
-  // ── MINI MAP: Widget ─────────────────────────────────────────────────────
-  Widget _buildMiniMap() {
-    // Loading state
-    if (_gpsLoading) {
-      return Positioned(
-        left: 14, top: 14,
-        child: Container(
-          width: 160, height: 80,
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.65),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 1.5, color: Colors.white54),
-                ),
-                SizedBox(height: 6),
-                Text('GPS…',
-                    style: TextStyle(color: Colors.white38, fontSize: 10)),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    // GPS tidak tersedia
-    if (_position == null) {
-      return Positioned(
-        left: 14, top: 14,
-        child: GestureDetector(
-          onTap: _fetchGps,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.65),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.red.shade400.withOpacity(0.6)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.location_off, size: 14, color: Colors.red.shade300),
-                const SizedBox(width: 6),
-                const Text('GPS off — Coba lagi',
-                    style: TextStyle(color: Colors.white54, fontSize: 10)),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final lat = _position!.latitude;
-    final lon = _position!.longitude;
-    final acc = _position!.accuracy;
-    final accColor = acc < 30 ? Colors.greenAccent : Colors.amber;
-    final mapSize  = _mapExpanded ? 260.0 : 150.0;
-
-    return Positioned(
-      left: 14, top: 14,
-      child: GestureDetector(
-        onTap: () => setState(() => _mapExpanded = !_mapExpanded),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeInOut,
-          width: mapSize,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white70, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.5),
-                blurRadius: 12, offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          clipBehavior: Clip.hardEdge,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Peta OSM ──────────────────────────────────────────────
-              SizedBox(
-                height: mapSize,
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCenter: LatLng(lat, lon),
-                    initialZoom: 17,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.none,
-                    ),
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.termullog.app',
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: LatLng(lat, lon),
-                          width: 36, height: 36,
-                          child: const Icon(
-                            Icons.location_pin,
-                            color: Colors.red,
-                            size: 36,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── Info GPS di bawah peta ────────────────────────────────
-              Container(
-                width: double.infinity,
-                color: Colors.black.withOpacity(0.80),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _GpsRow('LAT', lat.toStringAsFixed(5)),
-                    _GpsRow('LNG', lon.toStringAsFixed(5)),
-                    _GpsRow('±',   '${acc.toStringAsFixed(0)} m', color: accColor),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Tombol refresh
-                        GestureDetector(
-                          onTap: _fetchGps,
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.refresh, size: 11, color: Colors.white38),
-                              SizedBox(width: 3),
-                              Text('Refresh',
-                                  style: TextStyle(
-                                      color: Colors.white38, fontSize: 9)),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          _mapExpanded ? 'Tutup ▲' : 'Buka ▼',
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 9),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -2168,6 +2243,44 @@ class _CameraPageState extends State<CameraPage>
     if (file == null || !mounted) return;
     Navigator.pop(context, [file.path]);
   }
+
+  // ── [NEW] Simpan foto langsung ke galeri dengan nama timestamp ────────────
+  Future<void> _saveRawToGallery() async {
+    if (_ctrl == null || !_initialized || _busy) return;
+    setState(() => _busy = true);
+    unawaited(_flashShutter());
+    try {
+      final file      = await _ctrl!.takePicture();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final dir       = await getApplicationDocumentsDirectory();
+      final dest      = File('${dir.path}/TRM_$timestamp.jpg');
+      await File(file.path).copy(dest.path);
+      final ok = await GallerySaver.saveImage(dest.path);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok == true
+                ? '✓ Foto disimpan: TRM_$timestamp.jpg'
+                : '✗ Gagal simpan ke galeri'),
+            backgroundColor:
+                ok == true ? Colors.green.shade700 : Colors.red.shade700,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Save raw error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'),
+              backgroundColor: Colors.red.shade700),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   IconData get _flashIcon => _flash == FlashMode.always
       ? Icons.flash_on_rounded
@@ -2332,8 +2445,12 @@ class _CameraPageState extends State<CameraPage>
                 ),
               ),
 
-            // ── MINI MAP OVERLAY ────────────────────────────────────────
-            _buildMiniMap(),
+            // ── MINI MAP OVERLAY (StatefulWidget terpisah, tidak rebuild kamera) ─
+            _MiniMapWidget(
+              positionNotifier: _positionNotifier,
+              loadingNotifier:  _loadingNotifier,
+              onRefresh:        _fetchGps,
+            ),
             // ────────────────────────────────────────────────────────────
           ],
         ),
@@ -2364,12 +2481,15 @@ class _CameraPageState extends State<CameraPage>
   );
 
   Widget _buildBottomBar() => Container(
-    padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
     color: Colors.black,
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        // Galeri
         _CircleBtn(icon: Icons.photo_library_outlined, size: 48, onTap: _pickFromGallery),
+
+        // Shutter utama
         GestureDetector(
           onTap: _burstMode
               ? (_burstRunning ? _stopBurst : _startBurst)
@@ -2397,7 +2517,14 @@ class _CameraPageState extends State<CameraPage>
             ),
           ),
         ),
-        _CircleBtn(icon: Icons.info_outline_rounded, size: 48, onTap: _showInfoSheet),
+
+        // [NEW] Tombol simpan foto + timestamp (kanan bawah)
+        _CircleBtn(
+          icon: Icons.save_alt_rounded,
+          size: 48,
+          onTap: _saveRawToGallery,
+          tooltip: 'Simpan foto + timestamp',
+        ),
       ],
     ),
   );
@@ -2424,6 +2551,7 @@ class _CameraPageState extends State<CameraPage>
             _InfoRow(icon: Icons.burst_mode_rounded,      text: 'Burst: aktifkan toggle → tekan shutter mulai, tekan lagi berhenti'),
             _InfoRow(icon: Icons.flash_auto_rounded,      text: 'Ikon kilat: Off → Auto → On'),
             _InfoRow(icon: Icons.flip_camera_ios_rounded, text: 'Ikon flip: ganti kamera depan/belakang'),
+            _InfoRow(icon: Icons.save_alt_rounded,        text: 'Tombol simpan (kanan): foto langsung tersimpan ke galeri dengan nama TRM_timestamp'),
             _InfoRow(icon: Icons.map_outlined,            text: 'Mini map pojok kiri: tap untuk perbesar/perkecil, tap Refresh untuk perbarui GPS'),
           ],
         ),
@@ -2595,22 +2723,32 @@ class _CircleBtn extends StatelessWidget {
   final IconData icon;
   final double size;
   final VoidCallback onTap;
+  final String? tooltip;
 
-  const _CircleBtn({required this.icon, required this.size, required this.onTap});
+  const _CircleBtn({
+    required this.icon,
+    required this.size,
+    required this.onTap,
+    this.tooltip,
+  });
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: size, height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.12),
-        border: Border.all(color: Colors.white30, width: 1),
+  Widget build(BuildContext context) {
+    final btn = GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: size, height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withOpacity(0.12),
+          border: Border.all(color: Colors.white30, width: 1),
+        ),
+        child: Icon(icon, color: Colors.white, size: size * 0.45),
       ),
-      child: Icon(icon, color: Colors.white, size: size * 0.45),
-    ),
-  );
+    );
+    if (tooltip != null) return Tooltip(message: tooltip!, child: btn);
+    return btn;
+  }
 }
 
 class _FocusBox extends StatelessWidget {
@@ -2654,7 +2792,7 @@ class _InfoRow extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  GPS ROW WIDGET  ← helper untuk info di bawah mini map
+//  GPS ROW WIDGET
 // ════════════════════════════════════════════════════════════════════════════
 
 class _GpsRow extends StatelessWidget {

@@ -873,7 +873,7 @@ ProcessedImage _processImageOptimized(ImageProcessParams params) {
   }
 }
 
-// FIX: Menggunakan fillRectangle (camelCase) yang benar di package image 4.8.0
+// FIX: Menggunakan fillRect dengan parameter yang benar
 img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final now = params.timestamp;
   final pos = params.position;
@@ -893,8 +893,8 @@ img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   
   if (y0 < 0) return src;
   
-  // FIX: Gunakan fillRectangle yang benar di package image 4.8.0
-  img.fillRectangle(
+  // FIX: fillRect dengan parameter yang benar
+  img.fillRect(
     src,
     x1: 0,
     y1: y0,

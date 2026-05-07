@@ -51,7 +51,8 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
+dependency_overrides:
+  camera_android_camerax: 0.6.5+1
   flutter_lints: ^4.0.0
 
 flutter:

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
-import 'dart:isolate';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -142,9 +141,6 @@ class _CameraScreenState extends State<CameraScreen>
   Timer? _uiUpdateTimer;
   
   bool _isDisposed = false;
-  
-  // FIX: Preview size untuk aspect ratio
-  Size? _previewSize;
 
   // ───────────────── INIT ─────────────────
 
@@ -221,7 +217,6 @@ class _CameraScreenState extends State<CameraScreen>
       _gpsStream?.resume();
       _startGpsWatchdog();
       
-      // FIX: Delay sebelum reinit camera
       await Future.delayed(const Duration(milliseconds: 300));
       await _initCamera();
       
@@ -257,12 +252,10 @@ class _CameraScreenState extends State<CameraScreen>
       await controller.setFocusMode(FocusMode.auto);
       await controller.setExposureMode(ExposureMode.auto);
       
-      // FIX: Dapatkan preview size untuk aspect ratio
       if (mounted) {
         setState(() {
           _isInitialized = true;
           _isWarmingUp = false;
-          _previewSize = controller.value.previewSize;
         });
       }
     } catch (e) {
@@ -544,8 +537,7 @@ class _CameraScreenState extends State<CameraScreen>
         onTimeout: () => throw TimeoutException('Camera timeout'),
       );
       
-      // FIX: Baca file dengan Isolate agar tidak blocking
-      final bytes = await _readFileAsync(file.path);
+      final bytes = await File(file.path).readAsBytes();
       final DateTime waktuFoto = DateTime.now();
       
       if (mounted) {
@@ -558,9 +550,10 @@ class _CameraScreenState extends State<CameraScreen>
       
       await _waitForBestGps();
       
-      final String alamat = '';
+      final String alamat = _bestPosition != null
+          ? await _getAddressCached(_bestPosition)
+          : 'Lokasi tidak tersedia';
       
-      // FIX: Proses dengan isolate
       final result = await compute(_processImageOptimized, ImageProcessParams(
         imageBytes: bytes,
         timestamp: waktuFoto,
@@ -578,15 +571,10 @@ class _CameraScreenState extends State<CameraScreen>
       
       setState(() => _isPolishing = false);
       
-      final addressFuture = _bestPosition != null ? _getAddressCached(_bestPosition) : Future.value('Lokasi tidak tersedia');
-      
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PreviewScreen(
-            imagePath: outputPath,
-            addressFuture: addressFuture,
-          ),
+          builder: (_) => PreviewScreen(imagePath: outputPath),
         ),
       );
       
@@ -610,10 +598,6 @@ class _CameraScreenState extends State<CameraScreen>
     } finally {
       _cleanupCapture();
     }
-  }
-  
-  Future<Uint8List> _readFileAsync(String path) async {
-    return await File(path).readAsBytes();
   }
   
   Future<void> _quickGpsRefresh() async {
@@ -745,7 +729,7 @@ class _CameraScreenState extends State<CameraScreen>
       body: SafeArea(
         child: Stack(
           children: [
-            // FIX: Camera preview dengan aspect ratio yang benar
+            // Camera preview
             if (_isInitialized && _controller != null && !_isWarmingUp)
               Center(
                 child: ClipRect(
@@ -777,7 +761,7 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
             
-            // FIX: Polishing overlay dengan teks
+            // Polishing overlay
             if (_isPolishing)
               Container(
                 color: Colors.black.withOpacity(0.85),
@@ -864,14 +848,12 @@ class ProcessedImage {
 }
 
 ProcessedImage _processImageOptimized(ImageProcessParams params) {
-  // FIX: Decode dengan memory efficient
   img.Image? src;
   
   try {
     src = img.decodeImage(params.imageBytes);
     if (src == null) throw Exception('Decode failed');
     
-    // FIX: Resize jika perlu
     if (src.width > params.maxDimension || src.height > params.maxDimension) {
       src = img.copyResize(
         src, 
@@ -887,11 +869,11 @@ ProcessedImage _processImageOptimized(ImageProcessParams params) {
     
     return ProcessedImage(jpegData: Uint8List.fromList(jpegData));
   } finally {
-    // FIX: Pastikan memory cleanup
     src?.clear();
   }
 }
 
+// FIX: Perbaikan fillRect untuk package image versi 4.8.0
 img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final now = params.timestamp;
   final pos = params.position;
@@ -905,30 +887,31 @@ img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final lon = gpsAvailable ? pos.longitude.toStringAsFixed(5) : 'N/A';
   final acc = gpsAvailable ? '${pos.accuracy.toStringAsFixed(0)}m' : 'No GPS';
   
-  // FIX: Strip height dinamis dengan batas aman
   final int stripHeight = (src.height * 0.14).toInt().clamp(100, 180);
   final isBottom = WatermarkLayoutService.position != 'top';
   final y0 = isBottom ? src.height - stripHeight : 0;
   
-  // FIX: Pastikan y0 tidak negatif
   if (y0 < 0) return src;
   
+  // FIX: fillRect dengan parameter yang benar untuk image 4.8.0
+  // Signature: fillRect(src, x, y, x2, y2, color)
   img.fillRect(
-    src, 0, y0, src.width, y0 + stripHeight,
-    color: img.ColorRgba8(0, 0, 0, 180),
+    src,
+    0,  // x1
+    y0, // y1
+    src.width, // x2
+    y0 + stripHeight, // y2
+    img.ColorRgba8(0, 0, 0, 180),
   );
   
-  // FIX: Font dinamis dengan fallback
   final font = src.width > 1500 ? img.arial24 : img.arial14;
   final white = img.ColorRgba8(255, 255, 255, 255);
   final yellow = img.ColorRgba8(255, 200, 0, 255);
   final green = img.ColorRgba8(100, 220, 100, 255);
   
-  // FIX: Line height dinamis dengan batas aman
   final lineH = (stripHeight / 6).floor().clamp(14, 24);
   final y = y0 + 6;
   
-  // FIX: Pastikan teks tidak overflow
   if (y + lineH * 5 <= src.height) {
     img.drawString(src, 'TermulLog', font: font, x: 10, y: y, color: yellow);
     img.drawString(src, '$tanggal  $jam', font: font, x: 10, y: y + lineH, color: white);

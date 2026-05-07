@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -14,42 +13,30 @@ import '../services/watermark_layout_service.dart';
 import 'preview_screen.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  final Position lockedPosition; // ← GPS sudah dikunci dari screen sebelumnya
+
+  const CameraScreen({super.key, required this.lockedPosition});
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
 class _CameraScreenState extends State<CameraScreen> {
-
-  // ── KAMERA ──────────────────────────────────────────────────────────────
   CameraController? _controller;
   bool _isInitialized = false;
   bool _isTakingPhoto = false;
-
-  // ── GPS ─────────────────────────────────────────────────────────────────
-  StreamSubscription<Position>? _gpsStream;
-  Position? _currentPosition;
-  bool _gpsReady = false;
-  String _gpsText = '🔍 Searching GPS...';
-
-  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     _initCamera();
-    _startGpsTracking();
   }
 
   @override
   void dispose() {
     _controller?.dispose();
-    _gpsStream?.cancel();
     super.dispose();
   }
-
-  // ── INIT KAMERA ──────────────────────────────────────────────────────────
 
   Future<void> _initCamera() async {
     if (CameraRegistry.cameras.isEmpty) return;
@@ -66,62 +53,9 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  // ── GPS TRACKING ─────────────────────────────────────────────────────────
-
-  Future<void> _startGpsTracking() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      setState(() => _gpsText = '❌ GPS Disabled');
-      return;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      setState(() => _gpsText = '❌ GPS Permission Denied');
-      return;
-    }
-
-    _gpsStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1,
-      ),
-    ).listen((Position pos) {
-      // Simpan posisi dengan akurasi terbaik
-      if (_currentPosition == null ||
-          pos.accuracy < _currentPosition!.accuracy) {
-        _currentPosition = pos;
-      }
-
-      final acc = _currentPosition!.accuracy;
-
-      setState(() {
-        if (acc <= 10) {
-          _gpsReady = true;
-          _gpsText = '🟢 GPS Locked ±${acc.toStringAsFixed(1)}m';
-        } else {
-          _gpsReady = false;
-          _gpsText = '🟡 Searching GPS... ±${acc.toStringAsFixed(1)}m';
-        }
-      });
-    });
-  }
-
-  // ── AMBIL FOTO ───────────────────────────────────────────────────────────
-
   Future<void> _ambilFoto() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (_isTakingPhoto) return;
-    if (_currentPosition == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tunggu GPS siap terlebih dahulu')),
-      );
-      return;
-    }
 
     setState(() => _isTakingPhoto = true);
 
@@ -159,10 +93,8 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  // ── WATERMARK ────────────────────────────────────────────────────────────
-
   img.Image _addWatermark(img.Image src, DateTime now) {
-    final pos = _currentPosition!;
+    final pos = widget.lockedPosition; // gunakan posisi yang sudah dikunci
     final tanggal = DateFormat('dd MMM yyyy').format(now);
     final jam = DateFormat('HH:mm:ss').format(now);
     final lat = pos.latitude.toStringAsFixed(6);
@@ -170,16 +102,14 @@ class _CameraScreenState extends State<CameraScreen> {
     final acc = pos.accuracy.toStringAsFixed(1);
 
     final isBottom = WatermarkLayoutService.position != 'top';
-    const stripHeight = 130;
+    const stripHeight = 140;
     final y0 = isBottom ? src.height - stripHeight : 0;
     final y1 = isBottom ? src.height : stripHeight;
 
-    // Strip semi-transparan
     for (int y = y0; y < y1; y++) {
       for (int x = 0; x < src.width; x++) {
         final orig = src.getPixel(x, y);
-        src.setPixel(
-          x, y,
+        src.setPixel(x, y,
           img.ColorRgba8(
             (orig.r * 0.3).toInt(),
             (orig.g * 0.3).toInt(),
@@ -208,10 +138,10 @@ class _CameraScreenState extends State<CameraScreen> {
     return src;
   }
 
-  // ── UI ───────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
+    final pos = widget.lockedPosition;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -225,7 +155,7 @@ class _CameraScreenState extends State<CameraScreen> {
               child: CircularProgressIndicator(color: Colors.white),
             ),
 
-          // GPS status bar (atas)
+          // Info GPS terkunci (atas)
           Positioned(
             top: 0,
             left: 0,
@@ -235,20 +165,29 @@ class _CameraScreenState extends State<CameraScreen> {
               padding: const EdgeInsets.fromLTRB(16, 52, 16, 12),
               child: Row(
                 children: [
+                  const Icon(Icons.gps_fixed,
+                      color: Colors.greenAccent, size: 16),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _gpsText,
+                      '${pos.latitude.toStringAsFixed(6)}, '
+                      '${pos.longitude.toStringAsFixed(6)}  '
+                      '±${pos.accuracy.toStringAsFixed(1)}m',
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 13),
+                          color: Colors.white, fontSize: 12),
                     ),
                   ),
-                  if (_currentPosition != null)
-                    Text(
-                      '${_currentPosition!.latitude.toStringAsFixed(5)}, '
-                      '${_currentPosition!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                          color: Colors.white60, fontSize: 11),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
                     ),
+                    child: const Text('🟢 Locked',
+                        style: TextStyle(
+                            color: Colors.greenAccent, fontSize: 11)),
+                  ),
                 ],
               ),
             ),
@@ -265,32 +204,20 @@ class _CameraScreenState extends State<CameraScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  // Tombol kembali
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back_ios_new,
                         color: Colors.white, size: 28),
                   ),
-
-                  // Shutter — aktif hanya jika GPS siap
                   GestureDetector(
-                    onTap: (_gpsReady && !_isTakingPhoto)
-                        ? _ambilFoto
-                        : null,
+                    onTap: _isTakingPhoto ? null : _ambilFoto,
                     child: Container(
                       width: 72,
                       height: 72,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _gpsReady
-                              ? Colors.white
-                              : Colors.white38,
-                          width: 4,
-                        ),
-                        color: _gpsReady
-                            ? Colors.white.withOpacity(0.15)
-                            : Colors.white.withOpacity(0.05),
+                        border: Border.all(color: Colors.white, width: 4),
+                        color: Colors.white.withOpacity(0.15),
                       ),
                       child: _isTakingPhoto
                           ? const Padding(
@@ -298,38 +225,15 @@ class _CameraScreenState extends State<CameraScreen> {
                               child: CircularProgressIndicator(
                                   color: Colors.white, strokeWidth: 3),
                             )
-                          : Icon(
-                              Icons.camera_alt,
-                              color: _gpsReady
-                                  ? Colors.white
-                                  : Colors.white38,
-                              size: 32,
-                            ),
+                          : const Icon(Icons.camera_alt,
+                              color: Colors.white, size: 32),
                     ),
                   ),
-
                   const SizedBox(width: 48),
                 ],
               ),
             ),
           ),
-
-          // Label "Waiting GPS" di tengah jika belum siap
-          if (!_gpsReady)
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'Menunggu GPS stabil...',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
-                ),
-              ),
-            ),
         ],
       ),
     );

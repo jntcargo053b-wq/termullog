@@ -873,7 +873,7 @@ ProcessedImage _processImageOptimized(ImageProcessParams params) {
   }
 }
 
-// FIX: Perbaikan fillRect untuk package image versi 4.8.0
+// FIX: Menggunakan drawRect sebagai ganti fillRect untuk kompatibilitas
 img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final now = params.timestamp;
   final pos = params.position;
@@ -893,15 +893,15 @@ img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   
   if (y0 < 0) return src;
   
-  // FIX: fillRect dengan parameter yang benar untuk image 4.8.0
-  // Signature: fillRect(src, x, y, x2, y2, color)
-  img.fillRect(
+  // FIX: Gunakan drawRectangle sebagai alternatif fillRect
+  img.drawRectangle(
     src,
-    0,  // x1
-    y0, // y1
-    src.width, // x2
-    y0 + stripHeight, // y2
-    img.ColorRgba8(0, 0, 0, 180),
+    x1: 0,
+    y1: y0,
+    x2: src.width - 1,
+    y2: y0 + stripHeight - 1,
+    color: img.ColorRgba8(0, 0, 0, 180),
+    fill: true, // Fill the rectangle
   );
   
   final font = src.width > 1500 ? img.arial24 : img.arial14;

@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geolocator_android/geolocator_android.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -41,7 +42,7 @@ class _CameraScreenState extends State<CameraScreen> {
   // ── GPS POLISH ──────────────────────────────────────────────────────────
   bool _isPolishing = false;
 
-  int _polishCountdown = 30;
+  int _polishCountdown = 45;
 
   Timer? _countdownTimer;
 
@@ -86,7 +87,6 @@ class _CameraScreenState extends State<CameraScreen> {
         setState(() {
           _isInitialized = true;
         });
-
       }
 
     } catch (e) {
@@ -131,32 +131,48 @@ class _CameraScreenState extends State<CameraScreen> {
       return;
     }
 
+    // Force GPS aktif lebih cepat
+    try {
+
+      await Geolocator.getCurrentPosition(
+        desiredAccuracy:
+            LocationAccuracy.bestForNavigation,
+      );
+
+    } catch (_) {}
+
     _gpsStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
+
+      locationSettings: AndroidSettings(
+
+        accuracy:
+            LocationAccuracy.bestForNavigation,
+
         distanceFilter: 1,
+
+        intervalDuration:
+            const Duration(seconds: 1),
+
+        forceLocationManager: true,
       ),
+
     ).listen((Position pos) {
 
-      // Simpan posisi terbaik
-      if (_bestPosition == null ||
-          pos.accuracy < _bestPosition!.accuracy) {
+      // Selalu pakai posisi terbaru
+      _bestPosition = pos;
 
-        _bestPosition = pos;
-      }
-
-      final acc = _bestPosition!.accuracy;
+      final acc = pos.accuracy;
 
       setState(() {
 
-        if (acc <= 10) {
+        if (acc <= 25) {
 
           _gpsReady = true;
 
           _gpsText =
               '🟢 GPS Locked ±${acc.toStringAsFixed(1)}m';
 
-        } else if (acc <= 30) {
+        } else if (acc <= 50) {
 
           _gpsReady = false;
 
@@ -172,13 +188,14 @@ class _CameraScreenState extends State<CameraScreen> {
         }
       });
 
-      // Resolve jika GPS sudah bagus
+      // Jika sedang menunggu GPS
       if (_gpsCompleter != null &&
           !_gpsCompleter!.isCompleted &&
-          acc <= 10) {
+          acc <= 25) {
 
-        _gpsCompleter!.complete(_bestPosition);
-
+        _gpsCompleter!.complete(
+          _bestPosition,
+        );
       }
     });
   }
@@ -200,7 +217,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
 
-      // Ambil foto
+      // Ambil foto langsung
       final XFile file =
           await _controller!.takePicture();
 
@@ -214,21 +231,26 @@ class _CameraScreenState extends State<CameraScreen> {
           img.decodeImage(bytes);
 
       if (original == null) {
-        throw Exception('Gagal decode gambar');
+
+        throw Exception(
+          'Gagal decode gambar',
+        );
       }
 
       setState(() {
 
         _isTakingPhoto = false;
+
         _isPolishing = true;
-        _polishCountdown = 30;
+
+        _polishCountdown = 45;
 
       });
 
       // Tunggu GPS terbaik
       await _waitForBestGps();
 
-      // Gunakan posisi terbaik / dummy
+      // Posisi terbaik / fallback
       final Position gpsResult =
           _bestPosition ??
           Position(
@@ -308,6 +330,7 @@ class _CameraScreenState extends State<CameraScreen> {
     } finally {
 
       _countdownTimer?.cancel();
+
       _gpsCompleter = null;
 
     }
@@ -338,7 +361,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
     _countdownTimer?.cancel();
 
-    _polishCountdown = 30;
+    _polishCountdown = 45;
 
     _countdownTimer = Timer.periodic(
       const Duration(seconds: 1),
@@ -353,7 +376,9 @@ class _CameraScreenState extends State<CameraScreen> {
         }
 
         setState(() {
+
           _polishCountdown--;
+
         });
 
         // Timeout
@@ -381,9 +406,11 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
 
-      // GPS dummy
+      // GPS gagal
       if (pos.accuracy < 0) {
-        return 'Alamat tidak tersedia';
+
+        return 'Lat: ${pos.latitude.toStringAsFixed(6)}, '
+               'Lon: ${pos.longitude.toStringAsFixed(6)}';
       }
 
       final placemarks =
@@ -392,21 +419,43 @@ class _CameraScreenState extends State<CameraScreen> {
             pos.longitude,
           );
 
+      // Jika kosong
       if (placemarks.isEmpty) {
-        return 'Alamat tidak ditemukan';
+
+        return 'Lat: ${pos.latitude.toStringAsFixed(6)}, '
+               'Lon: ${pos.longitude.toStringAsFixed(6)}';
       }
 
       final p = placemarks.first;
 
-      return '${p.street}, '
-             '${p.subLocality}, '
-             '${p.locality}, '
-             '${p.administrativeArea}';
+      final alamat =
+          '${p.street ?? ''}, '
+          '${p.subLocality ?? ''}, '
+          '${p.locality ?? ''}, '
+          '${p.administrativeArea ?? ''}';
+
+      // Bersihkan koma kosong
+      final cleaned =
+          alamat
+              .replaceAll(' ,', '')
+              .replaceAll(', ,', ',')
+              .trim();
+
+      // Jika alamat kosong
+      if (cleaned.isEmpty ||
+          cleaned == ',') {
+
+        return 'Lat: ${pos.latitude.toStringAsFixed(6)}, '
+               'Lon: ${pos.longitude.toStringAsFixed(6)}';
+      }
+
+      return cleaned;
 
     } catch (e) {
 
-      return 'Alamat tidak tersedia';
-
+      // Fallback lat long
+      return 'Lat: ${pos.latitude.toStringAsFixed(6)}, '
+             'Lon: ${pos.longitude.toStringAsFixed(6)}';
     }
   }
 
@@ -445,7 +494,7 @@ class _CameraScreenState extends State<CameraScreen> {
     final isBottom =
         WatermarkLayoutService.position != 'top';
 
-    const stripHeight = 180;
+    const stripHeight = 210;
 
     final y0 = isBottom
         ? src.height - stripHeight
@@ -455,7 +504,7 @@ class _CameraScreenState extends State<CameraScreen> {
         ? src.height
         : stripHeight;
 
-    // Overlay hitam
+    // Overlay gelap
     for (int y = y0; y < y1; y++) {
 
       for (int x = 0; x < src.width; x++) {
@@ -581,7 +630,7 @@ class _CameraScreenState extends State<CameraScreen> {
       body: Stack(
         children: [
 
-          // CAMERA
+          // CAMERA PREVIEW
           if (_isInitialized &&
               _controller != null)
 
@@ -600,7 +649,7 @@ class _CameraScreenState extends State<CameraScreen> {
               ),
             ),
 
-          // GPS BAR
+          // GPS STATUS BAR
           Positioned(
             top: 0,
             left: 0,
@@ -668,7 +717,7 @@ class _CameraScreenState extends State<CameraScreen> {
             ),
           ),
 
-          // OVERLAY GPS
+          // GPS POLISH OVERLAY
           if (_isPolishing)
 
             Container(
@@ -718,7 +767,7 @@ class _CameraScreenState extends State<CameraScreen> {
                                 CircularProgressIndicator(
                               value:
                                   _polishCountdown /
-                                  30,
+                                  45,
 
                               strokeWidth: 6,
 

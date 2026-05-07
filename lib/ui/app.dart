@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/home_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -7,12 +8,8 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'My App',
-      home: const Scaffold(
-        body: Center(
-          child: Text('App Running'),
-        ),
-      ),
+      title: 'TermulLog',
+      home: const HomeScreen(),
     );
   }
 }

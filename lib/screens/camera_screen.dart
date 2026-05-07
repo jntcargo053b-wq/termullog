@@ -873,7 +873,7 @@ ProcessedImage _processImageOptimized(ImageProcessParams params) {
   }
 }
 
-// FIX: Menggunakan drawRect sebagai ganti fillRect untuk kompatibilitas
+// FIX: Menggunakan fillRectangle (camelCase) yang benar di package image 4.8.0
 img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final now = params.timestamp;
   final pos = params.position;
@@ -893,15 +893,14 @@ img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   
   if (y0 < 0) return src;
   
-  // FIX: Gunakan drawRectangle sebagai alternatif fillRect
-  img.drawRectangle(
+  // FIX: Gunakan fillRectangle yang benar di package image 4.8.0
+  img.fillRectangle(
     src,
     x1: 0,
     y1: y0,
     x2: src.width - 1,
     y2: y0 + stripHeight - 1,
     color: img.ColorRgba8(0, 0, 0, 180),
-    fill: true, // Fill the rectangle
   );
   
   final font = src.width > 1500 ? img.arial24 : img.arial14;

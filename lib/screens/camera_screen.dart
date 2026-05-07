@@ -6,7 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geolocator_android/geolocator_android.dart';
+
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -98,262 +98,501 @@ class _CameraScreenState extends State<CameraScreen> {
 
   // ── START GPS ───────────────────────────────────────────────────────────
 
-  Future<void> _startGpsTracking() async {
+Future<void> _startGpsTracking() async {
 
-    final serviceEnabled =
-        await Geolocator.isLocationServiceEnabled();
+  final serviceEnabled =
+      await Geolocator.isLocationServiceEnabled();
 
-    if (!serviceEnabled) {
+  if (!serviceEnabled) {
 
-      setState(() {
-        _gpsText = '❌ GPS tidak aktif';
-      });
+    setState(() {
+      _gpsText = '❌ GPS tidak aktif';
+    });
 
-      return;
-    }
+    return;
+  }
 
-    LocationPermission permission =
-        await Geolocator.checkPermission();
+  LocationPermission permission =
+      await Geolocator.checkPermission();
 
-    if (permission == LocationPermission.denied) {
+  if (permission == LocationPermission.denied) {
 
-      permission =
-          await Geolocator.requestPermission();
-    }
+    permission =
+        await Geolocator.requestPermission();
+  }
 
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
+  if (permission == LocationPermission.denied ||
+      permission == LocationPermission.deniedForever) {
 
-      setState(() {
-        _gpsText = '❌ Izin GPS ditolak';
-      });
+    setState(() {
+      _gpsText = '❌ Izin GPS ditolak';
+    });
 
-      return;
-    }
+    return;
+  }
 
-    // Force GPS aktif lebih cepat
-    try {
+  // ── GPS WARMUP ──────────────────────────────────────────
+  // Pancing GPS aktif lebih cepat
+  // Agar tidak lama dapat koordinat pertama
 
-      await Geolocator.getCurrentPosition(
-        desiredAccuracy:
-            LocationAccuracy.bestForNavigation,
-      );
+  try {
 
-    } catch (_) {}
+    final warmup =
+        await Geolocator.getCurrentPosition(
 
-    _gpsStream = Geolocator.getPositionStream(
-
-      locationSettings: AndroidSettings(
+      locationSettings:
+          const LocationSettings(
 
         accuracy:
-            LocationAccuracy.bestForNavigation,
-
-        distanceFilter: 1,
-
-        intervalDuration:
-            const Duration(seconds: 1),
-
-        forceLocationManager: true,
+            LocationAccuracy.low,
       ),
 
-    ).listen((Position pos) {
+    ).timeout(
+      const Duration(seconds: 5),
+    );
 
-      // Selalu pakai posisi terbaru
-      _bestPosition = pos;
+    _bestPosition = warmup;
 
-      final acc = pos.accuracy;
+    setState(() {
 
-      setState(() {
+      _gpsText =
+          '🟡 GPS awal ±${warmup.accuracy.toStringAsFixed(0)}m';
 
-        if (acc <= 25) {
+    });
 
-          _gpsReady = true;
+  } catch (_) {
 
-          _gpsText =
-              '🟢 GPS Locked ±${acc.toStringAsFixed(1)}m';
+    // Tidak masalah jika gagal
+    // Stream tetap berjalan
 
-        } else if (acc <= 50) {
+  }
 
-          _gpsReady = false;
+  // ── STREAM GPS REALTIME ────────────────────────────────
 
-          _gpsText =
-              '🟡 GPS ±${acc.toStringAsFixed(1)}m';
+  _gpsStream =
+      Geolocator.getPositionStream(
 
-        } else {
+    locationSettings:
+        const LocationSettings(
 
-          _gpsReady = false;
+      accuracy:
+          LocationAccuracy.bestForNavigation,
 
-          _gpsText =
-              '🔴 Sinyal lemah ±${acc.toStringAsFixed(1)}m';
-        }
-      });
+      distanceFilter: 1,
+    ),
 
-      // Jika sedang menunggu GPS
-      if (_gpsCompleter != null &&
-          !_gpsCompleter!.isCompleted &&
-          acc <= 25) {
+  ).listen((Position pos) {
 
-        _gpsCompleter!.complete(
-          _bestPosition,
-        );
+    // Simpan posisi terbaru
+    _bestPosition = pos;
+
+    final acc =
+        pos.accuracy;
+
+    setState(() {
+
+      if (acc <= 25) {
+
+        _gpsReady = true;
+
+        _gpsText =
+            '🟢 GPS Locked ±${acc.toStringAsFixed(1)}m';
+
+      } else if (acc <= 50) {
+
+        _gpsReady = false;
+
+        _gpsText =
+            '🟡 GPS ±${acc.toStringAsFixed(1)}m';
+
+      } else {
+
+        _gpsReady = false;
+
+        _gpsText =
+            '🔴 Sinyal lemah ±${acc.toStringAsFixed(1)}m';
       }
     });
-  }
+
+    // Jika sedang menunggu GPS
+    if (_gpsCompleter != null &&
+        !_gpsCompleter!.isCompleted &&
+        acc <= 25) {
+
+      _gpsCompleter!.complete(
+        _bestPosition,
+      );
+    }
+  });
+}
 
   // ── AMBIL FOTO ──────────────────────────────────────────────────────────
 
-  Future<void> _ambilFoto() async {
+Future<void> _ambilFoto() async {
 
-    if (_controller == null ||
-        !_controller!.value.isInitialized) {
-      return;
+  if (_controller == null ||
+      !_controller!.value.isInitialized) {
+    return;
+  }
+
+  if (_isTakingPhoto || _isPolishing) return;
+
+  setState(() {
+    _isTakingPhoto = true;
+  });
+
+  try {
+
+    // ── AMBIL FOTO ─────────────────────────────────────────
+
+    final XFile file =
+        await _controller!.takePicture();
+
+    final Uint8List bytes =
+        await file.readAsBytes();
+
+    final DateTime waktuFoto =
+        DateTime.now();
+
+    img.Image? original =
+        img.decodeImage(bytes);
+
+    if (original == null) {
+
+      throw Exception(
+        'Gagal decode gambar',
+      );
     }
 
-    if (_isTakingPhoto || _isPolishing) return;
+    // ── TAMPILKAN OVERLAY GPS ─────────────────────────────
 
     setState(() {
-      _isTakingPhoto = true;
+
+      _isTakingPhoto = false;
+
+      _isPolishing = true;
+
+      _polishCountdown = 45;
+
     });
 
-    try {
+    // ── TUNGGU GPS TERBAIK ────────────────────────────────
 
-      // Ambil foto langsung
-      final XFile file =
-          await _controller!.takePicture();
+    await _waitForBestGps();
 
-      final Uint8List bytes =
-          await file.readAsBytes();
+    // ── GPS RESULT ────────────────────────────────────────
 
-      final DateTime waktuFoto =
-          DateTime.now();
+    if (_bestPosition == null) {
 
-      img.Image? original =
-          img.decodeImage(bytes);
+      ScaffoldMessenger.of(context).showSnackBar(
 
-      if (original == null) {
+        const SnackBar(
+          content: Text(
+            'GPS tidak tersedia, foto tetap disimpan tanpa koordinat',
+          ),
+        ),
+      );
+    }
 
-        throw Exception(
-          'Gagal decode gambar',
+    final Position? gpsResult =
+        _bestPosition;
+
+    // ── AMBIL ALAMAT ──────────────────────────────────────
+
+    final String alamat =
+        gpsResult != null
+            ? await _getAddress(gpsResult)
+            : 'Lokasi tidak tersedia';
+
+    // ── WATERMARK ─────────────────────────────────────────
+
+    final watermarked =
+        _addWatermark(
+          original,
+          waktuFoto,
+          gpsResult,
+          alamat,
         );
-      }
+
+    // ── SIMPAN FOTO ───────────────────────────────────────
+
+    final dir =
+        await getTemporaryDirectory();
+
+    final outputPath =
+        '${dir.path}/termullog_${waktuFoto.millisecondsSinceEpoch}.jpg';
+
+    await File(outputPath).writeAsBytes(
+
+      img.encodeJpg(
+        watermarked,
+        quality: 90,
+      ),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+
+      _isPolishing = false;
+
+    });
+
+    // ── BUKA PREVIEW ──────────────────────────────────────
+
+    Navigator.push(
+
+      context,
+
+      MaterialPageRoute(
+        builder: (_) => PreviewScreen(
+          imagePath: outputPath,
+        ),
+      ),
+    );
+
+  } catch (e) {
+
+    if (mounted) {
 
       setState(() {
 
         _isTakingPhoto = false;
-
-        _isPolishing = true;
-
-        _polishCountdown = 45;
-
-      });
-
-      // Tunggu GPS terbaik
-      await _waitForBestGps();
-
-      // Posisi terbaik / fallback
-      final Position gpsResult =
-          _bestPosition ??
-          Position(
-            latitude: 0.0,
-            longitude: 0.0,
-            accuracy: -1,
-            altitude: 0.0,
-            altitudeAccuracy: 0.0,
-            heading: 0.0,
-            headingAccuracy: 0.0,
-            speed: 0.0,
-            speedAccuracy: 0.0,
-            timestamp: waktuFoto,
-          );
-
-      // Ambil alamat
-      final alamat =
-          await _getAddress(gpsResult);
-
-      // Tambah watermark
-      final watermarked =
-          _addWatermark(
-            original,
-            waktuFoto,
-            gpsResult,
-            alamat,
-          );
-
-      final dir =
-          await getTemporaryDirectory();
-
-      final outputPath =
-          '${dir.path}/termullog_${waktuFoto.millisecondsSinceEpoch}.jpg';
-
-      await File(outputPath).writeAsBytes(
-
-        img.encodeJpg(
-          watermarked,
-          quality: 90,
-        ),
-      );
-
-      if (!mounted) return;
-
-      setState(() {
         _isPolishing = false;
+
       });
 
-      Navigator.push(
-        context,
+      ScaffoldMessenger.of(context).showSnackBar(
 
-        MaterialPageRoute(
-          builder: (_) => PreviewScreen(
-            imagePath: outputPath,
+        SnackBar(
+          content: Text(
+            'Gagal: $e',
           ),
         ),
       );
+    }
 
-    } catch (e) {
+  } finally {
 
-      if (mounted) {
+    _countdownTimer?.cancel();
 
-        setState(() {
+    _gpsCompleter = null;
 
-          _isTakingPhoto = false;
-          _isPolishing = false;
+  }
+}
 
-        });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal: $e'),
-          ),
-        );
-      }
+// ── WAIT GPS ────────────────────────────────────────────────────────────
 
-    } finally {
+Future<void> _waitForBestGps() async {
 
-      _countdownTimer?.cancel();
+  // Jika GPS sudah bagus
+  if (_gpsReady &&
+      _bestPosition != null) {
+    return;
+  }
 
-      _gpsCompleter = null;
+  _gpsCompleter =
+      Completer<Position?>();
 
+  _startCountdown();
+
+  // Tunggu GPS / timeout
+  await _gpsCompleter!.future;
+}
+
+
+// ── WATERMARK ───────────────────────────────────────────────────────────
+
+img.Image _addWatermark(
+  img.Image src,
+  DateTime now,
+  Position? pos,
+  String alamat,
+) {
+
+  final tanggal =
+      DateFormat('dd MMM yyyy')
+          .format(now);
+
+  final jam =
+      DateFormat('HH:mm:ss')
+          .format(now);
+
+  // ── GPS STATUS ─────────────────────────────────────────
+
+  final bool gpsAvailable =
+      pos != null &&
+      pos.accuracy >= 0;
+
+  final lat =
+      gpsAvailable
+          ? pos!.latitude.toStringAsFixed(6)
+          : 'N/A';
+
+  final lon =
+      gpsAvailable
+          ? pos.longitude.toStringAsFixed(6)
+          : 'N/A';
+
+  final acc =
+      gpsAvailable
+          ? '±${pos.accuracy.toStringAsFixed(1)}m'
+          : 'GPS Unavailable';
+
+  final finalAlamat =
+      gpsAvailable
+          ? alamat
+          : 'Lokasi tidak tersedia';
+
+  // ── POSISI WATERMARK ───────────────────────────────────
+
+  final isBottom =
+      WatermarkLayoutService.position != 'top';
+
+  const stripHeight = 210;
+
+  final y0 =
+      isBottom
+          ? src.height - stripHeight
+          : 0;
+
+  final y1 =
+      isBottom
+          ? src.height
+          : stripHeight;
+
+  // ── OVERLAY GELAP ──────────────────────────────────────
+
+  for (int y = y0; y < y1; y++) {
+
+    for (int x = 0; x < src.width; x++) {
+
+      final orig =
+          src.getPixel(x, y);
+
+      src.setPixel(
+        x,
+        y,
+
+        img.ColorRgba8(
+          (orig.r * 0.3).toInt(),
+          (orig.g * 0.3).toInt(),
+          (orig.b * 0.3).toInt(),
+          255,
+        ),
+      );
     }
   }
 
-  // ── WAIT GPS ────────────────────────────────────────────────────────────
+  // ── COLOR ──────────────────────────────────────────────
 
-  Future<void> _waitForBestGps() async {
+  final font = img.arial24;
 
-    // Jika GPS sudah bagus
-    if (_gpsReady &&
-        _bestPosition != null) {
-      return;
-    }
+  final white =
+      img.ColorRgba8(
+        255,
+        255,
+        255,
+        255,
+      );
 
-    _gpsCompleter =
-        Completer<Position?>();
+  final yellow =
+      img.ColorRgba8(
+        255,
+        200,
+        0,
+        255,
+      );
 
-    _startCountdown();
+  final green =
+      img.ColorRgba8(
+        100,
+        220,
+        100,
+        255,
+      );
 
-    // Tunggu GPS / timeout
-    await _gpsCompleter!.future;
-  }
+  final red =
+      img.ColorRgba8(
+        255,
+        80,
+        80,
+        255,
+      );
+
+  final textY =
+      isBottom
+          ? src.height - stripHeight + 8
+          : 8;
+
+  // ── DRAW TEXT ──────────────────────────────────────────
+
+  img.drawString(
+    src,
+    '📦 TermulLog',
+
+    font: font,
+
+    x: 16,
+    y: textY,
+
+    color: yellow,
+  );
+
+  img.drawString(
+    src,
+    '$tanggal   $jam',
+
+    font: font,
+
+    x: 16,
+    y: textY + 32,
+
+    color: white,
+  );
+
+  img.drawString(
+    src,
+    'GPS: $lat, $lon',
+
+    font: font,
+
+    x: 16,
+    y: textY + 64,
+
+    color: white,
+  );
+
+  img.drawString(
+    src,
+    acc,
+
+    font: font,
+
+    x: 16,
+    y: textY + 96,
+
+    color:
+        gpsAvailable
+            ? green
+            : red,
+  );
+
+  img.drawString(
+    src,
+    finalAlamat,
+
+    font: font,
+
+    x: 16,
+    y: textY + 128,
+
+    color: white,
+  );
+
+  return src;
+}
 
   // ── COUNTDOWN ───────────────────────────────────────────────────────────
 

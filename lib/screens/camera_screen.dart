@@ -242,26 +242,34 @@ Future<void> _ambilFoto() async {
 
   try {
 
-    // ── AMBIL FOTO ─────────────────────────────────────────
+  // ── AMBIL FOTO ─────────────────────────────────────────
 
-    final XFile file =
-        await _controller!.takePicture();
+final XFile file =
+    await _controller!.takePicture();
 
-    final Uint8List bytes =
-        await file.readAsBytes();
+final Uint8List bytes =
+    await file.readAsBytes();
 
-    final DateTime waktuFoto =
-        DateTime.now();
+final DateTime waktuFoto =
+    DateTime.now();
 
-    img.Image? original =
-        img.decodeImage(bytes);
+// ── DECODE IMAGE ────────────────────────────────────────
 
-    if (original == null) {
+img.Image? original =
+    img.decodeImage(bytes);
 
-      throw Exception(
-        'Gagal decode gambar',
-      );
-    }
+// Jika gagal decode
+if (original == null) {
+
+  throw Exception(
+    'Gagal decode gambar',
+  );
+}
+
+// ── FIX ROTASI FOTO ─────────────────────────────────────
+// Beberapa device Android hasil kamera bisa miring
+
+original = img.bakeOrientation(original);
 
     // ── TAMPILKAN OVERLAY GPS ─────────────────────────────
 
@@ -303,17 +311,7 @@ Future<void> _ambilFoto() async {
             ? await _getAddress(gpsResult)
             : 'Lokasi tidak tersedia';
 
-    // ── WATERMARK ─────────────────────────────────────────
-
-    final watermarked =
-        _addWatermark(
-          original,
-          waktuFoto,
-          gpsResult,
-          alamat,
-        );
-
-    // ── SIMPAN FOTO ───────────────────────────────────────
+        // ── SIMPAN FOTO ───────────────────────────────────────
 
     final dir =
         await getTemporaryDirectory();
@@ -699,163 +697,195 @@ img.Image _addWatermark(
 
   // ── WATERMARK ───────────────────────────────────────────────────────────
 
-  img.Image _addWatermark(
-    img.Image src,
-    DateTime now,
-    Position pos,
-    String alamat,
-  ) {
+img.Image _addWatermark(
+  img.Image src,
+  DateTime now,
+  Position? pos,
+  String alamat,
+) {
 
-    final tanggal =
-        DateFormat('dd MMM yyyy')
-            .format(now);
+  final tanggal =
+      DateFormat('dd MMM yyyy')
+          .format(now);
 
-    final jam =
-        DateFormat('HH:mm:ss')
-            .format(now);
+  final jam =
+      DateFormat('HH:mm:ss')
+          .format(now);
 
-    final bool gpsAvailable =
-        pos.accuracy >= 0;
+  // ── GPS STATUS ─────────────────────────────────────────
 
-    final lat = gpsAvailable
-        ? pos.latitude.toStringAsFixed(6)
-        : 'NO GPS';
+  final bool gpsAvailable =
+      pos != null &&
+      pos.accuracy >= 0;
 
-    final lon = gpsAvailable
-        ? pos.longitude.toStringAsFixed(6)
-        : '-';
+  final lat =
+      gpsAvailable
+          ? pos!.latitude.toStringAsFixed(6)
+          : 'N/A';
 
-    final acc = gpsAvailable
-        ? pos.accuracy.toStringAsFixed(1)
-        : 'N/A';
+  final lon =
+      gpsAvailable
+          ? pos.longitude.toStringAsFixed(6)
+          : 'N/A';
 
-    final isBottom =
-        WatermarkLayoutService.position != 'top';
+  final acc =
+      gpsAvailable
+          ? '±${pos.accuracy.toStringAsFixed(1)}m'
+          : 'GPS Unavailable';
 
-    const stripHeight = 210;
+  final finalAlamat =
+      gpsAvailable
+          ? alamat
+          : 'Lokasi tidak tersedia';
 
-    final y0 = isBottom
-        ? src.height - stripHeight
-        : 0;
+  // ── POSISI WATERMARK ───────────────────────────────────
 
-    final y1 = isBottom
-        ? src.height
-        : stripHeight;
+  final isBottom =
+      WatermarkLayoutService.position != 'top';
 
-    // Overlay gelap
-    for (int y = y0; y < y1; y++) {
+  const stripHeight = 210;
 
-      for (int x = 0; x < src.width; x++) {
+  final y0 =
+      isBottom
+          ? src.height - stripHeight
+          : 0;
 
-        final orig =
-            src.getPixel(x, y);
+  final y1 =
+      isBottom
+          ? src.height
+          : stripHeight;
 
-        src.setPixel(
-          x,
-          y,
+  // ── OVERLAY GELAP ──────────────────────────────────────
 
-          img.ColorRgba8(
-            (orig.r * 0.3).toInt(),
-            (orig.g * 0.3).toInt(),
-            (orig.b * 0.3).toInt(),
-            255,
-          ),
-        );
-      }
+  for (int y = y0; y < y1; y++) {
+
+    for (int x = 0; x < src.width; x++) {
+
+      final orig =
+          src.getPixel(x, y);
+
+      src.setPixel(
+        x,
+        y,
+
+        img.ColorRgba8(
+          (orig.r * 0.3).toInt(),
+          (orig.g * 0.3).toInt(),
+          (orig.b * 0.3).toInt(),
+          255,
+        ),
+      );
     }
-
-    final font = img.arial24;
-
-    final white =
-        img.ColorRgba8(
-          255,
-          255,
-          255,
-          255,
-        );
-
-    final yellow =
-        img.ColorRgba8(
-          255,
-          200,
-          0,
-          255,
-        );
-
-    final green =
-        img.ColorRgba8(
-          100,
-          220,
-          100,
-          255,
-        );
-
-    final textY = isBottom
-        ? src.height - stripHeight + 8
-        : 8;
-
-    img.drawString(
-      src,
-      '📦 TermulLog',
-
-      font: font,
-
-      x: 16,
-      y: textY,
-
-      color: yellow,
-    );
-
-    img.drawString(
-      src,
-      '$tanggal   $jam',
-
-      font: font,
-
-      x: 16,
-      y: textY + 32,
-
-      color: white,
-    );
-
-    img.drawString(
-      src,
-      'GPS: $lat, $lon',
-
-      font: font,
-
-      x: 16,
-      y: textY + 64,
-
-      color: white,
-    );
-
-    img.drawString(
-      src,
-      'Accuracy: ±${acc}m',
-
-      font: font,
-
-      x: 16,
-      y: textY + 96,
-
-      color: green,
-    );
-
-    img.drawString(
-      src,
-      alamat,
-
-      font: font,
-
-      x: 16,
-      y: textY + 128,
-
-      color: white,
-    );
-
-    return src;
   }
+
+  // ── FONT & COLOR ───────────────────────────────────────
+
+  final font = img.arial24;
+
+  final white =
+      img.ColorRgba8(
+        255,
+        255,
+        255,
+        255,
+      );
+
+  final yellow =
+      img.ColorRgba8(
+        255,
+        200,
+        0,
+        255,
+      );
+
+  final green =
+      img.ColorRgba8(
+        100,
+        220,
+        100,
+        255,
+      );
+
+  final red =
+      img.ColorRgba8(
+        255,
+        80,
+        80,
+        255,
+      );
+
+  final textY =
+      isBottom
+          ? src.height - stripHeight + 8
+          : 8;
+
+  // ── DRAW TEXT ──────────────────────────────────────────
+
+  img.drawString(
+    src,
+    '📦 TermulLog',
+
+    font: font,
+
+    x: 16,
+    y: textY,
+
+    color: yellow,
+  );
+
+  img.drawString(
+    src,
+    '$tanggal   $jam',
+
+    font: font,
+
+    x: 16,
+    y: textY + 32,
+
+    color: white,
+  );
+
+  img.drawString(
+    src,
+    'GPS: $lat, $lon',
+
+    font: font,
+
+    x: 16,
+    y: textY + 64,
+
+    color: white,
+  );
+
+  img.drawString(
+    src,
+    acc,
+
+    font: font,
+
+    x: 16,
+    y: textY + 96,
+
+    color:
+        gpsAvailable
+            ? green
+            : red,
+  );
+
+  img.drawString(
+    src,
+    finalAlamat,
+
+    font: font,
+
+    x: 16,
+    y: textY + 128,
+
+    color: white,
+  );
+
+  return src;
+}
 
   // ── UI ──────────────────────────────────────────────────────────────────
 

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -24,34 +25,43 @@ class _CameraScreenState extends State<CameraScreen> {
 
   // ── CAMERA ──────────────────────────────────────────────────────────────
   CameraController? _controller;
+
   bool _isInitialized = false;
   bool _isTakingPhoto = false;
 
   // ── GPS ─────────────────────────────────────────────────────────────────
   StreamSubscription<Position>? _gpsStream;
+
   Position? _bestPosition;
+
   bool _gpsReady = false;
+
   String _gpsText = '🔍 Searching GPS...';
 
   // ── GPS POLISH ──────────────────────────────────────────────────────────
   bool _isPolishing = false;
+
   int _polishCountdown = 30;
 
   Timer? _countdownTimer;
+
   Completer<Position?>? _gpsCompleter;
 
   @override
   void initState() {
     super.initState();
+
     _initCamera();
     _startGpsTracking();
   }
 
   @override
   void dispose() {
+
     _controller?.dispose();
     _gpsStream?.cancel();
     _countdownTimer?.cancel();
+
     super.dispose();
   }
 
@@ -72,7 +82,11 @@ class _CameraScreenState extends State<CameraScreen> {
       await _controller!.initialize();
 
       if (mounted) {
-        setState(() => _isInitialized = true);
+
+        setState(() {
+          _isInitialized = true;
+        });
+
       }
 
     } catch (e) {
@@ -102,6 +116,7 @@ class _CameraScreenState extends State<CameraScreen> {
         await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
+
       permission =
           await Geolocator.requestPermission();
     }
@@ -157,7 +172,7 @@ class _CameraScreenState extends State<CameraScreen> {
         }
       });
 
-      // Jika sedang menunggu GPS
+      // Resolve jika GPS sudah bagus
       if (_gpsCompleter != null &&
           !_gpsCompleter!.isCompleted &&
           acc <= 10) {
@@ -168,7 +183,7 @@ class _CameraScreenState extends State<CameraScreen> {
     });
   }
 
-  // ── TAKE PHOTO ──────────────────────────────────────────────────────────
+  // ── AMBIL FOTO ──────────────────────────────────────────────────────────
 
   Future<void> _ambilFoto() async {
 
@@ -179,11 +194,13 @@ class _CameraScreenState extends State<CameraScreen> {
 
     if (_isTakingPhoto || _isPolishing) return;
 
-    setState(() => _isTakingPhoto = true);
+    setState(() {
+      _isTakingPhoto = true;
+    });
 
     try {
 
-      // Ambil foto langsung
+      // Ambil foto
       final XFile file =
           await _controller!.takePicture();
 
@@ -208,10 +225,10 @@ class _CameraScreenState extends State<CameraScreen> {
 
       });
 
-      // Tunggu GPS max 30 detik
+      // Tunggu GPS terbaik
       await _waitForBestGps();
 
-      // Pakai posisi terbaik / dummy
+      // Gunakan posisi terbaik / dummy
       final Position gpsResult =
           _bestPosition ??
           Position(
@@ -227,12 +244,18 @@ class _CameraScreenState extends State<CameraScreen> {
             timestamp: waktuFoto,
           );
 
-      // Watermark
-      final watermarked = _addWatermark(
-        original,
-        waktuFoto,
-        gpsResult,
-      );
+      // Ambil alamat
+      final alamat =
+          await _getAddress(gpsResult);
+
+      // Tambah watermark
+      final watermarked =
+          _addWatermark(
+            original,
+            waktuFoto,
+            gpsResult,
+            alamat,
+          );
 
       final dir =
           await getTemporaryDirectory();
@@ -241,6 +264,7 @@ class _CameraScreenState extends State<CameraScreen> {
           '${dir.path}/termullog_${waktuFoto.millisecondsSinceEpoch}.jpg';
 
       await File(outputPath).writeAsBytes(
+
         img.encodeJpg(
           watermarked,
           quality: 90,
@@ -255,6 +279,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
       Navigator.push(
         context,
+
         MaterialPageRoute(
           builder: (_) => PreviewScreen(
             imagePath: outputPath,
@@ -288,20 +313,22 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  // ── WAIT BEST GPS ───────────────────────────────────────────────────────
+  // ── WAIT GPS ────────────────────────────────────────────────────────────
 
   Future<void> _waitForBestGps() async {
 
-    // Jika GPS sudah locked
-    if (_gpsReady && _bestPosition != null) {
+    // Jika GPS sudah bagus
+    if (_gpsReady &&
+        _bestPosition != null) {
       return;
     }
 
-    _gpsCompleter = Completer<Position?>();
+    _gpsCompleter =
+        Completer<Position?>();
 
     _startCountdown();
 
-    // Tunggu GPS locked / timeout
+    // Tunggu GPS / timeout
     await _gpsCompleter!.future;
   }
 
@@ -315,6 +342,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
     _countdownTimer = Timer.periodic(
       const Duration(seconds: 1),
+
       (t) {
 
         if (!mounted) {
@@ -345,19 +373,59 @@ class _CameraScreenState extends State<CameraScreen> {
     );
   }
 
+  // ── GET ADDRESS ─────────────────────────────────────────────────────────
+
+  Future<String> _getAddress(
+    Position pos,
+  ) async {
+
+    try {
+
+      // GPS dummy
+      if (pos.accuracy < 0) {
+        return 'Alamat tidak tersedia';
+      }
+
+      final placemarks =
+          await placemarkFromCoordinates(
+            pos.latitude,
+            pos.longitude,
+          );
+
+      if (placemarks.isEmpty) {
+        return 'Alamat tidak ditemukan';
+      }
+
+      final p = placemarks.first;
+
+      return '${p.street}, '
+             '${p.subLocality}, '
+             '${p.locality}, '
+             '${p.administrativeArea}';
+
+    } catch (e) {
+
+      return 'Alamat tidak tersedia';
+
+    }
+  }
+
   // ── WATERMARK ───────────────────────────────────────────────────────────
 
   img.Image _addWatermark(
     img.Image src,
     DateTime now,
     Position pos,
+    String alamat,
   ) {
 
     final tanggal =
-        DateFormat('dd MMM yyyy').format(now);
+        DateFormat('dd MMM yyyy')
+            .format(now);
 
     final jam =
-        DateFormat('HH:mm:ss').format(now);
+        DateFormat('HH:mm:ss')
+            .format(now);
 
     final bool gpsAvailable =
         pos.accuracy >= 0;
@@ -377,7 +445,7 @@ class _CameraScreenState extends State<CameraScreen> {
     final isBottom =
         WatermarkLayoutService.position != 'top';
 
-    const stripHeight = 140;
+    const stripHeight = 180;
 
     final y0 = isBottom
         ? src.height - stripHeight
@@ -387,16 +455,18 @@ class _CameraScreenState extends State<CameraScreen> {
         ? src.height
         : stripHeight;
 
-    // Overlay gelap
+    // Overlay hitam
     for (int y = y0; y < y1; y++) {
 
       for (int x = 0; x < src.width; x++) {
 
-        final orig = src.getPixel(x, y);
+        final orig =
+            src.getPixel(x, y);
 
         src.setPixel(
           x,
           y,
+
           img.ColorRgba8(
             (orig.r * 0.3).toInt(),
             (orig.g * 0.3).toInt(),
@@ -410,13 +480,28 @@ class _CameraScreenState extends State<CameraScreen> {
     final font = img.arial24;
 
     final white =
-        img.ColorRgba8(255, 255, 255, 255);
+        img.ColorRgba8(
+          255,
+          255,
+          255,
+          255,
+        );
 
     final yellow =
-        img.ColorRgba8(255, 200, 0, 255);
+        img.ColorRgba8(
+          255,
+          200,
+          0,
+          255,
+        );
 
     final green =
-        img.ColorRgba8(100, 220, 100, 255);
+        img.ColorRgba8(
+          100,
+          220,
+          100,
+          255,
+        );
 
     final textY = isBottom
         ? src.height - stripHeight + 8
@@ -425,37 +510,61 @@ class _CameraScreenState extends State<CameraScreen> {
     img.drawString(
       src,
       '📦 TermulLog',
+
       font: font,
+
       x: 16,
       y: textY,
+
       color: yellow,
     );
 
     img.drawString(
       src,
       '$tanggal   $jam',
+
       font: font,
+
       x: 16,
       y: textY + 32,
+
       color: white,
     );
 
     img.drawString(
       src,
       'GPS: $lat, $lon',
+
       font: font,
+
       x: 16,
       y: textY + 64,
+
       color: white,
     );
 
     img.drawString(
       src,
       'Accuracy: ±${acc}m',
+
       font: font,
+
       x: 16,
       y: textY + 96,
+
       color: green,
+    );
+
+    img.drawString(
+      src,
+      alamat,
+
+      font: font,
+
+      x: 16,
+      y: textY + 128,
+
+      color: white,
     );
 
     return src;
@@ -472,7 +581,7 @@ class _CameraScreenState extends State<CameraScreen> {
       body: Stack(
         children: [
 
-          // CAMERA PREVIEW
+          // CAMERA
           if (_isInitialized &&
               _controller != null)
 
@@ -485,7 +594,8 @@ class _CameraScreenState extends State<CameraScreen> {
           else
 
             const Center(
-              child: CircularProgressIndicator(
+              child:
+                  CircularProgressIndicator(
                 color: Colors.white,
               ),
             ),
@@ -499,7 +609,8 @@ class _CameraScreenState extends State<CameraScreen> {
             child: Container(
               color: Colors.black54,
 
-              padding: const EdgeInsets.fromLTRB(
+              padding:
+                  const EdgeInsets.fromLTRB(
                 16,
                 52,
                 16,
@@ -527,11 +638,14 @@ class _CameraScreenState extends State<CameraScreen> {
                     child: Text(
 
                       _bestPosition != null
+
                           ? '${_bestPosition!.latitude.toStringAsFixed(5)}, '
                             '${_bestPosition!.longitude.toStringAsFixed(5)}'
+
                           : _gpsText,
 
-                      style: const TextStyle(
+                      style:
+                          const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
                       ),
@@ -554,23 +668,27 @@ class _CameraScreenState extends State<CameraScreen> {
             ),
           ),
 
-          // GPS OVERLAY
+          // OVERLAY GPS
           if (_isPolishing)
 
             Container(
-              color: Colors.black.withOpacity(0.75),
+              color:
+                  Colors.black.withOpacity(0.75),
 
               child: Center(
                 child: Container(
 
-                  margin: const EdgeInsets.symmetric(
+                  margin:
+                      const EdgeInsets.symmetric(
                     horizontal: 40,
                   ),
 
-                  padding: const EdgeInsets.all(28),
+                  padding:
+                      const EdgeInsets.all(28),
 
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0D1B2A),
+                    color:
+                        const Color(0xFF0D1B2A),
 
                     borderRadius:
                         BorderRadius.circular(20),
@@ -581,12 +699,14 @@ class _CameraScreenState extends State<CameraScreen> {
                   ),
 
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize:
+                        MainAxisSize.min,
 
                     children: [
 
                       Stack(
-                        alignment: Alignment.center,
+                        alignment:
+                            Alignment.center,
 
                         children: [
 
@@ -594,9 +714,11 @@ class _CameraScreenState extends State<CameraScreen> {
                             width: 80,
                             height: 80,
 
-                            child: CircularProgressIndicator(
+                            child:
+                                CircularProgressIndicator(
                               value:
-                                  _polishCountdown / 30,
+                                  _polishCountdown /
+                                  30,
 
                               strokeWidth: 6,
 
@@ -612,43 +734,57 @@ class _CameraScreenState extends State<CameraScreen> {
                           Text(
                             '$_polishCountdown',
 
-                            style: const TextStyle(
+                            style:
+                                const TextStyle(
                               color: Colors.white,
                               fontSize: 24,
-                              fontWeight: FontWeight.bold,
+                              fontWeight:
+                                  FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
 
-                      const SizedBox(height: 20),
+                      const SizedBox(
+                        height: 20,
+                      ),
 
                       Text(
                         _gpsReady
+
                             ? '✅ GPS Terkunci!\nMenyimpan foto...'
+
                             : '📡 Menyempurnakan GPS...\n$_gpsText',
 
-                        textAlign: TextAlign.center,
+                        textAlign:
+                            TextAlign.center,
 
-                        style: const TextStyle(
+                        style:
+                            const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                         ),
                       ),
 
-                      const SizedBox(height: 12),
+                      const SizedBox(
+                        height: 12,
+                      ),
 
                       Text(
                         _gpsReady
+
                             ? 'Koordinat berhasil dikunci'
+
                             : 'Foto sudah diambil.\n'
                               'Menunggu GPS presisi '
                               'atau timeout '
                               '$_polishCountdown detik',
 
-                        textAlign: TextAlign.center,
+                        textAlign:
+                            TextAlign.center,
 
-                        style: const TextStyle(
+                        style:
+                            const TextStyle(
                           color: Colors.white54,
                           fontSize: 12,
                         ),
@@ -670,7 +806,8 @@ class _CameraScreenState extends State<CameraScreen> {
               child: Container(
                 color: Colors.black87,
 
-                padding: const EdgeInsets.fromLTRB(
+                padding:
+                    const EdgeInsets.fromLTRB(
                   24,
                   20,
                   24,
@@ -705,7 +842,8 @@ class _CameraScreenState extends State<CameraScreen> {
                         width: 72,
                         height: 72,
 
-                        decoration: BoxDecoration(
+                        decoration:
+                            BoxDecoration(
                           shape: BoxShape.circle,
 
                           border: Border.all(
@@ -717,28 +855,43 @@ class _CameraScreenState extends State<CameraScreen> {
                               .withOpacity(0.15),
                         ),
 
-                        child: _isTakingPhoto
+                        child:
+                            _isTakingPhoto
 
-                            ? const Padding(
-                                padding:
-                                    EdgeInsets.all(20),
+                                ? const Padding(
+                                    padding:
+                                        EdgeInsets
+                                            .all(
+                                      20,
+                                    ),
 
-                                child:
-                                    CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 3,
-                                ),
-                              )
+                                    child:
+                                        CircularProgressIndicator(
+                                      color:
+                                          Colors
+                                              .white,
 
-                            : const Icon(
-                                Icons.camera_alt,
-                                color: Colors.white,
-                                size: 32,
-                              ),
+                                      strokeWidth:
+                                          3,
+                                    ),
+                                  )
+
+                                : const Icon(
+                                    Icons
+                                        .camera_alt,
+
+                                    color:
+                                        Colors
+                                            .white,
+
+                                    size: 32,
+                                  ),
                       ),
                     ),
 
-                    const SizedBox(width: 48),
+                    const SizedBox(
+                      width: 48,
+                    ),
                   ],
                 ),
               ),

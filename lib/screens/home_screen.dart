@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
 import '../core/camera_registry.dart';
-import 'gps_lock_screen.dart';
+import 'camera_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -20,7 +20,7 @@ class HomeScreen extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const GpsLockScreen(),
+        builder: (_) => const CameraScreen(),
       ),
     );
   }
@@ -178,7 +178,7 @@ class HomeScreen extends StatelessWidget {
 
                     Expanded(
                       child: Text(
-                        'Aplikasi akan mencari GPS terlebih dahulu sebelum kamera dibuka agar lokasi lebih akurat.',
+                        'GPS presisi tinggi akan digunakan otomatis saat kamera dibuka.',
                         style: TextStyle(
                           color: Colors.white54,
                           fontSize: 13,

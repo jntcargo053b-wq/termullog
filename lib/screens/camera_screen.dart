@@ -231,7 +231,7 @@ class _CameraScreenState extends State<CameraScreen>
             });
           }
         },
-        cancelOnError: false, // Jangan cancel stream, terus coba
+        cancelOnError: false,
       );
     } catch (e) {
       debugPrint('GPS Init Error: $e');
@@ -245,13 +245,11 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   void _onGpsData(Position pos) {
-    // Mock GPS check
     if (pos.isMocked) {
       debugPrint('⚠ Mock GPS detected');
       return;
     }
 
-    // Timestamp check
     final now = DateTime.now();
     final age = now.difference(pos.timestamp);
 
@@ -265,18 +263,15 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    // Outlier check
     if (_bestPosition != null && _isOutlier(pos, _bestPosition!)) {
       debugPrint('⚠ Outlier skipped');
       return;
     }
 
-    // Remove old samples
     _positionSamples.removeWhere(
       (p) => DateTime.now().difference(p.timestamp).inSeconds > 8,
     );
 
-    // Add sample
     _positionSamples.add(pos);
 
     if (_positionSamples.length > _maxSamples) {
@@ -295,7 +290,6 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    // Averaging
     final averaged = _averageBestPositions();
     if (averaged == null) return;
 
@@ -334,8 +328,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ───────────────── OUTLIER ─────────────────
-
   bool _isOutlier(Position newPos, Position lastPos) {
     final distance = _calculateDistance(
       lastPos.latitude,
@@ -367,8 +359,6 @@ class _CameraScreenState extends State<CameraScreen>
             sin(dLon / 2);
     return R * (2 * atan2(sqrt(a), sqrt(1 - a)));
   }
-
-  // ───────────────── AVERAGE GPS ─────────────────
 
   Position? _averageBestPositions() {
     if (_positionSamples.isEmpty) return _bestPosition;
@@ -420,8 +410,6 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  // ───────────────── TAKE PHOTO ─────────────────
-
   Future<void> _ambilFoto() async {
     final ctrl = _controller;
     if (ctrl == null || !ctrl.value.isInitialized) return;
@@ -441,7 +429,6 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isTakingPhoto = true);
 
     try {
-      // Force fresh GPS sync
       try {
         final fresh = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.bestForNavigation,
@@ -454,7 +441,6 @@ class _CameraScreenState extends State<CameraScreen>
       final Uint8List bytes = await file.readAsBytes();
       final DateTime waktuFoto = DateTime.now();
 
-      // Decode di background thread
       final img.Image? original = await compute(_decodeImage, bytes);
       if (original == null) throw Exception('Decode gagal');
 
@@ -470,7 +456,6 @@ class _CameraScreenState extends State<CameraScreen>
           ? await _getAddress(_bestPosition!)
           : 'Lokasi tidak tersedia';
 
-      // Proses watermark di background thread
       final WatermarkParams params = WatermarkParams(
         image: original,
         timestamp: waktuFoto,
@@ -484,7 +469,6 @@ class _CameraScreenState extends State<CameraScreen>
       final outputPath =
           '${dir.path}/termullog_${waktuFoto.millisecondsSinceEpoch}.jpg';
 
-      // Encode di background thread
       final Uint8List jpegData = await compute(_encodeJpg, watermarked);
 
       await File(outputPath).writeAsBytes(jpegData);
@@ -531,8 +515,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ───────────────── WAIT GPS ─────────────────
-
   Future<void> _waitForBestGps() async {
     if (!mounted) return;
     
@@ -560,8 +542,6 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  // ───────────────── COUNTDOWN ─────────────────
-
   void _startCountdown() {
     _countdownTimer?.cancel();
     _polishCountdown = 45;
@@ -582,8 +562,6 @@ class _CameraScreenState extends State<CameraScreen>
       }
     });
   }
-
-  // ───────────────── ADDRESS ─────────────────
 
   Future<String> _getAddress(Position pos) async {
     try {
@@ -617,21 +595,17 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ───────────────── UI ─────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // CAMERA PREVIEW
           if (_isInitialized && _controller != null)
             SizedBox.expand(child: CameraPreview(_controller!))
           else
             const Center(child: CircularProgressIndicator()),
 
-          // GPS BAR (atas)
           Positioned(
             top: 0, left: 0, right: 0,
             child: Container(
@@ -674,10 +648,9 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
-          // POLISHING OVERLAY
           if (_isPolishing)
             Container(
-              color: Colors.black.withValues(alpha: 0.75), // Fixed deprecated
+              color: Colors.black.withOpacity(0.75),
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -716,7 +689,6 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-          // BUTTON BAR (bawah)
           if (!_isPolishing)
             Positioned(
               bottom: 0, left: 0, right: 0,
@@ -744,7 +716,7 @@ class _CameraScreenState extends State<CameraScreen>
                             color: Colors.white,
                             width: 4,
                           ),
-                          color: Colors.white.withValues(alpha: 0.15), // Fixed
+                          color: Colors.white.withOpacity(0.15),
                         ),
                         child: _isTakingPhoto
                             ? const Padding(
@@ -856,7 +828,6 @@ img.Image _addWatermarkAsync(WatermarkParams params) {
   final isBottom = WatermarkLayoutService.position != 'top';
   final y0 = isBottom ? src.height - stripHeight : 0;
 
-  // Background overlay
   img.fillRect(
     src,
     x1: 0,
@@ -866,8 +837,6 @@ img.Image _addWatermarkAsync(WatermarkParams params) {
     color: img.ColorRgba8(0, 0, 0, 170),
   );
 
-  // Gunakan font yang support teks biasa (arial24 tidak support emoji)
-  // Untuk teks, kita buat teks tanpa emoji
   final font = img.arial24;
   final white = img.ColorRgba8(255, 255, 255, 255);
   final yellow = img.ColorRgba8(255, 200, 0, 255);
@@ -876,7 +845,6 @@ img.Image _addWatermarkAsync(WatermarkParams params) {
 
   final textY = y0 + 10;
 
-  // Remove emoji, use plain text
   img.drawString(src, 'TermulLog',
       font: font, x: 16, y: textY, color: yellow);
 
@@ -895,10 +863,10 @@ img.Image _addWatermarkAsync(WatermarkParams params) {
   return src;
 }
 
-// ───────────────── KALMAN FILTER (OPTIMIZED SPEED) ─────────────────
+// ───────────────── KALMAN FILTER ─────────────────
 
 class SimpleKalmanFilter {
-  final double _q = 0.05; // Kembali ke 0.05 untuk respon lebih cepat
+  final double _q = 0.05;
   double _r = 10.0;
   double _p = 1.0;
   double? _x;

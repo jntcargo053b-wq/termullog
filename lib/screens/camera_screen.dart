@@ -1060,4 +1060,61 @@ class _CameraScreenState extends State<CameraScreen>
                         width: 200,
                         child: LinearProgressIndicator(
                           value: _bestPosition != null 
-                            ? (1 - (_bestPosition!.accuracy / 100).cl
+                            ? (1 - (_bestPosition!.accuracy / 100)).clamp(0.0, 1.0)
+                            : null,
+                          backgroundColor: Colors.white24,
+                          color: Colors.greenAccent,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '$_polishCountdown s',
+                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            
+            // Capture button
+            if (!_isPolishing && !_isWarmingUp)
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Container(
+                  color: Colors.black87,
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                      ),
+                      GestureDetector(
+                        onTap: (_isTakingPhoto || _isPolishing) ? null : _ambilFoto,
+                        child: Container(
+                          width: 64, height: 64,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 3),
+                            color: Colors.white.withOpacity(0.15),
+                          ),
+                          child: _isTakingPhoto
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Icon(Icons.camera_alt, color: Colors.white, size: 28),
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -13,6 +13,7 @@ import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/camera_registry.dart';
 import '../services/watermark_layout_service.dart';
@@ -26,12 +27,17 @@ class CameraConstants {
   // GPS Configuration
   static const int gpsWatchdogIntervalSeconds = 15;
   static const int gpsStaleAfterSeconds = 25;
-  static const double targetAccuracyMeters = 20.0;
+  
+  // Accuracy thresholds
+  static const double accuracyExcellent = 10.0;
+  static const double accuracyTarget = 20.0;
+  static const double accuracyMedium = 30.0;
+  static const double accuracyPoor = 50.0;
+  static const double accuracyMax = 80.0;
+  
   static const int maxGpsSamples = 5;
   static const int minSamplesRequired = 3;
   static const double outlierSpeedThresholdMs = 30.0;
-  static const double maxValidAccuracyMeters = 80.0;
-  static const double maxAcceptableAccuracyMeters = 80.0;
   static const int quickGpsTimeoutSeconds = 2;
   static const int warmupGpsTimeoutSeconds = 3;
   
@@ -39,10 +45,6 @@ class CameraConstants {
   static const int polishTimeoutGoodAccuracy = 8;
   static const int polishTimeoutMediumAccuracy = 15;
   static const int polishTimeoutPoorAccuracy = 25;
-  
-  // GPS Accuracy thresholds
-  static const double accuracyGood = 30.0;
-  static const double accuracyMedium = 50.0;
   
   // Camera Configuration
   static const int photoQualityPercent = 78;
@@ -72,6 +74,10 @@ class CameraConstants {
   // Temp File Cleanup
   static const Duration tempFileRetention = Duration(hours: 24);
   static const int addressCacheMaxSize = 20;
+  
+  // GPS Health Check
+  static const int lowAccuracyCheckDelaySeconds = 5;
+  static const double lowAccuracyThreshold = 50.0;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -281,6 +287,134 @@ class GpsBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
+// DIALOG EDUKASI GPS
+// ─────────────────────────────────────────────────────────────
+
+class GpsAccuracyDialog extends StatelessWidget {
+  const GpsAccuracyDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.gps_fixed, color: Colors.blue, size: 28),
+          SizedBox(width: 8),
+          Text('Tingkatkan Akurasi GPS'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Untuk hasil seperti Google Maps, aktifkan pengaturan berikut:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            _buildStep(
+              '1',
+              'High Accuracy Mode',
+              'Settings → Location → Mode → Pilih "High Accuracy"',
+              Icons.settings,
+            ),
+            const SizedBox(height: 12),
+            _buildStep(
+              '2',
+              'Wi-Fi Scanning',
+              'Settings → Location → Advanced → Scanning → Aktifkan',
+              Icons.wifi,
+            ),
+            const SizedBox(height: 12),
+            _buildStep(
+              '3',
+              'Bluetooth Scanning',
+              'Settings → Location → Advanced → Scanning → Aktifkan',
+              Icons.bluetooth,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.amber, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Catatan: Mode High Accuracy akan menggunakan baterai lebih banyak, tetapi akurasi GPS meningkat drastis.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Nanti Saja'),
+        ),
+        ElevatedButton.icon(
+          onPressed: () async {
+            await Geolocator.openLocationSettings();
+            if (context.mounted) Navigator.pop(context);
+          },
+          icon: const Icon(Icons.settings),
+          label: const Text('Buka Setting'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep(String number, String title, String subtitle, IconData icon) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: Colors.blue,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: Text(
+              number,
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+        Icon(icon, color: Colors.blue, size: 20),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN CAMERA SCREEN
 // ─────────────────────────────────────────────────────────────
 
@@ -334,6 +468,10 @@ class _CameraScreenState extends State<CameraScreen>
   Timer? _countdownTimer;
   Completer<void>? _gpsCompleter;
   bool _isWaitingForGps = false;
+
+  // GPS UI State
+  bool _isLocationServiceDisabled = false;
+  bool _hasShownLowAccuracyDialog = false;
 
   // Kalman
   final SimpleKalmanFilter _kalmanLat = SimpleKalmanFilter();
@@ -434,11 +572,43 @@ class _CameraScreenState extends State<CameraScreen>
       debugPrint('Temp file cleanup error: $e');
     }
   }
+  
+  Future<void> _showAccuracyDialogIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyShown = prefs.getBool('gps_dialog_shown') ?? false;
+    
+    if (alreadyShown) return;
+    
+    if (mounted) {
+      await prefs.setBool('gps_dialog_shown', true);
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (_) => const GpsAccuracyDialog(),
+      );
+    }
+  }
+
+  // A. Deteksi Low Accuracy sebagai indikator mode bukan High Accuracy
+  void _checkLowAccuracyAndNotify() {
+    if (_hasShownLowAccuracyDialog) return;
+    
+    Future.delayed(const Duration(seconds: CameraConstants.lowAccuracyCheckDelaySeconds), () {
+      if (_isDisposed || !mounted) return;
+      
+      if (_bestPosition != null && 
+          _bestPosition!.accuracy > CameraConstants.lowAccuracyThreshold &&
+          !_hasShownLowAccuracyDialog) {
+        _hasShownLowAccuracyDialog = true;
+        _showAccuracyDialogIfNeeded();
+      }
+    });
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_isDisposed) return;
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused) {
       _handleAppPaused();
     } else if (state == AppLifecycleState.resumed) {
       _handleAppResumed();
@@ -539,9 +709,18 @@ class _CameraScreenState extends State<CameraScreen>
     
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      
+      // B. Update banner status
       if (!serviceEnabled) {
+        if (mounted) {
+          setState(() => _isLocationServiceDisabled = true);
+        }
         _updateGpsText('❌ GPS tidak aktif');
         return;
+      } else {
+        if (mounted) {
+          setState(() => _isLocationServiceDisabled = false);
+        }
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
@@ -555,11 +734,14 @@ class _CameraScreenState extends State<CameraScreen>
       }
 
       _warmupGps();
+      
+      // A. Trigger low accuracy check setelah beberapa detik
+      _checkLowAccuracyAndNotify();
 
       final locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-        intervalDuration: const Duration(seconds: 3),
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 1),
         forceLocationManager: false,
       );
 
@@ -582,11 +764,11 @@ class _CameraScreenState extends State<CameraScreen>
   void _warmupGps() async {
     try {
       final warmup = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        desiredAccuracy: LocationAccuracy.bestForNavigation,
       ).timeout(Duration(seconds: CameraConstants.warmupGpsTimeoutSeconds));
       
       if (!_isDisposed && warmup != null) {
-        if (warmup.accuracy <= CameraConstants.maxAcceptableAccuracyMeters && !warmup.isMocked) {
+        if (warmup.accuracy <= CameraConstants.accuracyMax && !warmup.isMocked) {
           _bestPosition = warmup;
           _positionSamples.add(warmup);
           _updateGpsText('🟡 GPS ±${warmup.accuracy.toStringAsFixed(0)}m');
@@ -615,7 +797,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (now.difference(timestamp).inSeconds > 5) return;
     
     if (pos.isMocked) return;
-    if (pos.accuracy > CameraConstants.maxAcceptableAccuracyMeters) return;
+    if (pos.accuracy > CameraConstants.accuracyMax) return;
     
     if (_isProcessingGps) return;
     _isProcessingGps = true;
@@ -650,16 +832,22 @@ class _CameraScreenState extends State<CameraScreen>
       }
       
       final acc = _bestPosition!.accuracy;
-      final isReady = acc <= CameraConstants.targetAccuracyMeters;
+      final isReady = acc <= CameraConstants.accuracyTarget;
       
       _debounceUiUpdate(() {
         if (_isDisposed) return;
         setState(() {
           _gpsReady = isReady;
           if (isReady) {
-            _gpsText = '🟢 GPS ${acc.toStringAsFixed(0)}m';
-          } else if (acc <= 30) {
+            if (acc <= CameraConstants.accuracyExcellent) {
+              _gpsText = '🟢 GPS Sangat Akurat ${acc.toStringAsFixed(0)}m ✨';
+            } else {
+              _gpsText = '🟢 GPS ${acc.toStringAsFixed(0)}m';
+            }
+          } else if (acc <= CameraConstants.accuracyMedium) {
             _gpsText = '🟡 ${acc.toStringAsFixed(0)}m';
+          } else if (acc <= CameraConstants.accuracyPoor) {
+            _gpsText = '🟠 ${acc.toStringAsFixed(0)}m';
           } else {
             _gpsText = '🔴 ${acc.toStringAsFixed(0)}m';
           }
@@ -709,7 +897,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   Position? _averageBestPositions() {
     final validSamples = _positionSamples
-        .where((p) => p.accuracy < CameraConstants.maxValidAccuracyMeters)
+        .where((p) => p.accuracy < CameraConstants.accuracyMax)
         .toList();
         
     if (validSamples.length < CameraConstants.minSamplesRequired) {
@@ -769,7 +957,7 @@ class _CameraScreenState extends State<CameraScreen>
     
     final acc = _bestPosition!.accuracy;
     
-    if (acc <= CameraConstants.accuracyGood) {
+    if (acc <= CameraConstants.accuracyTarget) {
       return CameraConstants.polishTimeoutGoodAccuracy;
     }
     
@@ -781,15 +969,15 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _quickGpsRefresh() async {
-    if (_bestPosition != null && _bestPosition!.accuracy <= 30) return;
+    if (_bestPosition != null && _bestPosition!.accuracy <= CameraConstants.accuracyMedium) return;
     
     try {
       final fresh = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        desiredAccuracy: LocationAccuracy.bestForNavigation,
       ).timeout(Duration(seconds: CameraConstants.quickGpsTimeoutSeconds));
       
       if (!fresh.isMocked && 
-          fresh.accuracy <= CameraConstants.maxAcceptableAccuracyMeters &&
+          fresh.accuracy <= CameraConstants.accuracyMax &&
           fresh.accuracy < (_bestPosition?.accuracy ?? 999)) {
         _bestPosition = fresh;
       }
@@ -916,7 +1104,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isDisposed) return;
     
     if (_gpsReady && _bestPosition != null && 
-        _bestPosition!.accuracy <= CameraConstants.targetAccuracyMeters) {
+        _bestPosition!.accuracy <= CameraConstants.accuracyTarget) {
       return;
     }
     
@@ -1029,9 +1217,44 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
             
+            // B. Banner GPS non-aktif (seperti Google Maps)
+            if (_isLocationServiceDisabled)
+              Positioned(
+                top: 40,
+                left: 16,
+                right: 16,
+                child: Material(
+                  elevation: 2,
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.red.shade800,
+                  child: InkWell(
+                    onTap: () => Geolocator.openLocationSettings(),
+                    borderRadius: BorderRadius.circular(8),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(Icons.location_off, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Lokasi tidak aktif — Ketuk untuk mengaktifkan',
+                              style: TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: Colors.white, size: 18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            
             // GPS bar
             Positioned(
-              top: 0, left: 0, right: 0,
+              top: _isLocationServiceDisabled ? 90 : 0,
+              left: 0,
+              right: 0,
               child: GpsBar(
                 gpsReady: _gpsReady,
                 gpsText: _gpsText,
@@ -1051,7 +1274,7 @@ class _CameraScreenState extends State<CameraScreen>
                       const SizedBox(height: 16),
                       Text(
                         _bestPosition != null 
-                          ? 'Akurasi: ${_bestPosition!.accuracy.toStringAsFixed(0)}m dari target ${CameraConstants.targetAccuracyMeters.toStringAsFixed(0)}m'
+                          ? 'Akurasi: ${_bestPosition!.accuracy.toStringAsFixed(0)}m dari target ${CameraConstants.accuracyTarget.toStringAsFixed(0)}m'
                           : _gpsText,
                         style: const TextStyle(color: Colors.white, fontSize: 13),
                       ),
@@ -1071,6 +1294,18 @@ class _CameraScreenState extends State<CameraScreen>
                         '$_polishCountdown s',
                         style: const TextStyle(color: Colors.white60, fontSize: 11),
                       ),
+                      if (_bestPosition != null && _bestPosition!.accuracy <= CameraConstants.accuracyExcellent)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star, color: Colors.amber, size: 16),
+                              SizedBox(width: 4),
+                              Text('Akurasi sangat baik!', style: TextStyle(color: Colors.amber, fontSize: 11)),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ),

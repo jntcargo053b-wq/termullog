@@ -18,7 +18,12 @@ jobs:
       - run: flutter clean
       - run: flutter pub get
       - run: flutter build apk --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+     - uses: actions/upload-artifact@v4
+  with:
+    name: app-release
+    path: build/app/outputs/flutter-apk/app-release.apk
+    if-no-files-found: warn
+    compression-level: 6
+    overwrite: true
+    retention-days: 7
+    include-hidden-files: false

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:path/path.dart' as path;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +18,218 @@ import '../core/camera_registry.dart';
 import '../services/watermark_layout_service.dart';
 import 'preview_screen.dart';
 
-// ───────────────── GPS BAR WIDGET ─────────────────
+// ─────────────────────────────────────────────────────────────
+// CONSTANTS & CONFIGURATION
+// ─────────────────────────────────────────────────────────────
+
+class CameraConstants {
+  // GPS Configuration
+  static const int gpsWatchdogIntervalSeconds = 15;
+  static const int gpsStaleAfterSeconds = 25;
+  static const double targetAccuracyMeters = 20.0;
+  static const int maxGpsSamples = 5;
+  static const int minSamplesRequired = 3;
+  static const double outlierSpeedThresholdMs = 30.0;
+  static const double maxValidAccuracyMeters = 80.0; // DITURUNKAN dari 100 ke 80
+  static const double maxAcceptableAccuracyMeters = 80.0; // Safety net di _onGpsData
+  static const int quickGpsTimeoutSeconds = 2;
+  static const int warmupGpsTimeoutSeconds = 3;
+  
+  // GPS Polishing - Adaptive Timeout
+  static const int polishTimeoutGoodAccuracy = 8;   // ≤30m
+  static const int polishTimeoutMediumAccuracy = 15; // ≤50m
+  static const int polishTimeoutPoorAccuracy = 25;   // >50m atau null
+  
+  // GPS Accuracy thresholds
+  static const double accuracyGood = 30.0;
+  static const double accuracyMedium = 50.0;
+  
+  // Camera Configuration
+  static const int photoQualityPercent = 78;
+  static const int maxImageDimensionPx = 1600;
+  static const Duration cameraTimeout = Duration(seconds: 5);
+  static const Duration cameraReinitDelay = Duration(milliseconds: 300);
+  
+  // Kalman Filter
+  static const double kalmanProcessNoise = 0.15;
+  static const double kalmanInitialEstimateError = 1.0;
+  static const double kalmanMinMeasurementNoise = 1.0;
+  static const double kalmanMaxMeasurementNoise = 100.0;
+  
+  // UI & Layout
+  static const double watermarkHeightRatio = 0.14;
+  static const int watermarkMinHeight = 100;
+  static const int watermarkMaxHeight = 180;
+  static const int watermarkLineSpacing = 6;
+  static const int watermarkMaxAddressLength = 42;
+  
+  // Performance
+  static const Duration uiDebounceDelay = Duration(milliseconds: 100);
+  static const int positionSampleLifespanSeconds = 15;
+  static const int topSamplesForAveraging = 3;
+  static const int maxErrorMessageLength = 50;
+  
+  // Temp File Cleanup
+  static const Duration tempFileRetention = Duration(hours: 24);
+}
+
+// ─────────────────────────────────────────────────────────────
+// KALMAN FILTER
+// ─────────────────────────────────────────────────────────────
+
+class SimpleKalmanFilter {
+  final double _processNoise;
+  double _measurementNoise;
+  double _errorCovariance;
+  double? _stateEstimate;
+  
+  SimpleKalmanFilter({
+    double q = CameraConstants.kalmanProcessNoise,
+    double r = 10.0
+  }) : _processNoise = q,
+       _measurementNoise = r,
+       _errorCovariance = CameraConstants.kalmanInitialEstimateError;
+  
+  double filter(double measurement, double measurementAccuracy) {
+    _measurementNoise = measurementAccuracy.clamp(
+      CameraConstants.kalmanMinMeasurementNoise,
+      CameraConstants.kalmanMaxMeasurementNoise,
+    );
+    
+    if (_stateEstimate == null) {
+      _stateEstimate = measurement;
+      return measurement;
+    }
+    
+    _errorCovariance = _errorCovariance + _processNoise;
+    final kalmanGain = _errorCovariance / (_errorCovariance + _measurementNoise);
+    _stateEstimate = _stateEstimate! + kalmanGain * (measurement - _stateEstimate!);
+    _errorCovariance = (1 - kalmanGain) * _errorCovariance;
+    
+    return _stateEstimate!;
+  }
+  
+  void reset() {
+    _errorCovariance = CameraConstants.kalmanInitialEstimateError;
+    _stateEstimate = null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// OPTIMIZED IMAGE PROCESSING
+// ─────────────────────────────────────────────────────────────
+
+class ImageProcessParams {
+  final Uint8List imageBytes;
+  final DateTime timestamp;
+  final Position? position;
+  final String address;
+  final int quality;
+  final int maxDimension;
+  final String watermarkPosition;
+  
+  const ImageProcessParams({
+    required this.imageBytes,
+    required this.timestamp,
+    this.position,
+    required this.address,
+    required this.quality,
+    required this.maxDimension,
+    required this.watermarkPosition,
+  });
+}
+
+class ProcessedImage {
+  final Uint8List jpegData;
+  const ProcessedImage({required this.jpegData});
+}
+
+ProcessedImage _processImageOptimized(ImageProcessParams params) {
+  img.Image? src;
+  
+  try {
+    src = img.decodeImage(params.imageBytes);
+    if (src == null) throw Exception('Decode failed');
+    
+    if (src.width > params.maxDimension || src.height > params.maxDimension) {
+      src = img.copyResize(
+        src, 
+        width: src.width > src.height ? params.maxDimension : null,
+        height: src.height > src.width ? params.maxDimension : null,
+        interpolation: img.Interpolation.average,
+      );
+    }
+    
+    src = _addWatermarkFast(src, params);
+    final jpegData = img.encodeJpg(src, quality: params.quality);
+    
+    return ProcessedImage(jpegData: Uint8List.fromList(jpegData));
+  } finally {
+    src?.clear();
+  }
+}
+
+img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
+  final now = params.timestamp;
+  final pos = params.position;
+  final alamat = params.address;
+  
+  final tanggal = DateFormat('dd/MM/yy').format(now);
+  final jam = DateFormat('HH:mm:ss').format(now);
+  
+  final gpsAvailable = pos != null;
+  final lat = gpsAvailable ? pos.latitude.toStringAsFixed(5) : 'N/A';
+  final lon = gpsAvailable ? pos.longitude.toStringAsFixed(5) : 'N/A';
+  final acc = gpsAvailable ? '${pos.accuracy.toStringAsFixed(0)}m' : 'No GPS';
+  
+  final int stripHeight = (src.height * CameraConstants.watermarkHeightRatio)
+      .toInt()
+      .clamp(CameraConstants.watermarkMinHeight, CameraConstants.watermarkMaxHeight);
+  
+  final isBottom = params.watermarkPosition != 'top';
+  final y0 = isBottom ? src.height - stripHeight : 0;
+  
+  if (y0 < 0) return src;
+  
+  img.fillRect(
+    src,
+    x1: 0,
+    y1: y0,
+    x2: src.width - 1,
+    y2: y0 + stripHeight - 1,
+    color: img.ColorRgba8(0, 0, 0, 180),
+  );
+  
+  final font = src.width > 1500 ? img.arial24 : img.arial14;
+  final white = img.ColorRgba8(255, 255, 255, 255);
+  final yellow = img.ColorRgba8(255, 200, 0, 255);
+  final green = img.ColorRgba8(100, 220, 100, 255);
+  
+  final lineH = (stripHeight / 6).floor().clamp(14, 24);
+  final y = y0 + CameraConstants.watermarkLineSpacing;
+  
+  if (y + lineH * 5 <= src.height) {
+    img.drawString(src, 'TermulLog', font: font, x: 10, y: y, color: yellow);
+    img.drawString(src, '$tanggal  $jam', font: font, x: 10, y: y + lineH, color: white);
+    img.drawString(src, '$lat, $lon', font: font, x: 10, y: y + lineH * 2, color: white);
+    img.drawString(src, 'Acc: $acc', font: font, x: 10, y: y + lineH * 3, 
+      color: gpsAvailable ? green : white);
+    
+    final shortAddr = alamat.length > CameraConstants.watermarkMaxAddressLength 
+        ? '${alamat.substring(0, CameraConstants.watermarkMaxAddressLength - 3)}...' 
+        : alamat;
+        
+    if (shortAddr.isNotEmpty && y + lineH * 4 < src.height) {
+      img.drawString(src, shortAddr, font: font, x: 10, y: y + lineH * 4, color: white);
+    }
+  }
+  
+  return src;
+}
+
+// ─────────────────────────────────────────────────────────────
+// GPS BAR WIDGET
+// ─────────────────────────────────────────────────────────────
 
 class GpsBar extends StatelessWidget {
   final bool gpsReady;
@@ -35,7 +247,7 @@ class GpsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Colors.black54,
-      padding: EdgeInsets.fromLTRB(12, MediaQuery.of(context).padding.top + 8, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Row(
         children: [
           Icon(
@@ -67,7 +279,9 @@ class GpsBar extends StatelessWidget {
   }
 }
 
-// ───────────────── MAIN CAMERA SCREEN ─────────────────
+// ─────────────────────────────────────────────────────────────
+// MAIN CAMERA SCREEN
+// ─────────────────────────────────────────────────────────────
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -82,11 +296,10 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   bool get wantKeepAlive => false;
 
-  // ───────────────── CAMERA ─────────────────
+  // Camera
   CameraController? _controller;
   bool _isInitialized = false;
   bool _isTakingPhoto = false;
-  bool _isCameraBusy = false;
   bool _isReinitializingCamera = false;
   bool _isResumingApp = false;
   
@@ -100,7 +313,7 @@ class _CameraScreenState extends State<CameraScreen>
     _captureLocked = false;
   }
 
-  // ───────────────── GPS ─────────────────
+  // GPS
   StreamSubscription<Position>? _gpsStream;
   Position? _bestPosition;
   bool _gpsReady = false;
@@ -108,41 +321,33 @@ class _CameraScreenState extends State<CameraScreen>
   
   Timer? _gpsWatchdog;
   DateTime _lastGpsUpdate = DateTime.now();
-  static const int _gpsUpdateIntervalMs = 3000;
   bool _isProcessingGps = false;
   int _gpsRestartCount = 0;
   
   final List<Position> _positionSamples = [];
-  static const int _maxSamples = 5;
-  static const double _targetAccuracy = 20.0;
-  static const int _minSamplesRequired = 3;
   int _samplesCollected = 0;
-
-  // ───────────────── GPS POLISH ─────────────────
+  
+  // GPS Polish
   bool _isPolishing = false;
-  int _polishCountdown = 25;
+  int _polishCountdown = CameraConstants.polishTimeoutPoorAccuracy;
   Timer? _countdownTimer;
   Completer<void>? _gpsCompleter;
   bool _isWaitingForGps = false;
 
-  // ───────────────── KALMAN ─────────────────
-  final SimpleKalmanFilter _kalmanLat = SimpleKalmanFilter(q: 0.15, r: 10.0);
-  final SimpleKalmanFilter _kalmanLon = SimpleKalmanFilter(q: 0.15, r: 10.0);
+  // Kalman
+  final SimpleKalmanFilter _kalmanLat = SimpleKalmanFilter();
+  final SimpleKalmanFilter _kalmanLon = SimpleKalmanFilter();
   bool _kalmanInitialized = false;
 
-  // ───────────────── PERFORMANCE ─────────────────
+  // Performance
   bool _isWarmingUp = true;
-  int _photoQuality = 78;
-  static const int _maxImageDimension = 1600;
+  int _photoQuality = CameraConstants.photoQualityPercent;
   
   final Map<String, String> _addressCache = {};
-  static const int _maxCacheSize = 20;
   
   Timer? _uiUpdateTimer;
   
   bool _isDisposed = false;
-
-  // ───────────────── INIT ─────────────────
 
   @override
   void initState() {
@@ -153,6 +358,7 @@ class _CameraScreenState extends State<CameraScreen>
     _initCamera();
     _startGpsTracking();
     _startGpsWatchdog();
+    _cleanOldTempFiles();
   }
 
   @override
@@ -193,38 +399,91 @@ class _CameraScreenState extends State<CameraScreen>
       }
     }
   }
-
-  // ───────────────── APP LIFECYCLE ─────────────────
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) async {
-    if (_isDisposed) return;
-    
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      _gpsStream?.pause();
-      _gpsWatchdog?.cancel();
-      await _disposeCamera();
-      if (mounted) {
-        setState(() {
-          _controller = null;
-          _isInitialized = false;
-        });
+  
+  // ─────────────────────────────────────────────────────────────
+  // TEMP FILE CLEANUP
+  // ─────────────────────────────────────────────────────────────
+  
+  Future<void> _cleanOldTempFiles() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final cutoff = DateTime.now().subtract(CameraConstants.tempFileRetention);
+      
+      final files = dir.listSync()
+          .whereType<File>()
+          .where((f) => path.basename(f.path).startsWith('termullog_'))
+          .where((f) {
+            try {
+              return f.statSync().modified.isBefore(cutoff);
+            } catch (_) {
+              return false;
+            }
+          })
+          .toList();
+      
+      for (final file in files) {
+        try {
+          await file.delete();
+          debugPrint('Deleted old temp file: ${file.path}');
+        } catch (e) {
+          debugPrint('Failed to delete temp file: $e');
+        }
       }
-    } else if (state == AppLifecycleState.resumed) {
-      if (_isResumingApp) return;
-      _isResumingApp = true;
       
-      _gpsStream?.resume();
-      _startGpsWatchdog();
-      
-      await Future.delayed(const Duration(milliseconds: 300));
-      await _initCamera();
-      
-      _isResumingApp = false;
+      if (files.isNotEmpty) {
+        debugPrint('Cleaned up ${files.length} old temp files');
+      }
+    } catch (e) {
+      debugPrint('Temp file cleanup error: $e');
     }
   }
 
-  // ───────────────── CAMERA INIT ─────────────────
+  // ─────────────────────────────────────────────────────────────
+  // APP LIFECYCLE
+  // ─────────────────────────────────────────────────────────────
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isDisposed) return;
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _handleAppPaused();
+    } else if (state == AppLifecycleState.resumed) {
+      _handleAppResumed();
+    }
+  }
+
+  Future<void> _handleAppPaused() async {
+    _gpsStream?.pause();
+    _gpsWatchdog?.cancel();
+    await _disposeCamera();
+    if (mounted) {
+      setState(() {
+        _controller = null;
+        _isInitialized = false;
+      });
+    }
+  }
+
+  Future<void> _handleAppResumed() async {
+    if (_isResumingApp) return;
+    _isResumingApp = true;
+    
+    if (mounted) {
+      setState(() => _isWarmingUp = true);
+    }
+    
+    _gpsStream?.resume();
+    _startGpsWatchdog();
+    
+    await Future.delayed(CameraConstants.cameraReinitDelay);
+    await _initCamera();
+    
+    _isResumingApp = false;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // CAMERA INIT
+  // ─────────────────────────────────────────────────────────────
 
   Future<void> _initCamera() async {
     if (_isReinitializingCamera) return;
@@ -266,19 +525,21 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ───────────────── GPS WATCHDOG ─────────────────
+  // ─────────────────────────────────────────────────────────────
+  // GPS WATCHDOG
+  // ─────────────────────────────────────────────────────────────
 
   void _startGpsWatchdog() {
     _gpsWatchdog?.cancel();
     
     _gpsWatchdog = Timer.periodic(
-      const Duration(seconds: 15),
+      Duration(seconds: CameraConstants.gpsWatchdogIntervalSeconds),
       (_) async {
         if (_isDisposed) return;
         
         final last = DateTime.now().difference(_lastGpsUpdate);
         
-        if (last.inSeconds > 25) {
+        if (last.inSeconds > CameraConstants.gpsStaleAfterSeconds) {
           debugPrint('GPS Watchdog: Restarting GPS stream (${_gpsRestartCount + 1})');
           _gpsRestartCount++;
           await _gpsStream?.cancel();
@@ -288,7 +549,9 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  // ───────────────── START GPS ─────────────────
+  // ─────────────────────────────────────────────────────────────
+  // START GPS
+  // ─────────────────────────────────────────────────────────────
 
   Future<void> _startGpsTracking() async {
     if (_isDisposed) return;
@@ -314,7 +577,7 @@ class _CameraScreenState extends State<CameraScreen>
 
       final locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 15,
+        distanceFilter: 5,
         intervalDuration: const Duration(seconds: 3),
         forceLocationManager: false,
       );
@@ -339,12 +602,15 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final warmup = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(Duration(seconds: CameraConstants.warmupGpsTimeoutSeconds));
       
       if (!_isDisposed && warmup != null) {
-        _bestPosition = warmup;
-        _positionSamples.add(warmup);
-        _updateGpsText('🟡 GPS ±${warmup.accuracy.toStringAsFixed(0)}m');
+        // Filter di warmup juga
+        if (warmup.accuracy <= CameraConstants.maxAcceptableAccuracyMeters && !warmup.isMocked) {
+          _bestPosition = warmup;
+          _positionSamples.add(warmup);
+          _updateGpsText('🟡 GPS ±${warmup.accuracy.toStringAsFixed(0)}m');
+        }
       }
     } catch (_) {}
   }
@@ -358,38 +624,42 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // GPS DATA PROCESSING (DENGAN FILTER AKURASI)
+  // ─────────────────────────────────────────────────────────────
+
   void _onGpsData(Position pos) {
     if (_isDisposed) return;
+    
+    _lastGpsUpdate = DateTime.now();
     
     final timestamp = pos.timestamp ?? DateTime.now();
     final now = DateTime.now();
     
     if (now.difference(timestamp).inSeconds > 5) return;
     
-    final elapsed = now.difference(_lastGpsUpdate).inMilliseconds;
-    if (elapsed < _gpsUpdateIntervalMs) return;
-    _lastGpsUpdate = now;
+    // FILTER KRITIS: Tolak GPS dengan akurasi buruk
+    if (pos.isMocked) return;
+    if (pos.accuracy > CameraConstants.maxAcceptableAccuracyMeters) return; // ← TAMBAHKAN INI
     
     if (_isProcessingGps) return;
     _isProcessingGps = true;
     
     try {
-      if (pos.isMocked) return;
-      
       if (_bestPosition != null && _isOutlier(pos, _bestPosition!)) return;
       
       _positionSamples.removeWhere((p) {
         final ts = p.timestamp ?? now;
-        return now.difference(ts).inSeconds > 15;
+        return now.difference(ts).inSeconds > CameraConstants.positionSampleLifespanSeconds;
       });
       _positionSamples.add(pos);
       
-      while (_positionSamples.length > _maxSamples) {
+      while (_positionSamples.length > CameraConstants.maxGpsSamples) {
         _positionSamples.removeAt(0);
       }
       
       _samplesCollected++;
-      if (_samplesCollected < _minSamplesRequired) return;
+      if (_samplesCollected < CameraConstants.minSamplesRequired) return;
       
       final averaged = _averageBestPositions();
       if (averaged == null) return;
@@ -405,7 +675,7 @@ class _CameraScreenState extends State<CameraScreen>
       }
       
       final acc = _bestPosition!.accuracy;
-      final isReady = acc <= _targetAccuracy;
+      final isReady = acc <= CameraConstants.targetAccuracyMeters;
       
       _debounceUiUpdate(() {
         if (_isDisposed) return;
@@ -423,8 +693,9 @@ class _CameraScreenState extends State<CameraScreen>
       
       if (_isWaitingForGps && _gpsCompleter != null && 
           !_gpsCompleter!.isCompleted && isReady) {
-        _gpsCompleter!.complete();
+        final completer = _gpsCompleter;
         _isWaitingForGps = false;
+        completer?.complete();
       }
     } finally {
       _isProcessingGps = false;
@@ -433,7 +704,7 @@ class _CameraScreenState extends State<CameraScreen>
   
   void _debounceUiUpdate(VoidCallback callback) {
     _uiUpdateTimer?.cancel();
-    _uiUpdateTimer = Timer(const Duration(milliseconds: 100), callback);
+    _uiUpdateTimer = Timer(CameraConstants.uiDebounceDelay, callback);
   }
 
   bool _isOutlier(Position newPos, Position lastPos) {
@@ -448,7 +719,7 @@ class _CameraScreenState extends State<CameraScreen>
     final timeDiff = newTs.difference(lastTs).inSeconds.abs();
     if (timeDiff == 0) return false;
     final speed = distance / timeDiff;
-    return speed > 30;
+    return speed > CameraConstants.outlierSpeedThresholdMs;
   }
 
   double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
@@ -462,20 +733,21 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Position? _averageBestPositions() {
-    if (_positionSamples.isEmpty) return _bestPosition;
-    
-    final validSamples = _positionSamples.where((p) => p.accuracy < 100).toList();
-    if (validSamples.isEmpty) return _bestPosition;
-    
-    validSamples.sort((a, b) => a.latitude.compareTo(b.latitude));
-    final medianLat = validSamples[validSamples.length ~/ 2].latitude;
-    validSamples.sort((a, b) => a.longitude.compareTo(b.longitude));
-    final medianLon = validSamples[validSamples.length ~/ 2].longitude;
+    final validSamples = _positionSamples
+        .where((p) => p.accuracy < CameraConstants.maxValidAccuracyMeters)
+        .toList();
+        
+    if (validSamples.length < CameraConstants.minSamplesRequired) {
+      return _bestPosition;
+    }
     
     final sorted = List<Position>.from(validSamples)
       ..sort((a, b) => a.accuracy.compareTo(b.accuracy));
     
-    final topN = sorted.take(3).toList();
+    final medianIdx = sorted.length ~/ 2;
+    final medianPos = sorted[medianIdx];
+    
+    final topN = sorted.take(CameraConstants.topSamplesForAveraging).toList();
     
     double totalWeight = 0;
     double weightedLat = 0;
@@ -491,8 +763,8 @@ class _CameraScreenState extends State<CameraScreen>
     double finalLat = weightedLat / totalWeight;
     double finalLon = weightedLon / totalWeight;
     
-    finalLat = (finalLat + medianLat) / 2;
-    finalLon = (finalLon + medianLon) / 2;
+    finalLat = (finalLat + medianPos.latitude) / 2;
+    finalLon = (finalLon + medianPos.longitude) / 2;
     
     if (_kalmanInitialized) {
       finalLat = _kalmanLat.filter(finalLat, topN.first.accuracy);
@@ -505,17 +777,58 @@ class _CameraScreenState extends State<CameraScreen>
       latitude: finalLat,
       longitude: finalLon,
       accuracy: avgAccuracy,
-      altitude: topN.first.altitude,
-      altitudeAccuracy: topN.first.altitudeAccuracy,
-      heading: topN.first.heading,
-      headingAccuracy: topN.first.headingAccuracy,
-      speed: topN.first.speed,
-      speedAccuracy: topN.first.speedAccuracy,
+      altitude: medianPos.altitude,
+      altitudeAccuracy: medianPos.altitudeAccuracy,
+      heading: medianPos.heading,
+      headingAccuracy: medianPos.headingAccuracy,
+      speed: medianPos.speed,
+      speedAccuracy: medianPos.speedAccuracy,
       timestamp: DateTime.now(),
     );
   }
 
-  // ───────────────── TAKE PHOTO ─────────────────
+  // ─────────────────────────────────────────────────────────────
+  // ADAPTIVE GPS TIMEOUT
+  // ─────────────────────────────────────────────────────────────
+  
+  int _adaptivePolishTimeout() {
+    if (_bestPosition == null) {
+      return CameraConstants.polishTimeoutPoorAccuracy;
+    }
+    
+    final acc = _bestPosition!.accuracy;
+    
+    if (acc <= CameraConstants.accuracyGood) {
+      return CameraConstants.polishTimeoutGoodAccuracy;
+    }
+    
+    if (acc <= CameraConstants.accuracyMedium) {
+      return CameraConstants.polishTimeoutMediumAccuracy;
+    }
+    
+    return CameraConstants.polishTimeoutPoorAccuracy;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // TAKE PHOTO
+  // ─────────────────────────────────────────────────────────────
+  
+  Future<void> _quickGpsRefresh() async {
+    if (_bestPosition != null && _bestPosition!.accuracy <= 30) return;
+    
+    try {
+      final fresh = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(Duration(seconds: CameraConstants.quickGpsTimeoutSeconds));
+      
+      // Filter di quick refresh juga
+      if (!fresh.isMocked && 
+          fresh.accuracy <= CameraConstants.maxAcceptableAccuracyMeters &&
+          fresh.accuracy < (_bestPosition?.accuracy ?? 999)) {
+        _bestPosition = fresh;
+      }
+    } catch (_) {}
+  }
   
   Future<void> _ambilFoto() async {
     if (!_acquireLock()) return;
@@ -523,20 +836,26 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final ctrl = _controller;
       if (ctrl == null || !ctrl.value.isInitialized) return;
-      if (_isTakingPhoto || _isPolishing || _isCameraBusy) return;
+      if (_isTakingPhoto || _isPolishing) return;
       if (ctrl.value.isTakingPicture) return;
       
-      _isCameraBusy = true;
       if (mounted) setState(() => _isTakingPhoto = true);
       
       HapticFeedback.lightImpact();
-      await _quickGpsRefresh();
       
-      final XFile file = await ctrl.takePicture().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw TimeoutException('Camera timeout'),
-      );
+      XFile? capturedFile;
+      await Future.wait([
+        _quickGpsRefresh(),
+        ctrl.takePicture()
+            .timeout(CameraConstants.cameraTimeout)
+            .then((file) => capturedFile = file)
+      ]);
       
+      if (capturedFile == null) {
+        throw Exception('Failed to capture photo');
+      }
+      
+      final XFile file = capturedFile!;
       final bytes = await File(file.path).readAsBytes();
       final DateTime waktuFoto = DateTime.now();
       
@@ -544,11 +863,13 @@ class _CameraScreenState extends State<CameraScreen>
         setState(() {
           _isTakingPhoto = false;
           _isPolishing = true;
-          _polishCountdown = 25;
+          _polishCountdown = _adaptivePolishTimeout();
         });
       }
       
       await _waitForBestGps();
+      
+      if (!mounted || _isDisposed) return;
       
       final String alamat = _bestPosition != null
           ? await _getAddressCached(_bestPosition)
@@ -560,14 +881,15 @@ class _CameraScreenState extends State<CameraScreen>
         position: _bestPosition,
         address: alamat,
         quality: _photoQuality,
-        maxDimension: _maxImageDimension,
+        maxDimension: CameraConstants.maxImageDimensionPx,
+        watermarkPosition: WatermarkLayoutService.position,
       ));
+      
+      if (!mounted || _isDisposed) return;
       
       final dir = await getTemporaryDirectory();
       final outputPath = '${dir.path}/termullog_${waktuFoto.millisecondsSinceEpoch}.jpg';
       await File(outputPath).writeAsBytes(result.jpegData);
-      
-      if (!mounted || _isDisposed) return;
       
       setState(() => _isPolishing = false);
       
@@ -591,26 +913,17 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (e) {
       debugPrint('Error: $e');
       if (mounted && !_isDisposed) {
+        final msg = e.toString();
+        final shortMsg = msg.length <= CameraConstants.maxErrorMessageLength 
+            ? msg 
+            : '${msg.substring(0, CameraConstants.maxErrorMessageLength)}...';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal: ${e.toString().substring(0, 50)}')),
+          SnackBar(content: Text('Gagal: $shortMsg')),
         );
       }
     } finally {
       _cleanupCapture();
     }
-  }
-  
-  Future<void> _quickGpsRefresh() async {
-    if (_bestPosition != null && _bestPosition!.accuracy <= 30) return;
-    
-    try {
-      final fresh = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      ).timeout(const Duration(seconds: 2));
-      if (!fresh.isMocked && fresh.accuracy < (_bestPosition?.accuracy ?? 999)) {
-        _bestPosition = fresh;
-      }
-    } catch (_) {}
   }
   
   void _cleanupCapture() {
@@ -622,7 +935,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
     _gpsCompleter = null;
     _isWaitingForGps = false;
-    _isCameraBusy = false;
     
     if (mounted && !_isDisposed) {
       setState(() {
@@ -638,7 +950,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isDisposed) return;
     
     if (_gpsReady && _bestPosition != null && 
-        _bestPosition!.accuracy <= _targetAccuracy) {
+        _bestPosition!.accuracy <= CameraConstants.targetAccuracyMeters) {
       return;
     }
     
@@ -648,9 +960,11 @@ class _CameraScreenState extends State<CameraScreen>
     _gpsCompleter = Completer<void>();
     _startCountdown();
     
+    final timeoutSeconds = _adaptivePolishTimeout();
+    
     try {
       await _gpsCompleter!.future.timeout(
-        const Duration(seconds: 25),
+        Duration(seconds: timeoutSeconds),
         onTimeout: () {
           if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) {
             _gpsCompleter!.complete();
@@ -664,7 +978,7 @@ class _CameraScreenState extends State<CameraScreen>
   
   void _startCountdown() {
     _countdownTimer?.cancel();
-    _polishCountdown = 25;
+    _polishCountdown = _adaptivePolishTimeout();
     
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_isDisposed || !mounted) {
@@ -707,7 +1021,7 @@ class _CameraScreenState extends State<CameraScreen>
         if (address.isEmpty) address = '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
       }
       
-      if (_addressCache.length >= _maxCacheSize) {
+      if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
         _addressCache.remove(_addressCache.keys.first);
       }
       _addressCache[cacheKey] = address;
@@ -718,7 +1032,9 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ───────────────── UI ─────────────────
+  // ─────────────────────────────────────────────────────────────
+  // UI
+  // ─────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -740,222 +1056,4 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               )
             else
-              const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(strokeWidth: 2),
-                    SizedBox(height: 16),
-                    Text('Starting camera...', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  ],
-                ),
-              ),
-            
-            // GPS bar
-            Positioned(
-              top: 0, left: 0, right: 0,
-              child: GpsBar(
-                gpsReady: _gpsReady,
-                gpsText: _gpsText,
-                bestPosition: _bestPosition,
-              ),
-            ),
-            
-            // Polishing overlay
-            if (_isPolishing)
-              Container(
-                color: Colors.black.withOpacity(0.85),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: Colors.greenAccent, strokeWidth: 2),
-                      const SizedBox(height: 16),
-                      Text(_gpsText, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                      const SizedBox(height: 8),
-                      Text('$_polishCountdown s', style: const TextStyle(color: Colors.white60, fontSize: 11)),
-                    ],
-                  ),
-                ),
-              ),
-            
-            // Capture button
-            if (!_isPolishing && !_isWarmingUp)
-              Positioned(
-                bottom: 0, left: 0, right: 0,
-                child: Container(
-                  color: Colors.black87,
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                      ),
-                      GestureDetector(
-                        onTap: (_isTakingPhoto || _isPolishing) ? null : _ambilFoto,
-                        child: Container(
-                          width: 64, height: 64,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 3),
-                            color: Colors.white.withOpacity(0.15),
-                          ),
-                          child: _isTakingPhoto
-                            ? const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                            : const Icon(Icons.camera_alt, color: Colors.white, size: 28),
-                        ),
-                      ),
-                      const SizedBox(width: 48),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ───────────────── OPTIMIZED IMAGE PROCESSING ─────────────────
-
-class ImageProcessParams {
-  final Uint8List imageBytes;
-  final DateTime timestamp;
-  final Position? position;
-  final String address;
-  final int quality;
-  final int maxDimension;
-  
-  const ImageProcessParams({
-    required this.imageBytes,
-    required this.timestamp,
-    this.position,
-    required this.address,
-    required this.quality,
-    required this.maxDimension,
-  });
-}
-
-class ProcessedImage {
-  final Uint8List jpegData;
-  const ProcessedImage({required this.jpegData});
-}
-
-ProcessedImage _processImageOptimized(ImageProcessParams params) {
-  img.Image? src;
-  
-  try {
-    src = img.decodeImage(params.imageBytes);
-    if (src == null) throw Exception('Decode failed');
-    
-    if (src.width > params.maxDimension || src.height > params.maxDimension) {
-      src = img.copyResize(
-        src, 
-        width: src.width > src.height ? params.maxDimension : null,
-        height: src.height > src.width ? params.maxDimension : null,
-        interpolation: img.Interpolation.average,
-      );
-    }
-    
-    src = _addWatermarkFast(src, params);
-    
-    final jpegData = img.encodeJpg(src, quality: params.quality);
-    
-    return ProcessedImage(jpegData: Uint8List.fromList(jpegData));
-  } finally {
-    src?.clear();
-  }
-}
-
-// FIX: Menggunakan fillRect dengan parameter yang benar
-img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
-  final now = params.timestamp;
-  final pos = params.position;
-  final alamat = params.address;
-  
-  final tanggal = DateFormat('dd/MM/yy').format(now);
-  final jam = DateFormat('HH:mm:ss').format(now);
-  
-  final gpsAvailable = pos != null;
-  final lat = gpsAvailable ? pos.latitude.toStringAsFixed(5) : 'N/A';
-  final lon = gpsAvailable ? pos.longitude.toStringAsFixed(5) : 'N/A';
-  final acc = gpsAvailable ? '${pos.accuracy.toStringAsFixed(0)}m' : 'No GPS';
-  
-  final int stripHeight = (src.height * 0.14).toInt().clamp(100, 180);
-  final isBottom = WatermarkLayoutService.position != 'top';
-  final y0 = isBottom ? src.height - stripHeight : 0;
-  
-  if (y0 < 0) return src;
-  
-  // FIX: fillRect dengan parameter yang benar
-  img.fillRect(
-    src,
-    x1: 0,
-    y1: y0,
-    x2: src.width - 1,
-    y2: y0 + stripHeight - 1,
-    color: img.ColorRgba8(0, 0, 0, 180),
-  );
-  
-  final font = src.width > 1500 ? img.arial24 : img.arial14;
-  final white = img.ColorRgba8(255, 255, 255, 255);
-  final yellow = img.ColorRgba8(255, 200, 0, 255);
-  final green = img.ColorRgba8(100, 220, 100, 255);
-  
-  final lineH = (stripHeight / 6).floor().clamp(14, 24);
-  final y = y0 + 6;
-  
-  if (y + lineH * 5 <= src.height) {
-    img.drawString(src, 'TermulLog', font: font, x: 10, y: y, color: yellow);
-    img.drawString(src, '$tanggal  $jam', font: font, x: 10, y: y + lineH, color: white);
-    img.drawString(src, '$lat, $lon', font: font, x: 10, y: y + lineH * 2, color: white);
-    img.drawString(src, 'Acc: $acc', font: font, x: 10, y: y + lineH * 3, 
-      color: gpsAvailable ? green : white);
-    
-    final shortAddr = alamat.length > 42 ? '${alamat.substring(0, 39)}...' : alamat;
-    if (shortAddr.isNotEmpty && y + lineH * 4 < src.height) {
-      img.drawString(src, shortAddr, font: font, x: 10, y: y + lineH * 4, color: white);
-    }
-  }
-  
-  return src;
-}
-
-// ───────────────── KALMAN FILTER ─────────────────
-
-class SimpleKalmanFilter {
-  final double _q;
-  double _r;
-  double _p;
-  double? _x;
-  
-  SimpleKalmanFilter({double q = 0.15, double r = 10.0})
-    : _q = q, _r = r, _p = 1.0;
-  
-  double filter(double measurement, double measurementAccuracy) {
-    _r = measurementAccuracy.clamp(1.0, 100.0);
-    
-    if (_x == null) {
-      _x = measurement;
-      return measurement;
-    }
-    
-    _p = _p + _q;
-    final k = _p / (_p + _r);
-    _x = _x! + k * (measurement - _x!);
-    _p = (1 - k) * _p;
-    
-    return _x!;
-  }
-  
-  void reset() {
-    _p = 1.0;
-    _x = null;
-  }
-}
+             

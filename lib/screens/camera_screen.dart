@@ -20,7 +20,7 @@ import '../services/watermark_layout_service.dart';
 import 'preview_screen.dart';
 
 // ─────────────────────────────────────────────────────────────
-// CONSTANTS & CONFIGURATION
+// CONSTANTS & CONFIGURATION (DIOPTIMASI)
 // ─────────────────────────────────────────────────────────────
 
 class CameraConstants {
@@ -35,8 +35,12 @@ class CameraConstants {
   static const double accuracyPoor = 50.0;
   static const double accuracyMax = 80.0;
   
-  static const int maxGpsSamples = 5;
+  // Sampling configuration (DIUBAH)
+  static const int maxGpsSamples = 10;                    // dari 5 → 10
   static const int minSamplesRequired = 3;
+  static const int topSamplesForAveraging = 5;            // dari 3 → 5
+  static const int positionSampleLifespanSeconds = 20;    // dari 15 → 20
+  
   static const double outlierSpeedThresholdMs = 30.0;
   static const int quickGpsTimeoutSeconds = 2;
   static const int warmupGpsTimeoutSeconds = 3;
@@ -52,11 +56,12 @@ class CameraConstants {
   static const Duration cameraTimeout = Duration(seconds: 5);
   static const Duration cameraReinitDelay = Duration(milliseconds: 300);
   
-  // Kalman Filter
+  // Kalman Filter (threshold diturunkan)
   static const double kalmanProcessNoise = 0.15;
   static const double kalmanInitialEstimateError = 1.0;
   static const double kalmanMinMeasurementNoise = 1.0;
   static const double kalmanMaxMeasurementNoise = 100.0;
+  static const double kalmanInitializeThreshold = 40.0;  // dari 25 → 40
   
   // UI & Layout
   static const double watermarkHeightRatio = 0.14;
@@ -67,8 +72,6 @@ class CameraConstants {
   
   // Performance
   static const Duration uiDebounceDelay = Duration(milliseconds: 100);
-  static const int positionSampleLifespanSeconds = 15;
-  static const int topSamplesForAveraging = 3;
   static const int maxErrorMessageLength = 50;
   
   // Temp File Cleanup
@@ -589,7 +592,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // A. Deteksi Low Accuracy sebagai indikator mode bukan High Accuracy
   void _checkLowAccuracyAndNotify() {
     if (_hasShownLowAccuracyDialog) return;
     
@@ -710,7 +712,6 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       
-      // B. Update banner status
       if (!serviceEnabled) {
         if (mounted) {
           setState(() => _isLocationServiceDisabled = true);
@@ -734,8 +735,6 @@ class _CameraScreenState extends State<CameraScreen>
       }
 
       _warmupGps();
-      
-      // A. Trigger low accuracy check setelah beberapa detik
       _checkLowAccuracyAndNotify();
 
       final locationSettings = AndroidSettings(
@@ -824,10 +823,12 @@ class _CameraScreenState extends State<CameraScreen>
       if (_bestPosition == null || averaged.accuracy < _bestPosition!.accuracy) {
         _bestPosition = averaged;
         
-        if (_bestPosition!.accuracy < 25 && !_kalmanInitialized) {
+        // FIX: threshold diturunkan dari 25 ke 40
+        if (_bestPosition!.accuracy < CameraConstants.kalmanInitializeThreshold && !_kalmanInitialized) {
           _kalmanLat.reset();
           _kalmanLon.reset();
           _kalmanInitialized = true;
+          debugPrint('Kalman filter initialized at accuracy: ${_bestPosition!.accuracy.toStringAsFixed(1)}m');
         }
       }
       
@@ -895,6 +896,7 @@ class _CameraScreenState extends State<CameraScreen>
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  // FIX: Gunakan bestAccuracy (bukan rata-rata)
   Position? _averageBestPositions() {
     final validSamples = _positionSamples
         .where((p) => p.accuracy < CameraConstants.accuracyMax)
@@ -934,12 +936,13 @@ class _CameraScreenState extends State<CameraScreen>
       finalLon = _kalmanLon.filter(finalLon, topN.first.accuracy);
     }
     
-    final avgAccuracy = topN.map((p) => p.accuracy).reduce((a, b) => a + b) / topN.length;
+    // FIX: Gunakan akurasi terbaik (topN.first) bukan rata-rata
+    final bestAccuracy = topN.first.accuracy;
     
     return Position(
       latitude: finalLat,
       longitude: finalLon,
-      accuracy: avgAccuracy,
+      accuracy: bestAccuracy,
       altitude: medianPos.altitude,
       altitudeAccuracy: medianPos.altitudeAccuracy,
       heading: medianPos.heading,
@@ -1217,7 +1220,7 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
             
-            // B. Banner GPS non-aktif (seperti Google Maps)
+            // Banner GPS non-aktif
             if (_isLocationServiceDisabled)
               Positioned(
                 top: 40,

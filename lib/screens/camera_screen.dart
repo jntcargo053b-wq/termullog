@@ -20,7 +20,7 @@ import '../services/watermark_layout_service.dart';
 import 'preview_screen.dart';
 
 // ─────────────────────────────────────────────────────────────
-// CONSTANTS & CONFIGURATION (DIOPTIMASI)
+// CONSTANTS & CONFIGURATION
 // ─────────────────────────────────────────────────────────────
 
 class CameraConstants {
@@ -35,13 +35,14 @@ class CameraConstants {
   static const double accuracyPoor = 50.0;
   static const double accuracyMax = 80.0;
   
-  // Sampling configuration (DIUBAH)
-  static const int maxGpsSamples = 10;                    // dari 5 → 10
+  // Sampling configuration
+  static const int maxGpsSamples = 10;
   static const int minSamplesRequired = 3;
-  static const int topSamplesForAveraging = 5;            // dari 3 → 5
-  static const int positionSampleLifespanSeconds = 20;    // dari 15 → 20
+  static const int topSamplesForAveraging = 5;
+  static const int positionSampleLifespanSeconds = 20;
   
   static const double outlierSpeedThresholdMs = 30.0;
+  static const double maxHorizontalSpeedMs = 50.0; // FIX #4: Maksimal kecepatan masuk akal
   static const int quickGpsTimeoutSeconds = 2;
   static const int warmupGpsTimeoutSeconds = 3;
   
@@ -56,18 +57,22 @@ class CameraConstants {
   static const Duration cameraTimeout = Duration(seconds: 5);
   static const Duration cameraReinitDelay = Duration(milliseconds: 300);
   
-  // Kalman Filter (threshold diturunkan)
+  // Kalman Filter
   static const double kalmanProcessNoise = 0.15;
   static const double kalmanInitialEstimateError = 1.0;
   static const double kalmanMinMeasurementNoise = 1.0;
   static const double kalmanMaxMeasurementNoise = 100.0;
-  static const double kalmanInitializeThreshold = 40.0;  // dari 25 → 40
+  static const double kalmanInitializeThreshold = 40.0;
   
-  // UI & Layout
+  // UI & Layout - FIX #5: Watermark spacing
   static const double watermarkHeightRatio = 0.14;
   static const int watermarkMinHeight = 100;
   static const int watermarkMaxHeight = 180;
-  static const int watermarkLineSpacing = 6;
+  static const double watermarkLineDivider = 5.5; // dari 6 → 5.5
+  static const int watermarkMinLineHeight = 16;   // dari 14 → 16
+  static const int watermarkMaxLineHeight = 28;   // dari 24 → 28
+  static const int watermarkStartOffset = 10;     // dari 6 → 10
+  static const int watermarkSpacing = 6;
   static const int watermarkMaxAddressLength = 42;
   
   // Performance
@@ -126,7 +131,7 @@ class SimpleKalmanFilter {
 }
 
 // ─────────────────────────────────────────────────────────────
-// OPTIMIZED IMAGE PROCESSING
+// OPTIMIZED IMAGE PROCESSING (FIX #5: Watermark tidak terpotong)
 // ─────────────────────────────────────────────────────────────
 
 class ImageProcessParams {
@@ -215,8 +220,11 @@ img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final yellow = img.ColorRgba8(255, 200, 0, 255);
   final green = img.ColorRgba8(100, 220, 100, 255);
   
-  final lineH = (stripHeight / 6).floor().clamp(14, 24);
-  final y = y0 + CameraConstants.watermarkLineSpacing;
+  // FIX #5: Adjusted line height for better spacing
+  final lineH = (stripHeight / CameraConstants.watermarkLineDivider)
+      .floor()
+      .clamp(CameraConstants.watermarkMinLineHeight, CameraConstants.watermarkMaxLineHeight);
+  final y = y0 + CameraConstants.watermarkStartOffset;
   
   if (y + lineH * 5 <= src.height) {
     img.drawString(src, 'TermulLog', font: font, x: 10, y: y, color: yellow);
@@ -706,6 +714,7 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  // FIX #8: Optimasi GPS super akurat dengan forceLocationManager: true
   Future<void> _startGpsTracking() async {
     if (_isDisposed) return;
     
@@ -737,11 +746,12 @@ class _CameraScreenState extends State<CameraScreen>
       _warmupGps();
       _checkLowAccuracyAndNotify();
 
+      // OPTIMASI: forceLocationManager: true untuk GPS chipset asli
       final locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 0,
         intervalDuration: const Duration(seconds: 1),
-        forceLocationManager: false,
+        forceLocationManager: true, // ← KUNCI: memaksa GPS chipset asli
       );
 
       await _gpsStream?.cancel();
@@ -785,6 +795,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  // FIX #4: Filter GPS berdasarkan horizontal speed
   void _onGpsData(Position pos) {
     if (_isDisposed) return;
     
@@ -796,6 +807,10 @@ class _CameraScreenState extends State<CameraScreen>
     if (now.difference(timestamp).inSeconds > 5) return;
     
     if (pos.isMocked) return;
+    
+    // FIX #4: Tolak GPS dengan kecepatan tidak masuk akal (> 50 m/s = 180 km/jam)
+    if (pos.speed > CameraConstants.maxHorizontalSpeedMs) return;
+    
     if (pos.accuracy > CameraConstants.accuracyMax) return;
     
     if (_isProcessingGps) return;
@@ -823,7 +838,6 @@ class _CameraScreenState extends State<CameraScreen>
       if (_bestPosition == null || averaged.accuracy < _bestPosition!.accuracy) {
         _bestPosition = averaged;
         
-        // FIX: threshold diturunkan dari 25 ke 40
         if (_bestPosition!.accuracy < CameraConstants.kalmanInitializeThreshold && !_kalmanInitialized) {
           _kalmanLat.reset();
           _kalmanLon.reset();
@@ -896,7 +910,6 @@ class _CameraScreenState extends State<CameraScreen>
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  // FIX: Gunakan bestAccuracy (bukan rata-rata)
   Position? _averageBestPositions() {
     final validSamples = _positionSamples
         .where((p) => p.accuracy < CameraConstants.accuracyMax)
@@ -936,7 +949,6 @@ class _CameraScreenState extends State<CameraScreen>
       finalLon = _kalmanLon.filter(finalLon, topN.first.accuracy);
     }
     
-    // FIX: Gunakan akurasi terbaik (topN.first) bukan rata-rata
     final bestAccuracy = topN.first.accuracy;
     
     return Position(
@@ -987,6 +999,7 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
   
+  // FIX #9: Double tap camera - cek mounted sebelum navigasi
   Future<void> _ambilFoto() async {
     if (!_acquireLock()) return;
     
@@ -1049,6 +1062,9 @@ class _CameraScreenState extends State<CameraScreen>
       await File(outputPath).writeAsBytes(result.jpegData);
       
       setState(() => _isPolishing = false);
+      
+      // FIX #9: Cek mounted sebelum navigasi
+      if (!mounted) return;
       
       await Navigator.push(
         context,
@@ -1154,6 +1170,7 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
   
+  // FIX #6: Address cache memory aman
   Future<String> _getAddressCached(Position? pos) async {
     if (pos == null) return 'Lokasi tidak tersedia';
     
@@ -1179,7 +1196,9 @@ class _CameraScreenState extends State<CameraScreen>
       }
       
       if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
-        _addressCache.remove(_addressCache.keys.first);
+        // FIX #6: Safe way to get first key
+        final firstKey = _addressCache.keys.toList().first;
+        _addressCache.remove(firstKey);
       }
       _addressCache[cacheKey] = address;
       

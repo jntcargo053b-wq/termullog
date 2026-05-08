@@ -3,25 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-// ─────────────────────────────────────────────────────────────
-// DEPENDENCIES YANG DIBUTUHKAN DI pubspec.yaml:
-//
-//   gal: ^1.1.0               ← save to gallery (Android + iOS)
-//   share_plus: ^9.0.0        ← share via intent
-//
-// Untuk Android, tambahkan di AndroidManifest.xml:
-//   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-//                    android:maxSdkVersion="29" />
-//
-// Untuk iOS, tambahkan di Info.plist:
-//   <key>NSPhotoLibraryAddUsageDescription</key>
-//   <string>Menyimpan foto dengan watermark GPS ke galeri</string>
-// ─────────────────────────────────────────────────────────────
-
-// NOTE: Import ini dipisah agar mudah diganti jika nama package berbeda
-// import 'package:gal/gal.dart';
-// import 'package:share_plus/share_plus.dart';
+import 'package:gallery_saver_plus/gallery_saver.dart';
+import 'package:share_plus/share_plus.dart';
 
 // ─────────────────────────────────────────────────────────────
 // ENUM STATUS SAVE
@@ -81,28 +64,27 @@ class _PreviewScreenState extends State<PreviewScreen>
     setState(() => _saveStatus = SaveStatus.saving);
 
     try {
-      // Periksa / minta izin galeri
-      // final hasAccess = await Gal.hasAccess(toAlbum: true);
-      // if (!hasAccess) {
-      //   await Gal.requestAccess(toAlbum: true);
-      // }
-
-      // Simpan foto ke galeri
-      // await Gal.putImage(widget.imagePath, album: 'TermulLog');
-
-      // ── SIMULASI (hapus bagian ini setelah package diimport) ──
-      await Future.delayed(const Duration(milliseconds: 800));
-      // ─────────────────────────────────────────────────────────
+      final bool? result = await GallerySaver.saveImage(
+        widget.imagePath,
+        albumName: 'TermulLog',
+      );
 
       if (!mounted) return;
-      setState(() => _saveStatus = SaveStatus.saved);
-      _checkAnimController.forward(from: 0);
-      HapticFeedback.mediumImpact();
 
-      // Reset status setelah 3 detik
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) setState(() => _saveStatus = SaveStatus.idle);
-      });
+      if (result == true) {
+        setState(() => _saveStatus = SaveStatus.saved);
+        _checkAnimController.forward(from: 0);
+        HapticFeedback.mediumImpact();
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _saveStatus = SaveStatus.idle);
+        });
+      } else {
+        setState(() => _saveStatus = SaveStatus.error);
+        _showErrorSnackbar('Gagal menyimpan foto ke galeri');
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _saveStatus = SaveStatus.idle);
+        });
+      }
     } on PlatformException catch (e) {
       debugPrint('Save gallery error: $e');
       if (!mounted) return;
@@ -135,17 +117,11 @@ class _PreviewScreenState extends State<PreviewScreen>
         return;
       }
 
-      // Share via share_plus
-      // await Share.shareXFiles(
-      //   [XFile(widget.imagePath)],
-      //   text: 'Foto dengan GPS dari TermulLog',
-      //   subject: 'Foto GPS TermulLog',
-      // );
-
-      // ── SIMULASI (hapus bagian ini setelah package diimport) ──
-      await Future.delayed(const Duration(milliseconds: 300));
-      _showInfoSnackbar('Share berhasil dipanggil ✓');
-      // ─────────────────────────────────────────────────────────
+      await Share.shareXFiles(
+        [XFile(widget.imagePath)],
+        text: 'Foto dengan GPS dari TermulLog',
+        subject: 'Foto GPS TermulLog',
+      );
 
       HapticFeedback.lightImpact();
     } catch (e) {

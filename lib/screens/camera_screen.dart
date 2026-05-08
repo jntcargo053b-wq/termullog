@@ -17,7 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/camera_registry.dart';
 import '../services/watermark_layout_service.dart';
-import 'preview_screen.dart';
+import 'preview_screen_enhanced.dart';
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS & CONFIGURATION

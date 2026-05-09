@@ -1,26 +1,20 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:path/path.dart' as path;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:image/image.dart' as img;
-import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/camera_registry.dart';
-import '../services/watermark_layout_service.dart';
-import 'preview_screen_enhanced.dart';
+import 'preview_screen_enhanced.dart'; // Pastikan file ini sudah didefinisikan
 
 // ─────────────────────────────────────────────────────────────
-// CONSTANTS & CONFIGURATION
+// CONSTANTS & CONFIGURATION (hanya yang diperlukan)
 // ─────────────────────────────────────────────────────────────
 
 class CameraConstants {
@@ -37,8 +31,8 @@ class CameraConstants {
   static const double accuracyMax = 80.0;
   
   // GPS sampling
-  static const double maxAcceptedAccuracyForSample = 30.0; // baru : hanya terima ≤30m
-  static const double minAcceptableAccuracy = 25.0;        // untuk warmup dll
+  static const double maxAcceptedAccuracyForSample = 30.0;
+  static const double minAcceptableAccuracy = 25.0;
   static const double minDistanceChange = 2.0;
   
   static const int maxGpsSamples = 10;
@@ -57,22 +51,8 @@ class CameraConstants {
   static const int polishTimeoutPoorAccuracy = 15;
   
   // Camera
-  static const int photoQualityPercent = 78;
-  static const int maxImageDimensionPx = 1600;
   static const Duration cameraTimeout = Duration(seconds: 5);
   static const Duration cameraReinitDelay = Duration(milliseconds: 300);
-  
-  // Watermark — 2 baris alamat
-  static const double watermarkHeightRatio = 0.20;
-  static const int watermarkMinHeight = 120;
-  static const int watermarkMaxHeight = 220;
-  static const double watermarkLineDivider = 6.5;        // untuk 6 baris teks
-  static const int watermarkMinLineHeight = 14;
-  static const int watermarkMaxLineHeight = 26;
-  static const int watermarkStartOffset = 8;
-  static const int watermarkSpacing = 6;
-  static const int watermarkMaxAddressLength = 44;       // per baris
-  static const String watermarkAddressSeparator = '|';   // pemisah dua baris alamat
   
   // Performance
   static const Duration uiDebounceDelay = Duration(milliseconds: 100);
@@ -80,7 +60,6 @@ class CameraConstants {
   
   // Temp file
   static const Duration tempFileRetention = Duration(hours: 24);
-  static const int addressCacheMaxSize = 20;
   
   // GPS Health Check
   static const int lowAccuracyCheckDelaySeconds = 5;
@@ -105,142 +84,11 @@ class SimpleKalmanFilter {
         _measurementNoise = r,
         _errorCovariance = 1.0;
   
-  double filter(double measurement, double measurementAccuracy) {
-    return measurement;
-  }
-  
+  double filter(double measurement, double measurementAccuracy) => measurement;
   void reset() {
     _errorCovariance = 1.0;
     _stateEstimate = null;
   }
-}
-
-// ─────────────────────────────────────────────────────────────
-// OPTIMIZED IMAGE PROCESSING
-// ─────────────────────────────────────────────────────────────
-
-class ImageProcessParams {
-  final Uint8List imageBytes;
-  final DateTime timestamp;
-  final Position? position;
-  final String address;
-  final int quality;
-  final int maxDimension;
-  final String watermarkPosition;
-  
-  const ImageProcessParams({
-    required this.imageBytes,
-    required this.timestamp,
-    this.position,
-    required this.address,
-    required this.quality,
-    required this.maxDimension,
-    required this.watermarkPosition,
-  });
-}
-
-class ProcessedImage {
-  final Uint8List jpegData;
-  const ProcessedImage({required this.jpegData});
-}
-
-ProcessedImage _processImageOptimized(ImageProcessParams params) {
-  img.Image? src;
-  try {
-    src = img.decodeImage(params.imageBytes);
-    if (src == null) throw Exception('Decode failed');
-    
-    if (src.width > params.maxDimension || src.height > params.maxDimension) {
-      src = img.copyResize(
-        src,
-        width: src.width > src.height ? params.maxDimension : null,
-        height: src.height > src.width ? params.maxDimension : null,
-        interpolation: img.Interpolation.average,
-      );
-    }
-    
-    src = _addWatermarkFast(src, params);
-    final jpegData = img.encodeJpg(src, quality: params.quality);
-    return ProcessedImage(jpegData: Uint8List.fromList(jpegData));
-  } finally {
-    src?.clear();
-  }
-}
-
-/// Helper: potong alamat pada batas kata
-String _truncateAddr(String text, int maxChars) {
-  final t = text.trim();
-  if (t.length <= maxChars) return t;
-  int cut = maxChars;
-  for (int i = maxChars; i > maxChars - 10 && i > 0; i--) {
-    if (t[i] == ',' || t[i] == ' ') { cut = i; break; }
-  }
-  return '${t.substring(0, cut).trimRight()}…';
-}
-
-img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
-  final now = params.timestamp;
-  final pos = params.position;
-  final tanggal = DateFormat('dd/MM/yy').format(now);
-  final jam     = DateFormat('HH:mm:ss').format(now);
-  
-  final gpsAvailable = pos != null;
-  final lat = gpsAvailable ? pos.latitude.toStringAsFixed(6)  : 'N/A';
-  final lon = gpsAvailable ? pos.longitude.toStringAsFixed(6) : 'N/A';
-  final acc = gpsAvailable ? '±${pos.accuracy.toStringAsFixed(0)}m' : 'No GPS';
-  
-  // Pecah alamat menjadi 2 baris (separator '|')
-  final separator = CameraConstants.watermarkAddressSeparator;
-  final addrParts = params.address.contains(separator)
-      ? params.address.split(separator)
-      : [params.address, ''];
-  final maxChar = CameraConstants.watermarkMaxAddressLength;
-  final addrLine1 = _truncateAddr(addrParts[0], maxChar);
-  final addrLine2 = addrParts.length > 1 ? _truncateAddr(addrParts[1], maxChar) : '';
-  
-  // Hitung strip
-  final int stripHeight = (src.height * CameraConstants.watermarkHeightRatio)
-      .toInt()
-      .clamp(CameraConstants.watermarkMinHeight, CameraConstants.watermarkMaxHeight);
-  
-  final isBottom = params.watermarkPosition != 'top';
-  final y0 = isBottom ? src.height - stripHeight : 0;
-  if (y0 < 0) return src;
-  
-  img.fillRect(
-    src,
-    x1: 0, y1: y0, x2: src.width - 1, y2: y0 + stripHeight - 1,
-    color: img.ColorRgba8(0, 0, 0, 190),
-  );
-  
-  final font  = src.width > 1500 ? img.arial24 : img.arial14;
-  final white  = img.ColorRgba8(255, 255, 255, 255);
-  final yellow = img.ColorRgba8(255, 200, 0, 255);
-  final green  = img.ColorRgba8(100, 220, 100, 255);
-  final grey   = img.ColorRgba8(180, 180, 180, 255);
-  
-  final lineH = (stripHeight / CameraConstants.watermarkLineDivider)
-      .floor()
-      .clamp(CameraConstants.watermarkMinLineHeight, CameraConstants.watermarkMaxLineHeight);
-  final y    = y0 + CameraConstants.watermarkStartOffset;
-  const xPad = 10;
-  
-  // Pastikan muat 6 baris
-  if (y + lineH * 5 + lineH ~/ 2 > src.height) return src;
-  
-  img.drawString(src, 'TermulLog', font: font, x: xPad, y: y, color: yellow);
-  img.drawString(src, '$tanggal  $jam', font: font, x: xPad, y: y + lineH, color: white);
-  img.drawString(src, '$lat, $lon', font: font, x: xPad, y: y + lineH * 2, color: white);
-  img.drawString(src, 'Akurasi: $acc', font: font, x: xPad, y: y + lineH * 3,
-      color: gpsAvailable ? green : white);
-  
-  if (addrLine1.isNotEmpty) {
-    img.drawString(src, addrLine1, font: font, x: xPad, y: y + lineH * 4, color: white);
-  }
-  if (addrLine2.isNotEmpty && y + lineH * 5 < src.height) {
-    img.drawString(src, addrLine2, font: font, x: xPad, y: y + lineH * 5, color: grey);
-  }
-  return src;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -252,12 +100,7 @@ class GpsBar extends StatelessWidget {
   final String gpsText;
   final Position? bestPosition;
   
-  const GpsBar({
-    super.key,
-    required this.gpsReady,
-    required this.gpsText,
-    this.bestPosition,
-  });
+  const GpsBar({super.key, required this.gpsReady, required this.gpsText, this.bestPosition});
   
   @override
   Widget build(BuildContext context) {
@@ -266,136 +109,22 @@ class GpsBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Row(
         children: [
-          Icon(
-            gpsReady ? Icons.gps_fixed : Icons.gps_not_fixed,
-            color: gpsReady ? Colors.greenAccent : Colors.amber,
-            size: 14,
-          ),
+          Icon(gpsReady ? Icons.gps_fixed : Icons.gps_not_fixed,
+              color: gpsReady ? Colors.greenAccent : Colors.amber, size: 14),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              bestPosition != null 
-                ? '${bestPosition!.latitude.toStringAsFixed(5)}, ${bestPosition!.longitude.toStringAsFixed(5)}'
-                : 'No GPS',
+              bestPosition != null
+                  ? '${bestPosition!.latitude.toStringAsFixed(5)}, ${bestPosition!.longitude.toStringAsFixed(5)}'
+                  : 'No GPS',
               style: const TextStyle(color: Colors.white70, fontSize: 11),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(
-            gpsText,
-            style: TextStyle(
-              color: gpsReady ? Colors.greenAccent : Colors.amber,
-              fontSize: 10,
-            ),
-          ),
+          Text(gpsText, style: TextStyle(color: gpsReady ? Colors.greenAccent : Colors.amber, fontSize: 10)),
         ],
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// DIALOG EDUKASI
-// ─────────────────────────────────────────────────────────────
-
-class GpsAccuracyDialog extends StatelessWidget {
-  const GpsAccuracyDialog({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.gps_fixed, color: Colors.blue, size: 28),
-          SizedBox(width: 8),
-          Text('Tingkatkan Akurasi GPS'),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Untuk hasil terbaik seperti Google Maps:',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            _buildStep('1', 'High Accuracy Mode',
-                'Settings → Location → Mode → Pilih "High Accuracy"', Icons.settings),
-            const SizedBox(height: 12),
-            _buildStep('2', 'Matikan Battery Optimization',
-                'Settings → Apps → Aplikasi ini → Battery → Tidak dioptimalkan', Icons.battery_full),
-            const SizedBox(height: 12),
-            _buildStep('3', 'Aktifkan Location Always',
-                'Settings → Apps → Aplikasi ini → Permissions → Location → "Selalu"', Icons.location_on),
-            const SizedBox(height: 12),
-            _buildStep('4', 'Wi-Fi & Bluetooth Scanning',
-                'Settings → Location → Advanced → Scanning → Aktifkan semua', Icons.wifi),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.amber, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Setting ini memungkinkan GPS bekerja optimal seperti aplikasi TimeMark.',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Nanti Saja'),
-        ),
-        ElevatedButton.icon(
-          onPressed: () async {
-            await Geolocator.openAppSettings();
-            if (context.mounted) Navigator.pop(context);
-          },
-          icon: const Icon(Icons.settings),
-          label: const Text('Buka Pengaturan Aplikasi'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStep(String number, String title, String subtitle, IconData icon) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 24, height: 24,
-          decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(12)),
-          child: Center(
-            child: Text(number,
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 2),
-              Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-            ],
-          ),
-        ),
-        Icon(icon, color: Colors.blue, size: 20),
-      ],
     );
   }
 }
@@ -417,7 +146,6 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   bool get wantKeepAlive => false;
 
-  // Camera
   CameraController? _controller;
   bool _isInitialized = false;
   bool _isTakingPhoto = false;
@@ -455,14 +183,11 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isLocationServiceDisabled = false;
   bool _hasShownLowAccuracyDialog = false;
 
-  // Kalman (dinonaktifkan)
   final SimpleKalmanFilter _kalmanLat = SimpleKalmanFilter();
   final SimpleKalmanFilter _kalmanLon = SimpleKalmanFilter();
   bool _kalmanInitialized = false;
 
   bool _isWarmingUp = true;
-  int _photoQuality = CameraConstants.photoQualityPercent;
-  final Map<String, String> _addressCache = {};
   Timer? _uiUpdateTimer;
   bool _isDisposed = false;
 
@@ -487,11 +212,8 @@ class _CameraScreenState extends State<CameraScreen>
     _countdownTimer?.cancel();
     _gpsWatchdog?.cancel();
     _gpsStream?.cancel().then((_) => _gpsStream = null).catchError((_) {});
-    if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) {
-      _gpsCompleter!.complete();
-    }
+    if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) _gpsCompleter!.complete();
     _positionSamples.clear();
-    _addressCache.clear();
     _disposeCamera();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
     WidgetsBinding.instance.removeObserver(this);
@@ -501,11 +223,9 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _preWarmGps() async {
     try {
       debugPrint('Pre-warming GPS...');
-      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
-          .timeout(const Duration(seconds: 3));
+      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best).timeout(const Duration(seconds: 3));
       await Future.delayed(const Duration(milliseconds: CameraConstants.preWarmDelayMs));
-      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
-          .timeout(const Duration(seconds: 3));
+      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best).timeout(const Duration(seconds: 3));
       debugPrint('GPS pre-warm complete');
     } catch (e) {
       debugPrint('Pre-warm GPS error: $e');
@@ -528,14 +248,11 @@ class _CameraScreenState extends State<CameraScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Untuk akurasi GPS maksimal seperti TimeMark:'),
+              Text('Untuk akurasi GPS maksimal:'),
               SizedBox(height: 12),
               Text('• Matikan battery optimization untuk aplikasi ini'),
               Text('• Izinkan akses lokasi "Selalu"'),
               Text('• Aktifkan High Accuracy Mode'),
-              SizedBox(height: 12),
-              Text('Ini akan meningkatkan akurasi GPS secara signifikan.',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
             ],
           ),
           actions: [
@@ -573,16 +290,22 @@ class _CameraScreenState extends State<CameraScreen>
           .whereType<File>()
           .where((f) => path.basename(f.path).startsWith('termullog_'))
           .where((f) {
-            try { return f.statSync().modified.isBefore(cutoff); }
-            catch (_) { return false; }
+            try { return f.statSync().modified.isBefore(cutoff); } catch (_) { return false; }
           }).toList();
-      for (final file in files) {
-        try { await file.delete(); } catch (_) {}
-      }
+      for (final file in files) { try { await file.delete(); } catch (_) {} }
       if (files.isNotEmpty) debugPrint('Cleaned ${files.length} temp files');
-    } catch (e) {
-      debugPrint('Temp file cleanup error: $e');
-    }
+    } catch (e) { debugPrint('Temp file cleanup error: $e'); }
+  }
+
+  void _checkLowAccuracyAndNotify() {
+    if (_hasShownLowAccuracyDialog) return;
+    Future.delayed(const Duration(seconds: CameraConstants.lowAccuracyCheckDelaySeconds), () {
+      if (_isDisposed || !mounted) return;
+      if (_bestPosition != null && _bestPosition!.accuracy > CameraConstants.lowAccuracyThreshold && !_hasShownLowAccuracyDialog) {
+        _hasShownLowAccuracyDialog = true;
+        _showAccuracyDialogIfNeeded();
+      }
+    });
   }
 
   Future<void> _showAccuracyDialogIfNeeded() async {
@@ -593,21 +316,21 @@ class _CameraScreenState extends State<CameraScreen>
     await showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (_) => const GpsAccuracyDialog(),
+      builder: (_) => AlertDialog(
+        title: const Text('Tingkatkan Akurasi GPS'),
+        content: const Text('Aktifkan High Accuracy Mode di pengaturan lokasi untuk hasil terbaik.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Tutup')),
+          ElevatedButton(
+            onPressed: () async {
+              await Geolocator.openLocationSettings();
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('Buka Setting'),
+          ),
+        ],
+      ),
     );
-  }
-
-  void _checkLowAccuracyAndNotify() {
-    if (_hasShownLowAccuracyDialog) return;
-    Future.delayed(const Duration(seconds: CameraConstants.lowAccuracyCheckDelaySeconds), () {
-      if (_isDisposed || !mounted) return;
-      if (_bestPosition != null && 
-          _bestPosition!.accuracy > CameraConstants.lowAccuracyThreshold &&
-          !_hasShownLowAccuracyDialog) {
-        _hasShownLowAccuracyDialog = true;
-        _showAccuracyDialogIfNeeded();
-      }
-    });
   }
 
   @override
@@ -664,19 +387,16 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _startGpsWatchdog() {
     _gpsWatchdog?.cancel();
-    _gpsWatchdog = Timer.periodic(
-      Duration(seconds: CameraConstants.gpsWatchdogIntervalSeconds),
-      (_) async {
-        if (_isDisposed) return;
-        final last = DateTime.now().difference(_lastGpsUpdate);
-        if (last.inSeconds > CameraConstants.gpsStaleAfterSeconds) {
-          debugPrint('GPS Watchdog: Restarting GPS stream (${_gpsRestartCount + 1})');
-          _gpsRestartCount++;
-          await _gpsStream?.cancel();
-          _startGpsTracking();
-        }
-      },
-    );
+    _gpsWatchdog = Timer.periodic(Duration(seconds: CameraConstants.gpsWatchdogIntervalSeconds), (_) async {
+      if (_isDisposed) return;
+      final last = DateTime.now().difference(_lastGpsUpdate);
+      if (last.inSeconds > CameraConstants.gpsStaleAfterSeconds) {
+        debugPrint('GPS Watchdog: Restarting GPS stream (${_gpsRestartCount + 1})');
+        _gpsRestartCount++;
+        await _gpsStream?.cancel();
+        _startGpsTracking();
+      }
+    });
   }
 
   Future<void> _startGpsTracking() async {
@@ -692,11 +412,8 @@ class _CameraScreenState extends State<CameraScreen>
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
         _updateGpsText('❌ Izin GPS ditolak');
         return;
       }
@@ -729,9 +446,8 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _warmupGps() async {
     try {
-      final warmup = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-      ).timeout(Duration(seconds: CameraConstants.warmupGpsTimeoutSeconds));
+      final warmup = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
+          .timeout(Duration(seconds: CameraConstants.warmupGpsTimeoutSeconds));
       if (!_isDisposed && warmup != null && warmup.accuracy <= CameraConstants.accuracyMax && !warmup.isMocked) {
         if (warmup.accuracy <= CameraConstants.minAcceptableAccuracy) {
           _bestPosition = warmup;
@@ -747,7 +463,6 @@ class _CameraScreenState extends State<CameraScreen>
     if (mounted) setState(() => _gpsText = text);
   }
 
-  // Optimasi GPS sampling: hanya terima sample dengan akurasi ≤ 30m
   void _onGpsData(Position pos) {
     if (_isDisposed) return;
     _lastGpsUpdate = DateTime.now();
@@ -755,15 +470,11 @@ class _CameraScreenState extends State<CameraScreen>
     final now = DateTime.now();
     if (now.difference(timestamp).inSeconds > 5) return;
     if (pos.isMocked) return;
-    // Hanya terima sample dengan akurasi ≤ 30 meter
     if (pos.accuracy > CameraConstants.maxAcceptedAccuracyForSample) return;
     if (pos.speed > CameraConstants.maxHorizontalSpeedMs) return;
     
     if (_bestPosition != null) {
-      final dist = _calculateDistance(
-        _bestPosition!.latitude, _bestPosition!.longitude,
-        pos.latitude, pos.longitude,
-      );
+      final dist = _calculateDistance(_bestPosition!.latitude, _bestPosition!.longitude, pos.latitude, pos.longitude);
       if (dist < CameraConstants.minDistanceChange && pos.accuracy > _bestPosition!.accuracy) return;
     }
     
@@ -777,9 +488,7 @@ class _CameraScreenState extends State<CameraScreen>
         return now.difference(ts).inSeconds > CameraConstants.positionSampleLifespanSeconds;
       });
       _positionSamples.add(pos);
-      while (_positionSamples.length > CameraConstants.maxGpsSamples) {
-        _positionSamples.removeAt(0);
-      }
+      while (_positionSamples.length > CameraConstants.maxGpsSamples) _positionSamples.removeAt(0);
       
       _samplesCollected++;
       if (_samplesCollected < CameraConstants.minSamplesRequired) return;
@@ -787,9 +496,7 @@ class _CameraScreenState extends State<CameraScreen>
       final averaged = _averageBestPositions();
       if (averaged == null) return;
       
-      if (_bestPosition == null || averaged.accuracy < _bestPosition!.accuracy) {
-        _bestPosition = averaged;
-      }
+      if (_bestPosition == null || averaged.accuracy < _bestPosition!.accuracy) _bestPosition = averaged;
       
       final acc = _bestPosition!.accuracy;
       final isReady = acc <= CameraConstants.accuracyTarget;
@@ -830,10 +537,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isOutlier(Position newPos, Position lastPos) {
     final newTs = newPos.timestamp ?? DateTime.now();
     final lastTs = lastPos.timestamp ?? DateTime.now();
-    final distance = _calculateDistance(
-      lastPos.latitude, lastPos.longitude,
-      newPos.latitude, newPos.longitude,
-    );
+    final distance = _calculateDistance(lastPos.latitude, lastPos.longitude, newPos.latitude, newPos.longitude);
     final timeDiff = newTs.difference(lastTs).inSeconds.abs();
     if (timeDiff == 0) return false;
     final speed = distance / timeDiff;
@@ -850,15 +554,11 @@ class _CameraScreenState extends State<CameraScreen>
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  // Hanya menggunakan sample dengan akurasi ≤ 30m
   Position? _averageBestPositions() {
-    final validSamples = _positionSamples
-        .where((p) => p.accuracy <= CameraConstants.maxAcceptedAccuracyForSample)
-        .toList();
+    final validSamples = _positionSamples.where((p) => p.accuracy <= CameraConstants.maxAcceptedAccuracyForSample).toList();
     if (validSamples.length < CameraConstants.minSamplesRequired) return _bestPosition;
     
-    final sorted = List<Position>.from(validSamples)
-      ..sort((a, b) => a.accuracy.compareTo(b.accuracy));
+    final sorted = List<Position>.from(validSamples)..sort((a, b) => a.accuracy.compareTo(b.accuracy));
     final medianPos = sorted[sorted.length ~/ 2];
     final topN = sorted.take(CameraConstants.topSamplesForAveraging).toList();
     
@@ -902,17 +602,16 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _quickGpsRefresh() async {
     if (_bestPosition != null && _bestPosition!.accuracy <= CameraConstants.accuracyGood) return;
     try {
-      final fresh = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-      ).timeout(Duration(seconds: CameraConstants.quickGpsTimeoutSeconds));
-      if (!fresh.isMocked && 
-          fresh.accuracy <= CameraConstants.minAcceptableAccuracy &&
+      final fresh = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
+          .timeout(Duration(seconds: CameraConstants.quickGpsTimeoutSeconds));
+      if (!fresh.isMocked && fresh.accuracy <= CameraConstants.minAcceptableAccuracy &&
           fresh.accuracy < (_bestPosition?.accuracy ?? 999)) {
         _bestPosition = fresh;
       }
     } catch (_) {}
   }
 
+  // ====================== PERUBAHAN UTAMA ======================
   Future<void> _ambilFoto() async {
     if (!_acquireLock()) return;
     try {
@@ -931,33 +630,35 @@ class _CameraScreenState extends State<CameraScreen>
       if (capturedFile == null) throw Exception('Failed to capture photo');
       final bytes = await File(capturedFile!.path).readAsBytes();
       final waktuFoto = DateTime.now();
-      if (mounted) setState(() { _isTakingPhoto = false; _isPolishing = true; _polishCountdown = _adaptivePolishTimeout(); });
-      await _waitForBestGps();
+      
+      // Tunggu GPS maksimal 2 detik agar tidak terasa lama
+      await _waitForBestGps().timeout(const Duration(seconds: 2), onTimeout: () {});
+      
+      if (mounted) {
+        setState(() {
+          _isTakingPhoto = false;
+          _isPolishing = true;
+        });
+      }
+      
+      // Langsung navigasi ke PreviewScreen dengan data mentah
       if (!mounted || _isDisposed) return;
-      final String alamat = _bestPosition != null ? await _getAddressCached(_bestPosition) : 'Lokasi tidak tersedia';
-      final result = await compute(_processImageOptimized, ImageProcessParams(
-        imageBytes: bytes,
-        timestamp: waktuFoto,
-        position: _bestPosition,
-        address: alamat,
-        quality: _photoQuality,
-        maxDimension: CameraConstants.maxImageDimensionPx,
-        watermarkPosition: WatermarkLayoutService.position,
-      ));
-      if (!mounted || _isDisposed) return;
-      final dir = await getTemporaryDirectory();
-      final outputPath = '${dir.path}/termullog_${waktuFoto.millisecondsSinceEpoch}.jpg';
-      await File(outputPath).writeAsBytes(result.jpegData);
-      setState(() => _isPolishing = false);
-      if (!mounted) return;
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => PreviewScreen(imagePath: outputPath)));
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PreviewScreen(
+            imageBytes: bytes,
+            timestamp: waktuFoto,
+            position: _bestPosition,
+          ),
+        ),
+      );
+      
+      if (mounted) setState(() => _isPolishing = false);
       if (mounted && _controller == null) await _initCamera();
-    } on TimeoutException catch (e) {
-      debugPrint('Timeout: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kamera sibuk, coba lagi'), duration: Duration(seconds: 1)));
     } catch (e) {
       debugPrint('Error: $e');
-      if (mounted && !_isDisposed) {
+      if (mounted) {
         final msg = e.toString();
         final shortMsg = msg.length <= CameraConstants.maxErrorMessageLength ? msg : '${msg.substring(0, CameraConstants.maxErrorMessageLength)}...';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $shortMsg')));
@@ -1005,77 +706,6 @@ class _CameraScreenState extends State<CameraScreen>
         if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) _gpsCompleter!.complete();
       }
     });
-  }
-
-  // ======================= ALAMAT LENGKAP 2 BARIS (FORMAT INDONESIA) =======================
-  String? _cleanString(String? s) {
-    if (s == null || s.trim().isEmpty) return null;
-    return s.trim();
-  }
-
-  String _fallbackCoords(Position pos) =>
-      '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
-
-  Future<String> _getAddressCached(Position? pos) async {
-    if (pos == null) return 'Lokasi tidak tersedia';
-    final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
-    if (_addressCache.containsKey(cacheKey)) return _addressCache[cacheKey]!;
-
-    try {
-      final placemarks = await placemarkFromCoordinates(
-        pos.latitude, pos.longitude,
-      ).timeout(const Duration(seconds: 5));
-
-      String address;
-      if (placemarks.isEmpty) {
-        address = _fallbackCoords(pos);
-      } else {
-        final p = placemarks.first;
-
-        // Baris 1 : Jalan + Nomor + Kelurahan
-        final houseNo = _cleanString(p.subThoroughfare);
-        final streetRaw = _cleanString(p.thoroughfare) ?? _cleanString(p.street) ?? _cleanString(p.name);
-        String streetPart = '';
-        if (streetRaw != null) {
-          streetPart = (houseNo != null) ? '$streetRaw No.$houseNo' : streetRaw;
-        }
-        final kelurahan = _cleanString(p.subLocality);
-        final line1Parts = <String>[];
-        if (streetPart.isNotEmpty) line1Parts.add(streetPart);
-        if (kelurahan != null) line1Parts.add(kelurahan);
-        final line1 = line1Parts.join(', ');
-
-        // Baris 2 : Kecamatan + Kota + Provinsi + Kode Pos
-        final kecamatan = _cleanString(p.subAdministrativeArea);
-        final kota = _cleanString(p.locality);
-        final provinsi = _cleanString(p.administrativeArea);
-        final kodePos = _cleanString(p.postalCode);
-        final line2Parts = <String>[];
-        if (kecamatan != null) line2Parts.add('Kec. $kecamatan');
-        if (kota != null) line2Parts.add(kota);
-        if (provinsi != null) line2Parts.add(provinsi);
-        if (kodePos != null) line2Parts.add(kodePos);
-        final line2 = line2Parts.join(', ');
-
-        if (line1.isNotEmpty && line2.isNotEmpty) {
-          address = '$line1${CameraConstants.watermarkAddressSeparator}$line2';
-        } else if (line1.isNotEmpty) {
-          address = line1;
-        } else if (line2.isNotEmpty) {
-          address = line2;
-        } else {
-          address = _fallbackCoords(pos);
-        }
-      }
-
-      if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
-        _addressCache.remove(_addressCache.keys.first);
-      }
-      _addressCache[cacheKey] = address;
-      return address;
-    } catch (_) {
-      return _fallbackCoords(pos);
-    }
   }
 
   @override
@@ -1145,34 +775,13 @@ class _CameraScreenState extends State<CameraScreen>
                       const CircularProgressIndicator(color: Colors.greenAccent, strokeWidth: 2),
                       const SizedBox(height: 16),
                       Text(
-                        _bestPosition != null 
-                          ? 'Akurasi: ±${_bestPosition!.accuracy.toStringAsFixed(0)}m (target ≤${CameraConstants.accuracyTarget.toStringAsFixed(0)}m)'
-                          : _gpsText,
+                        _bestPosition != null
+                            ? 'Akurasi: ±${_bestPosition!.accuracy.toStringAsFixed(0)}m'
+                            : _gpsText,
                         style: const TextStyle(color: Colors.white, fontSize: 13),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: 200,
-                        child: LinearProgressIndicator(
-                          value: _bestPosition != null ? (1 - (_bestPosition!.accuracy / 50)).clamp(0.0, 1.0) : null,
-                          backgroundColor: Colors.white24,
-                          color: Colors.greenAccent,
-                        ),
                       ),
                       const SizedBox(height: 12),
                       Text('$_polishCountdown s', style: const TextStyle(color: Colors.white60, fontSize: 11)),
-                      if (_bestPosition != null && _bestPosition!.accuracy <= CameraConstants.accuracyExcellent)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.star, color: Colors.amber, size: 16),
-                              SizedBox(width: 4),
-                              Text('Akurasi sangat baik!', style: TextStyle(color: Colors.amber, fontSize: 11)),
-                            ],
-                          ),
-                        ),
                     ],
                   ),
                 ),

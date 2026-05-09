@@ -36,10 +36,11 @@ class CameraConstants {
   static const double accuracyPoor = 40.0;
   static const double accuracyMax = 80.0;
   
-  static const double minAcceptableAccuracy = 25.0;
+  // GPS sampling
+  static const double maxAcceptedAccuracyForSample = 30.0; // baru : hanya terima ≤30m
+  static const double minAcceptableAccuracy = 25.0;        // untuk warmup dll
   static const double minDistanceChange = 2.0;
   
-  // Sampling
   static const int maxGpsSamples = 10;
   static const int minSamplesRequired = 3;
   static const int topSamplesForAveraging = 5;
@@ -61,16 +62,17 @@ class CameraConstants {
   static const Duration cameraTimeout = Duration(seconds: 5);
   static const Duration cameraReinitDelay = Duration(milliseconds: 300);
   
-  // Watermark
-  static const double watermarkHeightRatio = 0.14;
-  static const int watermarkMinHeight = 100;
-  static const int watermarkMaxHeight = 180;
-  static const double watermarkLineDivider = 5.5;
-  static const int watermarkMinLineHeight = 16;
-  static const int watermarkMaxLineHeight = 28;
-  static const int watermarkStartOffset = 10;
+  // Watermark — 2 baris alamat
+  static const double watermarkHeightRatio = 0.20;
+  static const int watermarkMinHeight = 120;
+  static const int watermarkMaxHeight = 220;
+  static const double watermarkLineDivider = 6.5;        // untuk 6 baris teks
+  static const int watermarkMinLineHeight = 14;
+  static const int watermarkMaxLineHeight = 26;
+  static const int watermarkStartOffset = 8;
   static const int watermarkSpacing = 6;
-  static const int watermarkMaxAddressLength = 55;
+  static const int watermarkMaxAddressLength = 44;       // per baris
+  static const String watermarkAddressSeparator = '|';   // pemisah dua baris alamat
   
   // Performance
   static const Duration uiDebounceDelay = Duration(milliseconds: 100);
@@ -165,19 +167,38 @@ ProcessedImage _processImageOptimized(ImageProcessParams params) {
   }
 }
 
+/// Helper: potong alamat pada batas kata
+String _truncateAddr(String text, int maxChars) {
+  final t = text.trim();
+  if (t.length <= maxChars) return t;
+  int cut = maxChars;
+  for (int i = maxChars; i > maxChars - 10 && i > 0; i--) {
+    if (t[i] == ',' || t[i] == ' ') { cut = i; break; }
+  }
+  return '${t.substring(0, cut).trimRight()}…';
+}
+
 img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final now = params.timestamp;
   final pos = params.position;
-  final alamat = params.address;
-  
   final tanggal = DateFormat('dd/MM/yy').format(now);
-  final jam = DateFormat('HH:mm:ss').format(now);
+  final jam     = DateFormat('HH:mm:ss').format(now);
   
   final gpsAvailable = pos != null;
-  final lat = gpsAvailable ? pos.latitude.toStringAsFixed(6) : 'N/A';
+  final lat = gpsAvailable ? pos.latitude.toStringAsFixed(6)  : 'N/A';
   final lon = gpsAvailable ? pos.longitude.toStringAsFixed(6) : 'N/A';
   final acc = gpsAvailable ? '±${pos.accuracy.toStringAsFixed(0)}m' : 'No GPS';
   
+  // Pecah alamat menjadi 2 baris (separator '|')
+  final separator = CameraConstants.watermarkAddressSeparator;
+  final addrParts = params.address.contains(separator)
+      ? params.address.split(separator)
+      : [params.address, ''];
+  final maxChar = CameraConstants.watermarkMaxAddressLength;
+  final addrLine1 = _truncateAddr(addrParts[0], maxChar);
+  final addrLine2 = addrParts.length > 1 ? _truncateAddr(addrParts[1], maxChar) : '';
+  
+  // Hitung strip
   final int stripHeight = (src.height * CameraConstants.watermarkHeightRatio)
       .toInt()
       .clamp(CameraConstants.watermarkMinHeight, CameraConstants.watermarkMaxHeight);
@@ -189,32 +210,35 @@ img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   img.fillRect(
     src,
     x1: 0, y1: y0, x2: src.width - 1, y2: y0 + stripHeight - 1,
-    color: img.ColorRgba8(0, 0, 0, 180),
+    color: img.ColorRgba8(0, 0, 0, 190),
   );
   
-  final font = src.width > 1500 ? img.arial24 : img.arial14;
-  final white = img.ColorRgba8(255, 255, 255, 255);
+  final font  = src.width > 1500 ? img.arial24 : img.arial14;
+  final white  = img.ColorRgba8(255, 255, 255, 255);
   final yellow = img.ColorRgba8(255, 200, 0, 255);
-  final green = img.ColorRgba8(100, 220, 100, 255);
+  final green  = img.ColorRgba8(100, 220, 100, 255);
+  final grey   = img.ColorRgba8(180, 180, 180, 255);
   
   final lineH = (stripHeight / CameraConstants.watermarkLineDivider)
       .floor()
       .clamp(CameraConstants.watermarkMinLineHeight, CameraConstants.watermarkMaxLineHeight);
-  final y = y0 + CameraConstants.watermarkStartOffset;
+  final y    = y0 + CameraConstants.watermarkStartOffset;
+  const xPad = 10;
   
-  if (y + lineH * 5 <= src.height) {
-    img.drawString(src, 'TermulLog', font: font, x: 10, y: y, color: yellow);
-    img.drawString(src, '$tanggal  $jam', font: font, x: 10, y: y + lineH, color: white);
-    img.drawString(src, '$lat, $lon', font: font, x: 10, y: y + lineH * 2, color: white);
-    img.drawString(src, 'Acc: $acc', font: font, x: 10, y: y + lineH * 3, 
+  // Pastikan muat 6 baris
+  if (y + lineH * 5 + lineH ~/ 2 > src.height) return src;
+  
+  img.drawString(src, 'TermulLog', font: font, x: xPad, y: y, color: yellow);
+  img.drawString(src, '$tanggal  $jam', font: font, x: xPad, y: y + lineH, color: white);
+  img.drawString(src, '$lat, $lon', font: font, x: xPad, y: y + lineH * 2, color: white);
+  img.drawString(src, 'Akurasi: $acc', font: font, x: xPad, y: y + lineH * 3,
       color: gpsAvailable ? green : white);
-    
-    final shortAddr = alamat.length > CameraConstants.watermarkMaxAddressLength 
-        ? '${alamat.substring(0, CameraConstants.watermarkMaxAddressLength - 3)}...' 
-        : alamat;
-    if (shortAddr.isNotEmpty && y + lineH * 4 < src.height) {
-      img.drawString(src, shortAddr, font: font, x: 10, y: y + lineH * 4, color: white);
-    }
+  
+  if (addrLine1.isNotEmpty) {
+    img.drawString(src, addrLine1, font: font, x: xPad, y: y + lineH * 4, color: white);
+  }
+  if (addrLine2.isNotEmpty && y + lineH * 5 < src.height) {
+    img.drawString(src, addrLine2, font: font, x: xPad, y: y + lineH * 5, color: grey);
   }
   return src;
 }
@@ -723,6 +747,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (mounted) setState(() => _gpsText = text);
   }
 
+  // Optimasi GPS sampling: hanya terima sample dengan akurasi ≤ 30m
   void _onGpsData(Position pos) {
     if (_isDisposed) return;
     _lastGpsUpdate = DateTime.now();
@@ -730,7 +755,8 @@ class _CameraScreenState extends State<CameraScreen>
     final now = DateTime.now();
     if (now.difference(timestamp).inSeconds > 5) return;
     if (pos.isMocked) return;
-    if (pos.accuracy > CameraConstants.minAcceptableAccuracy) return;
+    // Hanya terima sample dengan akurasi ≤ 30 meter
+    if (pos.accuracy > CameraConstants.maxAcceptedAccuracyForSample) return;
     if (pos.speed > CameraConstants.maxHorizontalSpeedMs) return;
     
     if (_bestPosition != null) {
@@ -824,9 +850,10 @@ class _CameraScreenState extends State<CameraScreen>
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  // Hanya menggunakan sample dengan akurasi ≤ 30m
   Position? _averageBestPositions() {
     final validSamples = _positionSamples
-        .where((p) => p.accuracy < CameraConstants.accuracyMax)
+        .where((p) => p.accuracy <= CameraConstants.maxAcceptedAccuracyForSample)
         .toList();
     if (validSamples.length < CameraConstants.minSamplesRequired) return _bestPosition;
     
@@ -980,46 +1007,74 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
-  // ======================= PERBAIKAN UTAMA: ALAMAT LENGKAP (NULL SAFE) =======================
+  // ======================= ALAMAT LENGKAP 2 BARIS (FORMAT INDONESIA) =======================
+  String? _cleanString(String? s) {
+    if (s == null || s.trim().isEmpty) return null;
+    return s.trim();
+  }
+
+  String _fallbackCoords(Position pos) =>
+      '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+
   Future<String> _getAddressCached(Position? pos) async {
     if (pos == null) return 'Lokasi tidak tersedia';
     final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
     if (_addressCache.containsKey(cacheKey)) return _addressCache[cacheKey]!;
+
     try {
-      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude).timeout(const Duration(seconds: 5));
+      final placemarks = await placemarkFromCoordinates(
+        pos.latitude, pos.longitude,
+      ).timeout(const Duration(seconds: 5));
+
       String address;
       if (placemarks.isEmpty) {
-        address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+        address = _fallbackCoords(pos);
       } else {
         final p = placemarks.first;
-        
-        // Nomor rumah + jalan
-        final houseNumber = p.subThoroughfare;
-        final streetName = p.thoroughfare ?? p.street;
-        final streetAddress = [
-          if (houseNumber != null && houseNumber.isNotEmpty) houseNumber,
-          if (streetName != null && streetName.isNotEmpty) streetName,
-        ].join(' ');
-        
-        final parts = <String>[];
-        if (streetAddress.isNotEmpty) parts.add(streetAddress);
-        if (p.subLocality != null && p.subLocality!.isNotEmpty) parts.add(p.subLocality!);
-        if (p.subAdministrativeArea != null && p.subAdministrativeArea!.isNotEmpty) parts.add(p.subAdministrativeArea!);
-        if (p.locality != null && p.locality!.isNotEmpty) parts.add(p.locality!);
-        if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) parts.add(p.administrativeArea!);
-        if (p.postalCode != null && p.postalCode!.isNotEmpty) parts.add(p.postalCode!);
-        
-        address = parts.join(', ');
-        if (address.isEmpty) address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+
+        // Baris 1 : Jalan + Nomor + Kelurahan
+        final houseNo = _cleanString(p.subThoroughfare);
+        final streetRaw = _cleanString(p.thoroughfare) ?? _cleanString(p.street) ?? _cleanString(p.name);
+        String streetPart = '';
+        if (streetRaw != null) {
+          streetPart = (houseNo != null) ? '$streetRaw No.$houseNo' : streetRaw;
+        }
+        final kelurahan = _cleanString(p.subLocality);
+        final line1Parts = <String>[];
+        if (streetPart.isNotEmpty) line1Parts.add(streetPart);
+        if (kelurahan != null) line1Parts.add(kelurahan);
+        final line1 = line1Parts.join(', ');
+
+        // Baris 2 : Kecamatan + Kota + Provinsi + Kode Pos
+        final kecamatan = _cleanString(p.subAdministrativeArea);
+        final kota = _cleanString(p.locality);
+        final provinsi = _cleanString(p.administrativeArea);
+        final kodePos = _cleanString(p.postalCode);
+        final line2Parts = <String>[];
+        if (kecamatan != null) line2Parts.add('Kec. $kecamatan');
+        if (kota != null) line2Parts.add(kota);
+        if (provinsi != null) line2Parts.add(provinsi);
+        if (kodePos != null) line2Parts.add(kodePos);
+        final line2 = line2Parts.join(', ');
+
+        if (line1.isNotEmpty && line2.isNotEmpty) {
+          address = '$line1${CameraConstants.watermarkAddressSeparator}$line2';
+        } else if (line1.isNotEmpty) {
+          address = line1;
+        } else if (line2.isNotEmpty) {
+          address = line2;
+        } else {
+          address = _fallbackCoords(pos);
+        }
       }
+
       if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
-        final firstKey = _addressCache.keys.toList().first;
-        _addressCache.remove(firstKey);
+        _addressCache.remove(_addressCache.keys.first);
       }
       _addressCache[cacheKey] = address;
       return address;
     } catch (_) {
-      return '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+      return _fallbackCoords(pos);
     }
   }
 

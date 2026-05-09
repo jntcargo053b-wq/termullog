@@ -28,8 +28,7 @@ jobs:
       - run: flutter pub get
       - run: flutter build apk --release
 
-      # Debug: pastikan APK benar-benar ada
-      - name: List APK file
+      - name: List APK file (debug)
         run: ls -la build/app/outputs/flutter-apk/
 
       - name: Create Release
@@ -37,5 +36,5 @@ jobs:
         with:
           tag_name: v1.${{ github.run_number }}
           files: build/app/outputs/flutter-apk/app-release.apk
-          overwrite: true          # ← izinkan menimpa release dengan tag sama
+          overwrite_files: true   # ← perbaikan: gunakan overwrite_files
           generate_release_notes: true

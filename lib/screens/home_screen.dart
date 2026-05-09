@@ -1,9 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p; // Tambahkan ini
 import 'package:image/image.dart' as img;
+import 'package:share_plus/share_plus.dart';
+
 import '../core/camera_registry.dart';
 import 'camera_screen.dart';
 import 'settings_screen.dart';
@@ -50,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final dir = await getTemporaryDirectory();
       final files = dir.listSync()
           .whereType<File>()
-          .where((f) => path.basename(f.path).startsWith('termullog_'))
+          .where((f) => p.basename(f.path).startsWith('termullog_')) // Gunakan p.
           .where((f) => f.path.endsWith('.jpg'))
           .toList();
       
@@ -67,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final image = img.decodeImage(bytes);
           if (image != null) {
             // Extract metadata from filename
-            final fileName = path.basenameWithoutExtension(file.path);
+            final fileName = p.basenameWithoutExtension(file.path); // Gunakan p.
             final parts = fileName.split('_');
             DateTime timestamp = DateTime.now();
             if (parts.length > 1) {
@@ -113,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
     for (int x = 0; x < image.width; x += step) {
       for (int y = 0; y < image.height; y += step) {
         final pixel = image.getPixel(x, y);
-        r += img.getRed(pixel);
+        r += img.getRed(pixel); // Kembali ke int
         g += img.getGreen(pixel);
         b += img.getBlue(pixel);
         count++;
@@ -180,7 +183,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           context,
                           MaterialPageRoute(builder: (_) => const SettingsScreen()),
                         );
-                        // Refresh when back from settings
                         _refreshPhotos();
                       },
                     ),
@@ -566,7 +568,7 @@ class _PhotoCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          photo['address']?.split(',').first ?? 'GPS Location',
+                          'GPS Location',
                           style: const TextStyle(
                             fontSize: 11,
                             color: Colors.white70,

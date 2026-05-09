@@ -19,6 +19,10 @@ import '../core/constants.dart';
 
 enum SaveStatus { idle, saving, saved, error }
 
+// Konstanta lokal
+const double _kLeftMargin = 25.0;  // dari kPanelPaddingX (int ke double)
+const int _kMaxAddressLen = 50;
+
 // ─────────────────────────────────────────────────────────────
 // PREVIEW SCREEN
 // ─────────────────────────────────────────────────────────────
@@ -171,15 +175,15 @@ class _PreviewScreenState extends State<PreviewScreen>
     // WATERMARK DENGAN DESAIN PROFESIONAL
     // ============================================================
     
-    // Layout constants dari constants.dart
-    const double leftMargin = kPanelPaddingX;
-    const int topPadding = kCornerMargin;
-    const int lineHeightLarge = kTextLineLarge;
-    const int lineHeightSmall = kTextLineSmall;
-    const int accentWidth = kAccentBarWidth;
+    // Layout constants
+    const int leftMargin = 25;  // kPanelPaddingX
+    const int topPadding = 20;  // kCornerMargin
+    const int lineHeightLarge = 28;  // kTextLineLarge
+    const int lineHeightSmall = 18;  // kTextLineSmall
+    const int accentWidth = 10;  // kAccentBarWidth
     
     // Hitung tinggi watermark (perkiraan 6-7 baris)
-    final totalHeight = (topPadding * 2 + lineHeightLarge * 3 + lineHeightSmall * 4).toInt();
+    final totalHeight = (topPadding * 2 + lineHeightLarge * 2 + lineHeightSmall * 4).toInt();
     final y0 = src.height - totalHeight;
     if (y0 < 0) return Uint8List(0);
     
@@ -198,25 +202,29 @@ class _PreviewScreenState extends State<PreviewScreen>
     );
     
     int currentY = y0 + topPadding;
-    final int xText = leftMargin.toInt();
+    final int xText = leftMargin;
+    
+    // Font yang tersedia di package image
+    final fontLarge = img.arial24;
+    final fontNormal = img.arial16 ?? img.arial14;
+    final fontSmall = img.arial14;
     
     // ─── HEADER: Nama Aplikasi ─────────────────────────────────
     img.drawString(
       src, 'TERMULOG',
-      font: img.arial24, x: xText, y: currentY,
+      font: fontLarge, x: xText, y: currentY,
       color: kColorCyan,
     );
     currentY += lineHeightLarge;
     
-    // Garis separator tipis
-    currentY += 4;
+    currentY += 4; // spacer kecil
     
     // ─── WAKTU & TANGGAL ───────────────────────────────────────
     final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
     final timeStr = DateFormat('HH:mm:ss').format(timestamp);
     img.drawString(
       src, '$dateStr  •  $timeStr',
-      font: img.arial14, x: xText, y: currentY,
+      font: fontNormal, x: xText, y: currentY,
       color: kColorWhite,
     );
     currentY += lineHeightSmall;
@@ -227,7 +235,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final lonStr = position.longitude.toStringAsFixed(6);
       img.drawString(
         src, '$latStr, $lonStr',
-        font: img.arial14, x: xText, y: currentY,
+        font: fontNormal, x: xText, y: currentY,
         color: kColorWhite,
       );
       currentY += lineHeightSmall;
@@ -237,7 +245,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final accColor = position.accuracy <= 10 ? kColorCyan : kColorGrey;
       img.drawString(
         src, 'Akurasi: $accStr',
-        font: img.arial12 ?? img.arial14, x: xText, y: currentY,
+        font: fontSmall, x: xText, y: currentY,
         color: accColor,
       );
       currentY += lineHeightSmall;
@@ -248,30 +256,27 @@ class _PreviewScreenState extends State<PreviewScreen>
     // ─── ALAMAT (jika tersedia) ────────────────────────────────
     if (address.isNotEmpty && !address.startsWith('GPS:') && address != 'Tidak ada lokasi') {
       String shortAddr = address;
-      // Potong jika terlalu panjang (perkiraan 45-50 karakter per baris)
-      if (shortAddr.length > 50) {
-        // Cari koma terakhir untuk potong rapi
-        int lastComma = shortAddr.lastIndexOf(',', 48);
+      if (shortAddr.length > _kMaxAddressLen) {
+        int lastComma = shortAddr.lastIndexOf(',', _kMaxAddressLen - 5);
         if (lastComma > 0) {
           shortAddr = '${shortAddr.substring(0, lastComma)}...';
         } else {
-          shortAddr = '${shortAddr.substring(0, 47)}...';
+          shortAddr = '${shortAddr.substring(0, _kMaxAddressLen - 3)}...';
         }
       }
       img.drawString(
         src, shortAddr,
-        font: img.arial12 ?? img.arial14, x: xText, y: currentY,
+        font: fontSmall, x: xText, y: currentY,
         color: kColorGrey,
       );
       currentY += lineHeightSmall + 4;
     }
     
     // ─── CUACA & VERIFIKASI ────────────────────────────────────
-    // Baris cuaca (jika ada)
     if (weather.isNotEmpty) {
       img.drawString(
         src, weather,
-        font: img.arial12 ?? img.arial14, x: xText, y: currentY,
+        font: fontSmall, x: xText, y: currentY,
         color: kColorCyan,
       );
       currentY += lineHeightSmall;
@@ -281,8 +286,8 @@ class _PreviewScreenState extends State<PreviewScreen>
     final verifiedTime = DateFormat('dd/MM/yy HH:mm').format(DateTime.now());
     img.drawString(
       src, 'TERMULOG • $verifiedTime',
-      font: img.arial12 ?? img.arial14, x: xText, y: currentY,
-      color: kColorGrey,
+        font: fontSmall, x: xText, y: currentY,
+        color: kColorGrey,
     );
     
     // Encode ke JPEG
@@ -303,7 +308,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (!mounted) return;
 
       if (result == true) {
-        // Hapus temp file setelah tersimpan
         try { await File(_displayImagePath!).delete(); } catch (_) {}
         setState(() => _saveStatus = SaveStatus.saved);
         _checkAnimController.forward(from: 0);

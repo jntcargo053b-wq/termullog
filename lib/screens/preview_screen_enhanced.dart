@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
@@ -10,7 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import '../services/location_weather_service.dart';
-import 'package:flutter/foundation.dart';
+
 // ─────────────────────────────────────────────────────────────
 // ENUM STATUS SAVE
 // ─────────────────────────────────────────────────────────────
@@ -22,10 +23,10 @@ enum SaveStatus { idle, saving, saved, error }
 // ─────────────────────────────────────────────────────────────
 
 class PreviewScreen extends StatefulWidget {
-  final String? imagePath;        // opsional (jika sudah jadi file)
-  final Uint8List? imageBytes;    // opsional (data mentah dari kamera)
-  final DateTime? timestamp;      // wajib jika pakai imageBytes
-  final Position? position;       // wajib jika pakai imageBytes
+  final String? imagePath;
+  final Uint8List? imageBytes;
+  final DateTime? timestamp;
+  final Position? position;
 
   const PreviewScreen({
     super.key,
@@ -64,10 +65,8 @@ class _PreviewScreenState extends State<PreviewScreen>
     );
 
     if (widget.imagePath != null) {
-      // Sudah ada file, langsung tampilkan
       _displayImagePath = widget.imagePath;
     } else {
-      // Proses imageBytes, buat watermark, ambil alamat & cuaca
       _processImageAsync();
     }
   }
@@ -90,7 +89,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       final timestamp = widget.timestamp!;
       final position = widget.position;
 
-      // 1. Ambil alamat & cuaca (jika posisi ada)
       String address = '';
       String weather = '';
       if (position != null) {
@@ -108,10 +106,8 @@ class _PreviewScreenState extends State<PreviewScreen>
         address = 'Tidak ada lokasi';
       }
 
-      // 2. Buat watermark
       final processedBytes = await _computeWatermark(bytes, timestamp, position, address, weather);
 
-      // 3. Simpan ke file temporary
       final dir = await getTemporaryDirectory();
       final fileName = 'termullog_${timestamp.millisecondsSinceEpoch}_temp.jpg';
       final tempFile = File('${dir.path}/$fileName');
@@ -160,7 +156,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.Image? src = img.decodeImage(bytes);
     if (src == null) throw Exception('Gagal decode gambar');
 
-    // Resize jika terlalu besar (maks 1600px)
     const maxDim = 1600;
     if (src.width > maxDim || src.height > maxDim) {
       src = img.copyResize(
@@ -171,7 +166,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       );
     }
 
-    // ── Watermark constants ───────────────────────────────────
     const stripHeightRatio = 0.20;
     const minStripHeight = 120;
     const maxStripHeight = 220;
@@ -185,11 +179,9 @@ class _PreviewScreenState extends State<PreviewScreen>
         .toInt()
         .clamp(minStripHeight, maxStripHeight);
 
-    final isBottom = true; // watermark di bawah
     final y0 = src.height - stripHeight;
     if (y0 < 0) return Uint8List(0);
 
-    // Background hitam transparan
     img.fillRect(
       src,
       x1: 0, y1: y0, x2: src.width - 1, y2: y0 + stripHeight - 1,
@@ -208,21 +200,16 @@ class _PreviewScreenState extends State<PreviewScreen>
     final y = y0 + startOffset;
 
     if (y + lineH * 5 <= src.height) {
-      // Baris 0: Branding
       img.drawString(src, 'TermulLog', font: font, x: xPad, y: y, color: yellow);
-      // Baris 1: Tanggal & Jam
       final dateStr = DateFormat('dd/MM/yy').format(timestamp);
       final timeStr = DateFormat('HH:mm:ss').format(timestamp);
       img.drawString(src, '$dateStr  $timeStr', font: font, x: xPad, y: y + lineH, color: white);
-      // Baris 2: Koordinat
       final latStr = position != null ? position.latitude.toStringAsFixed(6) : 'N/A';
       final lonStr = position != null ? position.longitude.toStringAsFixed(6) : 'N/A';
       img.drawString(src, '$latStr, $lonStr', font: font, x: xPad, y: y + lineH * 2, color: white);
-      // Baris 3: Akurasi
       final accStr = position != null ? '±${position.accuracy.toStringAsFixed(0)}m' : 'No GPS';
       img.drawString(src, 'Akurasi: $accStr', font: font, x: xPad, y: y + lineH * 3,
           color: position != null ? green : white);
-      // Baris 4: Alamat (potong jika panjang)
       String shortAddr = address;
       const maxAddrLen = 44;
       if (shortAddr.length > maxAddrLen) {
@@ -231,7 +218,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (shortAddr.isNotEmpty) {
         img.drawString(src, shortAddr, font: font, x: xPad, y: y + lineH * 4, color: white);
       }
-      // Baris 5: Cuaca
       if (weather.isNotEmpty && y + lineH * 5 < src.height) {
         img.drawString(src, 'Cuaca: $weather', font: font, x: xPad, y: y + lineH * 5, color: grey);
       }
@@ -399,7 +385,6 @@ class _PreviewScreenState extends State<PreviewScreen>
             ),
           ),
         ),
-
         Container(
           color: Colors.grey.shade900,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
@@ -441,10 +426,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// TOMBOL AKSI GENERIK
-// ─────────────────────────────────────────────────────────────
-
 class _ActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget icon;
@@ -476,10 +457,6 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────
-// TOMBOL SAVE — Animated
-// ─────────────────────────────────────────────────────────────
 
 class _SaveButton extends StatelessWidget {
   final SaveStatus status;

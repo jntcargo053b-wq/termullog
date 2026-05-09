@@ -238,7 +238,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     int currentY = y0 + 8;
     final int xText = leftPadding;
     final white = img.ColorRgba8(255, 255, 255, 255);
-    final font = img.arial10 ?? img.arial14;
+    final font = img.arial14;
     
     // Header
     img.drawString(src, 'TERMULOG', font: font, x: xText, y: currentY, color: white);
@@ -258,7 +258,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (showAccuracy) {
         final accStr = '±${position.accuracy.toStringAsFixed(0)}m';
         img.drawString(src, accStr, font: font, x: xText, y: currentY, color: white);
-        currentY += lineHeight;
       }
     }
     
@@ -308,7 +307,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     final cyan = img.ColorRgba8(0, 200, 180, 255);
     final grey = img.ColorRgba8(170, 170, 170, 255);
     final font = img.arial14;
-    final fontSmall = img.arial10 ?? img.arial14;
+    final fontSmall = img.arial14;
     
     // Header dengan icon
     img.drawString(src, '📍 TERMULOG', font: font, x: xText, y: currentY, color: cyan);
@@ -331,7 +330,8 @@ class _PreviewScreenState extends State<PreviewScreen>
       
       if (showAccuracy) {
         final accStr = '±${position.accuracy.toStringAsFixed(0)}m';
-        img.drawString(src, '🎯 Akurasi: $accStr', font: fontSmall, x: xText, y: currentY, color: position.accuracy <= 10 ? cyan : grey);
+        final cyanColor = position.accuracy <= 10 ? cyan : grey;
+        img.drawString(src, '🎯 Akurasi: $accStr', font: fontSmall, x: xText, y: currentY, color: cyanColor);
         currentY += lineHeight - 2;
       }
     }
@@ -397,7 +397,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     final gold = img.ColorRgba8(255, 180, 50, 255);
     final grey = img.ColorRgba8(160, 160, 170, 255);
     final font = img.arial14;
-    final fontSmall = img.arial10 ?? img.arial14;
+    final fontSmall = img.arial14;
     
     // Header
     img.drawString(src, 'TERMULOG', font: font, x: xText, y: currentY, color: gold);
@@ -476,7 +476,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     final darkText = img.ColorRgba8(0, 0, 0, 255);
     final grey = img.ColorRgba8(200, 200, 200, 255);
     final font = img.arial14;
-    final fontSmall = img.arial10 ?? img.arial14;
+    final fontSmall = img.arial14;
     
     // Header di bar cyan
     img.drawString(src, 'TERMULOG DOCUMENT', font: font, x: xText, y: currentY, color: darkText);

@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import '../services/location_weather_service.dart';
+import '../services/settings_service.dart';
 import '../core/constants.dart';
 
 // ─────────────────────────────────────────────────────────────
@@ -110,7 +111,16 @@ class _PreviewScreenState extends State<PreviewScreen>
         address = 'Tidak ada lokasi';
       }
 
-      final processedBytes = await _computeWatermark(bytes, timestamp, position, address, weather);
+      // Ambil pengaturan dari SharedPreferences
+      final layout = await SettingsService.getWatermarkLayout();
+      final showWeather = await SettingsService.getShowWeather();
+      final showAccuracy = await SettingsService.getShowAccuracy();
+      final watermarkPosition = await SettingsService.getWatermarkPosition();
+
+      final processedBytes = await _computeWatermark(
+        bytes, timestamp, position, address, weather,
+        layout, showWeather, showAccuracy, watermarkPosition,
+      );
 
       final dir = await getTemporaryDirectory();
       final fileName = 'termullog_${timestamp.millisecondsSinceEpoch}_temp.jpg';
@@ -140,6 +150,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     Position? position,
     String address,
     String weather,
+    WatermarkLayout layout,
+    bool showWeather,
+    bool showAccuracy,
+    String watermarkPosition,
   ) async {
     return await compute(_applyWatermark, {
       'bytes': imageBytes,
@@ -147,6 +161,10 @@ class _PreviewScreenState extends State<PreviewScreen>
       'position': position,
       'address': address,
       'weather': weather,
+      'layout': layout.index,
+      'showWeather': showWeather,
+      'showAccuracy': showAccuracy,
+      'watermarkPosition': watermarkPosition,
     });
   }
 
@@ -156,6 +174,12 @@ class _PreviewScreenState extends State<PreviewScreen>
     final position = params['position'] as Position?;
     final address = params['address'] as String;
     final weather = params['weather'] as String;
+    final layoutIndex = params['layout'] as int;
+    final showWeather = params['showWeather'] as bool;
+    final showAccuracy = params['showAccuracy'] as bool;
+    final watermarkPosition = params['watermarkPosition'] as String;
+
+    final layout = WatermarkLayout.values[layoutIndex];
 
     img.Image? src = img.decodeImage(bytes);
     if (src == null) throw Exception('Gagal decode gambar');
@@ -170,128 +194,334 @@ class _PreviewScreenState extends State<PreviewScreen>
       );
     }
 
-    // ============================================================
-    // WATERMARK DENGAN DESAIN PROFESIONAL
-    // ============================================================
+    // Panggil method sesuai layout yang dipilih
+    switch (layout) {
+      case WatermarkLayout.minimal:
+        return _applyMinimalWatermark(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+      case WatermarkLayout.modern:
+        return _applyModernWatermark(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+      case WatermarkLayout.elegant:
+        return _applyElegantWatermark(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+      case WatermarkLayout.professional:
+        return _applyProfessionalWatermark(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+    }
+  }
+
+  // ============================================================
+  // LAYOUT 1: MINIMALIS
+  // ============================================================
+  static Uint8List _applyMinimalWatermark(
+    img.Image src,
+    DateTime timestamp,
+    Position? position,
+    String address,
+    String weather,
+    bool showWeather,
+    bool showAccuracy,
+    String watermarkPosition,
+  ) {
+    const int watermarkHeight = 100;
+    const int leftPadding = 12;
+    const int lineHeight = 20;
     
-    // Layout constants
-    const int leftMargin = 25;  // kPanelPaddingX
-    const int topPadding = 20;  // kCornerMargin
-    const int lineHeightLarge = 28;  // kTextLineLarge
-    const int lineHeightSmall = 18;  // kTextLineSmall
-    const int accentWidth = 10;  // kAccentBarWidth
-    
-    // Hitung tinggi watermark (perkiraan 6-7 baris)
-    final totalHeight = (topPadding * 2 + lineHeightLarge * 2 + lineHeightSmall * 4).toInt();
-    final y0 = src.height - totalHeight;
+    final bool isTop = watermarkPosition == 'top';
+    final int y0 = isTop ? 0 : src.height - watermarkHeight;
     if (y0 < 0) return Uint8List(0);
     
-    // 1. Background utama (gelap transparan)
+    // Background hitam transparan
     img.fillRect(
       src,
-      x1: 0, y1: y0, x2: src.width - 1, y2: src.height - 1,
-      color: kColorDarkBg,
+      x1: 0, y1: y0, x2: src.width - 1, y2: y0 + watermarkHeight,
+      color: img.ColorRgba8(0, 0, 0, 180),
     );
     
-    // 2. Accent bar di sisi kiri (warna cyan)
-    img.fillRect(
-      src,
-      x1: 0, y1: y0, x2: accentWidth, y2: src.height - 1,
-      color: kColorCyan,
-    );
+    int currentY = y0 + 8;
+    final int xText = leftPadding;
+    final white = img.ColorRgba8(255, 255, 255, 255);
+    final font = img.arial10 ?? img.arial14;
     
-    int currentY = y0 + topPadding;
-    final int xText = leftMargin;
+    // Header
+    img.drawString(src, 'TERMULOG', font: font, x: xText, y: currentY, color: white);
+    currentY += lineHeight;
     
-    // Font yang tersedia di package image (hanya arial14 dan arial24)
-    final fontLarge = img.arial24;
-    final fontNormal = img.arial14;
+    // Waktu
+    final timeStr = DateFormat('dd/MM/yy HH:mm:ss').format(timestamp);
+    img.drawString(src, timeStr, font: font, x: xText, y: currentY, color: white);
+    currentY += lineHeight;
     
-    // ─── HEADER: Nama Aplikasi ─────────────────────────────────
-    img.drawString(
-      src, 'TERMULOG',
-      font: fontLarge, x: xText, y: currentY,
-      color: kColorCyan,
-    );
-    currentY += lineHeightLarge;
-    
-    currentY += 4; // spacer kecil
-    
-    // ─── WAKTU & TANGGAL ───────────────────────────────────────
-    final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
-    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
-    img.drawString(
-      src, '$dateStr  •  $timeStr',
-      font: fontNormal, x: xText, y: currentY,
-      color: kColorWhite,
-    );
-    currentY += lineHeightSmall;
-    
-    // ─── KOORDINAT GPS ─────────────────────────────────────────
+    // Koordinat
     if (position != null) {
-      final latStr = position.latitude.toStringAsFixed(6);
-      final lonStr = position.longitude.toStringAsFixed(6);
-      img.drawString(
-        src, '$latStr, $lonStr',
-        font: fontNormal, x: xText, y: currentY,
-        color: kColorWhite,
-      );
-      currentY += lineHeightSmall;
+      final coordStr = '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+      img.drawString(src, coordStr, font: font, x: xText, y: currentY, color: white);
+      currentY += lineHeight;
       
-      // Akurasi dengan indikator warna
-      final accStr = '±${position.accuracy.toStringAsFixed(0)} meter';
-      final accColor = position.accuracy <= 10 ? kColorCyan : kColorGrey;
-      img.drawString(
-        src, 'Akurasi: $accStr',
-        font: fontNormal, x: xText, y: currentY,
-        color: accColor,
-      );
-      currentY += lineHeightSmall;
-    }
-    
-    currentY += 4; // spacer
-    
-    // ─── ALAMAT (jika tersedia) ────────────────────────────────
-    if (address.isNotEmpty && !address.startsWith('GPS:') && address != 'Tidak ada lokasi') {
-      String shortAddr = address;
-      if (shortAddr.length > _kMaxAddressLen) {
-        int lastComma = shortAddr.lastIndexOf(',', _kMaxAddressLen - 5);
-        if (lastComma > 0) {
-          shortAddr = '${shortAddr.substring(0, lastComma)}...';
-        } else {
-          shortAddr = '${shortAddr.substring(0, _kMaxAddressLen - 3)}...';
-        }
+      if (showAccuracy) {
+        final accStr = '±${position.accuracy.toStringAsFixed(0)}m';
+        img.drawString(src, accStr, font: font, x: xText, y: currentY, color: white);
+        currentY += lineHeight;
       }
-      img.drawString(
-        src, shortAddr,
-        font: fontNormal, x: xText, y: currentY,
-        color: kColorGrey,
-      );
-      currentY += lineHeightSmall + 4;
     }
     
-    // ─── CUACA & VERIFIKASI ────────────────────────────────────
-    if (weather.isNotEmpty) {
-      img.drawString(
-        src, weather,
-        font: fontNormal, x: xText, y: currentY,
-        color: kColorCyan,
-      );
-      currentY += lineHeightSmall;
-    }
-    
-    // Timestamp verifikasi
-    final verifiedTime = DateFormat('dd/MM/yy HH:mm').format(DateTime.now());
-    img.drawString(
-      src, 'TERMULOG • $verifiedTime',
-      font: fontNormal, x: xText, y: currentY,
-      color: kColorGrey,
-    );
-    
-    // Encode ke JPEG
     final jpegData = img.encodeJpg(src, quality: kJpegQuality);
     return Uint8List.fromList(jpegData);
   }
+
+  // ============================================================
+  // LAYOUT 2: MODERN
+  // ============================================================
+  static Uint8List _applyModernWatermark(
+    img.Image src,
+    DateTime timestamp,
+    Position? position,
+    String address,
+    String weather,
+    bool showWeather,
+    bool showAccuracy,
+    String watermarkPosition,
+  ) {
+    const int watermarkHeight = 130;
+    const int leftPadding = 16;
+    const int lineHeight = 22;
+    
+    final bool isTop = watermarkPosition == 'top';
+    final int y0 = isTop ? 0 : src.height - watermarkHeight;
+    if (y0 < 0) return Uint8List(0);
+    
+    // Background
+    img.fillRect(
+      src,
+      x1: 0, y1: y0, x2: src.width - 1, y2: y0 + watermarkHeight,
+      color: img.ColorRgba8(10, 10, 20, 210),
+    );
+    
+    // Garis aksen di kiri (cyan)
+    img.fillRect(
+      src,
+      x1: 0, y1: y0, x2: 6, y2: y0 + watermarkHeight,
+      color: img.ColorRgba8(0, 200, 180, 255),
+    );
+    
+    int currentY = y0 + 10;
+    final int xText = leftPadding + 8;
+    
+    final white = img.ColorRgba8(255, 255, 255, 255);
+    final cyan = img.ColorRgba8(0, 200, 180, 255);
+    final grey = img.ColorRgba8(170, 170, 170, 255);
+    final font = img.arial14;
+    final fontSmall = img.arial10 ?? img.arial14;
+    
+    // Header dengan icon
+    img.drawString(src, '📍 TERMULOG', font: font, x: xText, y: currentY, color: cyan);
+    currentY += lineHeight;
+    
+    // Waktu
+    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
+    img.drawString(src, '$timeStr  •  $dateStr', font: fontSmall, x: xText, y: currentY, color: white);
+    currentY += lineHeight - 2;
+    
+    currentY += 2;
+    
+    // Koordinat
+    if (position != null) {
+      final latStr = position.latitude.toStringAsFixed(5);
+      final lonStr = position.longitude.toStringAsFixed(5);
+      img.drawString(src, '🌐 $latStr°, $lonStr°', font: fontSmall, x: xText, y: currentY, color: white);
+      currentY += lineHeight - 2;
+      
+      if (showAccuracy) {
+        final accStr = '±${position.accuracy.toStringAsFixed(0)}m';
+        img.drawString(src, '🎯 Akurasi: $accStr', font: fontSmall, x: xText, y: currentY, color: position.accuracy <= 10 ? cyan : grey);
+        currentY += lineHeight - 2;
+      }
+    }
+    
+    // Alamat singkat
+    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
+      String shortAddr = address;
+      if (shortAddr.length > 40) shortAddr = '${shortAddr.substring(0, 37)}...';
+      img.drawString(src, '🏠 $shortAddr', font: fontSmall, x: xText, y: currentY, color: grey);
+      currentY += lineHeight - 2;
+    }
+    
+    // Cuaca
+    if (showWeather && weather.isNotEmpty) {
+      img.drawString(src, '🌤️ $weather', font: fontSmall, x: xText, y: currentY, color: cyan);
+    }
+    
+    final jpegData = img.encodeJpg(src, quality: kJpegQuality);
+    return Uint8List.fromList(jpegData);
+  }
+
+  // ============================================================
+  // LAYOUT 3: ELEGAN
+  // ============================================================
+  static Uint8List _applyElegantWatermark(
+    img.Image src,
+    DateTime timestamp,
+    Position? position,
+    String address,
+    String weather,
+    bool showWeather,
+    bool showAccuracy,
+    String watermarkPosition,
+  ) {
+    const int watermarkHeight = 140;
+    const int leftPadding = 20;
+    const int lineHeight = 24;
+    
+    final bool isTop = watermarkPosition == 'top';
+    final int y0 = isTop ? 0 : src.height - watermarkHeight;
+    if (y0 < 0) return Uint8List(0);
+    
+    // Background glass morphism
+    img.fillRect(
+      src,
+      x1: 0, y1: y0, x2: src.width - 1, y2: y0 + watermarkHeight,
+      color: img.ColorRgba8(20, 20, 35, 220),
+    );
+    
+    // Border atas tipis
+    img.drawLine(
+      src,
+      x1: 0, y1: y0, x2: src.width - 1, y2: y0,
+      color: img.ColorRgba8(0, 200, 180, 150),
+      thickness: 2,
+    );
+    
+    int currentY = y0 + 16;
+    final int xText = leftPadding;
+    
+    final white = img.ColorRgba8(255, 255, 255, 255);
+    final cyan = img.ColorRgba8(0, 200, 180, 255);
+    final gold = img.ColorRgba8(255, 180, 50, 255);
+    final grey = img.ColorRgba8(160, 160, 170, 255);
+    final font = img.arial14;
+    final fontSmall = img.arial10 ?? img.arial14;
+    
+    // Header
+    img.drawString(src, 'TERMULOG', font: font, x: xText, y: currentY, color: gold);
+    currentY += lineHeight;
+    
+    // Tanggal lengkap
+    final dateStr = DateFormat('dd MMMM yyyy', 'id_ID').format(timestamp);
+    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    img.drawString(src, dateStr, font: fontSmall, x: xText, y: currentY, color: white);
+    currentY += lineHeight - 4;
+    img.drawString(src, timeStr, font: fontSmall, x: xText, y: currentY, color: cyan);
+    currentY += lineHeight;
+    
+    currentY += 4;
+    
+    // Koordinat
+    if (position != null) {
+      final latStr = position.latitude.toStringAsFixed(5);
+      final lonStr = position.longitude.toStringAsFixed(5);
+      img.drawString(src, '$latStr°', font: fontSmall, x: xText, y: currentY, color: white);
+      currentY += lineHeight - 4;
+      img.drawString(src, '$lonStr°', font: fontSmall, x: xText, y: currentY, color: white);
+      currentY += lineHeight;
+      
+      if (showAccuracy) {
+        final accStr = 'Akurasi ±${position.accuracy.toStringAsFixed(0)} meter';
+        final accColor = position.accuracy <= 10 ? cyan : grey;
+        img.drawString(src, accStr, font: fontSmall, x: xText, y: currentY, color: accColor);
+      }
+    }
+    
+    final jpegData = img.encodeJpg(src, quality: kJpegQuality);
+    return Uint8List.fromList(jpegData);
+  }
+
+  // ============================================================
+  // LAYOUT 4: PROFESIONAL
+  // ============================================================
+  static Uint8List _applyProfessionalWatermark(
+    img.Image src,
+    DateTime timestamp,
+    Position? position,
+    String address,
+    String weather,
+    bool showWeather,
+    bool showAccuracy,
+    String watermarkPosition,
+  ) {
+    const int watermarkHeight = 150;
+    const int leftPadding = 16;
+    const int lineHeight = 22;
+    
+    final bool isTop = watermarkPosition == 'top';
+    final int y0 = isTop ? 0 : src.height - watermarkHeight;
+    if (y0 < 0) return Uint8List(0);
+    
+    // Background
+    img.fillRect(
+      src,
+      x1: 0, y1: y0, x2: src.width - 1, y2: y0 + watermarkHeight,
+      color: img.ColorRgba8(0, 0, 0, 200),
+    );
+    
+    // Header bar
+    img.fillRect(
+      src,
+      x1: 0, y1: y0, x2: src.width - 1, y2: y0 + 28,
+      color: img.ColorRgba8(0, 200, 180, 255),
+    );
+    
+    int currentY = y0 + 8;
+    final int xText = leftPadding;
+    
+    final white = img.ColorRgba8(255, 255, 255, 255);
+    final cyan = img.ColorRgba8(0, 200, 180, 255);
+    final darkText = img.ColorRgba8(0, 0, 0, 255);
+    final grey = img.ColorRgba8(200, 200, 200, 255);
+    final font = img.arial14;
+    final fontSmall = img.arial10 ?? img.arial14;
+    
+    // Header di bar cyan
+    img.drawString(src, 'TERMULOG DOCUMENT', font: font, x: xText, y: currentY, color: darkText);
+    
+    currentY = y0 + 38;
+    
+    // Info waktu
+    final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
+    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    img.drawString(src, 'DATE : $dateStr', font: fontSmall, x: xText, y: currentY, color: white);
+    currentY += lineHeight - 2;
+    img.drawString(src, 'TIME : $timeStr', font: fontSmall, x: xText, y: currentY, color: white);
+    currentY += lineHeight - 2;
+    
+    currentY += 2;
+    
+    // Koordinat
+    if (position != null) {
+      final latStr = position.latitude.toStringAsFixed(6);
+      final lonStr = position.longitude.toStringAsFixed(6);
+      img.drawString(src, 'LAT : $latStr', font: fontSmall, x: xText, y: currentY, color: grey);
+      currentY += lineHeight - 2;
+      img.drawString(src, 'LON : $lonStr', font: fontSmall, x: xText, y: currentY, color: grey);
+      currentY += lineHeight - 2;
+      
+      if (showAccuracy) {
+        img.drawString(src, 'ACCURACY : ±${position.accuracy.toStringAsFixed(0)}m', font: fontSmall, x: xText, y: currentY, color: cyan);
+        currentY += lineHeight - 2;
+      }
+    }
+    
+    // Alamat
+    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
+      String shortAddr = address;
+      if (shortAddr.length > 45) shortAddr = '${shortAddr.substring(0, 42)}...';
+      img.drawString(src, 'ADDR : $shortAddr', font: fontSmall, x: xText, y: currentY, color: grey);
+    }
+    
+    final jpegData = img.encodeJpg(src, quality: kJpegQuality);
+    return Uint8List.fromList(jpegData);
+  }
+
+  // ============================================================
+  // SAVE & SHARE
+  // ============================================================
 
   Future<void> _saveToGallery() async {
     if (_saveStatus == SaveStatus.saving || _displayImagePath == null) return;

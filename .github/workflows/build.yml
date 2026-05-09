@@ -5,7 +5,6 @@ on:
     branches:
       - main
 
-# Memberikan izin untuk membuat release
 permissions:
   contents: write
 
@@ -29,8 +28,14 @@ jobs:
       - run: flutter pub get
       - run: flutter build apk --release
 
+      # Debug: pastikan APK benar-benar ada
+      - name: List APK file
+        run: ls -la build/app/outputs/flutter-apk/
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.${{ github.run_number }}
           files: build/app/outputs/flutter-apk/app-release.apk
+          overwrite: true          # ← izinkan menimpa release dengan tag sama
+          generate_release_notes: true

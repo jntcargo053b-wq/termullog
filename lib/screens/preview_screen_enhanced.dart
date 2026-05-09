@@ -20,7 +20,6 @@ import '../core/constants.dart';
 enum SaveStatus { idle, saving, saved, error }
 
 // Konstanta lokal
-const double _kLeftMargin = 25.0;  // dari kPanelPaddingX (int ke double)
 const int _kMaxAddressLen = 50;
 
 // ─────────────────────────────────────────────────────────────
@@ -204,10 +203,9 @@ class _PreviewScreenState extends State<PreviewScreen>
     int currentY = y0 + topPadding;
     final int xText = leftMargin;
     
-    // Font yang tersedia di package image
+    // Font yang tersedia di package image (hanya arial14 dan arial24)
     final fontLarge = img.arial24;
-    final fontNormal = img.arial16 ?? img.arial14;
-    final fontSmall = img.arial14;
+    final fontNormal = img.arial14;
     
     // ─── HEADER: Nama Aplikasi ─────────────────────────────────
     img.drawString(
@@ -245,7 +243,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final accColor = position.accuracy <= 10 ? kColorCyan : kColorGrey;
       img.drawString(
         src, 'Akurasi: $accStr',
-        font: fontSmall, x: xText, y: currentY,
+        font: fontNormal, x: xText, y: currentY,
         color: accColor,
       );
       currentY += lineHeightSmall;
@@ -266,7 +264,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       }
       img.drawString(
         src, shortAddr,
-        font: fontSmall, x: xText, y: currentY,
+        font: fontNormal, x: xText, y: currentY,
         color: kColorGrey,
       );
       currentY += lineHeightSmall + 4;
@@ -276,7 +274,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (weather.isNotEmpty) {
       img.drawString(
         src, weather,
-        font: fontSmall, x: xText, y: currentY,
+        font: fontNormal, x: xText, y: currentY,
         color: kColorCyan,
       );
       currentY += lineHeightSmall;
@@ -286,8 +284,8 @@ class _PreviewScreenState extends State<PreviewScreen>
     final verifiedTime = DateFormat('dd/MM/yy HH:mm').format(DateTime.now());
     img.drawString(
       src, 'TERMULOG • $verifiedTime',
-        font: fontSmall, x: xText, y: currentY,
-        color: kColorGrey,
+      font: fontNormal, x: xText, y: currentY,
+      color: kColorGrey,
     );
     
     // Encode ke JPEG

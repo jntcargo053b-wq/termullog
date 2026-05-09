@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/camera_registry.dart';
 import 'preview_screen_enhanced.dart';
+import 'settings_screen.dart';
 
 // ============================================================
 // Constants
@@ -44,8 +45,6 @@ class CameraConstants {
   static const int lowAccuracyCheckDelaySeconds = 5;
   static const double lowAccuracyThreshold = 30.0;
   static const int preWarmDelayMs = 800;
-  
-  // Tambahan yang hilang
   static const double accuracyMax = 80.0;
 }
 
@@ -56,7 +55,13 @@ class GpsBar extends StatelessWidget {
   final bool gpsReady;
   final String gpsText;
   final Position? bestPosition;
-  const GpsBar({super.key, required this.gpsReady, required this.gpsText, this.bestPosition});
+  
+  const GpsBar({
+    super.key, 
+    required this.gpsReady, 
+    required this.gpsText, 
+    this.bestPosition
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -65,8 +70,11 @@ class GpsBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Row(
         children: [
-          Icon(gpsReady ? Icons.gps_fixed : Icons.gps_not_fixed,
-              color: gpsReady ? Colors.greenAccent : Colors.amber, size: 14),
+          Icon(
+            gpsReady ? Icons.gps_fixed : Icons.gps_not_fixed,
+            color: gpsReady ? Colors.greenAccent : Colors.amber, 
+            size: 14,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -78,7 +86,13 @@ class GpsBar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(gpsText, style: TextStyle(color: gpsReady ? Colors.greenAccent : Colors.amber, fontSize: 10)),
+          Text(
+            gpsText, 
+            style: TextStyle(
+              color: gpsReady ? Colors.greenAccent : Colors.amber, 
+              fontSize: 10,
+            ),
+          ),
         ],
       ),
     );
@@ -96,7 +110,6 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
-
   // Camera
   CameraController? _controller;
   bool _isInitialized = false;
@@ -104,7 +117,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isReinitializingCamera = false;
   bool _isResumingApp = false;
   bool _captureLocked = false;
-  bool _acquireLock() { if (_captureLocked) return false; _captureLocked = true; return true; }
+  
+  bool _acquireLock() { 
+    if (_captureLocked) return false; 
+    _captureLocked = true; 
+    return true; 
+  }
+  
   void _releaseLock() => _captureLocked = false;
 
   // GPS
@@ -148,7 +167,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _countdownTimer?.cancel();
     _gpsWatchdog?.cancel();
     _gpsStream?.cancel().then((_) => _gpsStream = null).catchError((_) {});
-    if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) _gpsCompleter!.complete();
+    if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) {
+      _gpsCompleter!.complete();
+    }
     _positionSamples.clear();
     _disposeCamera();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
@@ -156,11 +177,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     super.dispose();
   }
 
+  // ============================================================
+  // Helper Methods
+  // ============================================================
+  
   Future<void> _preWarmGps() async {
     try {
-      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best).timeout(const Duration(seconds: 3));
+      await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+      ).timeout(const Duration(seconds: 3));
       await Future.delayed(const Duration(milliseconds: CameraConstants.preWarmDelayMs));
-      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best).timeout(const Duration(seconds: 3));
+      await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+      ).timeout(const Duration(seconds: 3));
     } catch (_) {}
   }
 
@@ -174,11 +203,20 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Optimalkan Akurasi GPS'),
-        content: const Text('Matikan battery optimization untuk aplikasi ini, izinkan lokasi "Selalu", dan aktifkan High Accuracy Mode.'),
+        content: const Text(
+          'Matikan battery optimization untuk aplikasi ini, '
+          'izinkan lokasi "Selalu", dan aktifkan High Accuracy Mode.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Nanti')),
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text('Nanti'),
+          ),
           ElevatedButton(
-            onPressed: () async { await Geolocator.openAppSettings(); if (context.mounted) Navigator.pop(context); },
+            onPressed: () async { 
+              await Geolocator.openAppSettings(); 
+              if (context.mounted) Navigator.pop(context); 
+            },
             child: const Text('Buka Setting'),
           ),
         ],
@@ -190,15 +228,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       final dir = await getTemporaryDirectory();
       final cutoff = DateTime.now().subtract(CameraConstants.tempFileRetention);
-      final files = dir.listSync().whereType<File>().where((f) => path.basename(f.path).startsWith('termullog_')).where((f) {
-        try { return f.statSync().modified.isBefore(cutoff); } catch (_) { return false; }
-      }).toList();
+      final files = dir.listSync()
+          .whereType<File>()
+          .where((f) => path.basename(f.path).startsWith('termullog_'))
+          .where((f) {
+            try { return f.statSync().modified.isBefore(cutoff); } 
+            catch (_) { return false; }
+          }).toList();
       for (final f in files) { await f.delete(); }
     } catch (_) {}
   }
 
-  void _updateGpsText(String text) { if (mounted) setState(() => _gpsText = text); }
+  void _updateGpsText(String text) { 
+    if (mounted) setState(() => _gpsText = text); 
+  }
 
+  // ============================================================
+  // GPS Tracking
+  // ============================================================
+  
   Future<void> _startGpsTracking() async {
     if (_isDisposed) return;
     try {
@@ -209,14 +257,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       } else {
         if (mounted) setState(() => _isLocationServiceDisabled = false);
       }
+      
       LocationPermission perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
         _updateGpsText('❌ Izin GPS ditolak');
         return;
       }
+      
       _warmupGps();
       _checkLowAccuracyAndNotify();
+      
       final settings = AndroidSettings(
         accuracy: LocationAccuracy.best,
         distanceFilter: 0,
@@ -228,15 +281,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           enableWakeLock: true,
         ),
       );
+      
       await _gpsStream?.cancel();
-      _gpsStream = Geolocator.getPositionStream(locationSettings: settings).listen(_onGpsData,
-          onError: (e) => debugPrint('GPS Error: $e'), cancelOnError: false);
-    } catch (e) { debugPrint('GPS Init Error: $e'); }
+      _gpsStream = Geolocator.getPositionStream(
+        locationSettings: settings,
+      ).listen(_onGpsData,
+          onError: (e) => debugPrint('GPS Error: $e'), 
+          cancelOnError: false);
+    } catch (e) { 
+      debugPrint('GPS Init Error: $e'); 
+    }
   }
 
   void _warmupGps() async {
     try {
-      final warmup = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best).timeout(Duration(seconds: CameraConstants.warmupGpsTimeoutSeconds));
+      final warmup = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+      ).timeout(Duration(seconds: CameraConstants.warmupGpsTimeoutSeconds));
       if (!_isDisposed && warmup.accuracy <= CameraConstants.accuracyMax && !warmup.isMocked) {
         if (warmup.accuracy <= CameraConstants.minAcceptableAccuracy) {
           _bestPosition = warmup;
@@ -249,61 +310,100 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   void _startGpsWatchdog() {
     _gpsWatchdog?.cancel();
-    _gpsWatchdog = Timer.periodic(Duration(seconds: CameraConstants.gpsWatchdogIntervalSeconds), (_) async {
-      if (_isDisposed) return;
-      if (DateTime.now().difference(_lastGpsUpdate).inSeconds > CameraConstants.gpsStaleAfterSeconds) {
-        _gpsRestartCount++;
-        await _gpsStream?.cancel();
-        _startGpsTracking();
+    _gpsWatchdog = Timer.periodic(
+      Duration(seconds: CameraConstants.gpsWatchdogIntervalSeconds), 
+      (_) async {
+        if (_isDisposed) return;
+        if (DateTime.now().difference(_lastGpsUpdate).inSeconds > 
+            CameraConstants.gpsStaleAfterSeconds) {
+          _gpsRestartCount++;
+          await _gpsStream?.cancel();
+          _startGpsTracking();
+        }
       }
-    });
+    );
   }
 
   void _onGpsData(Position pos) {
     if (_isDisposed) return;
     _lastGpsUpdate = DateTime.now();
+    
+    final timestamp = pos.timestamp;
+    if (timestamp == null) return;
+    
     final now = DateTime.now();
-    // Fix: timestamp null dianggap basi, bukan segar
-    final ts = pos.timestamp;
-    if (ts == null || now.difference(ts).inSeconds > 5) return;
+    if (now.difference(timestamp).inSeconds > 5) return;
     if (pos.isMocked) return;
     if (pos.accuracy > CameraConstants.maxAcceptedAccuracyForSample) return;
     if (pos.speed > CameraConstants.maxHorizontalSpeedMs) return;
+    
     if (_bestPosition != null) {
-      final dist = _calculateDistance(_bestPosition!.latitude, _bestPosition!.longitude, pos.latitude, pos.longitude);
-      if (dist < CameraConstants.minDistanceChange && pos.accuracy > _bestPosition!.accuracy) return;
+      final dist = _calculateDistance(
+        _bestPosition!.latitude, _bestPosition!.longitude,
+        pos.latitude, pos.longitude,
+      );
+      if (dist < CameraConstants.minDistanceChange && 
+          pos.accuracy > _bestPosition!.accuracy) return;
     }
-    // _isProcessingGps dihapus: stream callbacks di Dart tidak bisa re-entrant
-    if (_bestPosition != null && _isOutlier(pos, _bestPosition!)) return;
-    final now2 = DateTime.now();
-    _positionSamples.removeWhere((p) => p.timestamp == null || now2.difference(p.timestamp!).inSeconds > CameraConstants.positionSampleLifespanSeconds);
-    _positionSamples.add(pos);
-    while (_positionSamples.length > CameraConstants.maxGpsSamples) _positionSamples.removeAt(0);
-    _samplesCollected++;
-    if (_samplesCollected < CameraConstants.minSamplesRequired) return;
-    final averaged = _averageBestPositions();
-    if (averaged == null) return;
-    if (_bestPosition == null || averaged.accuracy < _bestPosition!.accuracy) _bestPosition = averaged;
-    final acc = _bestPosition!.accuracy;
-    final isReady = acc <= CameraConstants.accuracyTarget;
-    _debounceUiUpdate(() {
-      if (mounted) setState(() {
-        _gpsReady = isReady;
-        _gpsText = isReady ? '🟢 GPS ±${acc.toStringAsFixed(0)}m' : '🟡 ±${acc.toStringAsFixed(0)}m';
+    
+    try {
+      if (_bestPosition != null && _isOutlier(pos, _bestPosition!)) return;
+      
+      final now2 = DateTime.now();
+      _positionSamples.removeWhere((p) => 
+          now2.difference(p.timestamp ?? now2).inSeconds > 
+          CameraConstants.positionSampleLifespanSeconds);
+      _positionSamples.add(pos);
+      while (_positionSamples.length > CameraConstants.maxGpsSamples) {
+        _positionSamples.removeAt(0);
+      }
+      
+      _samplesCollected++;
+      if (_samplesCollected < CameraConstants.minSamplesRequired) return;
+      
+      final averaged = _averageBestPositions();
+      if (averaged == null) return;
+      if (_bestPosition == null || averaged.accuracy < _bestPosition!.accuracy) {
+        _bestPosition = averaged;
+      }
+      
+      final acc = _bestPosition!.accuracy;
+      final isReady = acc <= CameraConstants.accuracyTarget;
+      
+      _debounceUiUpdate(() {
+        if (mounted) setState(() {
+          _gpsReady = isReady;
+          _gpsText = isReady 
+              ? '🟢 GPS ±${acc.toStringAsFixed(0)}m' 
+              : '🟡 ±${acc.toStringAsFixed(0)}m';
+        });
       });
-    });
-    if (_isWaitingForGps && _gpsCompleter != null && !_gpsCompleter!.isCompleted && isReady) {
-      final c = _gpsCompleter;
-      _isWaitingForGps = false;
-      c?.complete();
+      
+      if (_isWaitingForGps && _gpsCompleter != null && 
+          !_gpsCompleter!.isCompleted && isReady) {
+        final c = _gpsCompleter;
+        _isWaitingForGps = false;
+        c?.complete();
+      }
+    } catch (e) { 
+      debugPrint('GPS data error: $e'); 
     }
   }
 
-  void _debounceUiUpdate(VoidCallback fn) { _uiUpdateTimer?.cancel(); _uiUpdateTimer = Timer(CameraConstants.uiDebounceDelay, fn); }
+  void _debounceUiUpdate(VoidCallback fn) { 
+    _uiUpdateTimer?.cancel(); 
+    _uiUpdateTimer = Timer(CameraConstants.uiDebounceDelay, fn); 
+  }
 
   bool _isOutlier(Position newPos, Position lastPos) {
-    final distance = _calculateDistance(lastPos.latitude, lastPos.longitude, newPos.latitude, newPos.longitude);
-    final timeDiff = (newPos.timestamp ?? DateTime.now()).difference(lastPos.timestamp ?? DateTime.now()).inSeconds.abs();
+    final distance = _calculateDistance(
+      lastPos.latitude, lastPos.longitude,
+      newPos.latitude, newPos.longitude,
+    );
+    final timeDiff = (newPos.timestamp ?? DateTime.now())
+        .difference(lastPos.timestamp ?? DateTime.now())
+        .inSeconds
+        .abs();
     if (timeDiff == 0) return false;
     return (distance / timeDiff) > CameraConstants.outlierSpeedThresholdMs;
   }
@@ -312,28 +412,47 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     const R = 6371000;
     final dLat = (lat2 - lat1) * pi / 180;
     final dLon = (lon2 - lon1) * pi / 180;
-    final a = sin(dLat/2)*sin(dLat/2) + cos(lat1*pi/180)*cos(lat2*pi/180)* sin(dLon/2)*sin(dLon/2);
+    final a = sin(dLat/2)*sin(dLat/2) + 
+              cos(lat1*pi/180)*cos(lat2*pi/180)* sin(dLon/2)*sin(dLon/2);
     return R * 2 * atan2(sqrt(a), sqrt(1-a));
   }
 
   Position? _averageBestPositions() {
-    final valid = _positionSamples.where((p) => p.accuracy <= CameraConstants.maxAcceptedAccuracyForSample).toList();
+    final valid = _positionSamples
+        .where((p) => p.accuracy <= CameraConstants.maxAcceptedAccuracyForSample)
+        .toList();
     if (valid.length < CameraConstants.minSamplesRequired) return _bestPosition;
-    final sorted = List<Position>.from(valid)..sort((a,b)=>a.accuracy.compareTo(b.accuracy));
+    
+    final sorted = List<Position>.from(valid)
+      ..sort((a,b) => a.accuracy.compareTo(b.accuracy));
     final medianPos = sorted[sorted.length ~/ 2];
     final topN = sorted.take(CameraConstants.topSamplesForAveraging).toList();
-    double tw=0, wlat=0, wlon=0;
-    for (final p in topN) { final w = 1.0/p.accuracy; tw+=w; wlat+=p.latitude*w; wlon+=p.longitude*w; }
-    double lat = wlat/tw, lon = wlon/tw;
-    lat = (lat + medianPos.latitude)/2;
-    lon = (lon + medianPos.longitude)/2;
-    final accs = topN.map((e)=>e.accuracy).toList()..sort();
-    final medAcc = accs[accs.length~/2];
+    
+    double tw = 0, wlat = 0, wlon = 0;
+    for (final p in topN) { 
+      final w = 1.0 / p.accuracy; 
+      tw += w; 
+      wlat += p.latitude * w; 
+      wlon += p.longitude * w; 
+    }
+    double lat = wlat / tw;
+    double lon = wlon / tw;
+    lat = (lat + medianPos.latitude) / 2;
+    lon = (lon + medianPos.longitude) / 2;
+    
+    final accs = topN.map((e) => e.accuracy).toList()..sort();
+    final medAcc = accs[accs.length ~/ 2];
+    
     return Position(
-      latitude: lat, longitude: lon, accuracy: medAcc,
-      altitude: medianPos.altitude, altitudeAccuracy: medianPos.altitudeAccuracy,
-      heading: medianPos.heading, headingAccuracy: medianPos.headingAccuracy,
-      speed: medianPos.speed, speedAccuracy: medianPos.speedAccuracy,
+      latitude: lat, 
+      longitude: lon, 
+      accuracy: medAcc,
+      altitude: medianPos.altitude,
+      altitudeAccuracy: medianPos.altitudeAccuracy,
+      heading: medianPos.heading,
+      headingAccuracy: medianPos.headingAccuracy,
+      speed: medianPos.speed,
+      speedAccuracy: medianPos.speedAccuracy,
       timestamp: DateTime.now(),
     );
   }
@@ -341,16 +460,24 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   int _adaptivePolishTimeout() {
     if (_bestPosition == null) return CameraConstants.polishTimeoutPoorAccuracy;
     final acc = _bestPosition!.accuracy;
-    if (acc <= CameraConstants.accuracyGood) return CameraConstants.polishTimeoutGoodAccuracy;
-    if (acc <= CameraConstants.accuracyMedium) return CameraConstants.polishTimeoutMediumAccuracy;
+    if (acc <= CameraConstants.accuracyGood) {
+      return CameraConstants.polishTimeoutGoodAccuracy;
+    }
+    if (acc <= CameraConstants.accuracyMedium) {
+      return CameraConstants.polishTimeoutMediumAccuracy;
+    }
     return CameraConstants.polishTimeoutPoorAccuracy;
   }
 
   Future<void> _quickGpsRefresh() async {
     if (_bestPosition != null && _bestPosition!.accuracy <= CameraConstants.accuracyGood) return;
     try {
-      final fresh = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best).timeout(Duration(seconds: CameraConstants.quickGpsTimeoutSeconds));
-      if (!fresh.isMocked && fresh.accuracy <= CameraConstants.minAcceptableAccuracy && fresh.accuracy < (_bestPosition?.accuracy ?? 999)) {
+      final fresh = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+      ).timeout(Duration(seconds: CameraConstants.quickGpsTimeoutSeconds));
+      if (!fresh.isMocked && 
+          fresh.accuracy <= CameraConstants.minAcceptableAccuracy &&
+          fresh.accuracy < (_bestPosition?.accuracy ?? 999)) {
         _bestPosition = fresh;
       }
     } catch (_) {}
@@ -360,7 +487,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (_hasShownLowAccuracyDialog) return;
     Future.delayed(Duration(seconds: CameraConstants.lowAccuracyCheckDelaySeconds), () {
       if (_isDisposed || !mounted) return;
-      if (_bestPosition != null && _bestPosition!.accuracy > CameraConstants.lowAccuracyThreshold && !_hasShownLowAccuracyDialog) {
+      if (_bestPosition != null && 
+          _bestPosition!.accuracy > CameraConstants.lowAccuracyThreshold && 
+          !_hasShownLowAccuracyDialog) {
         _hasShownLowAccuracyDialog = true;
         _showAccuracyDialogIfNeeded();
       }
@@ -378,43 +507,62 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         title: const Text('Tingkatkan Akurasi GPS'),
         content: const Text('Aktifkan High Accuracy Mode di pengaturan lokasi.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Tutup')),
-          ElevatedButton(onPressed: () async { await Geolocator.openLocationSettings(); if (context.mounted) Navigator.pop(context); }, child: const Text('Buka Setting')),
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () async { 
+              await Geolocator.openLocationSettings(); 
+              if (context.mounted) Navigator.pop(context); 
+            }, 
+            child: const Text('Buka Setting'),
+          ),
         ],
       ),
     );
   }
 
+  // ============================================================
+  // Camera & Capture
+  // ============================================================
+  
   Future<void> _initCamera() async {
     if (_isReinitializingCamera || _isDisposed) return;
-    if (CameraRegistry.cameras.isEmpty) {
-      // Tidak ada kamera — keluarkan dari state warming up agar UI tidak blank selamanya
-      if (mounted) setState(() => _isWarmingUp = false);
-      return;
-    }
+    if (CameraRegistry.cameras.isEmpty) return;
     _isReinitializingCamera = true;
     try {
       if (_controller != null && _controller!.value.isInitialized) return;
       final camera = CameraRegistry.cameras.first;
-      // Fix: ResolutionPreset.high (bukan medium) agar detail label/barcode terbaca
-      final controller = CameraController(camera, ResolutionPreset.high, enableAudio: false, imageFormatGroup: ImageFormatGroup.jpeg);
+      final controller = CameraController(
+        camera,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
       _controller = controller;
       await controller.initialize();
       await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
       await controller.setFocusMode(FocusMode.auto);
       await controller.setExposureMode(ExposureMode.auto);
-      if (mounted) setState(() { _isInitialized = true; _isWarmingUp = false; });
-    } catch (e) {
-      debugPrint('Camera init error: $e');
+      if (mounted) setState(() { 
+        _isInitialized = true; 
+        _isWarmingUp = false; 
+      });
+    } catch (e) { 
+      debugPrint('Camera init error: $e'); 
       _controller = null;
-      // Fix: pastikan _isWarmingUp = false agar shutter button muncul & error bisa ditampilkan
-      if (mounted) setState(() => _isWarmingUp = false);
+    } finally { 
+      _isReinitializingCamera = false; 
     }
-    finally { _isReinitializingCamera = false; }
   }
 
   Future<void> _disposeCamera() async {
-    try { await _controller?.dispose(); } catch(e) { debugPrint('Dispose camera error: $e'); }
+    try { 
+      await _controller?.dispose(); 
+    } catch(e) { 
+      debugPrint('Dispose camera error: $e'); 
+    }
     _controller = null;
   }
 
@@ -422,7 +570,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _gpsStream?.pause();
     _gpsWatchdog?.cancel();
     await _disposeCamera();
-    if (mounted) setState(() { _controller = null; _isInitialized = false; });
+    if (mounted) setState(() { 
+      _controller = null; 
+      _isInitialized = false; 
+    });
   }
 
   Future<void> _handleAppResumed() async {
@@ -432,7 +583,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _gpsStream?.resume();
     _startGpsWatchdog();
     await Future.delayed(CameraConstants.cameraReinitDelay);
-    await _initCamera();
+    try {
+      await _initCamera();
+    } catch (e) {
+      debugPrint('Resume camera error: $e');
+      if (mounted) setState(() => _isWarmingUp = false);
+    }
     _isResumingApp = false;
   }
 
@@ -444,33 +600,45 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _waitForBestGps() async {
     if (_isDisposed) return;
-    if (_gpsReady && _bestPosition != null && _bestPosition!.accuracy <= CameraConstants.accuracyTarget) return;
+    if (_gpsReady && _bestPosition != null && 
+        _bestPosition!.accuracy <= CameraConstants.accuracyTarget) return;
     if (_isWaitingForGps) return;
     _isWaitingForGps = true;
     _gpsCompleter = Completer<void>();
     _startCountdown();
     final timeout = _adaptivePolishTimeout();
     try {
-      await _gpsCompleter!.future.timeout(Duration(seconds: timeout), onTimeout: () {
-        if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) _gpsCompleter!.complete();
-      });
-    } finally { _isWaitingForGps = false; }
+      await _gpsCompleter!.future.timeout(
+        Duration(seconds: timeout), 
+        onTimeout: () {
+          if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) {
+            _gpsCompleter!.complete();
+          }
+        }
+      );
+    } finally { 
+      _isWaitingForGps = false; 
+    }
   }
 
   void _startCountdown() {
     _countdownTimer?.cancel();
     _polishCountdown = _adaptivePolishTimeout();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_isDisposed || !mounted) { timer.cancel(); return; }
+      if (_isDisposed || !mounted) { 
+        timer.cancel(); 
+        return; 
+      }
       setState(() => _polishCountdown--);
       if (_polishCountdown <= 0) {
         timer.cancel();
-        if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) _gpsCompleter!.complete();
+        if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) {
+          _gpsCompleter!.complete();
+        }
       }
     });
   }
 
-  // Capture: langsung navigasi ke PreviewScreen tanpa menunggu watermark
   Future<void> _ambilFoto() async {
     if (!_acquireLock()) return;
     try {
@@ -484,22 +652,30 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       XFile? capturedFile;
       await Future.wait([
         _quickGpsRefresh(),
-        ctrl.takePicture().timeout(CameraConstants.cameraTimeout).then((f) => capturedFile = f),
+        ctrl.takePicture()
+            .timeout(CameraConstants.cameraTimeout)
+            .then((f) => capturedFile = f),
       ]);
       if (capturedFile == null) throw Exception('Gagal mengambil foto');
       final bytes = await File(capturedFile!.path).readAsBytes();
       final waktuFoto = DateTime.now();
 
-      // Tunggu GPS dengan adaptive timeout (3/7/15 detik sesuai akurasi saat ini)
-      await _waitForBestGps();
+      // Tunggu GPS sebentar agar tidak terasa lama
+      await _waitForBestGps().timeout(const Duration(seconds: 2), onTimeout: () {});
 
       if (mounted) {
-        setState(() { _isTakingPhoto = false; _isPolishing = true; });
-        await Navigator.push(context, MaterialPageRoute(builder: (_) => PreviewScreen(
-          imageBytes: bytes,
-          timestamp: waktuFoto,
-          position: _bestPosition,
-        )));
+        setState(() { 
+          _isTakingPhoto = false; 
+          _isPolishing = true; 
+        });
+        await Navigator.push(
+          context, 
+          MaterialPageRoute(builder: (_) => PreviewScreen(
+            imageBytes: bytes,
+            timestamp: waktuFoto,
+            position: _bestPosition,
+          ))
+        );
       }
       if (mounted) setState(() => _isPolishing = false);
       if (mounted && _controller == null) await _initCamera();
@@ -507,22 +683,39 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       debugPrint('Capture error: $e');
       if (mounted) {
         final msg = e.toString();
-        final short = msg.length <= CameraConstants.maxErrorMessageLength ? msg : '${msg.substring(0, CameraConstants.maxErrorMessageLength)}...';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $short')));
+        final short = msg.length <= CameraConstants.maxErrorMessageLength 
+            ? msg 
+            : '${msg.substring(0, CameraConstants.maxErrorMessageLength)}...';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal: $short'))
+        );
       }
-    } finally { _cleanupCapture(); }
+    } finally { 
+      _cleanupCapture(); 
+    }
   }
 
   void _cleanupCapture() {
     _countdownTimer?.cancel();
     _countdownTimer = null;
-    if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) _gpsCompleter!.complete();
+    if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) {
+      _gpsCompleter!.complete();
+    }
     _gpsCompleter = null;
     _isWaitingForGps = false;
-    if (mounted && !_isDisposed) setState(() { _isTakingPhoto = false; _isPolishing = false; });
+    if (mounted && !_isDisposed) {
+      setState(() { 
+        _isTakingPhoto = false; 
+        _isPolishing = false; 
+      });
+    }
     _releaseLock();
   }
 
+  // ============================================================
+  // Build
+  // ============================================================
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -530,8 +723,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       body: SafeArea(
         child: Stack(
           children: [
+            // Camera preview
             if (_isInitialized && _controller != null && !_isWarmingUp)
-              Center(child: ClipRect(child: AspectRatio(aspectRatio: _controller!.value.aspectRatio, child: CameraPreview(_controller!)))),
+              Center(
+                child: ClipRect(
+                  child: AspectRatio(
+                    aspectRatio: _controller!.value.aspectRatio,
+                    child: CameraPreview(_controller!),
+                  ),
+                ),
+              )
+            else
+              const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(strokeWidth: 2),
+                    SizedBox(height: 16),
+                    Text(
+                      'Starting camera...', 
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            
+            // Banner GPS non-aktif
             if (_isLocationServiceDisabled)
               Positioned(
                 top: 40, left: 16, right: 16,
@@ -546,7 +763,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                         children: [
                           Icon(Icons.location_off, color: Colors.white, size: 18),
                           SizedBox(width: 8),
-                          Expanded(child: Text('Lokasi tidak aktif — Ketuk untuk mengaktifkan', style: TextStyle(color: Colors.white, fontSize: 12))),
+                          Expanded(
+                            child: Text(
+                              'Lokasi tidak aktif — Ketuk untuk mengaktifkan',
+                              style: TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
                           Icon(Icons.chevron_right, color: Colors.white, size: 18),
                         ],
                       ),
@@ -554,11 +776,34 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   ),
                 ),
               ),
+            
+            // GPS Bar
             Positioned(
               top: _isLocationServiceDisabled ? 90 : 0,
               left: 0, right: 0,
-              child: GpsBar(gpsReady: _gpsReady, gpsText: _gpsText, bestPosition: _bestPosition),
+              child: GpsBar(
+                gpsReady: _gpsReady, 
+                gpsText: _gpsText, 
+                bestPosition: _bestPosition,
+              ),
             ),
+            
+            // Settings Button
+            Positioned(
+              top: _isLocationServiceDisabled ? 90 : 0,
+              right: 8,
+              child: IconButton(
+                icon: const Icon(Icons.settings, color: Colors.white70, size: 22),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
+              ),
+            ),
+            
+            // Polishing overlay
             if (_isPolishing)
               Container(
                 color: Colors.black.withOpacity(0.85),
@@ -566,15 +811,28 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const CircularProgressIndicator(color: Colors.greenAccent, strokeWidth: 2),
+                      const CircularProgressIndicator(
+                        color: Colors.greenAccent, 
+                        strokeWidth: 2,
+                      ),
                       const SizedBox(height: 16),
-                      Text(_bestPosition != null ? 'Akurasi: ±${_bestPosition!.accuracy.toStringAsFixed(0)}m' : _gpsText, style: const TextStyle(color: Colors.white)),
+                      Text(
+                        _bestPosition != null 
+                            ? 'Akurasi: ±${_bestPosition!.accuracy.toStringAsFixed(0)}m' 
+                            : _gpsText,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                       const SizedBox(height: 8),
-                      Text('$_polishCountdown s', style: const TextStyle(color: Colors.white60)),
+                      Text(
+                        '$_polishCountdown s', 
+                        style: const TextStyle(color: Colors.white60),
+                      ),
                     ],
                   ),
                 ),
               ),
+            
+            // Capture button
             if (!_isPolishing && !_isWarmingUp)
               Positioned(
                 bottom: 0, left: 0, right: 0,
@@ -584,13 +842,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white, size: 28)),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                      ),
                       GestureDetector(
                         onTap: (_isTakingPhoto || _isPolishing) ? null : _ambilFoto,
                         child: Container(
                           width: 64, height: 64,
-                          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), color: Colors.white.withOpacity(0.15)),
-                          child: _isTakingPhoto ? const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.camera_alt, color: Colors.white, size: 28),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 3),
+                            color: Colors.white.withOpacity(0.15),
+                          ),
+                          child: _isTakingPhoto
+                              ? const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white, 
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.camera_alt, 
+                                  color: Colors.white, 
+                                  size: 28,
+                                ),
                         ),
                       ),
                       const SizedBox(width: 48),

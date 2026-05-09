@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+# Memberikan izin untuk membuat release
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest

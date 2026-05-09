@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p; // Tambahkan ini
 import 'package:image/image.dart' as img;
-import 'package:share_plus/share_plus.dart'; // Tambahkan ini
+import 'package:share_plus/share_plus.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -29,7 +30,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final dir = await getTemporaryDirectory();
       final files = dir.listSync()
           .whereType<File>()
-          .where((f) => path.basename(f.path).startsWith('termullog_'))
+          .where((f) => p.basename(f.path).startsWith('termullog_'))
           .where((f) => f.path.endsWith('.jpg'))
           .toList();
       
@@ -41,7 +42,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           final bytes = await file.readAsBytes();
           final image = img.decodeImage(bytes);
           if (image != null) {
-            final fileName = path.basenameWithoutExtension(file.path);
+            final fileName = p.basenameWithoutExtension(file.path);
             final parts = fileName.split('_');
             DateTime timestamp = DateTime.now();
             if (parts.length > 1) {
@@ -132,7 +133,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => _PhotoDetailScreen(imagePath: photo['path']),
+                              builder: (_) => _HistoryPhotoDetailScreen(imagePath: photo['path']),
                             ),
                           );
                         },
@@ -144,11 +145,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
-// Pindahkan _PhotoDetailScreen ke luar class HistoryScreen
-class _PhotoDetailScreen extends StatelessWidget {
+class _HistoryPhotoDetailScreen extends StatelessWidget {
   final String imagePath;
   
-  const _PhotoDetailScreen({required this.imagePath});
+  const _HistoryPhotoDetailScreen({required this.imagePath});
 
   @override
   Widget build(BuildContext context) {

@@ -34,3 +34,41 @@ final img.Color kColorShadow    = img.ColorRgb8(0, 0, 0);
 const kColorNavy     = 0xFF1B4F72;
 const kColorNavyDark = 0xFF0D2137;
 const kColorBlue     = 0xFF2980B9;
+// ============================================================
+// WATERMARK LAYOUT STYLE
+// ============================================================
+
+enum WatermarkLayout {
+  minimal,    // Minimalis (hanya teks putih di background hitam)
+  modern,     // Modern (dengan aksen garis dan warna)
+  elegant,    // Elegan (dengan icon dan gradasi)
+  professional, // Profesional (lengkap dengan border)
+}
+
+extension WatermarkLayoutExtension on WatermarkLayout {
+  String get displayName {
+    switch (this) {
+      case WatermarkLayout.minimal:
+        return 'Minimalis';
+      case WatermarkLayout.modern:
+        return 'Modern';
+      case WatermarkLayout.elegant:
+        return 'Elegan';
+      case WatermarkLayout.professional:
+        return 'Profesional';
+    }
+  }
+  
+  String get description {
+    switch (this) {
+      case WatermarkLayout.minimal:
+        return 'Tampilan sederhana dengan teks putih';
+      case WatermarkLayout.modern:
+        return 'Garis aksen dan warna modern';
+      case WatermarkLayout.elegant:
+        return 'Desain elegan dengan icon';
+      case WatermarkLayout.professional:
+        return 'Lengkap dengan border dan detail';
+    }
+  }
+}

@@ -43,7 +43,7 @@ dependencies:
   # GPS & ADDRESS
   geolocator: ^11.0.0
   geocoding: ^2.1.1
-
+  location: ^7.0.0   # package 'location', BUKAN 'geolocator' saja
   # MAP
   flutter_map: ^7.0.2
   latlong2: ^0.9.1

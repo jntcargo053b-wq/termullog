@@ -70,7 +70,7 @@ class CameraConstants {
   static const int watermarkMaxLineHeight = 28;
   static const int watermarkStartOffset = 10;
   static const int watermarkSpacing = 6;
-  static const int watermarkMaxAddressLength = 55; // diperpanjang untuk alamat lengkap
+  static const int watermarkMaxAddressLength = 55;
   
   // Performance
   static const Duration uiDebounceDelay = Duration(milliseconds: 100);
@@ -980,7 +980,7 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
-  // ======================= PERBAIKAN UTAMA: ALAMAT LENGKAP =======================
+  // ======================= PERBAIKAN UTAMA: ALAMAT LENGKAP (NULL SAFE) =======================
   Future<String> _getAddressCached(Position? pos) async {
     if (pos == null) return 'Lokasi tidak tersedia';
     final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
@@ -993,25 +993,21 @@ class _CameraScreenState extends State<CameraScreen>
       } else {
         final p = placemarks.first;
         
-        // Ambil nomor rumah (subThoroughfare) dan nama jalan (thoroughfare)
-        final houseNumber = p.subThoroughfare?.isNotEmpty == true ? p.subThoroughfare : '';
-        final streetName = p.thoroughfare?.isNotEmpty == true ? p.thoroughfare : p.street;
-        final streetAddress = [houseNumber, streetName].where((e) => e != null && e.trim().isNotEmpty).join(' ');
-        
-        // Kelurahan/desa (subLocality) dan kecamatan (subAdministrativeArea)
-        final village = p.subLocality?.isNotEmpty == true ? p.subLocality : '';
-        final district = p.subAdministrativeArea?.isNotEmpty == true ? p.subAdministrativeArea : '';
-        final city = p.locality?.isNotEmpty == true ? p.locality : '';
-        final province = p.administrativeArea?.isNotEmpty == true ? p.administrativeArea : '';
-        final postalCode = p.postalCode?.isNotEmpty == true ? p.postalCode : '';
+        // Nomor rumah + jalan
+        final houseNumber = p.subThoroughfare;
+        final streetName = p.thoroughfare ?? p.street;
+        final streetAddress = [
+          if (houseNumber != null && houseNumber.isNotEmpty) houseNumber,
+          if (streetName != null && streetName.isNotEmpty) streetName,
+        ].join(' ');
         
         final parts = <String>[];
         if (streetAddress.isNotEmpty) parts.add(streetAddress);
-        if (village.isNotEmpty) parts.add(village);
-        if (district.isNotEmpty) parts.add(district);
-        if (city.isNotEmpty) parts.add(city);
-        if (province.isNotEmpty) parts.add(province);
-        if (postalCode.isNotEmpty) parts.add(postalCode);
+        if (p.subLocality != null && p.subLocality!.isNotEmpty) parts.add(p.subLocality!);
+        if (p.subAdministrativeArea != null && p.subAdministrativeArea!.isNotEmpty) parts.add(p.subAdministrativeArea!);
+        if (p.locality != null && p.locality!.isNotEmpty) parts.add(p.locality!);
+        if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) parts.add(p.administrativeArea!);
+        if (p.postalCode != null && p.postalCode!.isNotEmpty) parts.add(p.postalCode!);
         
         address = parts.join(', ');
         if (address.isEmpty) address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';

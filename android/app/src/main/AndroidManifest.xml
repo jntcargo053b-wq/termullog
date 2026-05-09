@@ -1,5 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">   <!-- ← tambahkan tools namespace -->
+
     <!-- ==================== PERMISSIONS YANG DIPERLUKAN ==================== -->
     
     <!-- Internet & Network -->
@@ -16,8 +17,11 @@
     <!-- Storage (Android 13+ & below) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    
+    <!-- FIX: tambahkan tools:replace untuk mengatasi konflik dengan plugin camera -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
-                     android:maxSdkVersion="32" />
+                     android:maxSdkVersion="32"
+                     tools:replace="android:maxSdkVersion" />
     
     <!-- Audio Recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

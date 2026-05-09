@@ -28,7 +28,7 @@ class CameraConstants {
   static const int gpsWatchdogIntervalSeconds = 15;
   static const int gpsStaleAfterSeconds = 25;
   
-  // Accuracy thresholds (realistis seperti TimeMark)
+  // Accuracy thresholds
   static const double accuracyExcellent = 5.0;
   static const double accuracyTarget = 10.0;
   static const double accuracyGood = 15.0;
@@ -36,10 +36,7 @@ class CameraConstants {
   static const double accuracyPoor = 40.0;
   static const double accuracyMax = 80.0;
   
-  // Minimum accuracy yang diterima (data >25m ditolak)
   static const double minAcceptableAccuracy = 25.0;
-  
-  // Jitter filter
   static const double minDistanceChange = 2.0;
   
   // Sampling
@@ -73,7 +70,7 @@ class CameraConstants {
   static const int watermarkMaxLineHeight = 28;
   static const int watermarkStartOffset = 10;
   static const int watermarkSpacing = 6;
-  static const int watermarkMaxAddressLength = 42;
+  static const int watermarkMaxAddressLength = 55; // diperpanjang untuk alamat lengkap
   
   // Performance
   static const Duration uiDebounceDelay = Duration(milliseconds: 100);
@@ -107,7 +104,7 @@ class SimpleKalmanFilter {
         _errorCovariance = 1.0;
   
   double filter(double measurement, double measurementAccuracy) {
-    return measurement; // Kalman dinonaktifkan
+    return measurement;
   }
   
   void reset() {
@@ -179,7 +176,7 @@ img.Image _addWatermarkFast(img.Image src, ImageProcessParams params) {
   final gpsAvailable = pos != null;
   final lat = gpsAvailable ? pos.latitude.toStringAsFixed(6) : 'N/A';
   final lon = gpsAvailable ? pos.longitude.toStringAsFixed(6) : 'N/A';
-  final acc = gpsAvailable ? '${pos.accuracy.toStringAsFixed(0)}m' : 'No GPS';
+  final acc = gpsAvailable ? '±${pos.accuracy.toStringAsFixed(0)}m' : 'No GPS';
   
   final int stripHeight = (src.height * CameraConstants.watermarkHeightRatio)
       .toInt()
@@ -323,7 +320,7 @@ class GpsAccuracyDialog extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Setting ini memungkinkan GPS bekerja optimal seperti Google Maps & TimeMark.',
+                      'Setting ini memungkinkan GPS bekerja optimal seperti aplikasi TimeMark.',
                       style: TextStyle(fontSize: 12),
                     ),
                   ),
@@ -658,7 +655,6 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  // SETTING GPS MIRIP TIMEMARK (tanpa waitForAccurateLocation, tanpa heading/hdop filter)
   Future<void> _startGpsTracking() async {
     if (_isDisposed) return;
     try {
@@ -689,7 +685,6 @@ class _CameraScreenState extends State<CameraScreen>
         distanceFilter: 0,
         intervalDuration: const Duration(milliseconds: 700),
         forceLocationManager: false,
-        // waitForAccurateLocation tidak didukung, dihapus
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: 'GPS aktif',
           notificationText: 'Mengoptimalkan akurasi lokasi',
@@ -728,7 +723,6 @@ class _CameraScreenState extends State<CameraScreen>
     if (mounted) setState(() => _gpsText = text);
   }
 
-  // PENTING: filter headingAccuracy dan hdop sudah dihapus
   void _onGpsData(Position pos) {
     if (_isDisposed) return;
     _lastGpsUpdate = DateTime.now();
@@ -736,12 +730,9 @@ class _CameraScreenState extends State<CameraScreen>
     final now = DateTime.now();
     if (now.difference(timestamp).inSeconds > 5) return;
     if (pos.isMocked) return;
-    // Filter akurasi >25m
     if (pos.accuracy > CameraConstants.minAcceptableAccuracy) return;
-    // Filter kecepatan tidak masuk akal
     if (pos.speed > CameraConstants.maxHorizontalSpeedMs) return;
     
-    // Jitter filter
     if (_bestPosition != null) {
       final dist = _calculateDistance(
         _bestPosition!.latitude, _bestPosition!.longitude,
@@ -856,7 +847,6 @@ class _CameraScreenState extends State<CameraScreen>
     finalLat = (finalLat + medianPos.latitude) / 2;
     finalLon = (finalLon + medianPos.longitude) / 2;
     
-    // Kalman tidak dipakai
     final accuracies = topN.map((e) => e.accuracy).toList()..sort();
     final medianAccuracy = accuracies[accuracies.length ~/ 2];
     
@@ -990,6 +980,7 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
+  // ======================= PERBAIKAN UTAMA: ALAMAT LENGKAP =======================
   Future<String> _getAddressCached(Position? pos) async {
     if (pos == null) return 'Lokasi tidak tersedia';
     final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
@@ -1001,7 +992,27 @@ class _CameraScreenState extends State<CameraScreen>
         address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
       } else {
         final p = placemarks.first;
-        final parts = [p.street, p.locality].where((e) => e != null && e.trim().isNotEmpty).toList();
+        
+        // Ambil nomor rumah (subThoroughfare) dan nama jalan (thoroughfare)
+        final houseNumber = p.subThoroughfare?.isNotEmpty == true ? p.subThoroughfare : '';
+        final streetName = p.thoroughfare?.isNotEmpty == true ? p.thoroughfare : p.street;
+        final streetAddress = [houseNumber, streetName].where((e) => e != null && e.trim().isNotEmpty).join(' ');
+        
+        // Kelurahan/desa (subLocality) dan kecamatan (subAdministrativeArea)
+        final village = p.subLocality?.isNotEmpty == true ? p.subLocality : '';
+        final district = p.subAdministrativeArea?.isNotEmpty == true ? p.subAdministrativeArea : '';
+        final city = p.locality?.isNotEmpty == true ? p.locality : '';
+        final province = p.administrativeArea?.isNotEmpty == true ? p.administrativeArea : '';
+        final postalCode = p.postalCode?.isNotEmpty == true ? p.postalCode : '';
+        
+        final parts = <String>[];
+        if (streetAddress.isNotEmpty) parts.add(streetAddress);
+        if (village.isNotEmpty) parts.add(village);
+        if (district.isNotEmpty) parts.add(district);
+        if (city.isNotEmpty) parts.add(city);
+        if (province.isNotEmpty) parts.add(province);
+        if (postalCode.isNotEmpty) parts.add(postalCode);
+        
         address = parts.join(', ');
         if (address.isEmpty) address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
       }

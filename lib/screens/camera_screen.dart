@@ -113,7 +113,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _captureLocked = false;
   bool _acquireLock() { if (_captureLocked) return false; _captureLocked = true; return true; }
   void _releaseLock() => _captureLocked = false;
-
+  static const double accuracyMax = 80.0;
   // GPS
   StreamSubscription<Position>? _gpsStream;
   Position? _bestPosition;

@@ -50,6 +50,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   
   @override
   Widget build(BuildContext context) {
+    final dividerColor = Colors.grey.shade800;
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pengaturan Watermark'),
@@ -107,12 +109,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           
           // Layout Style
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               'Gaya Tampilan',
               style: TextStyle(
-                color: Colors.grey.shade400,
+                color: Colors.grey,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -130,15 +132,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             activeColor: const Color(0xFF00B8D4),
           )),
           
-          const Divider(color: Colors.grey.shade800),
+          Divider(color: dividerColor),
           
           // Opsi Tambahan
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               'Informasi yang Ditampilkan',
               style: TextStyle(
-                color: Colors.grey.shade400,
+                color: Colors.grey,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -162,15 +164,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             activeColor: const Color(0xFF00B8D4),
           ),
           
-          const Divider(color: Colors.grey.shade800),
+          Divider(color: dividerColor),
           
           // Posisi Watermark
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               'Posisi Watermark',
               style: TextStyle(
-                color: Colors.grey.shade400,
+                color: Colors.grey,
                 fontWeight: FontWeight.bold,
               ),
             ),

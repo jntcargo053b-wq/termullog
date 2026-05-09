@@ -19,6 +19,10 @@ import '../core/constants.dart';
 
 enum SaveStatus { idle, saving, saved, error }
 
+// Konstanta lokal untuk memastikan tidak error
+const int _kMaxAddressLen = 44;
+const int _kMaxErrorLen = 50;
+
 // ─────────────────────────────────────────────────────────────
 // PREVIEW SCREEN (dengan proses watermark & geocoding async)
 // ─────────────────────────────────────────────────────────────
@@ -212,8 +216,9 @@ class _PreviewScreenState extends State<PreviewScreen>
       img.drawString(src, 'Akurasi: $accStr', font: font, x: xPad, y: y + lineH * 3,
           color: position != null ? green : white);
       String shortAddr = address;
-      if (shortAddr.length > kMaxAddressLen) {
-        shortAddr = '${shortAddr.substring(0, kMaxAddressLen - 3)}...';
+      // FIX: Gunakan konstanta lokal _kMaxAddressLen
+      if (shortAddr.length > _kMaxAddressLen) {
+        shortAddr = '${shortAddr.substring(0, _kMaxAddressLen - 3)}...';
       }
       if (shortAddr.isNotEmpty) {
         img.drawString(src, shortAddr, font: font, x: xPad, y: y + lineH * 4, color: white);
@@ -240,7 +245,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (!mounted) return;
 
       if (result == true) {
-        // Fix: hapus temp file setelah tersimpan ke galeri
+        // Hapus temp file setelah tersimpan ke galeri
         try { await File(_displayImagePath!).delete(); } catch (_) {}
         setState(() => _saveStatus = SaveStatus.saved);
         _checkAnimController.forward(from: 0);
@@ -257,7 +262,12 @@ class _PreviewScreenState extends State<PreviewScreen>
       }
     } catch (e) {
       setState(() => _saveStatus = SaveStatus.error);
-      _showErrorSnackbar('Gagal menyimpan: ${e.toString().substring(0, kMaxErrorLen)}');
+      // FIX: Gunakan konstanta lokal _kMaxErrorLen
+      String errorMsg = e.toString();
+      if (errorMsg.length > _kMaxErrorLen) {
+        errorMsg = errorMsg.substring(0, _kMaxErrorLen);
+      }
+      _showErrorSnackbar('Gagal menyimpan: $errorMsg');
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => _saveStatus = SaveStatus.idle);
       });

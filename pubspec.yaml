@@ -1,9 +1,6 @@
 name: termullog
-
 description: TermulLog Premium Delivery App
-
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
@@ -12,51 +9,49 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
   cupertino_icons: ^1.0.8
 
-  # CAMERA
+  # Camera
   camera: ^0.10.5+9
   camera_android_camerax: ^0.6.5+1
-  image_picker: ^1.1.2
 
-  # STORAGE
+  # Storage
   path_provider: ^2.1.3
   shared_preferences: ^2.2.3
 
-  # IMAGE
+  # Image processing
   image: ^4.2.0
 
-  # NETWORK
-  http: ^1.2.1
-
-  # DATE TIME
+  # Date time
   intl: ^0.19.0
 
-  # SAVE & SHARE
+  # GPS & Address (cukup geolocator, hapus location)
+  geolocator: ^11.0.0
+  geocoding: ^2.1.1
+
+  # (Opsional) jika ingin gunakan foreground service GPS lebih stabil
+  geolocator_android: ^4.6.1  # tambahkan untuk kontrol penuh
+
+  # Save & share (jika diperlukan di screen lain)
   gallery_saver_plus: ^3.2.1
   share_plus: ^9.0.0
 
-  # SIGNATURE
+  # Signature (untuk screen lain)
   signature: ^5.5.0
 
-  # GPS & ADDRESS
-  geolocator: ^11.0.0
-  geocoding: ^2.1.1
-  location: ^7.0.0   # package 'location', BUKAN 'geolocator' saja
-  # MAP
+  # Map (untuk screen lain)
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^4.0.0
+
 dependency_overrides:
   camera_android_camerax: 0.6.5+1
-  flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
-
   assets:
     - assets/logo.png

@@ -19,12 +19,8 @@ import '../core/constants.dart';
 
 enum SaveStatus { idle, saving, saved, error }
 
-// Konstanta lokal untuk memastikan tidak error
-const int _kMaxAddressLen = 44;
-const int _kMaxErrorLen = 50;
-
 // ─────────────────────────────────────────────────────────────
-// PREVIEW SCREEN (dengan proses watermark & geocoding async)
+// PREVIEW SCREEN
 // ─────────────────────────────────────────────────────────────
 
 class PreviewScreen extends StatefulWidget {
@@ -161,74 +157,136 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.Image? src = img.decodeImage(bytes);
     if (src == null) throw Exception('Gagal decode gambar');
 
-    const maxDim = 1600;
-    if (src.width > maxDim || src.height > maxDim) {
+    // Resize jika terlalu besar
+    if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
       src = img.copyResize(
         src,
-        width: src.width > src.height ? maxDim : null,
-        height: src.height > src.width ? maxDim : null,
+        width: src.width > src.height ? kMaxOutputWidth : null,
+        height: src.height > src.width ? kMaxOutputWidth : null,
         interpolation: img.Interpolation.average,
       );
     }
 
-    const stripHeightRatio = 0.20;
-    const minStripHeight = 120;
-    const maxStripHeight = 220;
-    const lineDivider = 6.5;
-    const minLineHeight = 14;
-    const maxLineHeight = 26;
-    const startOffset = 8;
-    const xPad = 10;
-
-    final int stripHeight = (src.height * stripHeightRatio)
-        .toInt()
-        .clamp(minStripHeight, maxStripHeight);
-
-    final y0 = src.height - stripHeight;
+    // ============================================================
+    // WATERMARK DENGAN DESAIN PROFESIONAL
+    // ============================================================
+    
+    // Layout constants dari constants.dart
+    const double leftMargin = kPanelPaddingX;
+    const int topPadding = kCornerMargin;
+    const int lineHeightLarge = kTextLineLarge;
+    const int lineHeightSmall = kTextLineSmall;
+    const int accentWidth = kAccentBarWidth;
+    
+    // Hitung tinggi watermark (perkiraan 6-7 baris)
+    final totalHeight = (topPadding * 2 + lineHeightLarge * 3 + lineHeightSmall * 4).toInt();
+    final y0 = src.height - totalHeight;
     if (y0 < 0) return Uint8List(0);
-
+    
+    // 1. Background utama (gelap transparan)
     img.fillRect(
       src,
-      x1: 0, y1: y0, x2: src.width - 1, y2: y0 + stripHeight - 1,
-      color: img.ColorRgba8(0, 0, 0, 190),
+      x1: 0, y1: y0, x2: src.width - 1, y2: src.height - 1,
+      color: kColorDarkBg,
     );
-
-    final font = src.width > 1500 ? img.arial24 : img.arial14;
-    final white = img.ColorRgba8(255, 255, 255, 255);
-    final yellow = img.ColorRgba8(255, 200, 0, 255);
-    final green = img.ColorRgba8(100, 220, 100, 255);
-    final grey = img.ColorRgba8(180, 180, 180, 255);
-
-    final lineH = (stripHeight / lineDivider)
-        .floor()
-        .clamp(minLineHeight, maxLineHeight);
-    final y = y0 + startOffset;
-
-    if (y + lineH * 5 <= src.height) {
-      img.drawString(src, 'TermulLog', font: font, x: xPad, y: y, color: yellow);
-      final dateStr = DateFormat('dd/MM/yy').format(timestamp);
-      final timeStr = DateFormat('HH:mm:ss').format(timestamp);
-      img.drawString(src, '$dateStr  $timeStr', font: font, x: xPad, y: y + lineH, color: white);
-      final latStr = position != null ? position.latitude.toStringAsFixed(6) : 'N/A';
-      final lonStr = position != null ? position.longitude.toStringAsFixed(6) : 'N/A';
-      img.drawString(src, '$latStr, $lonStr', font: font, x: xPad, y: y + lineH * 2, color: white);
-      final accStr = position != null ? '±${position.accuracy.toStringAsFixed(0)}m' : 'No GPS';
-      img.drawString(src, 'Akurasi: $accStr', font: font, x: xPad, y: y + lineH * 3,
-          color: position != null ? green : white);
-      String shortAddr = address;
-      // FIX: Gunakan konstanta lokal _kMaxAddressLen
-      if (shortAddr.length > _kMaxAddressLen) {
-        shortAddr = '${shortAddr.substring(0, _kMaxAddressLen - 3)}...';
-      }
-      if (shortAddr.isNotEmpty) {
-        img.drawString(src, shortAddr, font: font, x: xPad, y: y + lineH * 4, color: white);
-      }
-      if (weather.isNotEmpty && y + lineH * 5 < src.height) {
-        img.drawString(src, 'Cuaca: $weather', font: font, x: xPad, y: y + lineH * 5, color: grey);
-      }
+    
+    // 2. Accent bar di sisi kiri (warna cyan)
+    img.fillRect(
+      src,
+      x1: 0, y1: y0, x2: accentWidth, y2: src.height - 1,
+      color: kColorCyan,
+    );
+    
+    int currentY = y0 + topPadding;
+    final int xText = leftMargin.toInt();
+    
+    // ─── HEADER: Nama Aplikasi ─────────────────────────────────
+    img.drawString(
+      src, 'TERMULOG',
+      font: img.arial24, x: xText, y: currentY,
+      color: kColorCyan,
+    );
+    currentY += lineHeightLarge;
+    
+    // Garis separator tipis
+    currentY += 4;
+    
+    // ─── WAKTU & TANGGAL ───────────────────────────────────────
+    final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
+    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    img.drawString(
+      src, '$dateStr  •  $timeStr',
+      font: img.arial14, x: xText, y: currentY,
+      color: kColorWhite,
+    );
+    currentY += lineHeightSmall;
+    
+    // ─── KOORDINAT GPS ─────────────────────────────────────────
+    if (position != null) {
+      final latStr = position.latitude.toStringAsFixed(6);
+      final lonStr = position.longitude.toStringAsFixed(6);
+      img.drawString(
+        src, '$latStr, $lonStr',
+        font: img.arial14, x: xText, y: currentY,
+        color: kColorWhite,
+      );
+      currentY += lineHeightSmall;
+      
+      // Akurasi dengan indikator warna
+      final accStr = '±${position.accuracy.toStringAsFixed(0)} meter';
+      final accColor = position.accuracy <= 10 ? kColorCyan : kColorGrey;
+      img.drawString(
+        src, 'Akurasi: $accStr',
+        font: img.arial12 ?? img.arial14, x: xText, y: currentY,
+        color: accColor,
+      );
+      currentY += lineHeightSmall;
     }
-
-    final jpegData = img.encodeJpg(src, quality: 85);
+    
+    currentY += 4; // spacer
+    
+    // ─── ALAMAT (jika tersedia) ────────────────────────────────
+    if (address.isNotEmpty && !address.startsWith('GPS:') && address != 'Tidak ada lokasi') {
+      String shortAddr = address;
+      // Potong jika terlalu panjang (perkiraan 45-50 karakter per baris)
+      if (shortAddr.length > 50) {
+        // Cari koma terakhir untuk potong rapi
+        int lastComma = shortAddr.lastIndexOf(',', 48);
+        if (lastComma > 0) {
+          shortAddr = '${shortAddr.substring(0, lastComma)}...';
+        } else {
+          shortAddr = '${shortAddr.substring(0, 47)}...';
+        }
+      }
+      img.drawString(
+        src, shortAddr,
+        font: img.arial12 ?? img.arial14, x: xText, y: currentY,
+        color: kColorGrey,
+      );
+      currentY += lineHeightSmall + 4;
+    }
+    
+    // ─── CUACA & VERIFIKASI ────────────────────────────────────
+    // Baris cuaca (jika ada)
+    if (weather.isNotEmpty) {
+      img.drawString(
+        src, weather,
+        font: img.arial12 ?? img.arial14, x: xText, y: currentY,
+        color: kColorCyan,
+      );
+      currentY += lineHeightSmall;
+    }
+    
+    // Timestamp verifikasi
+    final verifiedTime = DateFormat('dd/MM/yy HH:mm').format(DateTime.now());
+    img.drawString(
+      src, 'TERMULOG • $verifiedTime',
+      font: img.arial12 ?? img.arial14, x: xText, y: currentY,
+      color: kColorGrey,
+    );
+    
+    // Encode ke JPEG
+    final jpegData = img.encodeJpg(src, quality: kJpegQuality);
     return Uint8List.fromList(jpegData);
   }
 
@@ -245,7 +303,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (!mounted) return;
 
       if (result == true) {
-        // Hapus temp file setelah tersimpan ke galeri
+        // Hapus temp file setelah tersimpan
         try { await File(_displayImagePath!).delete(); } catch (_) {}
         setState(() => _saveStatus = SaveStatus.saved);
         _checkAnimController.forward(from: 0);
@@ -262,11 +320,8 @@ class _PreviewScreenState extends State<PreviewScreen>
       }
     } catch (e) {
       setState(() => _saveStatus = SaveStatus.error);
-      // FIX: Gunakan konstanta lokal _kMaxErrorLen
       String errorMsg = e.toString();
-      if (errorMsg.length > _kMaxErrorLen) {
-        errorMsg = errorMsg.substring(0, _kMaxErrorLen);
-      }
+      if (errorMsg.length > 50) errorMsg = errorMsg.substring(0, 50);
       _showErrorSnackbar('Gagal menyimpan: $errorMsg');
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => _saveStatus = SaveStatus.idle);

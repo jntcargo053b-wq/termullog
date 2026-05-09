@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p; // Tambahkan ini
+import 'package:path/path.dart' as p;
 import 'package:image/image.dart' as img;
 import 'package:share_plus/share_plus.dart';
 
@@ -53,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final dir = await getTemporaryDirectory();
       final files = dir.listSync()
           .whereType<File>()
-          .where((f) => p.basename(f.path).startsWith('termullog_')) // Gunakan p.
+          .where((f) => p.basename(f.path).startsWith('termullog_'))
           .where((f) => f.path.endsWith('.jpg'))
           .toList();
       
@@ -70,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final image = img.decodeImage(bytes);
           if (image != null) {
             // Extract metadata from filename
-            final fileName = p.basenameWithoutExtension(file.path); // Gunakan p.
+            final fileName = p.basenameWithoutExtension(file.path);
             final parts = fileName.split('_');
             DateTime timestamp = DateTime.now();
             if (parts.length > 1) {
@@ -78,8 +78,8 @@ class _HomeScreenState extends State<HomeScreen> {
               if (ms != null) timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
             }
             
-            // Calculate average color for gradient
-            final avgColor = _getAverageColor(image);
+            // Gunakan warna default (biru)
+            final avgColor = 0xFF1B4F72;
             
             photos.add({
               'path': file.path,
@@ -107,23 +107,6 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('Load photos error: $e');
       setState(() => _isLoading = false);
     }
-  }
-  
-  int _getAverageColor(img.Image image) {
-    int r = 0, g = 0, b = 0;
-    final step = image.width ~/ 20;
-    int count = 0;
-    for (int x = 0; x < image.width; x += step) {
-      for (int y = 0; y < image.height; y += step) {
-        final pixel = image.getPixel(x, y);
-        r += img.getRed(pixel); // Kembali ke int
-        g += img.getGreen(pixel);
-        b += img.getBlue(pixel);
-        count++;
-      }
-    }
-    if (count == 0) return 0xFF1B4F72;
-    return (r ~/ count) << 16 | (g ~/ count) << 8 | (b ~/ count);
   }
   
   Future<void> _refreshPhotos() async {

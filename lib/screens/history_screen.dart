@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
+import 'package:share_plus/share_plus.dart'; // Tambahkan ini
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -142,8 +144,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
+// Pindahkan _PhotoDetailScreen ke luar class HistoryScreen
 class _PhotoDetailScreen extends StatelessWidget {
   final String imagePath;
+  
   const _PhotoDetailScreen({required this.imagePath});
 
   @override

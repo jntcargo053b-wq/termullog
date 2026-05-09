@@ -14,7 +14,7 @@ import '../core/camera_registry.dart';
 import 'preview_screen_enhanced.dart';
 
 // ============================================================
-// Constants (hanya untuk GPS dan kamera)
+// Constants
 // ============================================================
 class CameraConstants {
   static const int gpsWatchdogIntervalSeconds = 15;
@@ -44,6 +44,9 @@ class CameraConstants {
   static const int lowAccuracyCheckDelaySeconds = 5;
   static const double lowAccuracyThreshold = 30.0;
   static const int preWarmDelayMs = 800;
+  
+  // Tambahan yang hilang
+  static const double accuracyMax = 80.0;
 }
 
 // ============================================================
@@ -113,7 +116,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _captureLocked = false;
   bool _acquireLock() { if (_captureLocked) return false; _captureLocked = true; return true; }
   void _releaseLock() => _captureLocked = false;
-  static const double accuracyMax = 80.0;
+
   // GPS
   StreamSubscription<Position>? _gpsStream;
   Position? _bestPosition;
@@ -167,9 +170,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     super.dispose();
   }
 
-  // ------------------------------------------------------------------
-  // Helper kecil
-  // ------------------------------------------------------------------
   Future<void> _preWarmGps() async {
     try {
       await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best).timeout(const Duration(seconds: 3));
@@ -213,9 +213,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   void _updateGpsText(String text) { if (mounted) setState(() => _gpsText = text); }
 
-  // ------------------------------------------------------------------
-  // GPS Stream & Data Processing (sama seperti sebelumnya, tapi tanpa watermark)
-  // ------------------------------------------------------------------
   Future<void> _startGpsTracking() async {
     if (_isDisposed) return;
     try {
@@ -403,9 +400,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
-  // ------------------------------------------------------------------
-  // Camera & Capture (Langsung ke PreviewScreen, tanpa menunggu GPS lama)
-  // ------------------------------------------------------------------
   Future<void> _initCamera() async {
     if (_isReinitializingCamera || _isDisposed) return;
     if (CameraRegistry.cameras.isEmpty) return;
@@ -501,7 +495,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final bytes = await File(capturedFile!.path).readAsBytes();
       final waktuFoto = DateTime.now();
 
-      // Tunggu GPS sebentar agar tidak terasa lama (opsional, bisa juga langsung)
+      // Tunggu GPS sebentar agar tidak terasa lama (opsional)
       await _waitForBestGps().timeout(const Duration(seconds: 2), onTimeout: () {});
 
       if (mounted) {
@@ -534,9 +528,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _releaseLock();
   }
 
-  // --------------------------------------------------------------
-  // Build
-  // --------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(

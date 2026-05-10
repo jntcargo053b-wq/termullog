@@ -19,14 +19,6 @@ enum SaveStatus { idle, saving, saved, error }
 
 const int _kMaxAddressLen = 50;
 
-const _blue     = img.ColorRgb8(30,  144, 255);
-const _blueDim  = img.ColorRgb8(20,   80, 160);
-const _white    = img.ColorRgb8(255, 255, 255);
-const _offWhite = img.ColorRgb8(220, 225, 235);
-const _grey     = img.ColorRgb8(140, 150, 165);
-const _dark     = img.ColorRgba8(0,    0,  10, 210);
-const _darker   = img.ColorRgba8(0,    0,   8, 235);
-
 class PreviewScreen extends StatefulWidget {
   final String? imagePath;
   final Uint8List? imageBytes;

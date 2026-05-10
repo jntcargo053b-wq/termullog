@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:geocoding/geocoding.dart';
+import 'package:image/image.dart' as img;
 
 // ============================================================
 // LocationWeatherResult
@@ -409,16 +410,6 @@ class LocationWeatherService {
   // OPENSTREETMAP STATIC MAP (GRATIS, TANPA API KEY)
   // ============================================================
 
-  /// Format number dengan leading zeros
-  static String _padNum(int n) => n.toString().padLeft(2, '0');
-
-  /// Konversi koordinat ke tile coordinates
-  static (int x, int y) _getTileCoordinates(double lat, double lon, int zoom) {
-    final x = ((lon + 180) / 360 * pow(2, zoom)).floor();
-    final y = ((1 - log(tan(lat * pi / 180) + 1 / cos(lat * pi / 180)) / pi) / 2 * pow(2, zoom)).floor();
-    return (x, y);
-  }
-
   /// Fetch static map dari OpenStreetMap (GRATIS, TANPA API KEY)
   static Future<Uint8List?> fetchOSMStaticMap(double lat, double lon) async {
     final cacheKey = '${lat.toStringAsFixed(3)},${lon.toStringAsFixed(3)}';
@@ -461,73 +452,38 @@ class LocationWeatherService {
     return null;
   }
 
-  /// Fetch tile berdasarkan koordinat (fallback)
-  static Future<Uint8List?> fetchOSMTile(double lat, double lon, int zoom) async {
+  /// Fetch static map dengan ukuran kustom
+  static Future<Uint8List?> fetchOSMStaticMapCustom(
+    double lat, double lon, int width, int height, int zoom
+  ) async {
+    final cacheKey = '${lat.toStringAsFixed(3)},${lon.toStringAsFixed(3)}_${width}x${height}_z$zoom';
+    
+    // Cek cache
+    if (_mapCache.containsKey(cacheKey)) {
+      return _mapCache[cacheKey];
+    }
+    
     try {
-      final (x, y) = _getTileCoordinates(lat, lon, zoom);
-      final url = Uri.parse('https://tile.openstreetmap.org/$zoom/$x/$y.png');
+      final url = Uri.parse(
+        'https://staticmap.openstreetmap.de/staticmap.php'
+        '?center=$lat,$lon'
+        '&zoom=$zoom'
+        '&size=${width}x$height'
+        '&maptype=mapnik'
+        '&markers=$lat,$lon,lightblue1'
+      );
       
-      final response = await _client.get(url).timeout(const Duration(seconds: 5));
+      final response = await _client.get(url).timeout(const Duration(seconds: 8));
       
       if (response.statusCode == 200) {
+        if (_mapCache.length >= _mapCacheMaxSize) {
+          _mapCache.remove(_mapCache.keys.first);
+        }
+        _mapCache[cacheKey] = response.bodyBytes;
         return response.bodyBytes;
       }
     } catch (e) {
-      debugPrint('OSM Tile error: $e');
-    }
-    return null;
-  }
-
-  /// Fetch mini map dengan multiple tiles (untuk area lebih luas)
-  static Future<Uint8List?> fetchOSMMapComposite(double lat, double lon) async {
-    try {
-      const zoom = 16;
-      const size = 400;
-      const tileSize = 256;
-      final tilesWide = (size / tileSize).ceil();
-      final tilesHigh = (size / tileSize).ceil();
-      
-      final (centerX, centerY) = _getTileCoordinates(lat, lon, zoom);
-      final startX = centerX - (tilesWide ~/ 2);
-      final startY = centerY - (tilesHigh ~/ 2);
-      
-      // Buat canvas untuk composite
-      img.Image? composite;
-      
-      for (int i = 0; i < tilesWide; i++) {
-        for (int j = 0; j < tilesHigh; j++) {
-          final tileX = startX + i;
-          final tileY = startY + j;
-          final tileUrl = Uri.parse('https://tile.openstreetmap.org/$zoom/$tileX/$tileY.png');
-          
-          final response = await _client.get(tileUrl).timeout(const Duration(seconds: 5));
-          
-          if (response.statusCode == 200) {
-            final tileImg = img.decodeImage(response.bodyBytes);
-            if (tileImg != null) {
-              if (composite == null) {
-                composite = img.Image(width: size, height: size);
-              }
-              final xOffset = i * tileSize;
-              final yOffset = j * tileSize;
-              img.drawImage(composite!, tileImg, dstX: xOffset, dstY: yOffset);
-            }
-          }
-        }
-      }
-      
-      if (composite != null) {
-        // Gambar marker di tengah
-        final markerColor = img.ColorRgba8(255, 50, 50, 255);
-        final centerXpos = composite!.width ~/ 2;
-        final centerYpos = composite!.height ~/ 2;
-        img.drawCircle(composite!, x: centerXpos, y: centerYpos, radius: 8, color: markerColor);
-        img.drawCircle(composite!, x: centerXpos, y: centerYpos, radius: 4, color: img.ColorRgba8(255, 255, 255, 255));
-        
-        return Uint8List.fromList(img.encodePng(composite!));
-      }
-    } catch (e) {
-      debugPrint('OSM composite error: $e');
+      debugPrint('OSM Static Map custom error: $e');
     }
     return null;
   }
@@ -538,10 +494,6 @@ class LocationWeatherService {
       try {
         final result = await fetchOSMStaticMap(lat, lon);
         if (result != null) return result;
-        
-        // Fallback ke composite
-        final composite = await fetchOSMMapComposite(lat, lon);
-        if (composite != null) return composite;
         
         // Tunggu sebelum retry
         if (i < maxRetries - 1) {

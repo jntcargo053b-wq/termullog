@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -14,9 +15,11 @@ import 'package:geocoding/geocoding.dart';
 class LocationWeatherResult {
   final String address;
   final String weather;
+  final String rawAddress;
   const LocationWeatherResult({
     required this.address,
     required this.weather,
+    this.rawAddress = '',
   });
 }
 
@@ -73,10 +76,14 @@ class LocationWeatherService {
   // Reusable HTTP client
   static final http.Client _client = http.Client();
   
-  // Cache dengan GeoHash
+  // Cache untuk alamat
   static final Map<String, _CacheEntry> _addressCache = {};
   static const int _cacheMaxSize = 100;
   static const double _cacheRadiusMeters = 50.0;
+  
+  // Cache untuk static map
+  static final Map<String, Uint8List> _mapCache = {};
+  static const int _mapCacheMaxSize = 50;
   
   // Rate limiting untuk Nominatim
   static DateTime _lastNominatimRequest = DateTime.now().subtract(const Duration(seconds: 2));
@@ -118,6 +125,7 @@ class LocationWeatherService {
       return LocationWeatherResult(
         address: cached.address,
         weather: weather,
+        rawAddress: cached.address,
       );
     }
 
@@ -129,12 +137,14 @@ class LocationWeatherService {
 
     String finalAddress = results[0];
     String weather = results[1];
+    String rawAddress = finalAddress;
 
     // Ultimate fallback: format DMS jika alamat kosong
     if (finalAddress.isEmpty) {
       final dmsLat = _formatDMS(lat, true);
       final dmsLon = _formatDMS(lon, false);
       finalAddress = '📍 $dmsLat, $dmsLon';
+      rawAddress = finalAddress;
       _emitProgress('🌐 Menggunakan koordinat DMS');
     } else {
       // Simpan ke cache
@@ -151,7 +161,7 @@ class LocationWeatherService {
       _emitProgress('✅ Alamat ditemukan');
     }
 
-    return LocationWeatherResult(address: finalAddress, weather: weather);
+    return LocationWeatherResult(address: finalAddress, weather: weather, rawAddress: rawAddress);
   }
 
   // ============================================================
@@ -379,7 +389,7 @@ class LocationWeatherService {
   }
 
   // ============================================================
-  // Weather Description
+  // WEATHER DESCRIPTION
   // ============================================================
 
   static String _wmoDesc(int c) {
@@ -393,5 +403,154 @@ class LocationWeatherService {
     if (c <= 86) return '❄️🌨️';
     if (c == 95) return '⚡';
     return '🌡️';
+  }
+
+  // ============================================================
+  // OPENSTREETMAP STATIC MAP (GRATIS, TANPA API KEY)
+  // ============================================================
+
+  /// Format number dengan leading zeros
+  static String _padNum(int n) => n.toString().padLeft(2, '0');
+
+  /// Konversi koordinat ke tile coordinates
+  static (int x, int y) _getTileCoordinates(double lat, double lon, int zoom) {
+    final x = ((lon + 180) / 360 * pow(2, zoom)).floor();
+    final y = ((1 - log(tan(lat * pi / 180) + 1 / cos(lat * pi / 180)) / pi) / 2 * pow(2, zoom)).floor();
+    return (x, y);
+  }
+
+  /// Fetch static map dari OpenStreetMap (GRATIS, TANPA API KEY)
+  static Future<Uint8List?> fetchOSMStaticMap(double lat, double lon) async {
+    final cacheKey = '${lat.toStringAsFixed(3)},${lon.toStringAsFixed(3)}';
+    
+    // Cek cache
+    if (_mapCache.containsKey(cacheKey)) {
+      debugPrint('Static map from cache: $cacheKey');
+      return _mapCache[cacheKey];
+    }
+    
+    try {
+      // OSM Static Map service (reliable, gratis)
+      final url = Uri.parse(
+        'https://staticmap.openstreetmap.de/staticmap.php'
+        '?center=$lat,$lon'
+        '&zoom=16'
+        '&size=400x250'
+        '&maptype=mapnik'
+        '&markers=$lat,$lon,lightblue1'
+      );
+      
+      final response = await _client.get(url).timeout(const Duration(seconds: 8));
+      
+      if (response.statusCode == 200) {
+        debugPrint('OSM Static Map fetched: ${response.bodyBytes.length} bytes');
+        
+        // Simpan ke cache
+        if (_mapCache.length >= _mapCacheMaxSize) {
+          _mapCache.remove(_mapCache.keys.first);
+        }
+        _mapCache[cacheKey] = response.bodyBytes;
+        
+        return response.bodyBytes;
+      } else {
+        debugPrint('OSM Static Map error: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('OSM Static Map exception: $e');
+    }
+    return null;
+  }
+
+  /// Fetch tile berdasarkan koordinat (fallback)
+  static Future<Uint8List?> fetchOSMTile(double lat, double lon, int zoom) async {
+    try {
+      final (x, y) = _getTileCoordinates(lat, lon, zoom);
+      final url = Uri.parse('https://tile.openstreetmap.org/$zoom/$x/$y.png');
+      
+      final response = await _client.get(url).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+    } catch (e) {
+      debugPrint('OSM Tile error: $e');
+    }
+    return null;
+  }
+
+  /// Fetch mini map dengan multiple tiles (untuk area lebih luas)
+  static Future<Uint8List?> fetchOSMMapComposite(double lat, double lon) async {
+    try {
+      const zoom = 16;
+      const size = 400;
+      const tileSize = 256;
+      final tilesWide = (size / tileSize).ceil();
+      final tilesHigh = (size / tileSize).ceil();
+      
+      final (centerX, centerY) = _getTileCoordinates(lat, lon, zoom);
+      final startX = centerX - (tilesWide ~/ 2);
+      final startY = centerY - (tilesHigh ~/ 2);
+      
+      // Buat canvas untuk composite
+      img.Image? composite;
+      
+      for (int i = 0; i < tilesWide; i++) {
+        for (int j = 0; j < tilesHigh; j++) {
+          final tileX = startX + i;
+          final tileY = startY + j;
+          final tileUrl = Uri.parse('https://tile.openstreetmap.org/$zoom/$tileX/$tileY.png');
+          
+          final response = await _client.get(tileUrl).timeout(const Duration(seconds: 5));
+          
+          if (response.statusCode == 200) {
+            final tileImg = img.decodeImage(response.bodyBytes);
+            if (tileImg != null) {
+              if (composite == null) {
+                composite = img.Image(width: size, height: size);
+              }
+              final xOffset = i * tileSize;
+              final yOffset = j * tileSize;
+              img.drawImage(composite!, tileImg, dstX: xOffset, dstY: yOffset);
+            }
+          }
+        }
+      }
+      
+      if (composite != null) {
+        // Gambar marker di tengah
+        final markerColor = img.ColorRgba8(255, 50, 50, 255);
+        final centerXpos = composite!.width ~/ 2;
+        final centerYpos = composite!.height ~/ 2;
+        img.drawCircle(composite!, x: centerXpos, y: centerYpos, radius: 8, color: markerColor);
+        img.drawCircle(composite!, x: centerXpos, y: centerYpos, radius: 4, color: img.ColorRgba8(255, 255, 255, 255));
+        
+        return Uint8List.fromList(img.encodePng(composite!));
+      }
+    } catch (e) {
+      debugPrint('OSM composite error: $e');
+    }
+    return null;
+  }
+
+  /// Fetch mini map dengan retry mechanism
+  static Future<Uint8List?> fetchMapWithRetry(double lat, double lon, {int maxRetries = 2}) async {
+    for (int i = 0; i < maxRetries; i++) {
+      try {
+        final result = await fetchOSMStaticMap(lat, lon);
+        if (result != null) return result;
+        
+        // Fallback ke composite
+        final composite = await fetchOSMMapComposite(lat, lon);
+        if (composite != null) return composite;
+        
+        // Tunggu sebelum retry
+        if (i < maxRetries - 1) {
+          await Future.delayed(Duration(seconds: i + 1));
+        }
+      } catch (e) {
+        debugPrint('Map fetch retry $i error: $e');
+      }
+    }
+    return null;
   }
 }

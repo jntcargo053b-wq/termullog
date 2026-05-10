@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import '../core/constants.dart';
 import '../services/settings_service.dart';
 
@@ -25,11 +28,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _timeFormat = 'HH:mm:ss';
   double _opacity = 0.85;
   bool _isLoading = true;
+  
+  // Cache info
+  int _tempFileCount = 0;
+  String _tempFileSize = '0 KB';
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadCacheInfo();
   }
 
   Future<void> _loadSettings() async {
@@ -101,6 +109,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _opacity = 0.85;
     });
     await _saveSettings();
+  }
+  
+  Future<void> _loadCacheInfo() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final files = dir.listSync()
+          .whereType<File>()
+          .where((f) => path.basename(f.path).startsWith('termullog_'))
+          .toList();
+      
+      int totalSize = 0;
+      for (final file in files) {
+        totalSize += await file.length();
+      }
+      
+      setState(() {
+        _tempFileCount = files.length;
+        if (totalSize < 1024) {
+          _tempFileSize = '$totalSize B';
+        } else if (totalSize < 1024 * 1024) {
+          _tempFileSize = '${(totalSize / 1024).toStringAsFixed(1)} KB';
+        } else {
+          _tempFileSize = '${(totalSize / (1024 * 1024)).toStringAsFixed(1)} MB';
+        }
+      });
+    } catch (e) {
+      debugPrint('Load cache info error: $e');
+    }
+  }
+  
+  Future<void> _clearTempFiles() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final files = dir.listSync()
+          .whereType<File>()
+          .where((f) => path.basename(f.path).startsWith('termullog_'))
+          .toList();
+      
+      int deletedCount = 0;
+      for (final file in files) {
+        try {
+          await file.delete();
+          deletedCount++;
+        } catch (e) {
+          debugPrint('Failed to delete: ${file.path} - $e');
+        }
+      }
+      
+      await _loadCacheInfo(); // Refresh info
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Berhasil menghapus $deletedCount file temporary'),
+            backgroundColor: Colors.green.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gagal membersihkan cache'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -282,6 +360,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 
+                // Section: Storage & Cache
+                _buildSectionHeader('PENYIMPANAN', Icons.storage),
+                
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00B8D4).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.cleaning_services, color: Colors.orange, size: 20),
+                  ),
+                  title: const Text(
+                    'Bersihkan File Temporary',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    '$_tempFileCount file (${_tempFileSize})',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                  ),
+                  trailing: ElevatedButton(
+                    onPressed: () => _showClearCacheDialog(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade800,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Hapus'),
+                  ),
+                  onTap: () => _showClearCacheDialog(),
+                ),
+                
+                Divider(color: dividerColor, height: 24, thickness: 1),
+                
                 // Section: Info Aplikasi
                 _buildSectionHeader('TENTANG APLIKASI', Icons.info_outline),
                 
@@ -301,6 +416,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Developer',
                   subtitle: 'TermulLog Team',
                   icon: Icons.developer_mode,
+                ),
+                
+                _buildInfoTile(
+                  title: 'Sumber Data',
+                  subtitle: 'GPS: Geolocator • Cuaca: Open-Meteo • Peta: OpenStreetMap',
+                  icon: Icons.data_usage,
                 ),
                 
                 const SizedBox(height: 16),
@@ -560,7 +681,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildPreview() {
     final textColor = _getPreviewTextColor();
     
-    // Get sample date and time based on format
     String dateStr = '';
     String timeStr = '';
     
@@ -753,6 +873,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
               foregroundColor: Colors.black,
             ),
             child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showClearCacheDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F2E),
+        title: const Text('Bersihkan Cache', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Hapus $_tempFileCount file temporary (${_tempFileSize})?'
+          '\n\nFile ini adalah foto sementara yang belum disimpan ke galeri. '
+          'Foto yang sudah disimpan tidak akan terhapus.',
+          style: TextStyle(color: Colors.grey.shade400),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _clearTempFiles();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Hapus Sekarang'),
           ),
         ],
       ),

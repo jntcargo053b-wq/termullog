@@ -119,6 +119,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isReinitializingCamera = false;
   bool _isResumingApp = false;
   bool _captureLocked = false;
+  String? _cameraError;
   
   bool _acquireLock() { 
     if (_captureLocked) return false; 
@@ -201,6 +202,31 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
   
+  void _showCameraErrorDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Kamera Error'),
+        content: const Text('Tidak dapat mengakses kamera. Pastikan:\n\n1. Izin kamera sudah diberikan\n2. Tidak ada aplikasi lain yang menggunakan kamera\n3. Restart aplikasi'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await Geolocator.openAppSettings();
+            },
+            child: const Text('Buka Setting'),
+          ),
+        ],
+      ),
+    );
+  }
+  
   Future<void> _preWarmGps() async {
     try {
       await Geolocator.getCurrentPosition(
@@ -255,8 +281,44 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             try { return f.statSync().modified.isBefore(cutoff); } 
             catch (_) { return false; }
           }).toList();
-      for (final f in files) { await f.delete(); }
-    } catch (_) {}
+      
+      int deletedCount = 0;
+      for (final f in files) { 
+        try { 
+          await f.delete(); 
+          deletedCount++;
+        } catch (_) { 
+          debugPrint('Failed to delete temp file: ${f.path}'); 
+        }
+      }
+      if (deletedCount > 0) {
+        debugPrint('Cleaned up $deletedCount old temp files');
+      }
+    } catch (e) {
+      debugPrint('Temp file cleanup error: $e');
+    }
+  }
+  
+  /// Hapus semua file temporary aplikasi
+  Future<void> _cleanAllTempFiles() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final files = dir.listSync()
+          .whereType<File>()
+          .where((f) => path.basename(f.path).startsWith('termullog_'))
+          .toList();
+      
+      for (final f in files) {
+        try {
+          await f.delete();
+          debugPrint('Deleted temp file: ${f.path}');
+        } catch (e) {
+          debugPrint('Failed to delete temp file: ${f.path} - $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Clean all temp files error: $e');
+    }
   }
 
   void _updateGpsText(String text) { 
@@ -574,7 +636,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   
   Future<void> _initCamera() async {
     if (_isReinitializingCamera || _isDisposed) return;
-    if (CameraRegistry.cameras.isEmpty) return;
+    if (CameraRegistry.cameras.isEmpty) {
+      _cameraError = 'Tidak ada kamera yang tersedia';
+      _showCameraErrorDialog();
+      return;
+    }
+    
     _isReinitializingCamera = true;
     try {
       if (_controller != null && _controller!.value.isInitialized) return;
@@ -590,13 +657,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
       await controller.setFocusMode(FocusMode.auto);
       await controller.setExposureMode(ExposureMode.auto);
+      _cameraError = null;
       if (mounted) setState(() { 
         _isInitialized = true; 
         _isWarmingUp = false; 
       });
-    } catch (e) { 
-      debugPrint('Camera init error: $e'); 
+    } catch (e) {
+      debugPrint('Camera init error: $e');
+      _cameraError = e.toString();
       _controller = null;
+      if (mounted) {
+        _showCameraErrorDialog();
+        setState(() { _isWarmingUp = false; });
+      }
     } finally { 
       _isReinitializingCamera = false; 
     }
@@ -690,7 +763,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (_addressCache.containsKey(cacheKey)) return _addressCache[cacheKey]!;
 
     try {
-      // Gunakan service yang sudah ditingkatkan
       final result = await LocationWeatherService.fetchFromPosition(pos);
       final address = result.address;
       
@@ -708,7 +780,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (!_acquireLock()) return;
     try {
       final ctrl = _controller;
-      if (ctrl == null || !ctrl.value.isInitialized) return;
+      if (ctrl == null || !ctrl.value.isInitialized) {
+        _showCameraErrorDialog();
+        return;
+      }
       if (_isTakingPhoto || _isPolishing) return;
       if (ctrl.value.isTakingPicture) return;
       if (mounted) setState(() => _isTakingPhoto = true);
@@ -804,7 +879,27 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         child: Stack(
           children: [
             // Camera preview dengan rasio asli (tidak melebar)
-            if (_isInitialized && _controller != null && !_isWarmingUp)
+            if (_cameraError != null)
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error Kamera: $_cameraError',
+                      style: const TextStyle(color: Colors.white70),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () => _initCamera(),
+                      child: const Text('Coba Lagi'),
+                    ),
+                  ],
+                ),
+              )
+            else if (_isInitialized && _controller != null && !_isWarmingUp)
               Container(
                 width: double.infinity,
                 height: double.infinity,
@@ -911,7 +1006,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             
             // Capture button
-            if (!_isPolishing && !_isWarmingUp)
+            if (!_isPolishing && !_isWarmingUp && _cameraError == null)
               Positioned(
                 bottom: 0, left: 0, right: 0,
                 child: Container(

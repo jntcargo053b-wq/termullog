@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/camera_registry.dart';
+import '../services/location_weather_service.dart';
 import 'preview_screen_enhanced.dart';
 import 'settings_screen.dart';
 
@@ -46,6 +47,7 @@ class CameraConstants {
   static const double lowAccuracyThreshold = 30.0;
   static const int preWarmDelayMs = 800;
   static const double accuracyMax = 80.0;
+  static const int addressCacheMaxSize = 20;
 }
 
 // ============================================================
@@ -146,6 +148,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isWarmingUp = true;
   Timer? _uiUpdateTimer;
   bool _isDisposed = false;
+  
+  // Prefetch cache
+  String? _cachedAddress;
+  String? _cachedWeather;
+  DateTime? _lastFetchTime;
+  StreamSubscription? _progressSubscription;
+  
+  // Cache alamat sederhana
+  final Map<String, String> _addressCache = {};
 
   @override
   void initState() {
@@ -158,10 +169,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _startGpsWatchdog();
     _cleanOldTempFiles();
     _showBatteryOptimizationDialog();
+    _listenToAddressProgress();
   }
 
   @override
   void dispose() {
+    _progressSubscription?.cancel();
     _isDisposed = true;
     _uiUpdateTimer?.cancel();
     _countdownTimer?.cancel();
@@ -171,6 +184,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _gpsCompleter!.complete();
     }
     _positionSamples.clear();
+    _addressCache.clear();
     _disposeCamera();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
     WidgetsBinding.instance.removeObserver(this);
@@ -180,6 +194,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // ============================================================
   // Helper Methods
   // ============================================================
+  
+  void _listenToAddressProgress() {
+    _progressSubscription = LocationWeatherService.onProgress.listen((message) {
+      debugPrint('Address progress: $message');
+    });
+  }
   
   Future<void> _preWarmGps() async {
     try {
@@ -324,6 +344,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
+  Future<void> _prefetchAddress(Position pos) async {
+    if (_lastFetchTime != null && 
+        DateTime.now().difference(_lastFetchTime!) < const Duration(seconds: 30)) {
+      return;
+    }
+    
+    _lastFetchTime = DateTime.now();
+    debugPrint('Prefetching address for location: ${pos.latitude}, ${pos.longitude}');
+    
+    try {
+      final result = await LocationWeatherService.fetchFromPosition(pos);
+      _cachedAddress = result.address;
+      _cachedWeather = result.weather;
+      debugPrint('Prefetch complete: $_cachedAddress');
+    } catch (e) {
+      debugPrint('Prefetch error: $e');
+    }
+  }
+
   void _onGpsData(Position pos) {
     if (_isDisposed) return;
     _lastGpsUpdate = DateTime.now();
@@ -384,6 +423,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         final c = _gpsCompleter;
         _isWaitingForGps = false;
         c?.complete();
+      }
+      
+      // Prefetch address di background saat akurasi sudah cukup
+      if (pos.accuracy <= 20 && (_lastFetchTime == null || 
+          DateTime.now().difference(_lastFetchTime!) > const Duration(seconds: 30))) {
+        _prefetchAddress(pos);
       }
     } catch (e) { 
       debugPrint('GPS data error: $e'); 
@@ -639,6 +684,26 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
 
+  Future<String> _getAddressCached(Position? pos) async {
+    if (pos == null) return 'Lokasi tidak tersedia';
+    final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
+    if (_addressCache.containsKey(cacheKey)) return _addressCache[cacheKey]!;
+
+    try {
+      // Gunakan service yang sudah ditingkatkan
+      final result = await LocationWeatherService.fetchFromPosition(pos);
+      final address = result.address;
+      
+      if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
+        _addressCache.remove(_addressCache.keys.first);
+      }
+      _addressCache[cacheKey] = address;
+      return address;
+    } catch (_) {
+      return '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+    }
+  }
+
   Future<void> _ambilFoto() async {
     if (!_acquireLock()) return;
     try {
@@ -660,8 +725,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final bytes = await File(capturedFile!.path).readAsBytes();
       final waktuFoto = DateTime.now();
 
-      // Tunggu GPS sebentar agar tidak terasa lama
       await _waitForBestGps().timeout(const Duration(seconds: 2), onTimeout: () {});
+
+      // Gunakan cached address jika ada dan masih fresh (kurang dari 5 menit)
+      String alamat = '';
+      if (_cachedAddress != null && 
+          _lastFetchTime != null &&
+          DateTime.now().difference(_lastFetchTime!) < const Duration(minutes: 5)) {
+        alamat = _cachedAddress!;
+        debugPrint('Using cached address: $alamat');
+      } else if (_bestPosition != null) {
+        alamat = await _getAddressCached(_bestPosition);
+      } else {
+        alamat = 'Lokasi tidak tersedia';
+      }
+      
+      // Gunakan cached weather jika ada
+      String cuaca = _cachedWeather ?? '';
 
       if (mounted) {
         setState(() { 
@@ -718,8 +798,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   
   @override
   Widget build(BuildContext context) {
-    super.build(context);
-    
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(

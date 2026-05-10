@@ -243,7 +243,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 
-                // Section: Opacity
+                // Section: Transparansi
                 _buildSectionHeader('TRANSPARANSI', Icons.opacity),
                 
                 Padding(
@@ -353,7 +353,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
-                  Icons.watermark,
+                  Icons.style,
                   color: Color(0xFF00B8D4),
                   size: 20,
                 ),
@@ -558,11 +558,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildPreview() {
-    final bgColor = Colors.black;
     final textColor = _getPreviewTextColor();
     
     // Get sample date and time based on format
-    final now = DateTime.now();
     String dateStr = '';
     String timeStr = '';
     

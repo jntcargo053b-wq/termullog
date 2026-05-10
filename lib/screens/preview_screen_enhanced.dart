@@ -156,6 +156,8 @@ class _PreviewScreenState extends State<PreviewScreen>
           );
           if (mapBytes != null) {
             debugPrint('Mini map fetched successfully');
+          } else {
+            debugPrint('Mini map fetch failed');
           }
         } catch (e) {
           debugPrint('Mini map fetch error: $e');
@@ -459,7 +461,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     const int padX = 16;
     const int colVal = 130;
     const int mapWidth = 350;
-    const int mapHeight = 160;
+    const int mapHeight = 180;
     const int mapPadding = 12;
 
     // Build rows data
@@ -479,8 +481,6 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     // Calculate total height
     int totalRows = rows.length;
-    if (showMiniMap && mapBytes != null) totalRows += 1; // Space for map
-    
     final int totalH = headerH + totalRows * rowH + 12;
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - totalH;
@@ -506,7 +506,11 @@ class _PreviewScreenState extends State<PreviewScreen>
       cy += rowH;
     }
 
-    // Draw mini map if available
+    // Footer line
+    img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + 3,
+        color: img.ColorRgba8(30, 144, 255, 200));
+    
+    // Draw mini map if available (di pojok kanan bawah)
     if (showMiniMap && mapBytes != null && position != null) {
       try {
         final mapImage = img.decodeImage(mapBytes);
@@ -514,37 +518,25 @@ class _PreviewScreenState extends State<PreviewScreen>
           // Resize map
           final resizedMap = img.copyResize(mapImage, width: mapWidth, height: mapHeight);
           
-          // Position map di kanan bawah watermark
+          // Position map di pojok kanan bawah
           final mapX = src.width - mapWidth - padX;
-          final mapY = cy - mapHeight - mapPadding;
+          final mapY = src.height - mapHeight - 8;
           
-          if (mapX > 0 && mapY > y0) {
-            // Draw map
-            img.drawImage(src, resizedMap, dstX: mapX, dstY: mapY);
+          if (mapX > padX && mapY > y0) {
+            // Composite map ke gambar
+            img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY);
             
             // Draw border
             img.drawRect(src,
                 x1: mapX - 1, y1: mapY - 1,
-                x2: mapX + mapWidth + 1, y2: mapY + mapHeight + 1,
+                x2: mapX + mapWidth, y2: mapY + mapHeight,
                 color: img.ColorRgba8(30, 144, 255, 255), thickness: 2);
-            
-            // Draw marker
-            final markerX = mapX + mapWidth ~/ 2;
-            final markerY = mapY + mapHeight ~/ 2;
-            img.drawCircle(src, x: markerX, y: markerY, radius: 6,
-                color: img.ColorRgba8(255, 0, 0, 255));
-            img.drawCircle(src, x: markerX, y: markerY, radius: 3,
-                color: img.ColorRgba8(255, 255, 255, 255));
           }
         }
       } catch (e) {
         debugPrint('Draw mini map error: $e');
       }
     }
-
-    // Footer line
-    img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + 3,
-        color: img.ColorRgba8(30, 144, 255, 200));
 
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }

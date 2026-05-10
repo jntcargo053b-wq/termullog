@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:geocoding/geocoding.dart'; // Tambahkan import ini
+import 'package:geocoding/geocoding.dart';
 
 class LocationWeatherResult {
   final String address;
@@ -23,88 +23,144 @@ class LocationWeatherService {
     final lonStr = lon.toStringAsFixed(6);
 
     // Fallback koordinat
-    address = 'GPS: ${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
+    address = 'GPS: ${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}';
 
-    // ─── PRIORITAS 1: Nominatim (OpenStreetMap) ─────────────────────────
+    // ─── PRIORITAS 1: Geocoding Package (lebih lengkap untuk Indonesia) ───
     try {
-      final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse'
-        '?format=json&lat=$latStr&lon=$lonStr&zoom=18&addressdetails=1',
+      final placemarks = await placemarkFromCoordinates(lat, lon).timeout(
+        const Duration(seconds: 8),
       );
-      final res = await http
-          .get(uri, headers: {'User-Agent': 'TermulLog/1.0'})
-          .timeout(const Duration(seconds: 8));
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final addr = data['address'] as Map<String, dynamic>?;
+      
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final parts = <String>[];
         
-        if (addr != null) {
-          final parts = <String>[];
-          
-          // Urutan alamat Indonesia yang benar
-          final houseNumber = addr['house_number'] as String?;
-          final road = addr['road'] as String?;
-          final village = addr['village'] as String? ?? addr['suburb'] as String?;
-          final subDistrict = addr['suburb'] as String?; // kecamatan
-          final city = addr['city'] as String? ?? addr['town'] as String? ?? addr['county'] as String?;
-          final regency = addr['county'] as String?; // kabupaten
-          final province = addr['state'] as String?;
-          final postcode = addr['postcode'] as String?;
-          
-          // Bangun alamat lengkap
-          if (houseNumber != null && houseNumber.isNotEmpty) parts.add(houseNumber);
-          if (road != null && road.isNotEmpty) parts.add(road);
-          if (village != null && village.isNotEmpty) parts.add(village);
-          if (subDistrict != null && subDistrict.isNotEmpty) parts.add('Kec. $subDistrict');
-          if (city != null && city.isNotEmpty) parts.add(city);
-          if (regency != null && regency.isNotEmpty && regency != city) parts.add(regency);
-          if (province != null && province.isNotEmpty) parts.add(province);
-          if (postcode != null && postcode.isNotEmpty) parts.add(postcode);
-          
-          final resolved = parts.join(', ');
-          if (resolved.isNotEmpty) {
-            address = resolved;
-          } else {
-            final display = data['display_name'] as String?;
-            if (display != null) {
-              // Ambil 4 komponen pertama dari display_name
-              final short = display.split(',').take(4).join(',').trim();
-              if (short.isNotEmpty) address = short;
-            }
-          }
+        // Urutan alamat Indonesia dari terkecil ke terbesar
+        // Nomor rumah / blok
+        if (p.subThoroughfare != null && p.subThoroughfare!.isNotEmpty) {
+          parts.add(p.subThoroughfare!);
+        }
+        
+        // Nama jalan
+        if (p.thoroughfare != null && p.thoroughfare!.isNotEmpty) {
+          parts.add(p.thoroughfare!);
+        }
+        
+        // Kelurahan/Desa (subLocality)
+        if (p.subLocality != null && p.subLocality!.isNotEmpty) {
+          parts.add('Kel. ${p.subLocality}');
+        }
+        
+        // Kecamatan (subAdministrativeArea)
+        if (p.subAdministrativeArea != null && p.subAdministrativeArea!.isNotEmpty) {
+          parts.add('Kec. ${p.subAdministrativeArea}');
+        }
+        
+        // Kota/Kabupaten (locality)
+        if (p.locality != null && p.locality!.isNotEmpty) {
+          parts.add(p.locality!);
+        }
+        
+        // Provinsi (administrativeArea)
+        if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) {
+          parts.add(p.administrativeArea!);
+        }
+        
+        // Kode Pos
+        if (p.postalCode != null && p.postalCode!.isNotEmpty) {
+          parts.add(p.postalCode!);
+        }
+        
+        final resolved = parts.join(', ');
+        if (resolved.isNotEmpty) {
+          address = resolved;
+          debugPrint('Address from geocoding: $address');
         }
       }
     } catch (e) {
-      debugPrint('Nominatim error: $e');
+      debugPrint('Geocoding error: $e');
     }
 
-    // ─── PRIORITAS 2: Geocoding package (fallback jika Nominatim gagal) ───
+    // ─── PRIORITAS 2: Nominatim (OpenStreetMap) jika geocoding gagal ──────
     if (address.startsWith('GPS:')) {
       try {
-        final placemarks = await placemarkFromCoordinates(lat, lon).timeout(
-          const Duration(seconds: 5),
+        final uri = Uri.parse(
+          'https://nominatim.openstreetmap.org/reverse'
+          '?format=json&lat=$latStr&lon=$lonStr&zoom=18&addressdetails=1',
         );
-        if (placemarks.isNotEmpty) {
-          final p = placemarks.first;
-          final parts = <String>[];
+        final res = await http
+            .get(uri, headers: {'User-Agent': 'TermulLog/1.0'})
+            .timeout(const Duration(seconds: 8));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final addr = data['address'] as Map<String, dynamic>?;
           
-          if (p.subThoroughfare != null && p.subThoroughfare!.isNotEmpty) parts.add(p.subThoroughfare!);
-          if (p.thoroughfare != null && p.thoroughfare!.isNotEmpty) parts.add(p.thoroughfare!);
-          if (p.subLocality != null && p.subLocality!.isNotEmpty) parts.add(p.subLocality!);
-          if (p.subAdministrativeArea != null && p.subAdministrativeArea!.isNotEmpty) {
-            parts.add('Kec. ${p.subAdministrativeArea}');
+          if (addr != null) {
+            final parts = <String>[];
+            
+            // Nomor rumah
+            final houseNumber = addr['house_number'] as String?;
+            if (houseNumber != null && houseNumber.isNotEmpty) {
+              parts.add(houseNumber);
+            }
+            
+            // Nama jalan
+            final road = addr['road'] as String?;
+            if (road != null && road.isNotEmpty) {
+              parts.add(road);
+            }
+            
+            // Kelurahan/desa
+            final village = addr['village'] as String? ?? addr['suburb'] as String?;
+            if (village != null && village.isNotEmpty) {
+              parts.add('Kel. $village');
+            }
+            
+            // Kecamatan
+            final district = addr['suburb'] as String?;
+            if (district != null && district.isNotEmpty && district != village) {
+              parts.add('Kec. $district');
+            }
+            
+            // Kota/kabupaten
+            final city = addr['city'] as String? ?? addr['town'] as String? ?? addr['county'] as String?;
+            if (city != null && city.isNotEmpty) {
+              parts.add(city);
+            }
+            
+            // Provinsi
+            final province = addr['state'] as String?;
+            if (province != null && province.isNotEmpty) {
+              parts.add(province);
+            }
+            
+            // Kode pos
+            final postcode = addr['postcode'] as String?;
+            if (postcode != null && postcode.isNotEmpty) {
+              parts.add(postcode);
+            }
+            
+            final resolved = parts.join(', ');
+            if (resolved.isNotEmpty) {
+              address = resolved;
+              debugPrint('Address from Nominatim: $address');
+            } else {
+              final display = data['display_name'] as String?;
+              if (display != null) {
+                address = display.split(',').take(4).join(',').trim();
+              }
+            }
           }
-          if (p.locality != null && p.locality!.isNotEmpty) parts.add(p.locality!);
-          if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) parts.add(p.administrativeArea!);
-          if (p.postalCode != null && p.postalCode!.isNotEmpty) parts.add(p.postalCode!);
-          
-          final fallbackAddr = parts.join(', ');
-          if (fallbackAddr.isNotEmpty) address = fallbackAddr;
         }
       } catch (e) {
-        debugPrint('Geocoding fallback error: $e');
+        debugPrint('Nominatim error: $e');
       }
+    }
+
+    // ─── PRIORITAS 3: Koordinat saja jika semua gagal ─────────────────────
+    if (address.startsWith('GPS:')) {
+      address = '${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}';
     }
 
     // ─── Cuaca Open-Meteo ────────────────────────────────────────────────
@@ -132,16 +188,16 @@ class LocationWeatherService {
   }
 
   static String _wmoDesc(int c) {
-    if (c == 0) return 'Cerah';
-    if (c <= 3) return 'Berawan';
-    if (c <= 49) return 'Berkabut';
-    if (c <= 59) return 'Gerimis';
-    if (c <= 67) return 'Hujan';
-    if (c <= 77) return 'Bersalju';
-    if (c <= 82) return 'Hujan Lebat';
-    if (c <= 86) return 'Salju Lebat';
-    if (c == 95) return 'Badai Petir';
-    if (c <= 99) return 'Badai+Hujan Es';
-    return '';
+    if (c == 0) return '🌞 Cerah';
+    if (c <= 3) return '⛅ Berawan';
+    if (c <= 49) return '🌫️ Berkabut';
+    if (c <= 59) return '🌧️ Gerimis';
+    if (c <= 67) return '🌧️ Hujan';
+    if (c <= 77) return '❄️ Bersalju';
+    if (c <= 82) return '🌧️ Hujan Lebat';
+    if (c <= 86) return '❄️ Salju Lebat';
+    if (c == 95) return '⚡ Badai Petir';
+    if (c <= 99) return '🌨️ Badai+Hujan Es';
+    return '🌡️ Tidak diketahui';
   }
 }

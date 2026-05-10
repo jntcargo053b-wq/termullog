@@ -14,9 +14,14 @@ import '../services/location_weather_service.dart';
 import '../services/settings_service.dart';
 import '../core/constants.dart';
 
+// ─────────────────────────────────────────────────────────────
+// ENUM STATUS SAVE
+// ─────────────────────────────────────────────────────────────
+
 enum SaveStatus { idle, saving, saved, error }
 
-const int _kMaxAddressLen = 55; // Diperpanjang untuk font lebih besar
+// Konstanta lokal
+const int _kMaxAddressLen = 55;
 
 // Gunakan warna dari constants.dart
 final _blue = kColorLightBlue;
@@ -26,6 +31,10 @@ final _offWhite = kColorOffWhite;
 final _grey = kColorDarkGrey;
 final _dark = kColorVeryDarkBg;
 final _darker = kColorBlackerBg;
+
+// ─────────────────────────────────────────────────────────────
+// PREVIEW SCREEN
+// ─────────────────────────────────────────────────────────────
 
 class PreviewScreen extends StatefulWidget {
   final String? imagePath;
@@ -56,6 +65,9 @@ class _PreviewScreenState extends State<PreviewScreen>
   late AnimationController _checkAnimController;
   late Animation<double> _checkAnim;
   final TransformationController _transformController = TransformationController();
+  
+  // Untuk mencatat apakah file sudah disimpan
+  bool _isFileSaved = false;
 
   @override
   void initState() {
@@ -80,7 +92,25 @@ class _PreviewScreenState extends State<PreviewScreen>
   void dispose() {
     _checkAnimController.dispose();
     _transformController.dispose();
+    
+    // Hapus temp file jika masih ada dan belum di-save
+    _cleanupTempFile();
+    
     super.dispose();
+  }
+  
+  Future<void> _cleanupTempFile() async {
+    if (_displayImagePath != null && !_isFileSaved && !_isProcessing) {
+      try {
+        final tempFile = File(_displayImagePath!);
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+          debugPrint('Temp file deleted on dispose: $_displayImagePath');
+        }
+      } catch (e) {
+        debugPrint('Failed to delete temp file on dispose: $e');
+      }
+    }
   }
 
   Future<void> _processImageAsync() async {
@@ -98,8 +128,9 @@ class _PreviewScreenState extends State<PreviewScreen>
       String weather = '';
       if (position != null) {
         try {
-          final result = await LocationWeatherService.fetchFromPosition(position)
-              .timeout(const Duration(seconds: 8));
+          final result = await LocationWeatherService.fetchFromPosition(position).timeout(
+            const Duration(seconds: 10),
+          );
           address = result.address;
           weather = result.weather;
         } catch (e) {
@@ -205,15 +236,15 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // ── LAYOUT 1: FILM STRIP (DIPERBESAR) ─────────────────────────
+  // ── LAYOUT 1: FILM STRIP ─────────────────────────────────────
   static Uint8List _layoutFilmStrip(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int stripH = 95;  // Diperbesar dari 72
-    const int borderH = 4;  // Diperbesar dari 3
-    const int padX = 24;    // Diperbesar dari 20
-    const int lineH = 28;   // Diperbesar dari 22
+    const int stripH = 95;
+    const int borderH = 4;
+    const int padX = 24;
+    const int lineH = 28;
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - stripH;
     if (y0 < 0) return Uint8List(0);
@@ -227,7 +258,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.fillCircle(src, x: padX + 6, y: y0 + borderH + 18, radius: 7,
         color: img.ColorRgba8(220, 30, 30, 255));
 
-    final font = img.arial24;  // Ganti ke arial24 dari arial14
+    final font = img.arial24;
     int cy = y0 + borderH + 10;
 
     img.drawString(src, '   ${DateFormat('yyyy-MM-dd').format(timestamp)}  ${DateFormat('HH:mm:ss').format(timestamp)}',
@@ -255,16 +286,16 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 2: DSLR CORNER (DIPERBESAR) ────────────────────────
+  // ── LAYOUT 2: DSLR CORNER ────────────────────────────────────
   static Uint8List _layoutDSLRCorner(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
     const int padX = 18;
     const int padY = 16;
-    const int lineH = 26;   // Diperbesar dari 19
-    const int brkLen = 22;  // Diperbesar dari 16
-    const int brkW = 4;     // Diperbesar dari 3
+    const int lineH = 26;
+    const int brkLen = 22;
+    const int brkW = 4;
 
     int rows = 2;
     if (position != null) rows += 2;
@@ -299,7 +330,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.fillRect(src, x1: x1 - brkLen, y1: y1 - brkW, x2: x1, y2: y1, color: blueColor);
     img.fillRect(src, x1: x1 - brkW, y1: y1 - brkLen, x2: x1, y2: y1, color: blueColor);
 
-    final font = img.arial24;  // Ganti ke arial24
+    final font = img.arial24;
     int cy = y0 + padY;
     final int xT = x0 + padX;
 
@@ -332,14 +363,14 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 3: CINEMATIC (DIPERBESAR) ──────────────────────────
+  // ── LAYOUT 3: CINEMATIC ──────────────────────────────────────
   static Uint8List _layoutCinematic(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int gradH = 180;  // Diperbesar dari 140
-    const int padX = 36;    // Diperbesar dari 28
-    const int lineH = 28;   // Diperbesar dari 22
+    const int gradH = 180;
+    const int padX = 36;
+    const int lineH = 28;
     final bool isTop = watermarkPosition == 'top';
     final int gradY0 = isTop ? 0 : src.height - gradH;
 
@@ -393,15 +424,15 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 4: FIELD SURVEY (DIPERBESAR) ───────────────────────
+  // ── LAYOUT 4: FIELD SURVEY ───────────────────────────────────
   static Uint8List _layoutFieldSurvey(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int headerH = 32;   // Diperbesar dari 22
-    const int rowH = 28;      // Diperbesar dari 20
-    const int padX = 16;      // Diperbesar dari 12
-    const int colVal = 130;   // Diperbesar dari 100
+    const int headerH = 32;
+    const int rowH = 28;
+    const int padX = 16;
+    const int colVal = 130;
 
     final List<List<String>> rows = [
       ['DATE', DateFormat('yyyy-MM-dd').format(timestamp)],
@@ -445,17 +476,17 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 5: HUD (DIPERBESAR) ────────────────────────────────
+  // ── LAYOUT 5: HUD ────────────────────────────────────────────
   static Uint8List _layoutHUD(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int padX = 36;    // Diperbesar dari 28
-    const int padY = 20;    // Diperbesar dari 16
-    const int lineH = 28;   // Diperbesar dari 20
-    const int accentH = 6;  // Diperbesar dari 4
+    const int padX = 36;
+    const int padY = 20;
+    const int lineH = 28;
+    const int accentH = 6;
 
-    int rows = 2;  // Header + timestamp
+    int rows = 2;
     if (position != null) rows += 1;
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows += 1;
     if (showWeather && weather.isNotEmpty) rows += 1;
@@ -520,12 +551,25 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     try {
       final bool? result = await GallerySaver.saveImage(
-        _displayImagePath!, albumName: 'TermulLog');
+        _displayImagePath!, 
+        albumName: 'TermulLog'
+      );
 
       if (!mounted) return;
 
       if (result == true) {
-        try { await File(_displayImagePath!).delete(); } catch (_) {}
+        // Hapus file temporary setelah berhasil disimpan ke galeri
+        try { 
+          final tempFile = File(_displayImagePath!);
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+            debugPrint('Temp file deleted after save: $_displayImagePath');
+          }
+        } catch (e) {
+          debugPrint('Failed to delete temp file after save: $e');
+        }
+        
+        _isFileSaved = true;
         setState(() => _saveStatus = SaveStatus.saved);
         _checkAnimController.forward(from: 0);
         HapticFeedback.mediumImpact();
@@ -574,11 +618,13 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(children: [
-          const Icon(Icons.error_outline, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(msg)),
-        ]),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
         backgroundColor: Colors.red.shade700,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 3),
@@ -593,8 +639,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Preview Foto',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+        title: const Text('Preview Foto', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
@@ -615,8 +660,7 @@ class _PreviewScreenState extends State<PreviewScreen>
             SizedBox(height: 16),
             Text('Memproses foto...', style: TextStyle(color: Colors.white70)),
             SizedBox(height: 8),
-            Text('Mengambil alamat & cuaca',
-                style: TextStyle(color: Colors.white38, fontSize: 12)),
+            Text('Mengambil alamat & cuaca', style: TextStyle(color: Colors.white38, fontSize: 12)),
           ],
         ),
       );
@@ -629,8 +673,7 @@ class _PreviewScreenState extends State<PreviewScreen>
           children: [
             const Icon(Icons.broken_image, color: Colors.red, size: 64),
             const SizedBox(height: 16),
-            Text('Terjadi kesalahan: $_errorMessage',
-                style: const TextStyle(color: Colors.white70)),
+            Text('Terjadi kesalahan: $_errorMessage', style: const TextStyle(color: Colors.white70)),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
@@ -643,8 +686,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
 
     if (_displayImagePath == null) {
-      return const Center(
-          child: Text('Tidak ada gambar', style: TextStyle(color: Colors.white70)));
+      return const Center(child: Text('Tidak ada gambar', style: TextStyle(color: Colors.white70)));
     }
 
     return Column(
@@ -666,8 +708,7 @@ class _PreviewScreenState extends State<PreviewScreen>
                       children: [
                         Icon(Icons.broken_image, color: Colors.white38, size: 64),
                         SizedBox(height: 12),
-                        Text('Gagal memuat foto',
-                            style: TextStyle(color: Colors.white38)),
+                        Text('Gagal memuat foto', style: TextStyle(color: Colors.white38)),
                       ],
                     ),
                   ),
@@ -690,8 +731,7 @@ class _PreviewScreenState extends State<PreviewScreen>
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white38),
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ),
@@ -699,8 +739,7 @@ class _PreviewScreenState extends State<PreviewScreen>
               _ActionButton(
                 onPressed: _isSharing ? null : _sharePhoto,
                 icon: _isSharing
-                    ? const SizedBox(width: 18, height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.share_outlined, size: 20),
                 label: 'Bagikan',
                 color: Colors.blue.shade600,
@@ -718,6 +757,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// TOMBOL AKSI GENERIK
+// ─────────────────────────────────────────────────────────────
 
 class _ActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -751,6 +794,10 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// TOMBOL SAVE — Animated
+// ─────────────────────────────────────────────────────────────
+
 class _SaveButton extends StatelessWidget {
   final SaveStatus status;
   final Animation<double> checkAnim;
@@ -776,14 +823,15 @@ class _SaveButton extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: onPressed,
         icon: isSaving
-            ? const SizedBox(width: 18, height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             : isSaved
                 ? ScaleTransition(scale: checkAnim, child: const Icon(Icons.check_circle, size: 20))
                 : isError
                     ? const Icon(Icons.error_outline, size: 20)
                     : const Icon(Icons.save_alt, size: 20),
-        label: Text(isSaving ? 'Menyimpan...' : isSaved ? 'Tersimpan!' : isError ? 'Gagal' : 'Simpan'),
+        label: Text(
+          isSaving ? 'Menyimpan...' : isSaved ? 'Tersimpan!' : isError ? 'Gagal' : 'Simpan',
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: bgColor,
           foregroundColor: Colors.white,

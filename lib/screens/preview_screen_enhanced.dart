@@ -16,7 +16,7 @@ import '../core/constants.dart';
 
 enum SaveStatus { idle, saving, saved, error }
 
-const int _kMaxAddressLen = 50;
+const int _kMaxAddressLen = 55; // Diperpanjang untuk font lebih besar
 
 // Gunakan warna dari constants.dart
 final _blue = kColorLightBlue;
@@ -205,15 +205,15 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // ── LAYOUT 1: FILM STRIP ─────────────────────────────────────
+  // ── LAYOUT 1: FILM STRIP (DIPERBESAR) ─────────────────────────
   static Uint8List _layoutFilmStrip(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int stripH = 72;
-    const int borderH = 3;
-    const int padX = 20;
-    const int lineH = 22;
+    const int stripH = 95;  // Diperbesar dari 72
+    const int borderH = 4;  // Diperbesar dari 3
+    const int padX = 24;    // Diperbesar dari 20
+    const int lineH = 28;   // Diperbesar dari 22
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - stripH;
     if (y0 < 0) return Uint8List(0);
@@ -224,11 +224,11 @@ class _PreviewScreenState extends State<PreviewScreen>
         color: img.ColorRgba8(30, 144, 255, 255));
     img.fillRect(src, x1: 0, y1: src.height - borderH, x2: src.width - 1, y2: src.height - 1,
         color: img.ColorRgba8(30, 144, 255, 255));
-    img.fillCircle(src, x: padX + 4, y: y0 + borderH + 15, radius: 5,
+    img.fillCircle(src, x: padX + 6, y: y0 + borderH + 18, radius: 7,
         color: img.ColorRgba8(220, 30, 30, 255));
 
-    final font = img.arial14;
-    int cy = y0 + borderH + 6;
+    final font = img.arial24;  // Ganti ke arial24 dari arial14
+    int cy = y0 + borderH + 10;
 
     img.drawString(src, '   ${DateFormat('yyyy-MM-dd').format(timestamp)}  ${DateFormat('HH:mm:ss').format(timestamp)}',
         font: font, x: padX, y: cy, color: _white);
@@ -255,16 +255,16 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 2: DSLR CORNER ────────────────────────────────────
+  // ── LAYOUT 2: DSLR CORNER (DIPERBESAR) ────────────────────────
   static Uint8List _layoutDSLRCorner(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int padX = 14;
-    const int padY = 12;
-    const int lineH = 19;
-    const int brkLen = 16;
-    const int brkW = 3;
+    const int padX = 18;
+    const int padY = 16;
+    const int lineH = 26;   // Diperbesar dari 19
+    const int brkLen = 22;  // Diperbesar dari 16
+    const int brkW = 4;     // Diperbesar dari 3
 
     int rows = 2;
     if (position != null) rows += 2;
@@ -273,10 +273,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (showWeather && weather.isNotEmpty) rows += 1;
 
     final int boxH = padY * 2 + rows * lineH;
-    final int boxW = (src.width * 0.55).toInt().clamp(260, src.width - 20);
+    final int boxW = (src.width * 0.55).toInt().clamp(300, src.width - 30);
     final bool isTop = watermarkPosition == 'top';
-    final int x0 = 14;
-    final int y0 = isTop ? 14 : src.height - boxH - 14;
+    final int x0 = 20;
+    final int y0 = isTop ? 20 : src.height - boxH - 20;
     final int x1 = x0 + boxW;
     final int y1 = y0 + boxH;
 
@@ -299,7 +299,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.fillRect(src, x1: x1 - brkLen, y1: y1 - brkW, x2: x1, y2: y1, color: blueColor);
     img.fillRect(src, x1: x1 - brkW, y1: y1 - brkLen, x2: x1, y2: y1, color: blueColor);
 
-    final font = img.arial14;
+    final font = img.arial24;  // Ganti ke arial24
     int cy = y0 + padY;
     final int xT = x0 + padX;
 
@@ -320,7 +320,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
 
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      String sh = address.length > 42 ? '${address.substring(0, 39)}…' : address;
+      String sh = address.length > 50 ? '${address.substring(0, 47)}…' : address;
       img.drawString(src, sh, font: font, x: xT, y: cy, color: _grey);
       cy += lineH;
     }
@@ -332,21 +332,21 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 3: CINEMATIC ──────────────────────────────────────
+  // ── LAYOUT 3: CINEMATIC (DIPERBESAR) ──────────────────────────
   static Uint8List _layoutCinematic(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int gradH = 140;
-    const int padX = 28;
-    const int lineH = 22;
+    const int gradH = 180;  // Diperbesar dari 140
+    const int padX = 36;    // Diperbesar dari 28
+    const int lineH = 28;   // Diperbesar dari 22
     final bool isTop = watermarkPosition == 'top';
     final int gradY0 = isTop ? 0 : src.height - gradH;
 
     for (int y = gradY0; y < gradY0 + gradH; y++) {
       if (y < 0 || y >= src.height) continue;
       final t = isTop ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
-      final alpha = (t * 210).toInt().clamp(0, 210);
+      final alpha = (t * 200).toInt().clamp(0, 200);
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);
         src.setPixel(x, y, img.ColorRgba8(
@@ -356,17 +356,17 @@ class _PreviewScreenState extends State<PreviewScreen>
       }
     }
 
-    final int divY = isTop ? gradH - 30 : gradY0 + 28;
-    img.fillRect(src, x1: padX, y1: divY, x2: src.width - padX, y2: divY + 1,
+    final int divY = isTop ? gradH - 40 : gradY0 + 36;
+    img.fillRect(src, x1: padX, y1: divY, x2: src.width - padX, y2: divY + 2,
         color: img.ColorRgba8(30, 144, 255, 200));
 
-    final font = img.arial14;
-    int cy = isTop ? 10 : gradY0 + 8;
+    final font = img.arial24;
+    int cy = isTop ? 16 : gradY0 + 12;
 
     img.drawString(src, DateFormat('HH : mm : ss').format(timestamp), font: font, x: padX, y: cy, color: _white);
     cy += lineH;
     img.drawString(src, DateFormat('dd  MMMM  yyyy').format(timestamp), font: font, x: padX, y: cy, color: _blue);
-    cy += lineH + 6;
+    cy += lineH + 8;
 
     if (position != null) {
       img.drawString(src,
@@ -393,15 +393,15 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 4: FIELD SURVEY ───────────────────────────────────
+  // ── LAYOUT 4: FIELD SURVEY (DIPERBESAR) ───────────────────────
   static Uint8List _layoutFieldSurvey(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int headerH = 22;
-    const int rowH = 20;
-    const int padX = 12;
-    const int colVal = 100;
+    const int headerH = 32;   // Diperbesar dari 22
+    const int rowH = 28;      // Diperbesar dari 20
+    const int padX = 16;      // Diperbesar dari 12
+    const int colVal = 130;   // Diperbesar dari 100
 
     final List<List<String>> rows = [
       ['DATE', DateFormat('yyyy-MM-dd').format(timestamp)],
@@ -413,11 +413,11 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (showAccuracy) rows.add(['ACC', '±${position.accuracy.toStringAsFixed(0)} m']);
     }
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      rows.add(['ADDR', address.length > 38 ? '${address.substring(0, 35)}…' : address]);
+      rows.add(['ADDR', address.length > 50 ? '${address.substring(0, 47)}…' : address]);
     }
     if (showWeather && weather.isNotEmpty) rows.add(['WX', weather]);
 
-    final int totalH = headerH + rows.length * rowH + 6;
+    final int totalH = headerH + rows.length * rowH + 8;
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - totalH;
     if (y0 < 0) return Uint8List(0);
@@ -425,42 +425,42 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + headerH,
         color: img.ColorRgba8(30, 144, 255, 255));
     img.drawString(src, 'TERMULOG  GEOTAGGED PHOTO',
-        font: img.arial14, x: padX, y: y0 + 4,
+        font: img.arial24, x: padX, y: y0 + 8,
         color: img.ColorRgba8(0, 0, 0, 255));
 
-    final font = img.arial14;
+    final font = img.arial24;
     int cy = y0 + headerH;
     for (int i = 0; i < rows.length; i++) {
       img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + rowH,
           color: i.isEven ? img.ColorRgba8(0, 0, 12, 220) : img.ColorRgba8(10, 10, 28, 220));
-      img.drawString(src, rows[i][0], font: font, x: padX, y: cy + 3, color: _grey);
-      img.drawString(src, rows[i][1], font: font, x: padX + colVal, y: cy + 3,
+      img.drawString(src, rows[i][0], font: font, x: padX, y: cy + 6, color: _grey);
+      img.drawString(src, rows[i][1], font: font, x: padX + colVal, y: cy + 6,
           color: i < 2 ? _white : _blue);
       cy += rowH;
     }
 
-    img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + 2,
+    img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + 3,
         color: img.ColorRgba8(30, 144, 255, 200));
 
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 5: HUD ────────────────────────────────────────────
+  // ── LAYOUT 5: HUD (DIPERBESAR) ────────────────────────────────
   static Uint8List _layoutHUD(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int padX = 28;
-    const int padY = 16;
-    const int lineH = 20;
-    const int accentH = 4;
+    const int padX = 36;    // Diperbesar dari 28
+    const int padY = 20;    // Diperbesar dari 16
+    const int lineH = 28;   // Diperbesar dari 20
+    const int accentH = 6;  // Diperbesar dari 4
 
-    int rows = 1;
+    int rows = 2;  // Header + timestamp
     if (position != null) rows += 1;
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows += 1;
     if (showWeather && weather.isNotEmpty) rows += 1;
 
-    final int panelH = padY * 2 + rows * lineH + (rows - 1) * 5 + accentH;
+    final int panelH = padY * 2 + rows * lineH + (rows - 1) * 6 + accentH;
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - panelH;
     if (y0 < 0) return Uint8List(0);
@@ -468,7 +468,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     final int yEnd = src.height - accentH;
     for (int y = y0; y < yEnd; y++) {
       final progress = (y - y0) / (yEnd - y0).clamp(1, double.infinity);
-      final alpha = (130 + (progress * 90)).toInt().clamp(0, 220);
+      final alpha = (140 + (progress * 80)).toInt().clamp(0, 220);
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);
         src.setPixel(x, y, img.ColorRgba8(
@@ -480,29 +480,29 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     img.fillRect(src, x1: 0, y1: src.height - accentH, x2: src.width - 1, y2: src.height - 1,
         color: img.ColorRgba8(30, 144, 255, 255));
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + 1,
-        color: img.ColorRgba8(30, 144, 255, 100));
+    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + 2,
+        color: img.ColorRgba8(30, 144, 255, 120));
 
-    final font = img.arial14;
+    final font = img.arial24;
     int cy = y0 + padY;
 
     img.drawString(src,
         '${DateFormat('dd MMM yyyy').format(timestamp)}   ${DateFormat('HH:mm:ss').format(timestamp)}',
         font: font, x: padX, y: cy, color: _white);
-    cy += lineH + 5;
+    cy += lineH + 6;
 
     if (position != null) {
       final acc = showAccuracy ? '   ±${position.accuracy.toStringAsFixed(0)}m' : '';
       img.drawString(src,
           '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}$acc',
           font: font, x: padX, y: cy, color: img.ColorRgba8(30, 144, 255, 255));
-      cy += lineH + 5;
+      cy += lineH + 6;
     }
 
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       String sh = address.length > _kMaxAddressLen ? '${address.substring(0, _kMaxAddressLen - 1)}…' : address;
       img.drawString(src, sh, font: font, x: padX, y: cy, color: _grey);
-      cy += lineH + 5;
+      cy += lineH + 6;
     }
 
     if (showWeather && weather.isNotEmpty) {

@@ -718,20 +718,20 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Stack(
           children: [
-            // Camera preview
+            // Camera preview dengan rasio asli (tidak melebar)
             if (_isInitialized && _controller != null && !_isWarmingUp)
-              Center(
-                child: ClipRect(
-                  child: AspectRatio(
-                    aspectRatio: _controller!.value.aspectRatio,
-                    child: CameraPreview(_controller!),
-                  ),
-                ),
+              Container(
+                width: double.infinity,
+                height: double.infinity,
+                color: Colors.black,
+                child: CameraPreview(_controller!),
               )
             else
               const Center(

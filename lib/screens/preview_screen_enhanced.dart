@@ -1,4 +1,3 @@
-
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -18,6 +17,15 @@ import '../core/constants.dart';
 enum SaveStatus { idle, saving, saved, error }
 
 const int _kMaxAddressLen = 50;
+
+// Gunakan warna dari constants.dart
+final _blue = kColorLightBlue;
+final _blueDim = kColorDimBlue;
+final _white = kColorWhite;
+final _offWhite = kColorOffWhite;
+final _grey = kColorDarkGrey;
+final _dark = kColorVeryDarkBg;
+final _darker = kColorBlackerBg;
 
 class PreviewScreen extends StatefulWidget {
   final String? imagePath;
@@ -82,9 +90,9 @@ class _PreviewScreenState extends State<PreviewScreen>
     });
 
     try {
-      final bytes     = widget.imageBytes!;
+      final bytes = widget.imageBytes!;
       final timestamp = widget.timestamp!;
-      final position  = widget.position;
+      final position = widget.position;
 
       String address = '';
       String weather = '';
@@ -102,9 +110,9 @@ class _PreviewScreenState extends State<PreviewScreen>
         address = 'Tidak ada lokasi';
       }
 
-      final layout            = await SettingsService.getWatermarkLayout();
-      final showWeather       = await SettingsService.getShowWeather();
-      final showAccuracy      = await SettingsService.getShowAccuracy();
+      final layout = await SettingsService.getWatermarkLayout();
+      final showWeather = await SettingsService.getShowWeather();
+      final showAccuracy = await SettingsService.getShowAccuracy();
       final watermarkPosition = await SettingsService.getWatermarkPosition();
 
       final processedBytes = await _computeWatermark(
@@ -112,7 +120,7 @@ class _PreviewScreenState extends State<PreviewScreen>
         layout, showWeather, showAccuracy, watermarkPosition,
       );
 
-      final dir      = await getTemporaryDirectory();
+      final dir = await getTemporaryDirectory();
       final fileName = 'termullog_${timestamp.millisecondsSinceEpoch}_temp.jpg';
       final tempFile = File('${dir.path}/$fileName');
       await tempFile.writeAsBytes(processedBytes);
@@ -120,7 +128,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (mounted) {
         setState(() {
           _displayImagePath = tempFile.path;
-          _isProcessing     = false;
+          _isProcessing = false;
         });
       }
     } catch (e) {
@@ -146,27 +154,27 @@ class _PreviewScreenState extends State<PreviewScreen>
     String watermarkPosition,
   ) async {
     return await compute(_applyWatermark, {
-      'bytes'             : imageBytes,
-      'timestamp'         : timestamp,
-      'position'          : position,
-      'address'           : address,
-      'weather'           : weather,
-      'layout'            : layout.index,
-      'showWeather'       : showWeather,
-      'showAccuracy'      : showAccuracy,
-      'watermarkPosition' : watermarkPosition,
+      'bytes': imageBytes,
+      'timestamp': timestamp,
+      'position': position,
+      'address': address,
+      'weather': weather,
+      'layout': layout.index,
+      'showWeather': showWeather,
+      'showAccuracy': showAccuracy,
+      'watermarkPosition': watermarkPosition,
     });
   }
 
   static Uint8List _applyWatermark(Map<String, dynamic> params) {
-    final bytes             = params['bytes'] as Uint8List;
-    final timestamp         = params['timestamp'] as DateTime;
-    final position          = params['position'] as Position?;
-    final address           = params['address'] as String;
-    final weather           = params['weather'] as String;
-    final layoutIndex       = params['layout'] as int;
-    final showWeather       = params['showWeather'] as bool;
-    final showAccuracy      = params['showAccuracy'] as bool;
+    final bytes = params['bytes'] as Uint8List;
+    final timestamp = params['timestamp'] as DateTime;
+    final position = params['position'] as Position?;
+    final address = params['address'] as String;
+    final weather = params['weather'] as String;
+    final layoutIndex = params['layout'] as int;
+    final showWeather = params['showWeather'] as bool;
+    final showAccuracy = params['showAccuracy'] as bool;
     final watermarkPosition = params['watermarkPosition'] as String;
 
     final layout = WatermarkLayout.values[layoutIndex];
@@ -177,8 +185,8 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
       src = img.copyResize(
         src,
-        width:  src.width > src.height ? kMaxOutputWidth : null,
-        height: src.height > src.width  ? kMaxOutputWidth : null,
+        width: src.width > src.height ? kMaxOutputWidth : null,
+        height: src.height > src.width ? kMaxOutputWidth : null,
         interpolation: img.Interpolation.average,
       );
     }
@@ -202,12 +210,12 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int stripH  = 72;
+    const int stripH = 72;
     const int borderH = 3;
-    const int padX    = 20;
-    const int lineH   = 22;
-    final bool isTop  = watermarkPosition == 'top';
-    final int y0      = isTop ? 0 : src.height - stripH;
+    const int padX = 20;
+    const int lineH = 22;
+    final bool isTop = watermarkPosition == 'top';
+    final int y0 = isTop ? 0 : src.height - stripH;
     if (y0 < 0) return Uint8List(0);
 
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: src.height - 1,
@@ -252,11 +260,11 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int padX   = 14;
-    const int padY   = 12;
-    const int lineH  = 19;
+    const int padX = 14;
+    const int padY = 12;
+    const int lineH = 19;
     const int brkLen = 16;
-    const int brkW   = 3;
+    const int brkW = 3;
 
     int rows = 2;
     if (position != null) rows += 2;
@@ -264,13 +272,13 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows += 1;
     if (showWeather && weather.isNotEmpty) rows += 1;
 
-    final int boxH   = padY * 2 + rows * lineH;
-    final int boxW   = (src.width * 0.55).toInt().clamp(260, src.width - 20);
+    final int boxH = padY * 2 + rows * lineH;
+    final int boxW = (src.width * 0.55).toInt().clamp(260, src.width - 20);
     final bool isTop = watermarkPosition == 'top';
-    final int x0     = 14;
-    final int y0     = isTop ? 14 : src.height - boxH - 14;
-    final int x1     = x0 + boxW;
-    final int y1     = y0 + boxH;
+    final int x0 = 14;
+    final int y0 = isTop ? 14 : src.height - boxH - 14;
+    final int x1 = x0 + boxW;
+    final int y1 = y0 + boxH;
 
     for (int y = y0; y <= y1; y++) {
       for (int x = x0; x <= x1; x++) {
@@ -330,7 +338,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
     const int gradH = 140;
-    const int padX  = 28;
+    const int padX = 28;
     const int lineH = 22;
     final bool isTop = watermarkPosition == 'top';
     final int gradY0 = isTop ? 0 : src.height - gradH;
@@ -391,9 +399,9 @@ class _PreviewScreenState extends State<PreviewScreen>
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
     const int headerH = 22;
-    const int rowH    = 20;
-    const int padX    = 12;
-    const int colVal  = 100;
+    const int rowH = 20;
+    const int padX = 12;
+    const int colVal = 100;
 
     final List<List<String>> rows = [
       ['DATE', DateFormat('yyyy-MM-dd').format(timestamp)],
@@ -411,7 +419,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     final int totalH = headerH + rows.length * rowH + 6;
     final bool isTop = watermarkPosition == 'top';
-    final int y0     = isTop ? 0 : src.height - totalH;
+    final int y0 = isTop ? 0 : src.height - totalH;
     if (y0 < 0) return Uint8List(0);
 
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + headerH,
@@ -442,9 +450,9 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int padX    = 28;
-    const int padY    = 16;
-    const int lineH   = 20;
+    const int padX = 28;
+    const int padY = 16;
+    const int lineH = 20;
     const int accentH = 4;
 
     int rows = 1;
@@ -454,7 +462,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     final int panelH = padY * 2 + rows * lineH + (rows - 1) * 5 + accentH;
     final bool isTop = watermarkPosition == 'top';
-    final int y0     = isTop ? 0 : src.height - panelH;
+    final int y0 = isTop ? 0 : src.height - panelH;
     if (y0 < 0) return Uint8List(0);
 
     final int yEnd = src.height - accentH;
@@ -756,8 +764,8 @@ class _SaveButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isSaved  = status == SaveStatus.saved;
-    final isError  = status == SaveStatus.error;
+    final isSaved = status == SaveStatus.saved;
+    final isError = status == SaveStatus.error;
     final isSaving = status == SaveStatus.saving;
 
     Color bgColor = Colors.green.shade600;

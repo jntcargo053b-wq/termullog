@@ -142,10 +142,7 @@ final img.Color kColorVeryDarkBg = img.ColorRgba8(0, 0, 10, 210);
 /// Background paling gelap (opacity ~92%)
 final img.Color kColorBlackerBg = img.ColorRgba8(0, 0, 8, 235);
 
-/// Warna biru untuk teks
-final img.Color kColorBlue = img.ColorRgb8(30, 144, 255);
-
-/// Warna biru redup
+/// Warna biru redup untuk UI
 final img.Color kColorDimBlue200 = img.ColorRgb8(20, 80, 160);
 
 /// Abu-abu terang
@@ -155,23 +152,23 @@ final img.Color kColorLightGrey = img.ColorRgb8(200, 200, 205);
 final img.Color kColorGold = img.ColorRgb8(255, 180, 50);
 
 // ============================================================
-// UI COLOURS (untuk Flutter Widget)
+// UI COLOURS (untuk Flutter Widget) - HINDARI DUPLIKASI
 // ============================================================
 
 /// Warna navy untuk app bar
-const int kColorNavy = 0xFF1B4F72;
+const int kColorNavyUi = 0xFF1B4F72;
 
 /// Warna navy gelap
-const int kColorNavyDark = 0xFF0D2137;
+const int kColorNavyDarkUi = 0xFF0D2137;
 
-/// Warna biru untuk tombol
-const int kColorBlue = 0xFF2980B9;
+/// Warna biru untuk tombol (UI)
+const int kColorBlueUi = 0xFF2980B9;
 
 /// Warna cyan terang untuk aksen
-const int kColorCyanLight = 0xFF00B8D4;
+const int kColorCyanLightUi = 0xFF00B8D4;
 
 /// Warna cyan gelap
-const int kColorCyanDark = 0xFF0077B6;
+const int kColorCyanDarkUi = 0xFF0077B6;
 
 // ============================================================
 // LAYOUT WATERMARK GEOMETRY TAMBAHAN

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -18,20 +19,40 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  // Watermark Settings
   WatermarkLayout _selectedLayout = WatermarkLayout.modern;
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
   bool _showCoordinates = true;
   String _watermarkPosition = 'bottom';
+  double _opacity = 0.85;
+  bool _showBorder = true;
+  
+  // Format Settings
   String _dateFormat = 'dd/MM/yyyy';
   String _timeFormat = 'HH:mm:ss';
-  double _opacity = 0.85;
-  bool _isLoading = true;
   
-  // Cache info
+  // Mini Map Settings
+  bool _showMiniMap = true;
+  int _mapZoomLevel = 16;
+  String _mapSize = 'medium';
+  
+  // Display Settings
+  String _fontSize = 'normal';
+  String _themeMode = 'dark';
+  
+  // Camera Settings
+  int _imageQuality = 90;
+  bool _keepScreenOn = true;
+  bool _useHighAccuracy = true;
+  bool _autoSave = false;
+  
+  // Cache Info
   int _tempFileCount = 0;
   String _tempFileSize = '0 KB';
+  
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -49,9 +70,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final showAddress = await SettingsService.getShowAddress();
     final showCoordinates = await SettingsService.getShowCoordinates();
     final position = await SettingsService.getWatermarkPosition();
+    final opacity = await SettingsService.getOpacity();
+    final showBorder = await SettingsService.getShowBorder();
     final dateFormat = await SettingsService.getDateFormat();
     final timeFormat = await SettingsService.getTimeFormat();
-    final opacity = await SettingsService.getOpacity();
+    final showMiniMap = await SettingsService.getShowMiniMap();
+    final mapZoomLevel = await SettingsService.getMapZoomLevel();
+    final mapSize = await SettingsService.getMapSize();
+    final fontSize = await SettingsService.getFontSize();
+    final themeMode = await SettingsService.getThemeMode();
+    final imageQuality = await SettingsService.getImageQuality();
+    final keepScreenOn = await SettingsService.getKeepScreenOn();
+    final useHighAccuracy = await SettingsService.getUseHighAccuracy();
+    final autoSave = await SettingsService.getAutoSave();
     
     setState(() {
       _selectedLayout = layout;
@@ -60,9 +91,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _showAddress = showAddress;
       _showCoordinates = showCoordinates;
       _watermarkPosition = position;
+      _opacity = opacity;
+      _showBorder = showBorder;
       _dateFormat = dateFormat;
       _timeFormat = timeFormat;
-      _opacity = opacity;
+      _showMiniMap = showMiniMap;
+      _mapZoomLevel = mapZoomLevel;
+      _mapSize = mapSize;
+      _fontSize = fontSize;
+      _themeMode = themeMode;
+      _imageQuality = imageQuality;
+      _keepScreenOn = keepScreenOn;
+      _useHighAccuracy = useHighAccuracy;
+      _autoSave = autoSave;
       _isLoading = false;
     });
   }
@@ -74,9 +115,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await SettingsService.setShowAddress(_showAddress);
     await SettingsService.setShowCoordinates(_showCoordinates);
     await SettingsService.setWatermarkPosition(_watermarkPosition);
+    await SettingsService.setOpacity(_opacity);
+    await SettingsService.setShowBorder(_showBorder);
     await SettingsService.setDateFormat(_dateFormat);
     await SettingsService.setTimeFormat(_timeFormat);
-    await SettingsService.setOpacity(_opacity);
+    await SettingsService.setShowMiniMap(_showMiniMap);
+    await SettingsService.setMapZoomLevel(_mapZoomLevel);
+    await SettingsService.setMapSize(_mapSize);
+    await SettingsService.setFontSize(_fontSize);
+    await SettingsService.setThemeMode(_themeMode);
+    await SettingsService.setImageQuality(_imageQuality);
+    await SettingsService.setKeepScreenOn(_keepScreenOn);
+    await SettingsService.setUseHighAccuracy(_useHighAccuracy);
+    await SettingsService.setAutoSave(_autoSave);
+    
+    // Apply theme mode
+    _applyThemeMode();
+    
+    // Apply keep screen on setting
+    _applyKeepScreenOn();
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,20 +152,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
   }
+  
+  void _applyThemeMode() {
+    // This will be handled by the main app widget
+    // We'll just save the preference
+  }
+  
+  void _applyKeepScreenOn() {
+    if (_keepScreenOn) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+  }
 
   Future<void> _resetToDefault() async {
-    setState(() {
-      _selectedLayout = WatermarkLayout.modern;
-      _showWeather = true;
-      _showAccuracy = true;
-      _showAddress = true;
-      _showCoordinates = true;
-      _watermarkPosition = 'bottom';
-      _dateFormat = 'dd/MM/yyyy';
-      _timeFormat = 'HH:mm:ss';
-      _opacity = 0.85;
-    });
-    await _saveSettings();
+    await SettingsService.resetAllSettings();
+    await _loadSettings();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 20),
+              SizedBox(width: 8),
+              Text('Pengaturan berhasil direset ke default'),
+            ],
+          ),
+          backgroundColor: Color(0xFF1A1F2E),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
   
   Future<void> _loadCacheInfo() async {
@@ -157,7 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
       
-      await _loadCacheInfo(); // Refresh info
+      await _loadCacheInfo();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -224,6 +300,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // Section: Gaya Tampilan
                 _buildSectionHeader('GAYA TAMPILAN', Icons.style),
                 ...WatermarkLayout.values.map((layout) => _buildLayoutOption(layout)),
+                
+                _buildSliderTile(
+                  title: 'Transparansi Background',
+                  subtitle: 'Atur kegelapan background watermark',
+                  value: _opacity,
+                  min: 0.3,
+                  max: 1.0,
+                  divisions: 14,
+                  onChanged: (value) => setState(() => _opacity = value),
+                  icon: Icons.opacity,
+                ),
+                
+                _buildSwitchTile(
+                  title: 'Tampilkan Border',
+                  subtitle: 'Menampilkan border di sekitar watermark',
+                  value: _showBorder,
+                  onChanged: (value) => setState(() => _showBorder = value),
+                  icon: Icons.border_style,
+                ),
                 
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 
@@ -321,41 +416,124 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 
-                // Section: Transparansi
-                _buildSectionHeader('TRANSPARANSI', Icons.opacity),
+                // Section: Mini Map
+                _buildSectionHeader('MINI MAP', Icons.map),
                 
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.opacity, color: Color(0xFF00B8D4), size: 20),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Opacity: ${(_opacity * 100).toInt()}%',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Slider(
-                        value: _opacity,
-                        min: 0.3,
-                        max: 1.0,
-                        divisions: 14,
-                        activeColor: const Color(0xFF00B8D4),
-                        inactiveColor: Colors.grey.shade700,
-                        label: '${(_opacity * 100).toInt()}%',
-                        onChanged: (value) => setState(() => _opacity = value),
-                      ),
-                      Text(
-                        'Semakin rendah nilai, semakin transparan background watermark',
-                        style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
-                      ),
-                    ],
+                _buildSwitchTile(
+                  title: 'Tampilkan Mini Map',
+                  subtitle: 'Menampilkan peta lokasi pada watermark',
+                  value: _showMiniMap,
+                  onChanged: (value) => setState(() => _showMiniMap = value),
+                  icon: Icons.map,
+                ),
+                
+                if (_showMiniMap) ...[
+                  _buildSliderTile(
+                    title: 'Zoom Level Mini Map',
+                    subtitle: 'Atur tingkat zoom peta (${_mapZoomLevel})',
+                    value: _mapZoomLevel.toDouble(),
+                    min: 10,
+                    max: 18,
+                    divisions: 8,
+                    onChanged: (value) => setState(() => _mapZoomLevel = value.toInt()),
+                    icon: Icons.zoom_in,
                   ),
+                  
+                  _buildRadioTile(
+                    title: 'Ukuran Kecil',
+                    subtitle: '250 x 150 pixel',
+                    value: 'small',
+                    groupValue: _mapSize,
+                    onChanged: (value) => setState(() => _mapSize = value!),
+                    icon: Icons.crop_square,
+                  ),
+                  _buildRadioTile(
+                    title: 'Ukuran Sedang',
+                    subtitle: '350 x 180 pixel',
+                    value: 'medium',
+                    groupValue: _mapSize,
+                    onChanged: (value) => setState(() => _mapSize = value!),
+                    icon: Icons.crop_square,
+                  ),
+                  _buildRadioTile(
+                    title: 'Ukuran Besar',
+                    subtitle: '450 x 200 pixel',
+                    value: 'large',
+                    groupValue: _mapSize,
+                    onChanged: (value) => setState(() => _mapSize = value!),
+                    icon: Icons.crop_square,
+                  ),
+                ],
+                
+                Divider(color: dividerColor, height: 24, thickness: 1),
+                
+                // Section: Tampilan
+                _buildSectionHeader('TAMPILAN', Icons.display_settings),
+                
+                _buildDropdownTile(
+                  title: 'Ukuran Font',
+                  subtitle: 'Pilih ukuran teks watermark',
+                  value: _fontSize,
+                  items: const [
+                    'small',
+                    'normal',
+                    'large',
+                  ],
+                  onChanged: (value) => setState(() => _fontSize = value!),
+                  icon: Icons.text_fields,
+                ),
+                
+                _buildDropdownTile(
+                  title: 'Mode Tema',
+                  subtitle: 'Pilih tema aplikasi',
+                  value: _themeMode,
+                  items: const [
+                    'light',
+                    'dark',
+                    'system',
+                  ],
+                  onChanged: (value) => setState(() => _themeMode = value!),
+                  icon: Icons.brightness_4,
+                ),
+                
+                Divider(color: dividerColor, height: 24, thickness: 1),
+                
+                // Section: Kamera
+                _buildSectionHeader('KAMERA', Icons.camera_alt),
+                
+                _buildSliderTile(
+                  title: 'Kualitas Gambar',
+                  subtitle: 'Atur kualitas JPEG (${_imageQuality}%)',
+                  value: _imageQuality.toDouble(),
+                  min: 50,
+                  max: 100,
+                  divisions: 10,
+                  onChanged: (value) => setState(() => _imageQuality = value.toInt()),
+                  icon: Icons.image,
+                ),
+                
+                _buildSwitchTile(
+                  title: 'Jaga Layar Tetap Nyala',
+                  subtitle: 'Mencegah layar mati saat menggunakan kamera',
+                  value: _keepScreenOn,
+                  onChanged: (value) => setState(() => _keepScreenOn = value),
+                  icon: Icons.screen_lock_portrait,
+                ),
+                
+                _buildSwitchTile(
+                  title: 'GPS Akurasi Tinggi',
+                  subtitle: 'Menggunakan GPS dengan akurasi maksimal',
+                  value: _useHighAccuracy,
+                  onChanged: (value) => setState(() => _useHighAccuracy = value),
+                  icon: Icons.gps_fixed,
+                ),
+                
+                _buildSwitchTile(
+                  title: 'Auto Save ke Galeri',
+                  subtitle: 'Menyimpan foto otomatis ke galeri setelah preview',
+                  value: _autoSave,
+                  onChanged: (value) => setState(() => _autoSave = value),
+                  icon: Icons.save_alt,
                 ),
                 
                 Divider(color: dividerColor, height: 24, thickness: 1),
@@ -492,7 +670,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
           Container(
-            height: 180,
+            height: 200,
             width: double.infinity,
             decoration: BoxDecoration(
               color: Colors.black,
@@ -601,6 +779,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildSliderTile({
+    required String title,
+    required String subtitle,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required Function(double) onChanged,
+    required IconData icon,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00B8D4).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: const Color(0xFF00B8D4), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+                    Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            activeColor: const Color(0xFF00B8D4),
+            inactiveColor: Colors.grey.shade700,
+            label: value.toInt().toString(),
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDropdownTile({
     required String title,
     required String subtitle,
@@ -626,7 +857,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         style: const TextStyle(color: Color(0xFF00B8D4)),
         underline: Container(height: 0),
         items: items.map((item) {
-          return DropdownMenuItem(value: item, child: Text(item));
+          final displayName = item == 'small' ? 'Kecil' 
+              : item == 'normal' ? 'Normal'
+              : item == 'large' ? 'Besar'
+              : item == 'light' ? 'Terang'
+              : item == 'dark' ? 'Gelap'
+              : item == 'system' ? 'Sistem'
+              : item;
+          return DropdownMenuItem(value: item, child: Text(displayName));
         }).toList(),
         onChanged: onChanged,
       ),
@@ -680,6 +918,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildPreview() {
     final textColor = _getPreviewTextColor();
+    final opacity = 0.85;
     
     String dateStr = '';
     String timeStr = '';

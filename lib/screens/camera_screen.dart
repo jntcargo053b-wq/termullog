@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/camera_registry.dart';
 import '../services/location_weather_service.dart';
+import '../services/gps_lock_manager.dart';
 import 'preview_screen_enhanced.dart';
 import 'settings_screen.dart';
 
@@ -51,13 +52,15 @@ class CameraConstants {
 }
 
 // ============================================================
-// GPS Bar Widget (alamat real-time)
+// GPS Bar Widget (dengan indikator lock)
 // ============================================================
 class GpsBar extends StatelessWidget {
   final bool gpsReady;
   final String gpsText;
   final Position? bestPosition;
   final String address;
+  final GpsLockState lockState;
+  final int lockProgress;
 
   const GpsBar({
     super.key,
@@ -65,6 +68,8 @@ class GpsBar extends StatelessWidget {
     required this.gpsText,
     this.bestPosition,
     this.address = '',
+    required this.lockState,
+    required this.lockProgress,
   });
 
   @override
@@ -102,6 +107,22 @@ class GpsBar extends StatelessWidget {
               ),
             ],
           ),
+          if (lockState == GpsLockState.acquiring)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: LinearProgressIndicator(
+                value: lockProgress / 100,
+                backgroundColor: Colors.white24,
+                color: Colors.amber,
+                minHeight: 2,
+              ),
+            ),
+          if (lockState == GpsLockState.locked)
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              height: 2,
+              color: Colors.greenAccent,
+            ),
           if (address.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -167,15 +188,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Timer? _uiUpdateTimer;
   bool _isDisposed = false;
 
-  // Address real-time & cache
+  // Address real‑time & cache
   final Map<String, String> _addressCache = {};
   String _currentAddress = '';
   Timer? _addressFetchTimer;
 
-  // Prefetch untuk keperluan preview (cached address & weather)
+  // Prefetch untuk keperluan preview
   String? _cachedAddress;
   String? _cachedWeather;
   DateTime? _lastFetchTime;
+
+  // GPS Lock Manager
+  final GpsLockManager _lockManager = GpsLockManager();
 
   @override
   void initState() {
@@ -311,11 +335,24 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (mounted) setState(() => _gpsText = text);
   }
 
+  String _buildGpsText(double accuracy) {
+    switch (_lockManager.state) {
+      case GpsLockState.locked:
+        return '🔒 ±${accuracy.toStringAsFixed(0)}m';
+      case GpsLockState.acquiring:
+        return '🟡 ±${accuracy.toStringAsFixed(0)}m (${_lockManager.stationaryProgress}%)';
+      case GpsLockState.searching:
+        return '📍 Mencari GPS...';
+      case GpsLockState.stale:
+        return '⚠️ GPS stale';
+    }
+  }
+
   // ============================================================
   // GPS Tracking
   // ============================================================
 
-  Future<void> _startGpsTracking() async {
+  Future<void> _startGpsTracking({Duration interval = const Duration(milliseconds: 700)}) async {
     if (_isDisposed) return;
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
@@ -335,7 +372,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Reset sample counter ketika restart
+      // Reset counter saat restart
       _samplesCollected = 0;
       _positionSamples.clear();
 
@@ -345,7 +382,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final settings = AndroidSettings(
         accuracy: LocationAccuracy.best,
         distanceFilter: 0,
-        intervalDuration: const Duration(milliseconds: 700),
+        intervalDuration: interval,
         forceLocationManager: false,
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: 'GPS aktif',
@@ -365,7 +402,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // _warmupGps TIDAK LANGSUNG SET _bestPosition
   void _warmupGps() async {
     try {
       final warmup = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
@@ -389,6 +425,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _startGpsTracking();
       }
     });
+  }
+
+  Future<void> _setGpsInterval(Duration interval) async {
+    if (_isDisposed) return;
+    await _gpsStream?.cancel();
+    _startGpsTracking(interval: interval);
   }
 
   // Ambil alamat real-time (debounced, dengan cache)
@@ -423,6 +465,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         if (mounted) setState(() => _currentAddress = '');
       }
     });
+  }
+
+  Future<void> _fetchAndSaveLockAddress() async {
+    final lock = _lockManager.lockData;
+    if (lock == null || lock.address.isNotEmpty) return;
+    try {
+      final result = await LocationWeatherService.fetchFromPosition(lock.position);
+      _lockManager.updateLockAddress(result.address, result.weather);
+      _cachedAddress = result.address;
+      _cachedWeather = result.weather;
+      _lastFetchTime = DateTime.now();
+      if (mounted) setState(() => _currentAddress = result.address);
+      debugPrint('GPS Lock address saved: ${result.address}');
+    } catch (e) {
+      debugPrint('Lock address error: $e');
+    }
   }
 
   void _onGpsData(Position pos) {
@@ -461,10 +519,27 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       final averaged = _averageBestPositions();
       if (averaged == null) return;
-      if (_bestPosition == null || averaged.accuracy < _bestPosition!.accuracy) {
-        _bestPosition = averaged;
-        // Setelah _bestPosition berubah, ambil alamat realtime
-        _fetchAddressForCurrentPosition();
+
+      // Gunakan averaged (atau pos asli jika averaging gagal)
+      final effectivePos = averaged ?? pos;
+
+      // ── GPS Lock processing ─────────────────────────────────────────
+      final justLocked = _lockManager.processSample(effectivePos, _bestPosition);
+
+      if (_bestPosition == null || effectivePos.accuracy < _bestPosition!.accuracy - 0.5) {
+        _bestPosition = effectivePos;
+      }
+
+      if (justLocked) {
+        _fetchAndSaveLockAddress();
+        _setGpsInterval(const Duration(seconds: 4)); // maintenance mode
+        debugPrint('GPS: switched to maintenance mode interval');
+      } else if (_lockManager.isLocked && _lockManager.lockData!.address.isEmpty) {
+        _fetchAndSaveLockAddress();
+      }
+
+      if (!_lockManager.isLocked && _lockManager.state == GpsLockState.acquiring) {
+        _setGpsInterval(const Duration(milliseconds: 700));
       }
 
       final acc = _bestPosition!.accuracy;
@@ -473,9 +548,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _debounceUiUpdate(() {
         if (mounted) setState(() {
           _gpsReady = isReady;
-          _gpsText = isReady
-              ? '🟢 GPS ±${acc.toStringAsFixed(0)}m'
-              : '🟡 ±${acc.toStringAsFixed(0)}m';
+          _gpsText = _buildGpsText(acc);
         });
       });
 
@@ -485,11 +558,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         c?.complete();
       }
 
-      // Simpan ke cache untuk preview (address sudah di-fetch oleh _fetchAddressForCurrentPosition)
-      if (pos.accuracy <= 20 && _currentAddress.isNotEmpty) {
+      // Simpan ke cache untuk preview (address sudah di-fetch secara real-time)
+      if (effectivePos.accuracy <= 20 && _currentAddress.isNotEmpty) {
         _cachedAddress = _currentAddress;
         _lastFetchTime = DateTime.now();
-        // Weather bisa di-fetch sesekali, tetapi tidak wajib untuk preview
       }
     } catch (e) {
       debugPrint('GPS data error: $e');
@@ -528,7 +600,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     final valid = _positionSamples
         .where((p) => p.accuracy <= CameraConstants.maxAcceptedAccuracyForSample)
         .toList();
-    if (valid.length < CameraConstants.minSamplesRequired) return _bestPosition;
+    if (valid.length < CameraConstants.minSamplesRequired) return null;
 
     final sorted = List<Position>.from(valid)..sort((a, b) => a.accuracy.compareTo(b.accuracy));
     final medianPos = sorted[sorted.length ~/ 2];
@@ -743,7 +815,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
 
-  // Cache sederhana untuk alamat (fallback)
   Future<String> _getAddressCached(Position? pos) async {
     if (pos == null) return 'Lokasi tidak tersedia';
     final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
@@ -762,6 +833,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ============================================================
+  // Capture (dengan fast path untuk locked GPS)
+  // ============================================================
+
   Future<void> _ambilFoto() async {
     if (!_acquireLock()) return;
     try {
@@ -770,17 +845,40 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _showCameraErrorDialog();
         return;
       }
-      if (_isTakingPhoto || _isPolishing) return;
-      if (ctrl.value.isTakingPicture) return;
+      if (_isTakingPhoto || ctrl.value.isTakingPicture) return;
 
-      // Tampilkan overlay polishing SEBELUM capture
-      if (mounted) setState(() {
-        _isTakingPhoto = true;
-        _isPolishing = true;
-      });
+      if (mounted) setState(() => _isTakingPhoto = true);
       HapticFeedback.lightImpact();
 
-      // Mulai countdown (akan di-update oleh _startCountdown)
+      final waktuFoto = DateTime.now();
+
+      // ── FAST PATH: GPS sudah locked ────────────────────────────────────
+      if (_lockManager.isLocked) {
+        final lockData = _lockManager.lockData!;
+        final capturedFile = await ctrl.takePicture().timeout(CameraConstants.cameraTimeout);
+        final bytes = await File(capturedFile.path).readAsBytes();
+
+        if (mounted) {
+          setState(() => _isTakingPhoto = false);
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PreviewScreen(
+                imageBytes: bytes,
+                timestamp: waktuFoto,
+                position: lockData.position,
+                address: lockData.address.isNotEmpty ? lockData.address : _currentAddress,
+                weather: lockData.weather,
+              ),
+            ),
+          );
+        }
+        if (mounted && _controller == null) await _initCamera();
+        return;
+      }
+
+      // ── NORMAL PATH: GPS belum locked ───────────────────────────────────
+      if (mounted) setState(() => _isPolishing = true);
       _startCountdown();
 
       XFile? capturedFile;
@@ -790,29 +888,20 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       ]);
       if (capturedFile == null) throw Exception('Gagal mengambil foto');
       final bytes = await File(capturedFile!.path).readAsBytes();
-      final waktuFoto = DateTime.now();
 
-      // Tunggu GPS dengan adaptive timeout (tanpa override 2 detik)
       await _waitForBestGps();
 
-      // Gunakan alamat yang sudah di-fetch realtime (atau cached)
-      String alamat;
-      if (_currentAddress.isNotEmpty) {
-        alamat = _currentAddress;
-      } else if (_cachedAddress != null &&
-          _lastFetchTime != null &&
-          DateTime.now().difference(_lastFetchTime!) < const Duration(minutes: 5)) {
-        alamat = _cachedAddress!;
-      } else {
-        alamat = await _getAddressCached(_bestPosition);
-      }
-
-      final cuaca = _cachedWeather ?? '';
+      String alamat = _lockManager.lockData?.address.isNotEmpty == true
+          ? _lockManager.lockData!.address
+          : _currentAddress.isNotEmpty
+              ? _currentAddress
+              : _cachedAddress ?? await _getAddressCached(_bestPosition);
+      final cuaca = _lockManager.lockData?.weather ?? _cachedWeather ?? '';
 
       if (mounted) {
         setState(() {
           _isTakingPhoto = false;
-          // _isPolishing tetap true sampai preview selesai
+          _isPolishing = false;
         });
         await Navigator.push(
           context,
@@ -827,7 +916,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           ),
         );
       }
-      if (mounted) setState(() => _isPolishing = false);
       if (mounted && _controller == null) await _initCamera();
     } catch (e) {
       debugPrint('Capture error: $e');
@@ -943,7 +1031,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
 
-            // GPS Bar (dengan alamat realtime)
+            // GPS Bar dengan indikator lock
             Positioned(
               top: _isLocationServiceDisabled ? 90 : 0,
               left: 0,
@@ -953,6 +1041,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 gpsText: _gpsText,
                 bestPosition: _bestPosition,
                 address: _currentAddress,
+                lockState: _lockManager.state,
+                lockProgress: _lockManager.stationaryProgress,
               ),
             ),
 

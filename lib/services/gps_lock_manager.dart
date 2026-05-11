@@ -1,5 +1,4 @@
-
-import 'dart:async';
+import 'dart:math';  // WAJIB ADA
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 
@@ -35,17 +34,15 @@ class GpsLockManager {
   DateTime? _lastMovement;
 
   static const int _samplesBeforeLock = 8;
-  static const double _moveThreshold = 3.0; // meter
+  static const double _moveThreshold = 3.0;
   static const double _lockAccuracyThreshold = 20.0;
 
   GpsLockState get state => _state;
   GpsLockData? get lockData => _lockData;
   bool get isLocked => _state == GpsLockState.locked && (_lockData?.isValid ?? false);
 
-  /// Proses setiap sample GPS. Return true jika baru saja locked.
   bool processSample(Position newPos, Position? lastBest) {
     if (_state == GpsLockState.locked) {
-      // Cek apakah user mulai bergerak
       if (_lockData != null) {
         final dist = _haversine(
           _lockData!.position.latitude, _lockData!.position.longitude,
@@ -55,7 +52,6 @@ class GpsLockManager {
           _unlock();
           debugPrint('GPS Lock: UNLOCKED — moved ${dist.toStringAsFixed(1)}m');
         } else if (newPos.accuracy < _lockData!.position.accuracy - 2) {
-          // Refresh posisi jika akurasi membaik
           _lockData = GpsLockData(
             position: newPos,
             address: _lockData!.address,
@@ -67,7 +63,6 @@ class GpsLockManager {
       return false;
     }
 
-    // Belum locked
     if (lastBest != null) {
       final dist = _haversine(
         lastBest.latitude, lastBest.longitude,
@@ -128,6 +123,7 @@ class GpsLockManager {
     final a = sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1 * pi / 180) * cos(lat2 * pi / 180) *
         sin(dLon / 2) * sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
   }
 }

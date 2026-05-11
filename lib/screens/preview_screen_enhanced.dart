@@ -1,3 +1,4 @@
+import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';

@@ -14,7 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:permission_handler/permission_handler.dart';
 import '../services/location_weather_service.dart';
-import '../services/settings_cache.dart'; // cache settings
+import '../services/settings_cache.dart';
 import '../core/constants.dart';
 
 // ─────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ enum SaveStatus { idle, saving, saved, error }
 // konstanta lokal
 const int _kMaxAddressLen = 55;
 
-// warna dari constants.dart (sudah didefinisikan di file tersebut)
+// warna dari constants.dart
 final _blue = kColorLightBlue;
 final _blueDim = kColorDimBlue;
 final _white = kColorWhite;
@@ -104,7 +104,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     _transformController.dispose();
     super.dispose();
     if (pathToDelete != null && shouldDelete) {
-      // hapus setelah frame selesai agar tidak crash
       Future.microtask(() async {
         try {
           final f = File(pathToDelete);
@@ -114,7 +113,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // unique temp filename
   String _uniqueTempName(DateTime ts) {
     final suffix = _rng.nextInt(0xFFFF).toRadixString(16).padLeft(4, '0');
     return 'termullog_${ts.millisecondsSinceEpoch}_$suffix.jpg';
@@ -131,7 +129,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       final timestamp = widget.timestamp!;
       final position = widget.position;
 
-      // gunakan address/weather dari kamera jika sudah ada
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
 
@@ -209,7 +206,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     bool showMiniMap,
     Uint8List? mapBytes,
   ) async {
-    // gunakan TransferableTypedData untuk efisiensi
     final transferable = TransferableTypedData.fromList([imageBytes]);
     final params = {
       'transferable': transferable,
@@ -230,7 +226,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   static Uint8List _applyWatermarkTransfer(Map<String, dynamic> params) {
     final transferable = params['transferable'] as TransferableTypedData;
     final bytes = transferable.materialize().asUint8List();
-    // ubah ke map biasa agar _applyWatermark bisa dipakai ulang
     final newParams = Map<String, dynamic>.from(params);
     newParams['bytes'] = bytes;
     newParams.remove('transferable');
@@ -276,7 +271,6 @@ class _PreviewScreenState extends State<PreviewScreen>
         result = _layoutCinematic(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
         break;
       case WatermarkLayout.professional:
-        // gambar field survey langsung di src tanpa encode
         _drawFieldSurveyOnSrc(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
         if (showMiniMap && mapBytes != null && position != null) {
           _addMiniMapTopRight(src, mapBytes);
@@ -478,7 +472,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 4: FIELD SURVEY (modifikasi langsung src, tidak encode) ──
+  // ── LAYOUT 4: FIELD SURVEY (modifikasi langsung src) ─────────
   static void _drawFieldSurveyOnSrc(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -529,7 +523,7 @@ class _PreviewScreenState extends State<PreviewScreen>
         color: img.ColorRgba8(30, 144, 255, 200));
   }
 
-  // ── MINI MAP (kanan atas) ─────────────────────────────────────
+  // ── MINI MAP ────────────────────────────────────────────────
   static void _addMiniMapTopRight(img.Image src, Uint8List? mapBytes) {
     if (mapBytes == null) return;
     try {
@@ -578,7 +572,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     final int y0 = isTop ? 0 : src.height - panelH;
     if (y0 < 0) return Uint8List(0);
 
-    // hanya area panel yang digelapkan
     final int yEnd = isTop ? y0 + panelH : src.height - accentH;
     for (int y = y0; y < yEnd; y++) {
       final progress = (y - y0) / (panelH).clamp(0.0, 1.0);
@@ -627,13 +620,12 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   // ─────────────────────────────────────────────────────────────
-  // SAVE & SHARE (dengan permission & retry)
+  // SAVE & SHARE
   // ─────────────────────────────────────────────────────────────
 
   Future<void> _saveToGallery() async {
     if (_saveStatus == SaveStatus.saving || _displayImagePath == null) return;
 
-    // izin storage untuk Android
     if (Platform.isAndroid) {
       final status = await Permission.storage.request();
       if (!status.isGranted) {
@@ -653,7 +645,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (!mounted) return;
 
       if (result == true) {
-        // hapus file temporary setelah sukses
         try {
           final tempFile = File(_displayImagePath!);
           if (await tempFile.exists()) await tempFile.delete();

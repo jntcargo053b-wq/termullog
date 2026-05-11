@@ -623,102 +623,94 @@ class _PreviewScreenState extends State<PreviewScreen>
   // SAVE & SHARE
   // ─────────────────────────────────────────────────────────────
 
-  Future<void> _saveToGallery() async {
-    if (_saveStatus == SaveStatus.saving || _displayImagePath == null) return;
+  // Di bagian atas, tambahkan import:
+import 'package:device_info_plus/device_info_plus.dart';
 
-    if (Platform.isAndroid) {
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        _showErrorSnackbar('Izin penyimpanan diperlukan');
-        return;
-      }
+// Ganti method _saveToGallery dengan kode berikut:
+Future<void> _saveToGallery() async {
+  if (_saveStatus == SaveStatus.saving || _displayImagePath == null) return;
+
+  // Request permission berdasarkan versi Android
+  if (Platform.isAndroid) {
+    final granted = await _requestStoragePermission();
+    if (!granted) {
+      _showErrorSnackbar('Izin penyimpanan diperlukan untuk menyimpan foto');
+      return;
     }
+  } else if (Platform.isIOS) {
+    final status = await Permission.photos.request();
+    if (!status.isGranted) {
+      _showErrorSnackbar('Izin akses foto diperlukan');
+      return;
+    }
+  }
 
-    setState(() => _saveStatus = SaveStatus.saving);
+  setState(() => _saveStatus = SaveStatus.saving);
 
-    try {
-      final bool? result = await GallerySaver.saveImage(
-        _displayImagePath!,
-        albumName: 'TermulLog',
-      );
+  try {
+    final bool? result = await GallerySaver.saveImage(
+      _displayImagePath!,
+      albumName: 'TermulLog',
+    );
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      if (result == true) {
-        try {
-          final tempFile = File(_displayImagePath!);
-          if (await tempFile.exists()) await tempFile.delete();
-        } catch (e) {
-          debugPrint('Failed to delete temp file after save: $e');
-        }
-        _isFileSaved = true;
-        setState(() => _saveStatus = SaveStatus.saved);
-        _checkAnimController.forward(from: 0);
-        HapticFeedback.mediumImpact();
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) setState(() => _saveStatus = SaveStatus.idle);
-        });
-      } else {
-        setState(() => _saveStatus = SaveStatus.error);
-        _showErrorSnackbar('Gagal menyimpan foto ke galeri');
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) setState(() => _saveStatus = SaveStatus.idle);
-        });
+    if (result == true) {
+      // Hapus temp file setelah berhasil
+      try {
+        final tempFile = File(_displayImagePath!);
+        if (await tempFile.exists()) await tempFile.delete();
+      } catch (e) {
+        debugPrint('Failed to delete temp file after save: $e');
       }
-    } catch (e) {
+      _isFileSaved = true;
+      setState(() => _saveStatus = SaveStatus.saved);
+      _checkAnimController.forward(from: 0);
+      HapticFeedback.mediumImpact();
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _saveStatus = SaveStatus.idle);
+      });
+    } else {
       setState(() => _saveStatus = SaveStatus.error);
-      String errorMsg = e.toString();
-      if (errorMsg.length > 50) errorMsg = errorMsg.substring(0, 50);
-      _showErrorSnackbar('Gagal menyimpan: $errorMsg');
+      _showErrorSnackbar('Gagal menyimpan foto ke galeri');
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => _saveStatus = SaveStatus.idle);
       });
     }
-  }
-
-  Future<void> _sharePhoto() async {
-    if (_isSharing || _displayImagePath == null) return;
-    setState(() {
-      _isSharing = true;
-      _isFileInUse = true;
+  } catch (e) {
+    setState(() => _saveStatus = SaveStatus.error);
+    _showErrorSnackbar('Gagal menyimpan: ${e.toString().substring(0, 50)}');
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _saveStatus = SaveStatus.idle);
     });
+  }
+}
 
-    try {
-      final file = File(_displayImagePath!);
-      if (!file.existsSync()) throw Exception('File tidak ada');
-      await Share.shareXFiles(
-        [XFile(_displayImagePath!)],
-        text: 'Foto dengan GPS dari TermulLog',
-        subject: 'Foto GPS TermulLog',
-      );
-      HapticFeedback.lightImpact();
-    } catch (e) {
-      _showErrorSnackbar('Gagal membagikan foto');
-    } finally {
-      if (mounted) setState(() {
-        _isSharing = false;
-        _isFileInUse = false;
-      });
+Future<bool> _requestStoragePermission() async {
+  if (!Platform.isAndroid) return true;
+  final androidInfo = await DeviceInfoPlugin().androidInfo;
+  final sdkInt = androidInfo.version.sdkInt;
+
+  if (sdkInt >= 33) {
+    // Android 13+ : READ_MEDIA_IMAGES / Permission.photos
+    final status = await Permission.photos.request();
+    if (status.isGranted) return true;
+    if (status.isPermanentlyDenied) {
+      openAppSettings();
+      return false;
     }
+    return false;
+  } else {
+    // Android 12 ke bawah : WRITE_EXTERNAL_STORAGE
+    final status = await Permission.storage.request();
+    if (status.isGranted) return true;
+    if (status.isPermanentlyDenied) {
+      openAppSettings();
+      return false;
+    }
+    return false;
   }
-
-  void _showErrorSnackbar(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: Text(msg)),
-          ],
-        ),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
+}
 
   // ─────────────────────────────────────────────────────────────
   // BUILD

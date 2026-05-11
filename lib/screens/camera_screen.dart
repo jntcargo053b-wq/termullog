@@ -55,7 +55,7 @@ class CameraConstants {
 }
 
 // ============================================================
-// GPS Bar Widget (dengan indikator lock)
+// GPS Bar Widget
 // ============================================================
 class GpsBar extends StatelessWidget {
   final bool gpsReady;
@@ -128,7 +128,7 @@ class GpsBar extends StatelessWidget {
             ),
           if (address.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.Only(top: 4),
+              padding: const EdgeInsets.only(top: 4),
               child: Text(
                 address,
                 style: const TextStyle(color: Colors.white54, fontSize: 10),

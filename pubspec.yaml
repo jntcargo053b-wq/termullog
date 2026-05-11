@@ -34,7 +34,8 @@ dependencies:
   # Save & share
   gallery_saver_plus: ^3.2.1
   share_plus: ^9.0.0
-
+  image_gallery_saver: ^2.0.3
+  
   # Signature
   signature: ^5.5.0
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:collection';
 import 'package:path/path.dart' as path;
 
 import 'package:camera/camera.dart';
@@ -9,10 +10,12 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../core/camera_registry.dart';
 import '../services/location_weather_service.dart';
 import '../services/gps_lock_manager.dart';
+import '../services/settings_cache.dart';
 import 'preview_screen_enhanced.dart';
 import 'settings_screen.dart';
 
@@ -20,7 +23,8 @@ import 'settings_screen.dart';
 // Constants
 // ============================================================
 class CameraConstants {
-  static const int gpsWatchdogIntervalSeconds = 15;
+  static const int gpsWatchdogHealthyInterval = 30;
+  static const int gpsWatchdogUnhealthyInterval = 15;
   static const int gpsStaleAfterSeconds = 25;
   static const double accuracyTarget = 10.0;
   static const double accuracyGood = 15.0;
@@ -43,10 +47,9 @@ class CameraConstants {
   static const Duration cameraReinitDelay = Duration(milliseconds: 300);
   static const Duration uiDebounceDelay = Duration(milliseconds: 100);
   static const int maxErrorMessageLength = 50;
-  static const Duration tempFileRetention = Duration(hours: 24);
+  static const Duration tempFileRetention = Duration(hours: 1);
   static const int lowAccuracyCheckDelaySeconds = 5;
   static const double lowAccuracyThreshold = 30.0;
-  static const int preWarmDelayMs = 800;
   static const double accuracyMax = 80.0;
   static const int addressCacheMaxSize = 20;
 }
@@ -125,7 +128,7 @@ class GpsBar extends StatelessWidget {
             ),
           if (address.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.Only(top: 4),
               child: Text(
                 address,
                 style: const TextStyle(color: Colors.white54, fontSize: 10),
@@ -188,8 +191,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Timer? _uiUpdateTimer;
   bool _isDisposed = false;
 
-  // Address real‑time & cache
-  final Map<String, String> _addressCache = {};
+  // Address real‑time & cache (LRU)
+  final LinkedHashMap<String, String> _addressCache = LinkedHashMap();
   String _currentAddress = '';
   Timer? _addressFetchTimer;
 
@@ -200,6 +203,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   // GPS Lock Manager
   final GpsLockManager _lockManager = GpsLockManager();
+
+  // Focus overlay
+  OverlayEntry? _focusOverlay;
+
+  // Untuk double-tap reset zoom
+  Offset? _lastDoubleTapPos;
+
+  // Random generator untuk nama file unik
+  final Random _rng = Random.secure();
 
   @override
   void initState() {
@@ -237,6 +249,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // Helper Methods
   // ============================================================
 
+  String _uniqueTempName(DateTime ts) {
+    final suffix = _rng.nextInt(0xFFFF).toRadixString(16).padLeft(4, '0');
+    return 'termullog_${ts.millisecondsSinceEpoch}_$suffix.jpg';
+  }
+
+  void _addToAddressCache(String key, String value) {
+    if (_addressCache.containsKey(key)) {
+      _addressCache.remove(key);
+    }
+    if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
+      _addressCache.remove(_addressCache.keys.first);
+    }
+    _addressCache[key] = value;
+  }
+
   void _showCameraErrorDialog() {
     if (!mounted) return;
     showDialog(
@@ -265,11 +292,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _preWarmGps() async {
     try {
-      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
-          .timeout(const Duration(seconds: 3));
-      await Future.delayed(const Duration(milliseconds: CameraConstants.preWarmDelayMs));
-      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
-          .timeout(const Duration(seconds: 3));
+      await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+      ).timeout(const Duration(seconds: 3));
     } catch (_) {}
   }
 
@@ -307,22 +332,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _cleanOldTempFiles() async {
     try {
       final dir = await getTemporaryDirectory();
-      final cutoff = DateTime.now().subtract(CameraConstants.tempFileRetention);
+      final now = DateTime.now();
       final files = dir.listSync()
           .whereType<File>()
           .where((f) => path.basename(f.path).startsWith('termullog_'))
-          .where((f) {
-            try {
-              return f.statSync().modified.isBefore(cutoff);
-            } catch (_) {
-              return false;
-            }
-          }).toList();
+          .toList();
       int deletedCount = 0;
       for (final f in files) {
         try {
-          await f.delete();
-          deletedCount++;
+          final age = now.difference(f.statSync().modified);
+          if (age > CameraConstants.tempFileRetention) {
+            await f.delete();
+            deletedCount++;
+          }
         } catch (_) {}
       }
       if (deletedCount > 0) debugPrint('Cleaned up $deletedCount old temp files');
@@ -416,13 +438,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   void _startGpsWatchdog() {
     _gpsWatchdog?.cancel();
-    _gpsWatchdog = Timer.periodic(
-        Duration(seconds: CameraConstants.gpsWatchdogIntervalSeconds), (_) async {
+    final interval = _gpsReady
+        ? const Duration(seconds: CameraConstants.gpsWatchdogHealthyInterval)
+        : const Duration(seconds: CameraConstants.gpsWatchdogUnhealthyInterval);
+    _gpsWatchdog = Timer.periodic(interval, (_) async {
       if (_isDisposed) return;
-      if (DateTime.now().difference(_lastGpsUpdate).inSeconds > CameraConstants.gpsStaleAfterSeconds) {
+      final isStale = DateTime.now()
+          .difference(_lastGpsUpdate)
+          .inSeconds > CameraConstants.gpsStaleAfterSeconds;
+      if (isStale) {
         _gpsRestartCount++;
         await _gpsStream?.cancel();
-        _startGpsTracking();
+        await _startGpsTracking();
+        _startGpsWatchdog(); // restart watchdog dengan interval baru
       }
     });
   }
@@ -453,10 +481,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         final addr = result.address;
         if (mounted && addr.isNotEmpty && !addr.startsWith('GPS:')) {
           setState(() => _currentAddress = addr);
-          if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
-            _addressCache.remove(_addressCache.keys.first);
-          }
-          _addressCache[cacheKey] = addr;
+          _addToAddressCache(cacheKey, addr);
         } else {
           if (mounted) setState(() => _currentAddress = '');
         }
@@ -520,7 +545,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final averaged = _averageBestPositions();
       if (averaged == null) return;
 
-      // Gunakan averaged (atau pos asli jika averaging gagal)
       final effectivePos = averaged ?? pos;
 
       // ── GPS Lock processing ─────────────────────────────────────────
@@ -697,6 +721,35 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   // ============================================================
+  // Focus indicator
+  // ============================================================
+
+  void _showFocusIndicator(Offset position) {
+    _focusOverlay?.remove();
+    _focusOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        left: position.dx - 24,
+        top: position.dy - 24,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 1.0, end: 0.0),
+          duration: const Duration(milliseconds: 1200),
+          builder: (_, opacity, child) => Opacity(opacity: opacity, child: child),
+          onEnd: () => _focusOverlay?.remove(),
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white, width: 1.5),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_focusOverlay!);
+  }
+
+  // ============================================================
   // Camera & Capture
   // ============================================================
 
@@ -705,6 +758,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (CameraRegistry.cameras.isEmpty) {
       _cameraError = 'Tidak ada kamera yang tersedia';
       _showCameraErrorDialog();
+      if (mounted) setState(() => _isWarmingUp = false);
       return;
     }
 
@@ -738,6 +792,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     } finally {
       _isReinitializingCamera = false;
+      if (mounted) setState(() => _isWarmingUp = false);
     }
   }
 
@@ -815,6 +870,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
 
+  // Cache sederhana untuk alamat (fallback)
   Future<String> _getAddressCached(Position? pos) async {
     if (pos == null) return 'Lokasi tidak tersedia';
     final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
@@ -823,10 +879,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos);
       final address = result.address;
-      if (_addressCache.length >= CameraConstants.addressCacheMaxSize) {
-        _addressCache.remove(_addressCache.keys.first);
-      }
-      _addressCache[cacheKey] = address;
+      _addToAddressCache(cacheKey, address);
       return address;
     } catch (_) {
       return '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
@@ -979,11 +1032,27 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               )
             else if (_isInitialized && _controller != null && !_isWarmingUp)
-              Container(
-                width: double.infinity,
-                height: double.infinity,
-                color: Colors.black,
-                child: CameraPreview(_controller!),
+              GestureDetector(
+                onTapUp: (details) async {
+                  final ctrl = _controller;
+                  if (ctrl == null || !ctrl.value.isInitialized) return;
+                  final size = MediaQuery.of(context).size;
+                  final offset = Offset(
+                    details.localPosition.dx / size.width,
+                    details.localPosition.dy / size.height,
+                  );
+                  try {
+                    await ctrl.setFocusPoint(offset);
+                    await ctrl.setExposurePoint(offset);
+                    _showFocusIndicator(details.localPosition);
+                  } catch (_) {}
+                },
+                child: Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  color: Colors.black,
+                  child: CameraPreview(_controller!),
+                ),
               )
             else
               const Center(
@@ -1046,18 +1115,20 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
 
-            // Settings Button
+            // Settings Button (perbaiki posisi)
             Positioned(
-              top: _isLocationServiceDisabled ? 90 : 0,
-              right: 8,
-              child: IconButton(
-                icon: const Icon(Icons.settings, color: Colors.white70, size: 22),
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                },
+              top: (_isLocationServiceDisabled ? 90 : 0) + 4,
+              right: 4,
+              child: SafeArea(
+                child: IconButton(
+                  icon: const Icon(Icons.settings, color: Colors.white70, size: 22),
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
+                  },
+                ),
               ),
             ),
 

@@ -1,4 +1,4 @@
-// preview_screen_enhanced.dart (clean)
+// preview_screen_enhanced.dart (final dengan fix mini map)
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
@@ -20,15 +19,10 @@ import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../core/constants.dart';
 
-// ─────────────────────────────────────────────────────────────
-// ENUM STATUS SAVE
-// ─────────────────────────────────────────────────────────────
-
+// --- ENUM & CONSTANTS -----------------------------------------------------
 enum SaveStatus { idle, saving, saved, error }
-
 const int _kMaxAddressLen = 55;
 
-// warna dari constants.dart
 final _blue = kColorLightBlue;
 final _white = kColorWhite;
 final _offWhite = kColorOffWhite;
@@ -36,15 +30,16 @@ final _grey = kColorDarkGrey;
 final _dark = kColorVeryDarkBg;
 final _darker = kColorBlackerBg;
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------------------
 // PREVIEW SCREEN
-// ─────────────────────────────────────────────────────────────
-
+// -------------------------------------------------------------------------
 class PreviewScreen extends StatefulWidget {
   final String? imagePath;
   final Uint8List? imageBytes;
   final DateTime? timestamp;
-  final Position? position;
+  final double? latitude;
+  final double? longitude;
+  final double? accuracy;
   final String? address;
   final String? weather;
 
@@ -53,7 +48,9 @@ class PreviewScreen extends StatefulWidget {
     this.imagePath,
     this.imageBytes,
     this.timestamp,
-    this.position,
+    this.latitude,
+    this.longitude,
+    this.accuracy,
     this.address,
     this.weather,
   }) : assert(imagePath != null || imageBytes != null,
@@ -130,10 +127,109 @@ class _PreviewScreenState extends State<PreviewScreen>
     return decoded;
   }
 
+  Future<void> _processImageAsync() async {
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+    });
+    _processingStep.value = 'Memuat gambar...';
+
+    try {
+      final bytes = widget.imageBytes!;
+      final timestamp = widget.timestamp!;
+      final hasPosition = widget.latitude != null && widget.longitude != null;
+
+      String address = widget.address ?? '';
+      String weather = widget.weather ?? '';
+
+      if (hasPosition && (address.isEmpty || weather.isEmpty)) {
+        _processingStep.value = 'Mengambil alamat & cuaca...';
+        try {
+          final dummyPos = Position(
+            latitude: widget.latitude!,
+            longitude: widget.longitude!,
+            accuracy: widget.accuracy ?? 0,
+            altitude: 0, altitudeAccuracy: 0,
+            heading: 0, headingAccuracy: 0,
+            speed: 0, speedAccuracy: 0,
+            timestamp: DateTime.now(),
+          );
+          final result = await LocationWeatherService.fetchFromPosition(dummyPos)
+              .timeout(const Duration(seconds: 10));
+          if (address.isEmpty) address = result.address;
+          if (weather.isEmpty) weather = result.weather;
+        } catch (e) {
+          debugPrint('Geocoding/weather error: $e');
+          if (address.isEmpty) address = 'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
+        }
+      } else if (address.isEmpty && !hasPosition) {
+        address = 'Tidak ada lokasi';
+      }
+
+      final results = await Future.wait([
+        SettingsCache.layout,
+        SettingsCache.showWeather,
+        SettingsCache.showAccuracy,
+        SettingsCache.watermarkPosition,
+        SettingsCache.showMiniMap,
+      ]);
+      final layout = results[0] as WatermarkLayout;
+      final showWeather = results[1] as bool;
+      final showAccuracy = results[2] as bool;
+      final watermarkPosition = results[3] as String;
+      final showMiniMap = results[4] as bool;
+
+      Uint8List? mapBytes;
+      if (showMiniMap && hasPosition && layout == WatermarkLayout.professional) {
+        _processingStep.value = 'Menambahkan peta...';
+        try {
+          mapBytes = await LocationWeatherService.fetchMapWithRetry(
+            widget.latitude!,
+            widget.longitude!,
+          );
+          if (mapBytes != null) debugPrint('Mini map fetched');
+          else debugPrint('Mini map fetch failed');
+        } catch (e) {
+          debugPrint('Mini map fetch error: $e');
+        }
+      }
+
+      _processingStep.value = 'Membuat watermark...';
+      final processedBytes = await _computeWatermark(
+        bytes, timestamp,
+        widget.latitude, widget.longitude, widget.accuracy,
+        address, weather,
+        layout, showWeather, showAccuracy, watermarkPosition, showMiniMap, mapBytes,
+      );
+
+      final dir = await getTemporaryDirectory();
+      final fileName = _uniqueTempName(timestamp);
+      final tempFile = File('${dir.path}/$fileName');
+      await tempFile.writeAsBytes(processedBytes);
+
+      if (mounted) {
+        setState(() {
+          _displayImagePath = tempFile.path;
+          _isProcessing = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Processing error: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
   Future<Uint8List> _computeWatermark(
     Uint8List imageBytes,
     DateTime timestamp,
-    Position? position,
+    double? lat,
+    double? lon,
+    double? acc,
     String address,
     String weather,
     WatermarkLayout layout,
@@ -144,7 +240,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     Uint8List? mapBytes,
   ) async {
     final transferable = TransferableTypedData.fromList([imageBytes]);
-    final mapTransferable = mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null;
+    final mapTransferable = mapBytes != null
+        ? TransferableTypedData.fromList([mapBytes])
+        : null;
+
     final params = {
       'transferable': transferable,
       'mapTransferable': mapTransferable,
@@ -156,7 +255,11 @@ class _PreviewScreenState extends State<PreviewScreen>
       'showAccuracy': showAccuracy,
       'watermarkPosition': watermarkPosition,
       'showMiniMap': showMiniMap,
+      'posLat': lat,
+      'posLon': lon,
+      'posAcc': acc,
     };
+
     _cancelableCompute = CancelableOperation.fromFuture(
       compute(_applyWatermarkTransfer, params),
     );
@@ -180,7 +283,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   static Uint8List _applyWatermark(Map<String, dynamic> params) {
     final bytes = params['bytes'] as Uint8List;
     final timestamp = params['timestamp'] as DateTime;
-    final position = params['position'] as Position?;
     final address = params['address'] as String;
     final weather = params['weather'] as String;
     final layoutIndex = params['layout'] as int;
@@ -190,11 +292,16 @@ class _PreviewScreenState extends State<PreviewScreen>
     final showMiniMap = params['showMiniMap'] as bool? ?? false;
     final mapBytes = params['mapBytes'] as Uint8List?;
 
+    final posLat = params['posLat'] as double?;
+    final posLon = params['posLon'] as double?;
+    final posAcc = params['posAcc'] as double?;
+    final hasPosition = posLat != null && posLon != null;
+
     final layout = WatermarkLayout.values[layoutIndex];
 
-    final src = _decodeOrThrow(bytes);
+    img.Image src = _decodeOrThrow(bytes);
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
-      img.copyResize(src,
+      src = img.copyResize(src,
           width: src.width > src.height ? kMaxOutputWidth : null,
           height: src.height > src.width ? kMaxOutputWidth : null,
           interpolation: img.Interpolation.average);
@@ -203,36 +310,43 @@ class _PreviewScreenState extends State<PreviewScreen>
     Uint8List result;
     switch (layout) {
       case WatermarkLayout.minimal:
-        result = _layoutFilmStrip(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+        result = _layoutFilmStrip(src, timestamp, hasPosition, posLat, posLon, posAcc,
+            address, weather, showWeather, showAccuracy, watermarkPosition);
         break;
       case WatermarkLayout.modern:
-        result = _layoutDSLRCorner(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+        result = _layoutDSLRCorner(src, timestamp, hasPosition, posLat, posLon, posAcc,
+            address, weather, showWeather, showAccuracy, watermarkPosition);
         break;
       case WatermarkLayout.elegant:
-        result = _layoutCinematic(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+        result = _layoutCinematic(src, timestamp, hasPosition, posLat, posLon, posAcc,
+            address, weather, showWeather, showAccuracy, watermarkPosition);
         break;
       case WatermarkLayout.professional:
-        _drawFieldSurveyOnSrc(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
-        if (showMiniMap && mapBytes != null && position != null) {
+        _drawFieldSurveyOnSrc(src, timestamp, hasPosition, posLat, posLon, posAcc,
+            address, weather, showWeather, showAccuracy, watermarkPosition);
+        if (showMiniMap && mapBytes != null && hasPosition) {
           _addMiniMapTopRight(src, mapBytes);
         }
         result = Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
         break;
       case WatermarkLayout.semiTransparent:
-        result = _layoutHUD(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
+        result = _layoutHUD(src, timestamp, hasPosition, posLat, posLon, posAcc,
+            address, weather, showWeather, showAccuracy, watermarkPosition);
         break;
     }
+
     if (result.isEmpty) throw Exception('Layout gagal menghasilkan data gambar');
     return result;
   }
 
-  // ── LAYOUT 1: FILM STRIP ─────────────────────────────────────
+  // ================= LAYOUT 1: FILM STRIP =================
   static Uint8List _layoutFilmStrip(
-    img.Image src, DateTime timestamp, Position? position,
+    img.Image src, DateTime timestamp,
+    bool hasPosition, double? lat, double? lon, double? acc,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
     int rows = 3;
-    if (position != null) rows++;
+    if (hasPosition) rows++;
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows++;
     if (showWeather && weather.isNotEmpty) rows++;
     const int lineH = 28;
@@ -259,10 +373,10 @@ class _PreviewScreenState extends State<PreviewScreen>
         font: font, x: padX, y: cy, color: _white);
     cy += lineH;
 
-    if (position != null) {
-      final acc = showAccuracy ? '  ±${position.accuracy.toStringAsFixed(0)}m' : '';
+    if (hasPosition) {
+      final accStr = showAccuracy ? '  ±${acc?.toStringAsFixed(0) ?? '?'}m' : '';
       img.drawString(src,
-          '${position.latitude.toStringAsFixed(6)}  ${position.longitude.toStringAsFixed(6)}$acc',
+          '${lat!.toStringAsFixed(6)}  ${lon!.toStringAsFixed(6)}$accStr',
           font: font, x: padX, y: cy, color: _blue);
       cy += lineH;
     }
@@ -280,12 +394,12 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 2: DSLR CORNER ────────────────────────────────────
+  // ================= LAYOUT 2: DSLR CORNER =================
   static Uint8List _layoutDSLRCorner(
-    img.Image src, DateTime timestamp, Position? position,
+    img.Image src, DateTime timestamp,
+    bool hasPosition, double? lat, double? lon, double? acc,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    // ... (sama seperti sebelumnya, tidak diubah)
     const int padX = 18;
     const int padY = 16;
     const int lineH = 26;
@@ -293,8 +407,8 @@ class _PreviewScreenState extends State<PreviewScreen>
     const int brkW = 4;
 
     int rows = 2;
-    if (position != null) rows += 2;
-    if (showAccuracy && position != null) rows += 1;
+    if (hasPosition) rows += 2;
+    if (showAccuracy && hasPosition) rows += 1;
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows += 1;
     if (showWeather && weather.isNotEmpty) rows += 1;
 
@@ -329,13 +443,13 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.drawString(src, DateFormat('HH : mm : ss').format(timestamp), font: font, x: xT, y: cy, color: _white);
     cy += lineH;
 
-    if (position != null) {
-      img.drawString(src, 'N ${position.latitude.toStringAsFixed(6)}', font: font, x: xT, y: cy, color: _offWhite);
+    if (hasPosition) {
+      img.drawString(src, 'N ${lat!.toStringAsFixed(6)}', font: font, x: xT, y: cy, color: _offWhite);
       cy += lineH;
-      img.drawString(src, 'E ${position.longitude.toStringAsFixed(6)}', font: font, x: xT, y: cy, color: _offWhite);
+      img.drawString(src, 'E ${lon!.toStringAsFixed(6)}', font: font, x: xT, y: cy, color: _offWhite);
       cy += lineH;
       if (showAccuracy) {
-        img.drawString(src, 'ACC  ±${position.accuracy.toStringAsFixed(0)} m', font: font, x: xT, y: cy, color: _grey);
+        img.drawString(src, 'ACC  ±${acc?.toStringAsFixed(0) ?? '?'} m', font: font, x: xT, y: cy, color: _grey);
         cy += lineH;
       }
     }
@@ -353,11 +467,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // Untuk layout lain (Cinematic, HUD) silakan gunakan yang sudah ada, tidak perlu diubah.
-
-  // ── LAYOUT 3: CINEMATIC (ringkas) ─────────────────────────
+  // ================= LAYOUT 3: CINEMATIC =================
   static Uint8List _layoutCinematic(
-    img.Image src, DateTime timestamp, Position? position,
+    img.Image src, DateTime timestamp,
+    bool hasPosition, double? lat, double? lon, double? acc,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
     const int gradH = 180;
@@ -391,13 +504,13 @@ class _PreviewScreenState extends State<PreviewScreen>
     img.drawString(src, DateFormat('dd  MMMM  yyyy').format(timestamp), font: font, x: padX, y: cy, color: _blue);
     cy += lineH + 8;
 
-    if (position != null) {
+    if (hasPosition) {
       img.drawString(src,
-          '${position.latitude.toStringAsFixed(5)}°N   ${position.longitude.toStringAsFixed(5)}°E',
+          '${lat!.toStringAsFixed(5)}°N   ${lon!.toStringAsFixed(5)}°E',
           font: font, x: padX, y: cy, color: _offWhite);
       cy += lineH;
       if (showAccuracy) {
-        img.drawString(src, 'ACCURACY  ±${position.accuracy.toStringAsFixed(0)} M',
+        img.drawString(src, 'ACCURACY  ±${acc?.toStringAsFixed(0) ?? '?'} M',
             font: font, x: padX, y: cy, color: _grey);
         cy += lineH;
       }
@@ -416,9 +529,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 4: FIELD SURVEY (modifikasi langsung) ─────────
+  // ================= LAYOUT 4: FIELD SURVEY =================
   static void _drawFieldSurveyOnSrc(
-    img.Image src, DateTime timestamp, Position? position,
+    img.Image src, DateTime timestamp,
+    bool hasPosition, double? lat, double? lon, double? acc,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
     const int headerH = 32;
@@ -430,10 +544,10 @@ class _PreviewScreenState extends State<PreviewScreen>
       ['DATE', DateFormat('yyyy-MM-dd').format(timestamp)],
       ['TIME', DateFormat('HH:mm:ss').format(timestamp)],
     ];
-    if (position != null) {
-      rows.add(['LAT', '${position.latitude.toStringAsFixed(6)}°']);
-      rows.add(['LON', '${position.longitude.toStringAsFixed(6)}°']);
-      if (showAccuracy) rows.add(['ACC', '±${position.accuracy.toStringAsFixed(0)} m']);
+    if (hasPosition) {
+      rows.add(['LAT', '${lat!.toStringAsFixed(6)}°']);
+      rows.add(['LON', '${lon!.toStringAsFixed(6)}°']);
+      if (showAccuracy) rows.add(['ACC', '±${acc?.toStringAsFixed(0) ?? '?'} m']);
     }
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       rows.add(['ADDR', address.length > 50 ? '${address.substring(0, 47)}…' : address]);
@@ -467,6 +581,7 @@ class _PreviewScreenState extends State<PreviewScreen>
         color: img.ColorRgba8(30, 144, 255, 200));
   }
 
+  // ================= MINI MAP (pojok kanan bawah) =================
   static void _addMiniMapTopRight(img.Image src, Uint8List? mapBytes) {
     if (mapBytes == null) return;
     try {
@@ -476,7 +591,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       const int mapHeight = 140;
       final resizedMap = img.copyResize(mapImage, width: mapWidth, height: mapHeight);
       final mapX = src.width - mapWidth - 16;
-      final mapY = 16;
+      final mapY = src.height - mapHeight - 16;
       if (mapX > 0 && mapY > 0) {
         img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY);
         img.drawRect(src,
@@ -495,9 +610,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // ── LAYOUT 5: HUD ────────────────────────────────────────────
+  // ================= LAYOUT 5: HUD =================
   static Uint8List _layoutHUD(
-    img.Image src, DateTime timestamp, Position? position,
+    img.Image src, DateTime timestamp,
+    bool hasPosition, double? lat, double? lon, double? acc,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
     const int padX = 36;
@@ -506,7 +622,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     const int accentH = 6;
 
     int rows = 2;
-    if (position != null) rows += 1;
+    if (hasPosition) rows += 1;
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows += 1;
     if (showWeather && weather.isNotEmpty) rows += 1;
 
@@ -541,10 +657,10 @@ class _PreviewScreenState extends State<PreviewScreen>
         font: font, x: padX, y: cy, color: _white);
     cy += lineH + 6;
 
-    if (position != null) {
-      final acc = showAccuracy ? '   ±${position.accuracy.toStringAsFixed(0)}m' : '';
+    if (hasPosition) {
+      final accStr = showAccuracy ? '   ±${acc?.toStringAsFixed(0) ?? '?'}m' : '';
       img.drawString(src,
-          '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}$acc',
+          '${lat!.toStringAsFixed(5)}, ${lon!.toStringAsFixed(5)}$accStr',
           font: font, x: padX, y: cy, color: img.ColorRgba8(30, 144, 255, 255));
       cy += lineH + 6;
     }
@@ -562,10 +678,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // SAVE, SHARE, PERMISSION
-  // ─────────────────────────────────────────────────────────────
-
+  // ================= PERMISSION & SAVE/SHARE =================
   Future<bool> _requestStoragePermission() async {
     if (!Platform.isAndroid) return true;
     final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -590,92 +703,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  Future<void> _processImageAsync() async {
-    setState(() {
-      _isProcessing = true;
-      _errorMessage = null;
-    });
-    _processingStep.value = 'Memuat gambar...';
-
-    try {
-      final bytes = widget.imageBytes!;
-      final timestamp = widget.timestamp!;
-      final position = widget.position;
-
-      String address = widget.address ?? '';
-      String weather = widget.weather ?? '';
-
-      if (position != null && (address.isEmpty || weather.isEmpty)) {
-        _processingStep.value = 'Mengambil alamat & cuaca...';
-        try {
-          final result = await LocationWeatherService.fetchFromPosition(position)
-              .timeout(const Duration(seconds: 10));
-          if (address.isEmpty) address = result.address;
-          if (weather.isEmpty) weather = result.weather;
-        } catch (e) {
-          debugPrint('Geocoding/weather error: $e');
-          if (address.isEmpty) address = 'GPS: ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
-        }
-      } else if (address.isEmpty && position == null) {
-        address = 'Tidak ada lokasi';
-      }
-
-      final results = await Future.wait([
-        SettingsCache.layout,
-        SettingsCache.showWeather,
-        SettingsCache.showAccuracy,
-        SettingsCache.watermarkPosition,
-        SettingsCache.showMiniMap,
-      ]);
-      final layout = results[0] as WatermarkLayout;
-      final showWeather = results[1] as bool;
-      final showAccuracy = results[2] as bool;
-      final watermarkPosition = results[3] as String;
-      final showMiniMap = results[4] as bool;
-
-      Uint8List? mapBytes;
-      if (showMiniMap && position != null && layout == WatermarkLayout.professional) {
-        _processingStep.value = 'Menambahkan peta...';
-        try {
-          mapBytes = await LocationWeatherService.fetchMapWithRetry(
-            position.latitude,
-            position.longitude,
-          );
-          if (mapBytes != null) debugPrint('Mini map fetched');
-          else debugPrint('Mini map fetch failed');
-        } catch (e) {
-          debugPrint('Mini map fetch error: $e');
-        }
-      }
-
-      _processingStep.value = 'Membuat watermark...';
-      final processedBytes = await _computeWatermark(
-        bytes, timestamp, position, address, weather,
-        layout, showWeather, showAccuracy, watermarkPosition, showMiniMap, mapBytes,
-      );
-
-      final dir = await getTemporaryDirectory();
-      final fileName = _uniqueTempName(timestamp);
-      final tempFile = File('${dir.path}/$fileName');
-      await tempFile.writeAsBytes(processedBytes);
-
-      if (mounted) {
-        setState(() {
-          _displayImagePath = tempFile.path;
-          _isProcessing = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Processing error: $e');
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString();
-          _isProcessing = false;
-        });
-      }
-    }
-  }
-
   Future<void> _saveToGallery() async {
     if (_saveStatus == SaveStatus.saving || _displayImagePath == null) return;
 
@@ -696,11 +723,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     setState(() => _saveStatus = SaveStatus.saving);
 
     try {
-      final bool? result = await GallerySaver.saveImage(
-        _displayImagePath!,
-        albumName: 'TermulLog',
-      );
-
+      final bool? result = await GallerySaver.saveImage(_displayImagePath!, albumName: 'TermulLog');
       if (!mounted) return;
 
       if (result == true) {
@@ -941,10 +964,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// TOMBOL AKSI GENERIK
-// ─────────────────────────────────────────────────────────────
-
+// ================= BOTTOM SHEET WIDGETS =================
 class _ActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget icon;
@@ -976,10 +996,6 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────
-// TOMBOL SAVE — Animated
-// ─────────────────────────────────────────────────────────────
 
 class _SaveButton extends StatelessWidget {
   final SaveStatus status;

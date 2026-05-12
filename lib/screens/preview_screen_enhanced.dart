@@ -1,4 +1,4 @@
-// preview_screen_enhanced.dart (final dengan fix mini map)
+// preview_screen_enhanced.dart (final)
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
@@ -19,7 +20,6 @@ import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../core/constants.dart';
 
-// --- ENUM & CONSTANTS -----------------------------------------------------
 enum SaveStatus { idle, saving, saved, error }
 const int _kMaxAddressLen = 55;
 
@@ -30,9 +30,6 @@ final _grey = kColorDarkGrey;
 final _dark = kColorVeryDarkBg;
 final _darker = kColorBlackerBg;
 
-// -------------------------------------------------------------------------
-// PREVIEW SCREEN
-// -------------------------------------------------------------------------
 class PreviewScreen extends StatefulWidget {
   final String? imagePath;
   final Uint8List? imageBytes;
@@ -581,7 +578,6 @@ class _PreviewScreenState extends State<PreviewScreen>
         color: img.ColorRgba8(30, 144, 255, 200));
   }
 
-  // ================= MINI MAP (pojok kanan bawah) =================
   static void _addMiniMapTopRight(img.Image src, Uint8List? mapBytes) {
     if (mapBytes == null) return;
     try {
@@ -964,7 +960,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 }
 
-// ================= BOTTOM SHEET WIDGETS =================
 class _ActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget icon;

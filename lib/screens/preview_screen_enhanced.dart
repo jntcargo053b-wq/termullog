@@ -1,3 +1,4 @@
+// preview_screen_enhanced.dart (final dengan semua perbaikan)
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -14,6 +15,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:async/async.dart';
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../core/constants.dart';
@@ -29,7 +31,6 @@ const int _kMaxAddressLen = 55;
 
 // warna dari constants.dart
 final _blue = kColorLightBlue;
-final _blueDim = kColorDimBlue;
 final _white = kColorWhite;
 final _offWhite = kColorOffWhite;
 final _grey = kColorDarkGrey;
@@ -77,6 +78,8 @@ class _PreviewScreenState extends State<PreviewScreen>
   final TransformationController _transformController = TransformationController();
   Offset? _lastDoubleTapPos;
   final Random _rng = Random.secure();
+  CancelableOperation<Uint8List>? _cancelableCompute;
+  final ValueNotifier<String> _processingStep = ValueNotifier<String>('Memuat gambar...');
 
   @override
   void initState() {
@@ -99,6 +102,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   @override
   void dispose() {
+    _cancelableCompute?.cancel();
     final pathToDelete = _displayImagePath;
     final shouldDelete = !_isFileSaved && !_isProcessing && !_isFileInUse;
     _checkAnimController.dispose();
@@ -119,11 +123,20 @@ class _PreviewScreenState extends State<PreviewScreen>
     return 'termullog_${ts.millisecondsSinceEpoch}_$suffix.jpg';
   }
 
+  static img.Image _decodeOrThrow(Uint8List bytes) {
+    if (bytes.isEmpty) throw Exception('Data gambar kosong');
+    if (bytes.length < 100) throw Exception('Data gambar terlalu kecil, mungkin corrupt');
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) throw Exception('Format gambar tidak didukung');
+    return decoded;
+  }
+
   Future<void> _processImageAsync() async {
     setState(() {
       _isProcessing = true;
       _errorMessage = null;
     });
+    _processingStep.value = 'Memuat gambar...';
 
     try {
       final bytes = widget.imageBytes!;
@@ -134,6 +147,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       String weather = widget.weather ?? '';
 
       if (address.isEmpty && position != null) {
+        _processingStep.value = 'Mengambil alamat & cuaca...';
         try {
           final result = await LocationWeatherService.fetchFromPosition(position)
               .timeout(const Duration(seconds: 10));
@@ -147,14 +161,23 @@ class _PreviewScreenState extends State<PreviewScreen>
         address = 'Tidak ada lokasi';
       }
 
-      final layout = await SettingsCache.layout;
-      final showWeather = await SettingsCache.showWeather;
-      final showAccuracy = await SettingsCache.showAccuracy;
-      final watermarkPosition = await SettingsCache.watermarkPosition;
-      final showMiniMap = await SettingsCache.showMiniMap;
+      // Parallel settings load
+      final results = await Future.wait([
+        SettingsCache.layout,
+        SettingsCache.showWeather,
+        SettingsCache.showAccuracy,
+        SettingsCache.watermarkPosition,
+        SettingsCache.showMiniMap,
+      ]);
+      final layout = results[0] as WatermarkLayout;
+      final showWeather = results[1] as bool;
+      final showAccuracy = results[2] as bool;
+      final watermarkPosition = results[3] as String;
+      final showMiniMap = results[4] as bool;
 
       Uint8List? mapBytes;
       if (showMiniMap && position != null && layout == WatermarkLayout.professional) {
+        _processingStep.value = 'Menambahkan peta...';
         try {
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             position.latitude,
@@ -167,6 +190,7 @@ class _PreviewScreenState extends State<PreviewScreen>
         }
       }
 
+      _processingStep.value = 'Membuat watermark...';
       final processedBytes = await _computeWatermark(
         bytes, timestamp, position, address, weather,
         layout, showWeather, showAccuracy, watermarkPosition, showMiniMap, mapBytes,
@@ -208,8 +232,12 @@ class _PreviewScreenState extends State<PreviewScreen>
     Uint8List? mapBytes,
   ) async {
     final transferable = TransferableTypedData.fromList([imageBytes]);
+    final mapTransferable = mapBytes != null
+        ? TransferableTypedData.fromList([mapBytes])
+        : null;
     final params = {
       'transferable': transferable,
+      'mapTransferable': mapTransferable,
       'timestamp': timestamp,
       'position': position,
       'address': address,
@@ -219,17 +247,24 @@ class _PreviewScreenState extends State<PreviewScreen>
       'showAccuracy': showAccuracy,
       'watermarkPosition': watermarkPosition,
       'showMiniMap': showMiniMap,
-      'mapBytes': mapBytes,
     };
-    return await compute(_applyWatermarkTransfer, params);
+    _cancelableCompute = CancelableOperation.fromFuture(
+      compute(_applyWatermarkTransfer, params),
+    );
+    return await _cancelableCompute!.value;
   }
 
   static Uint8List _applyWatermarkTransfer(Map<String, dynamic> params) {
     final transferable = params['transferable'] as TransferableTypedData;
     final bytes = transferable.materialize().asUint8List();
+    final mapTransferable = params['mapTransferable'] as TransferableTypedData?;
+    final mapBytes = mapTransferable?.materialize().asUint8List();
+
     final newParams = Map<String, dynamic>.from(params);
     newParams['bytes'] = bytes;
+    newParams['mapBytes'] = mapBytes;
     newParams.remove('transferable');
+    newParams.remove('mapTransferable');
     return _applyWatermark(newParams);
   }
 
@@ -248,16 +283,12 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     final layout = WatermarkLayout.values[layoutIndex];
 
-    img.Image? src = img.decodeImage(bytes);
-    if (src == null) throw Exception('Gagal decode gambar');
-
+    final src = _decodeOrThrow(bytes);
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
-      src = img.copyResize(
-        src,
-        width: src.width > src.height ? kMaxOutputWidth : null,
-        height: src.height > src.width ? kMaxOutputWidth : null,
-        interpolation: img.Interpolation.average,
-      );
+      img.copyResize(src,
+          width: src.width > src.height ? kMaxOutputWidth : null,
+          height: src.height > src.width ? kMaxOutputWidth : null,
+          interpolation: img.Interpolation.average);
     }
 
     Uint8List result;
@@ -282,6 +313,7 @@ class _PreviewScreenState extends State<PreviewScreen>
         result = _layoutHUD(src, timestamp, position, address, weather, showWeather, showAccuracy, watermarkPosition);
         break;
     }
+    if (result.isEmpty) throw Exception('Layout gagal menghasilkan data gambar');
     return result;
   }
 
@@ -335,7 +367,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 2: DSLR CORNER ────────────────────────────────────
+  // ── LAYOUT 2: DSLR CORNER (dengan adjustColor) ───────────────
   static Uint8List _layoutDSLRCorner(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -360,14 +392,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     final int x1 = x0 + boxW;
     final int y1 = y0 + boxH;
 
-    for (int y = y0; y <= y1; y++) {
-      for (int x = x0; x <= x1; x++) {
-        if (x < 0 || x >= src.width || y < 0 || y >= src.height) continue;
-        final px = src.getPixel(x, y);
-        src.setPixel(x, y, img.ColorRgba8(
-          ((px.r * 15) ~/ 100), ((px.g * 15) ~/ 100), ((px.b * 15) ~/ 100), 255));
-      }
-    }
+    // Gelapkan region dengan copyCrop + adjustColor (jauh lebih cepat)
+    final region = img.copyCrop(src, x: x0, y: y0, width: boxW, height: boxH);
+    img.adjustColor(region, brightness: -0.85);
+    img.compositeImage(src, region, dstX: x0, dstY: y0);
 
     final blueColor = img.ColorRgba8(30, 144, 255, 255);
     img.fillRect(src, x1: x0, y1: y0, x2: x0 + brkLen, y2: y0 + brkW, color: blueColor);
@@ -412,7 +440,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 3: CINEMATIC ──────────────────────────────────────
+  // ── LAYOUT 3: CINEMATIC (gradient loop masih ok karena hanya 180px tinggi) ──
   static Uint8List _layoutCinematic(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -423,6 +451,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     final bool isTop = watermarkPosition == 'top';
     final int gradY0 = isTop ? 0 : src.height - gradH;
 
+    // Loop gradient (hanya di area gradien, tidak seluruh gambar)
     for (int y = gradY0; y < gradY0 + gradH; y++) {
       if (y < 0 || y >= src.height) continue;
       final t = isTop ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
@@ -553,7 +582,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // ── LAYOUT 5: HUD (perbaikan loop gelap) ─────────────────────
+  // ── LAYOUT 5: HUD (perbaikan loop gelap hanya area panel) ─────
   static Uint8List _layoutHUD(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -621,13 +650,36 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   // ─────────────────────────────────────────────────────────────
-  // SAVE & SHARE
+  // SAVE, SHARE, PERMISSION
   // ─────────────────────────────────────────────────────────────
+
+  Future<bool> _requestStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
+
+    if (sdkInt >= 33) {
+      final status = await Permission.photos.request();
+      if (status.isGranted) return true;
+      if (status.isPermanentlyDenied) {
+        openAppSettings();
+        return false;
+      }
+      return false;
+    } else {
+      final status = await Permission.storage.request();
+      if (status.isGranted) return true;
+      if (status.isPermanentlyDenied) {
+        openAppSettings();
+        return false;
+      }
+      return false;
+    }
+  }
 
   Future<void> _saveToGallery() async {
     if (_saveStatus == SaveStatus.saving || _displayImagePath == null) return;
 
-    // Request permission sesuai versi Android
     if (Platform.isAndroid) {
       final granted = await _requestStoragePermission();
       if (!granted) {
@@ -653,7 +705,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (!mounted) return;
 
       if (result == true) {
-        // hapus file temporary
         try {
           final tempFile = File(_displayImagePath!);
           if (await tempFile.exists()) await tempFile.delete();
@@ -685,77 +736,51 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  Future<bool> _requestStoragePermission() async {
-    if (!Platform.isAndroid) return true;
-    final androidInfo = await DeviceInfoPlugin().androidInfo;
-    final sdkInt = androidInfo.version.sdkInt;
+  Future<void> _sharePhoto() async {
+    if (_isSharing || _displayImagePath == null) return;
+    setState(() {
+      _isSharing = true;
+      _isFileInUse = true;
+    });
 
-    if (sdkInt >= 33) {
-      // Android 13+ : READ_MEDIA_IMAGES
-      final status = await Permission.photos.request();
-      if (status.isGranted) return true;
-      if (status.isPermanentlyDenied) {
-        openAppSettings();
-        return false;
-      }
-      return false;
-    } else {
-      // Android 12 ke bawah : WRITE_EXTERNAL_STORAGE
-      final status = await Permission.storage.request();
-      if (status.isGranted) return true;
-      if (status.isPermanentlyDenied) {
-        openAppSettings();
-        return false;
-      }
-      return false;
+    try {
+      final file = File(_displayImagePath!);
+      if (!await file.exists()) throw Exception('File tidak ada');
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Foto dengan GPS dari TermulLog',
+        subject: 'Foto GPS TermulLog',
+      );
+      HapticFeedback.lightImpact();
+    } catch (e) {
+      debugPrint('Share error: $e');
+      _showErrorSnackbar('Gagal membagikan foto: ${e.toString().substring(0, 50)}');
+    } finally {
+      if (mounted) setState(() {
+        _isSharing = false;
+        _isFileInUse = false;
+      });
     }
   }
 
- Future<void> _sharePhoto() async {
-  if (_isSharing || _displayImagePath == null) return;
-  setState(() {
-    _isSharing = true;
-    _isFileInUse = true;
-  });
-
-  try {
-    final file = File(_displayImagePath!);
-    if (!await file.exists()) throw Exception('File tidak ada');
-    
-    // Gunakan shareXFiles (kompatibel dengan semua versi share_plus)
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Foto dengan GPS dari TermulLog',
-      subject: 'Foto GPS TermulLog',
-    );
-    HapticFeedback.lightImpact();
-  } catch (e) {
-    debugPrint('Share error: $e');
-    _showErrorSnackbar('Gagal membagikan foto: ${e.toString().substring(0, 50)}');
-  } finally {
-    if (mounted) setState(() {
-      _isSharing = false;
-      _isFileInUse = false;
-    });
-  }
-}
   void _showErrorSnackbar(String msg) {
-  if (!mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          const Icon(Icons.error_outline, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(msg)),
-        ],
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
       ),
-      backgroundColor: Colors.red.shade700,
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 3),
-    ),
-  );
-}
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────────────────────
@@ -787,7 +812,10 @@ class _PreviewScreenState extends State<PreviewScreen>
           children: [
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
-            const Text('Memproses foto...', style: TextStyle(color: Colors.white70)),
+            ValueListenableBuilder<String>(
+              valueListenable: _processingStep,
+              builder: (_, step, __) => Text(step, style: const TextStyle(color: Colors.white70)),
+            ),
             if (needGeocoding) ...[
               const SizedBox(height: 8),
               const Text('Mengambil alamat & cuaca', style: TextStyle(color: Colors.white38, fontSize: 12)),
@@ -844,10 +872,11 @@ class _PreviewScreenState extends State<PreviewScreen>
                 _transformController.value = Matrix4.identity();
               } else {
                 final pos = _lastDoubleTapPos ?? const Offset(0, 0);
+                final x = -pos.dx * (2.5 - 1);
+                final y = -pos.dy * (2.5 - 1);
                 _transformController.value = Matrix4.identity()
-                  ..translate(-pos.dx, -pos.dy)
-                  ..scale(2.5)
-                  ..translate(pos.dx / 2.5, pos.dy / 2.5);
+                  ..translate(x, y)
+                  ..scale(2.5);
               }
             },
             child: InteractiveViewer(

@@ -1,4 +1,4 @@
-// preview_screen_enhanced.dart (final dengan semua perbaikan)
+// preview_screen_enhanced.dart (final dengan semua perbaikan cuaca & mini map)
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -16,6 +16,7 @@ import 'package:image/image.dart' as img;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:async/async.dart';
+import 'package:http/http.dart' as http;
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../core/constants.dart';
@@ -28,6 +29,7 @@ enum SaveStatus { idle, saving, saved, error }
 
 // konstanta lokal
 const int _kMaxAddressLen = 55;
+const int _kMaxAddressLenMedium = 40;
 
 // warna dari constants.dart
 final _blue = kColorLightBlue;
@@ -131,6 +133,27 @@ class _PreviewScreenState extends State<PreviewScreen>
     return decoded;
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // FIX 6: Fetch tile langsung dari OSM (fallback)
+  // ─────────────────────────────────────────────────────────────
+  static Future<Uint8List?> _fetchOsmTileBytes(double lat, double lon) async {
+    const zoom = 16;
+    final x = ((lon + 180) / 360 * pow(2, zoom)).floor();
+    final y = ((1 - log(tan(lat * pi / 180) + 1 / cos(lat * pi / 180)) / pi) / 2 * pow(2, zoom)).floor();
+    final subdomain = ['a', 'b', 'c'][Random().nextInt(3)];
+    final url = 'https://$subdomain.tile.openstreetmap.org/$zoom/$x/$y.png';
+    final client = http.Client();
+    try {
+      final response = await client.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) return response.bodyBytes;
+    } catch (e) {
+      debugPrint('OSM tile fallback error: $e');
+    } finally {
+      client.close();
+    }
+    return null;
+  }
+
   Future<void> _processImageAsync() async {
     setState(() {
       _isProcessing = true;
@@ -146,16 +169,20 @@ class _PreviewScreenState extends State<PreviewScreen>
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
 
-      if (address.isEmpty && position != null) {
+      // ─────────────────────────────────────────────────────────
+      // FIX 1: Fetch cuaca meski address sudah ada
+      // ─────────────────────────────────────────────────────────
+      if (position != null && (address.isEmpty || weather.isEmpty)) {
         _processingStep.value = 'Mengambil alamat & cuaca...';
         try {
           final result = await LocationWeatherService.fetchFromPosition(position)
               .timeout(const Duration(seconds: 10));
-          address = result.address;
-          weather = result.weather;
+          if (address.isEmpty) address = result.address;
+          if (weather.isEmpty) weather = result.weather;
         } catch (e) {
           debugPrint('Geocoding/weather error: $e');
-          address = 'GPS: ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+          if (address.isEmpty) address = 'GPS: ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+          // weather tetap kosong, tidak masalah
         }
       } else if (address.isEmpty && position == null) {
         address = 'Tidak ada lokasi';
@@ -179,10 +206,18 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (showMiniMap && position != null && layout == WatermarkLayout.professional) {
         _processingStep.value = 'Menambahkan peta...';
         try {
+          // Coba fetch dari service (dengan retry)
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             position.latitude,
             position.longitude,
           );
+          // ─────────────────────────────────────────────────────
+          // FIX 2: Fallback OSM tile langsung jika gagal
+          // ─────────────────────────────────────────────────────
+          if (mapBytes == null) {
+            mapBytes = await _fetchOsmTileBytes(position.latitude, position.longitude);
+            if (mapBytes != null) debugPrint('Mini map fetched from OSM tile fallback');
+          }
           if (mapBytes != null) debugPrint('Mini map fetched');
           else debugPrint('Mini map fetch failed');
         } catch (e) {
@@ -231,15 +266,17 @@ class _PreviewScreenState extends State<PreviewScreen>
     bool showMiniMap,
     Uint8List? mapBytes,
   ) async {
-    final transferable = TransferableTypedData.fromList([imageBytes]);
-    final mapTransferable = mapBytes != null
-        ? TransferableTypedData.fromList([mapBytes])
-        : null;
+    // ─────────────────────────────────────────────────────────
+    // FIX 3 & 4: Kirim mapBytes sebagai TransferableTypedData
+    // serta kirim primitif position (karena Position tidak aman di isolate)
+    // ─────────────────────────────────────────────────────────
+    final transferableImage = TransferableTypedData.fromList([imageBytes]);
+    final mapTransferable = mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null;
+
     final params = {
-      'transferable': transferable,
+      'transferableImage': transferableImage,
       'mapTransferable': mapTransferable,
       'timestamp': timestamp,
-      'position': position,
       'address': address,
       'weather': weather,
       'layout': layout.index,
@@ -247,6 +284,17 @@ class _PreviewScreenState extends State<PreviewScreen>
       'showAccuracy': showAccuracy,
       'watermarkPosition': watermarkPosition,
       'showMiniMap': showMiniMap,
+      // primitif position (karena Position tidak bisa langsung dikirim)
+      'hasPosition': position != null,
+      'lat': position?.latitude,
+      'lon': position?.longitude,
+      'acc': position?.accuracy,
+      'alt': position?.altitude,
+      'altAcc': position?.altitudeAccuracy,
+      'heading': position?.heading,
+      'headingAcc': position?.headingAccuracy,
+      'speed': position?.speed,
+      'speedAcc': position?.speedAccuracy,
     };
     _cancelableCompute = CancelableOperation.fromFuture(
       compute(_applyWatermarkTransfer, params),
@@ -255,16 +303,44 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   static Uint8List _applyWatermarkTransfer(Map<String, dynamic> params) {
-    final transferable = params['transferable'] as TransferableTypedData;
-    final bytes = transferable.materialize().asUint8List();
+    final transferableImage = params['transferableImage'] as TransferableTypedData;
+    final bytes = transferableImage.materialize().asUint8List();
     final mapTransferable = params['mapTransferable'] as TransferableTypedData?;
     final mapBytes = mapTransferable?.materialize().asUint8List();
+
+    // Rekonstruksi Position dari primitif
+    Position? position;
+    if (params['hasPosition'] == true) {
+      position = Position(
+        latitude: params['lat'] as double,
+        longitude: params['lon'] as double,
+        accuracy: params['acc'] as double,
+        altitude: (params['alt'] as double?) ?? 0.0,
+        altitudeAccuracy: (params['altAcc'] as double?) ?? 0.0,
+        heading: (params['heading'] as double?) ?? 0.0,
+        headingAccuracy: (params['headingAcc'] as double?) ?? 0.0,
+        speed: (params['speed'] as double?) ?? 0.0,
+        speedAccuracy: (params['speedAcc'] as double?) ?? 0.0,
+        timestamp: DateTime.now(),
+      );
+    }
 
     final newParams = Map<String, dynamic>.from(params);
     newParams['bytes'] = bytes;
     newParams['mapBytes'] = mapBytes;
-    newParams.remove('transferable');
+    newParams['position'] = position;
+    newParams.remove('transferableImage');
     newParams.remove('mapTransferable');
+    newParams.remove('hasPosition');
+    newParams.remove('lat');
+    newParams.remove('lon');
+    newParams.remove('acc');
+    newParams.remove('alt');
+    newParams.remove('altAcc');
+    newParams.remove('heading');
+    newParams.remove('headingAcc');
+    newParams.remove('speed');
+    newParams.remove('speedAcc');
     return _applyWatermark(newParams);
   }
 
@@ -317,15 +393,20 @@ class _PreviewScreenState extends State<PreviewScreen>
     return result;
   }
 
-  // ── LAYOUT 1: FILM STRIP ─────────────────────────────────────
+  // ── LAYOUT 1: FILM STRIP (dengan perbaikan FIX 5) ────────────
   static Uint8List _layoutFilmStrip(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
   ) {
-    const int stripH = 95;
+    // Hitung jumlah baris dinamis
+    int rows = 3; // header + tanggal + koordinat?
+    if (position != null) rows++; // akurasi mungkin 1 baris
+    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows++;
+    if (showWeather && weather.isNotEmpty) rows++;
+    const int lineH = 28;
     const int borderH = 4;
     const int padX = 24;
-    const int lineH = 28;
+    final int stripH = borderH + rows * lineH + 10;
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - stripH;
     if (y0 < 0) return Uint8List(0);
@@ -354,20 +435,22 @@ class _PreviewScreenState extends State<PreviewScreen>
       cy += lineH;
     }
 
-    String line3 = '';
+    // Address baris terpisah
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      line3 = address.length > _kMaxAddressLen ? '${address.substring(0, _kMaxAddressLen - 1)}…' : address;
-    } else if (showWeather && weather.isNotEmpty) {
-      line3 = weather;
+      String shortAddr = address.length > _kMaxAddressLen ? '${address.substring(0, _kMaxAddressLen - 1)}…' : address;
+      img.drawString(src, shortAddr, font: font, x: padX, y: cy, color: _grey);
+      cy += lineH;
     }
-    if (line3.isNotEmpty) {
-      img.drawString(src, line3, font: font, x: padX, y: cy, color: _grey);
+
+    // Cuaca baris terpisah
+    if (showWeather && weather.isNotEmpty) {
+      img.drawString(src, weather, font: font, x: padX, y: cy, color: _blue);
     }
 
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 2: DSLR CORNER (dengan adjustColor) ───────────────
+  // ── LAYOUT 2: DSLR CORNER ────────────────────────────────────
   static Uint8List _layoutDSLRCorner(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -392,7 +475,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     final int x1 = x0 + boxW;
     final int y1 = y0 + boxH;
 
-    // Gelapkan region dengan copyCrop + adjustColor (jauh lebih cepat)
+    // Gelapkan region
     final region = img.copyCrop(src, x: x0, y: y0, width: boxW, height: boxH);
     img.adjustColor(region, brightness: -0.85);
     img.compositeImage(src, region, dstX: x0, dstY: y0);
@@ -440,7 +523,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ── LAYOUT 3: CINEMATIC (gradient loop masih ok karena hanya 180px tinggi) ──
+  // ── LAYOUT 3: CINEMATIC ──────────────────────────────────────
   static Uint8List _layoutCinematic(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -451,7 +534,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     final bool isTop = watermarkPosition == 'top';
     final int gradY0 = isTop ? 0 : src.height - gradH;
 
-    // Loop gradient (hanya di area gradien, tidak seluruh gambar)
     for (int y = gradY0; y < gradY0 + gradH; y++) {
       if (y < 0 || y >= src.height) continue;
       final t = isTop ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
@@ -582,7 +664,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // ── LAYOUT 5: HUD (perbaikan loop gelap hanya area panel) ─────
+  // ── LAYOUT 5: HUD ────────────────────────────────────────────
   static Uint8List _layoutHUD(
     img.Image src, DateTime timestamp, Position? position,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -805,7 +887,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   Widget _buildBody() {
     if (_isProcessing) {
-      final bool needGeocoding = (widget.address == null || widget.address!.isEmpty);
+      final bool needGeocoding = (widget.address == null || widget.address!.isEmpty) || (widget.weather == null || widget.weather!.isEmpty);
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

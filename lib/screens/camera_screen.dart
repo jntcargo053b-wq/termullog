@@ -968,99 +968,56 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       final waktuFoto = DateTime.now();
 
-      if (_lockManager.isLocked) {
-        final lockData = _lockManager.lockData!;
-        final capturedFile = await ctrl.takePicture().timeout(CameraConstants.cameraTimeout);
-        final bytes = await File(capturedFile.path).readAsBytes();
-        String alamat = lockData.address.isNotEmpty
-            ? lockData.address
-            : await _getAddressCached(lockData.position);
-        if (mounted) {
-          setState(() => _isTakingPhoto = false);
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PreviewScreen(
-                imageBytes: bytes,
-                timestamp: waktuFoto,
-                position: lockData.position,
-                address: alamat,
-                weather: lockData.weather,
-              ),
-            ),
-          );
-        }
-        if (mounted && _controller == null) await _initCamera();
-        return;
-      }
-
-      // Normal path
-      if (mounted) setState(() => _isPolishing = true);
-      _startCountdown();
-
-      XFile? capturedFile;
-      await Future.wait([
-        _quickGpsRefresh(),
-        ctrl.takePicture().timeout(CameraConstants.cameraTimeout).then((f) => capturedFile = f),
-      ]);
-      if (capturedFile == null) throw Exception('Gagal mengambil foto');
-      final bytes = await File(capturedFile!.path).readAsBytes();
-      await _waitForBestGps();
-
-      String alamat = _lockManager.lockData?.address.isNotEmpty == true
-          ? _lockManager.lockData!.address
-          : _currentAddress.isNotEmpty
-              ? _currentAddress
-              : await _getAddressCached(_bestPosition);
-      final cuaca = _lockManager.lockData?.weather ?? _cachedWeather ?? '';
-
-      if (mounted) {
-        setState(() {
-          _isTakingPhoto = false;
-          _isPolishing = false;
-        });
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PreviewScreen(
-              imageBytes: bytes,
-              timestamp: waktuFoto,
-              position: _bestPosition,
-              address: alamat,
-              weather: cuaca,
-            ),
-          ),
-        );
-      }
-      if (mounted && _controller == null) await _initCamera();
-    } catch (e) {
-      debugPrint('Capture error: $e');
-      if (mounted) {
-        final msg = e.toString();
-        final short = msg.length <= CameraConstants.maxErrorMessageLength
-            ? msg
-            : '${msg.substring(0, CameraConstants.maxErrorMessageLength)}...';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $short')));
-      }
-    } finally {
-      _cleanupCapture();
-    }
+    // Fast path (when locked)
+if (_lockManager.isLocked) {
+  final lockData = _lockManager.lockData!;
+  final capturedFile = await ctrl.takePicture().timeout(CameraConstants.cameraTimeout);
+  final bytes = await File(capturedFile.path).readAsBytes();
+  String alamat = lockData.address.isNotEmpty
+      ? lockData.address
+      : await _getAddressCached(lockData.position);
+  if (mounted) {
+    setState(() => _isTakingPhoto = false);
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PreviewScreen(
+          imageBytes: bytes,
+          timestamp: waktuFoto,
+          latitude: lockData.position.latitude,
+          longitude: lockData.position.longitude,
+          accuracy: lockData.position.accuracy,
+          address: alamat,
+          weather: lockData.weather,
+        ),
+      ),
+    );
   }
+  if (mounted && _controller == null) await _initCamera();
+  return;
+}
 
-  void _cleanupCapture() {
-    _countdownTimer?.cancel();
-    _countdownTimer = null;
-    if (_gpsCompleter != null && !_gpsCompleter!.isCompleted) _gpsCompleter!.complete();
-    _gpsCompleter = null;
-    _isWaitingForGps = false;
-    if (mounted && !_isDisposed) {
-      setState(() {
-        _isTakingPhoto = false;
-        _isPolishing = false;
-      });
-    }
-    _releaseLock();
-  }
+// Normal path
+if (mounted) {
+  setState(() {
+    _isTakingPhoto = false;
+    _isPolishing = false;
+  });
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PreviewScreen(
+        imageBytes: bytes,
+        timestamp: waktuFoto,
+        latitude: _bestPosition?.latitude,
+        longitude: _bestPosition?.longitude,
+        accuracy: _bestPosition?.accuracy,
+        address: alamat,
+        weather: cuaca,
+      ),
+    ),
+  );
+}
 
   // ----------------------------------------------------------------------
   // Build

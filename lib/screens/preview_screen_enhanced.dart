@@ -712,48 +712,33 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   Future<void> _sharePhoto() async {
-    if (_isSharing || _displayImagePath == null) return;
-    setState(() {
-      _isSharing = true;
-      _isFileInUse = true;
-    });
+  if (_isSharing || _displayImagePath == null) return;
+  setState(() {
+    _isSharing = true;
+    _isFileInUse = true;
+  });
 
-    try {
-      final file = File(_displayImagePath!);
-      if (!file.existsSync()) throw Exception('File tidak ada');
-      await Share.shareXFiles(
-        [XFile(_displayImagePath!)],
-        text: 'Foto dengan GPS dari TermulLog',
-        subject: 'Foto GPS TermulLog',
-      );
-      HapticFeedback.lightImpact();
-    } catch (e) {
-      _showErrorSnackbar('Gagal membagikan foto');
-    } finally {
-      if (mounted) setState(() {
-        _isSharing = false;
-        _isFileInUse = false;
-      });
-    }
-  }
-
-  void _showErrorSnackbar(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: Text(msg)),
-          ],
-        ),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
+  try {
+    final file = File(_displayImagePath!);
+    if (!await file.exists()) throw Exception('File tidak ada');
+    
+    // Gunakan Share.shareFiles (cara yang lebih stabil)
+    await Share.shareFiles(
+      [file.path],
+      text: 'Foto dengan GPS dari TermulLog',
+      subject: 'Foto GPS TermulLog',
     );
+    HapticFeedback.lightImpact();
+  } catch (e) {
+    debugPrint('Share error: $e');
+    _showErrorSnackbar('Gagal membagikan foto: ${e.toString().substring(0, 50)}');
+  } finally {
+    if (mounted) setState(() {
+      _isSharing = false;
+      _isFileInUse = false;
+    });
   }
+}
 
   // ─────────────────────────────────────────────────────────────
   // BUILD

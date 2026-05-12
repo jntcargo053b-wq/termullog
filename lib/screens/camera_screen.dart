@@ -48,6 +48,8 @@ class CameraConstants {
   static const Duration cameraTimeout = Duration(seconds: 5);
   static const Duration cameraReinitDelay = Duration(milliseconds: 300);
   static const Duration uiDebounceDelay = Duration(milliseconds: 100);
+  static const Duration gpsDefaultInterval = Duration(milliseconds: 500);
+  static const Duration gpsMaintenanceInterval = Duration(seconds: 4);
   static const int maxErrorMessageLength = 50;
   static const Duration tempFileRetention = Duration(hours: 1);
   static const int lowAccuracyCheckDelaySeconds = 5;
@@ -379,7 +381,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // GPS Tracking
   // ============================================================
 
-  Future<void> _startGpsTracking({Duration interval = const Duration(milliseconds: 700)}) async {
+  Future<void> _startGpsTracking({Duration interval = const Duration(milliseconds: 500)}) async {
     if (_isDisposed) return;
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {

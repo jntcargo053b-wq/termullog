@@ -1,4 +1,4 @@
-// preview_screen_enhanced.dart (final)
+// preview_screen_enhanced.dart (final - improved)
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -184,8 +184,11 @@ class _PreviewScreenState extends State<PreviewScreen>
             widget.latitude!,
             widget.longitude!,
           );
-          if (mapBytes != null) debugPrint('Mini map fetched');
-          else debugPrint('Mini map fetch failed');
+          if (mapBytes != null) {
+            debugPrint('Mini map fetched successfully');
+          } else {
+            debugPrint('Mini map fetch returned null');
+          }
         } catch (e) {
           debugPrint('Mini map fetch error: $e');
         }
@@ -210,8 +213,9 @@ class _PreviewScreenState extends State<PreviewScreen>
           _isProcessing = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Processing error: $e');
+      debugPrint('Stack trace: $stackTrace');
       if (mounted) {
         setState(() {
           _errorMessage = e.toString();
@@ -319,10 +323,12 @@ class _PreviewScreenState extends State<PreviewScreen>
             address, weather, showWeather, showAccuracy, watermarkPosition);
         break;
       case WatermarkLayout.professional:
-        _drawFieldSurveyOnSrc(src, timestamp, hasPosition, posLat, posLon, posAcc,
-            address, weather, showWeather, showAccuracy, watermarkPosition);
-        if (showMiniMap && mapBytes != null && hasPosition) {
-          _addMiniMapTopRight(src, mapBytes);
+        final wmHeight = _drawFieldSurveyOnSrc(
+          src, timestamp, hasPosition, posLat, posLon, posAcc,
+          address, weather, showWeather, showAccuracy, watermarkPosition,
+        );
+        if (showMiniMap && mapBytes != null && hasPosition && wmHeight > 0) {
+          _addMiniMapTopRight(src, mapBytes, watermarkHeight: wmHeight);
         }
         result = Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
         break;
@@ -526,8 +532,8 @@ class _PreviewScreenState extends State<PreviewScreen>
     return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
   }
 
-  // ================= LAYOUT 4: FIELD SURVEY =================
-  static void _drawFieldSurveyOnSrc(
+  // ================= LAYOUT 4: FIELD SURVEY (IMPROVED) =================
+  static int _drawFieldSurveyOnSrc(
     img.Image src, DateTime timestamp,
     bool hasPosition, double? lat, double? lon, double? acc,
     String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
@@ -537,72 +543,198 @@ class _PreviewScreenState extends State<PreviewScreen>
     const int padX = 16;
     const int colVal = 130;
 
+    // Bangun data baris
     final List<List<String>> rows = [
       ['DATE', DateFormat('yyyy-MM-dd').format(timestamp)],
       ['TIME', DateFormat('HH:mm:ss').format(timestamp)],
     ];
+    
     if (hasPosition) {
       rows.add(['LAT', '${lat!.toStringAsFixed(6)}°']);
       rows.add(['LON', '${lon!.toStringAsFixed(6)}°']);
       if (showAccuracy) rows.add(['ACC', '±${acc?.toStringAsFixed(0) ?? '?'} m']);
     }
+    
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       rows.add(['ADDR', address.length > 50 ? '${address.substring(0, 47)}…' : address]);
     }
-    if (showWeather && weather.isNotEmpty) rows.add(['WX', weather]);
+    
+    if (showWeather && weather.isNotEmpty) {
+      rows.add(['WX', weather]);
+    }
 
     final int totalRows = rows.length;
-    final int totalH = headerH + totalRows * rowH + 12;
+    final int totalH = headerH + totalRows * rowH + 12 + 3; // +12 padding, +3 garis penutup
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - totalH;
-    if (y0 < 0) return;
+    
+    // Return 0 jika tidak cukup ruang
+    if (y0 < 0) {
+      debugPrint('Field survey: Not enough space (needed: $totalH, available: ${src.height})');
+      return 0;
+    }
 
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + headerH,
-        color: img.ColorRgba8(30, 144, 255, 255));
-    img.drawString(src, 'TERMULOG  GEOTAGGED PHOTO',
-        font: img.arial24, x: padX, y: y0 + 8,
-        color: img.ColorRgba8(0, 0, 0, 255));
+    // Gambar header biru
+    img.fillRect(
+      src, 
+      x1: 0, 
+      y1: y0, 
+      x2: src.width - 1, 
+      y2: y0 + headerH,
+      color: img.ColorRgba8(30, 144, 255, 255),
+    );
+    
+    img.drawString(
+      src, 
+      'TERMULOG  GEOTAGGED PHOTO',
+      font: img.arial24, 
+      x: padX, 
+      y: y0 + 8,
+      color: img.ColorRgba8(0, 0, 0, 255),
+    );
 
+    // Gambar baris data
     final font = img.arial24;
     int cy = y0 + headerH;
+    
     for (int i = 0; i < rows.length; i++) {
-      img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + rowH,
-          color: i.isEven ? img.ColorRgba8(0, 0, 12, 220) : img.ColorRgba8(10, 10, 28, 220));
-      img.drawString(src, rows[i][0], font: font, x: padX, y: cy + 6, color: _grey);
-      img.drawString(src, rows[i][1], font: font, x: padX + colVal, y: cy + 6,
-          color: i < 2 ? _white : _blue);
+      final bool isEven = i.isEven;
+      
+      // Background baris (zebra stripe)
+      img.fillRect(
+        src, 
+        x1: 0, 
+        y1: cy, 
+        x2: src.width - 1, 
+        y2: cy + rowH,
+        color: isEven 
+            ? img.ColorRgba8(0, 0, 12, 220) 
+            : img.ColorRgba8(10, 10, 28, 220),
+      );
+      
+      // Label (kolom kiri)
+      img.drawString(
+        src, 
+        rows[i][0], 
+        font: font, 
+        x: padX, 
+        y: cy + 6, 
+        color: _grey,
+      );
+      
+      // Value (kolom kanan) - warna berbeda untuk 2 baris pertama
+      img.drawString(
+        src, 
+        rows[i][1], 
+        font: font, 
+        x: padX + colVal, 
+        y: cy + 6,
+        color: i < 2 ? _white : _blue,
+      );
+      
       cy += rowH;
     }
 
-    img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + 3,
-        color: img.ColorRgba8(30, 144, 255, 200));
+    // Garis penutup bawah
+    img.fillRect(
+      src, 
+      x1: 0, 
+      y1: cy, 
+      x2: src.width - 1, 
+      y2: cy + 3,
+      color: img.ColorRgba8(30, 144, 255, 200),
+    );
+
+    return totalH; // Kembalikan tinggi total watermark
   }
 
-  static void _addMiniMapTopRight(img.Image src, Uint8List? mapBytes) {
-    if (mapBytes == null) return;
+  // ================= MINI MAP (IMPROVED) =================
+  static void _addMiniMapTopRight(img.Image src, Uint8List? mapBytes, {int watermarkHeight = 0}) {
+    if (mapBytes == null || mapBytes.isEmpty) {
+      debugPrint('Mini map: mapBytes is null or empty');
+      return;
+    }
+    
     try {
       final mapImage = img.decodeImage(mapBytes);
-      if (mapImage == null) return;
+      if (mapImage == null) {
+        debugPrint('Mini map: Failed to decode image');
+        return;
+      }
+      
       const int mapWidth = 220;
       const int mapHeight = 140;
-      final resizedMap = img.copyResize(mapImage, width: mapWidth, height: mapHeight);
-      final mapX = src.width - mapWidth - 16;
-      final mapY = src.height - mapHeight - 16;
-      if (mapX > 0 && mapY > 0) {
-        img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY);
-        img.drawRect(src,
-            x1: mapX - 1, y1: mapY - 1,
-            x2: mapX + mapWidth, y2: mapY + mapHeight,
-            color: img.ColorRgba8(30, 144, 255, 255), thickness: 2);
-        final centerX = mapX + mapWidth ~/ 2;
-        final centerY = mapY + mapHeight ~/ 2;
-        img.fillCircle(src, x: centerX, y: centerY, radius: 6,
-            color: img.ColorRgba8(255, 50, 50, 255));
-        img.fillCircle(src, x: centerX, y: centerY, radius: 3,
-            color: img.ColorRgba8(255, 255, 255, 255));
+      const int margin = 16;
+      
+      // Resize hanya jika dimensi berbeda (optimasi)
+      final resizedMap = (mapImage.width != mapWidth || mapImage.height != mapHeight)
+          ? img.copyResize(mapImage, width: mapWidth, height: mapHeight)
+          : mapImage;
+      
+      // Hitung posisi X (kanan)
+      final mapX = src.width - mapWidth - margin;
+      
+      // Hitung posisi Y (di atas watermark)
+      final mapY = src.height - watermarkHeight - mapHeight - margin;
+      
+      // Validasi posisi
+      if (mapX < 0 || mapY < 0) {
+        debugPrint(
+          'Mini map: Position out of bounds '
+          '(mapX: $mapX, mapY: $mapY, '
+          'src: ${src.width}x${src.height}, '
+          'watermarkH: $watermarkHeight)'
+        );
+        return;
       }
-    } catch (e) {
+      
+      // Cek apakah area tersedia cukup
+      if (mapX + mapWidth > src.width || mapY + mapHeight > src.height) {
+        debugPrint('Mini map: Map area exceeds image bounds');
+        return;
+      }
+      
+      // Gambar mini map
+      img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY);
+      
+      // Border biru
+      img.drawRect(
+        src,
+        x1: mapX - 1,
+        y1: mapY - 1,
+        x2: mapX + mapWidth,
+        y2: mapY + mapHeight,
+        color: img.ColorRgba8(30, 144, 255, 255),
+        thickness: 2,
+      );
+      
+      // Pin lokasi di tengah map
+      final int centerX = mapX + mapWidth ~/ 2;
+      final int centerY = mapY + mapHeight ~/ 2;
+      
+      // Lingkaran luar (merah)
+      img.fillCircle(
+        src,
+        x: centerX,
+        y: centerY,
+        radius: 6,
+        color: img.ColorRgba8(255, 50, 50, 255),
+      );
+      
+      // Lingkaran dalam (putih) - titik pusat
+      img.fillCircle(
+        src,
+        x: centerX,
+        y: centerY,
+        radius: 3,
+        color: img.ColorRgba8(255, 255, 255, 255),
+      );
+      
+      debugPrint('Mini map added successfully at position ($mapX, $mapY)');
+      
+    } catch (e, stackTrace) {
       debugPrint('Add mini map error: $e');
+      debugPrint('Stack trace: $stackTrace');
     }
   }
 

@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:math';
-import 'dart:collection';
 import 'package:path/path.dart' as path;
 
 import 'package:camera/camera.dart';
@@ -9,12 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import '../core/camera_registry.dart';
 import '../services/location_weather_service.dart';
 import '../services/gps_lock_manager.dart';
+import '../services/gps_stabilizer.dart';
 import '../services/settings_cache.dart';
 import 'preview_screen_enhanced.dart';
 import 'settings_screen.dart';
@@ -55,7 +57,7 @@ class CameraConstants {
 }
 
 // ============================================================
-// GPS Bar Widget
+// GPS Bar Widget (dengan indikator lock)
 // ============================================================
 class GpsBar extends StatelessWidget {
   final bool gpsReady;
@@ -290,6 +292,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
+  /// Pre-warm GPS tanpa mengganggu stream (hanya sekali)
   Future<void> _preWarmGps() async {
     try {
       await Geolocator.getCurrentPosition(
@@ -371,7 +374,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   // ============================================================
-  // GPS Tracking
+  // GPS Tracking (dengan GpsLockManager)
   // ============================================================
 
   Future<void> _startGpsTracking({Duration interval = const Duration(milliseconds: 700)}) async {
@@ -450,7 +453,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _gpsRestartCount++;
         await _gpsStream?.cancel();
         await _startGpsTracking();
-        _startGpsWatchdog(); // restart watchdog dengan interval baru
+        _startGpsWatchdog();
       }
     });
   }
@@ -492,6 +495,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
 
+  // Save lock address (hanya sekali)
   Future<void> _fetchAndSaveLockAddress() async {
     final lock = _lockManager.lockData;
     if (lock == null || lock.address.isNotEmpty) return;
@@ -556,7 +560,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       if (justLocked) {
         _fetchAndSaveLockAddress();
-        _setGpsInterval(const Duration(seconds: 4)); // maintenance mode
+        _setGpsInterval(const Duration(seconds: 4));
         debugPrint('GPS: switched to maintenance mode interval');
       } else if (_lockManager.isLocked && _lockManager.lockData!.address.isEmpty) {
         _fetchAndSaveLockAddress();
@@ -870,16 +874,41 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
 
-  // Cache sederhana untuk alamat (fallback)
+  /// Cache utama untuk alamat – sekarang menggunakan GpsStabilizer juga
   Future<String> _getAddressCached(Position? pos) async {
     if (pos == null) return 'Lokasi tidak tersedia';
+
+    // 1. Cek cache dari GpsStabilizer (radius 50m)
+    final stabilizerCache = GpsStabilizer.instance.getCachedGeoData(pos);
+    if (stabilizerCache.address != null) {
+      debugPrint('Menggunakan alamat dari GpsStabilizer cache');
+      // Simpan juga ke cache lokal agar lebih cepat
+      final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
+      if (!_addressCache.containsKey(cacheKey)) {
+        _addToAddressCache(cacheKey, stabilizerCache.address!);
+      }
+      return stabilizerCache.address!;
+    }
+
+    // 2. Cek cache lokal (LRU)
     final cacheKey = '${pos.latitude.toStringAsFixed(3)},${pos.longitude.toStringAsFixed(3)}';
     if (_addressCache.containsKey(cacheKey)) return _addressCache[cacheKey]!;
 
+    // 3. Fetch dari service
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos);
       final address = result.address;
+      final weather = result.weather;
+
+      // Simpan ke kedua cache
       _addToAddressCache(cacheKey, address);
+      GpsStabilizer.instance.saveToCache(
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        address: address,
+        weather: weather,
+      );
+
       return address;
     } catch (_) {
       return '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
@@ -911,6 +940,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         final capturedFile = await ctrl.takePicture().timeout(CameraConstants.cameraTimeout);
         final bytes = await File(capturedFile.path).readAsBytes();
 
+        // Ambil alamat dari cache atau fallback
+        String alamat = lockData.address.isNotEmpty
+            ? lockData.address
+            : await _getAddressCached(lockData.position);
+
         if (mounted) {
           setState(() => _isTakingPhoto = false);
           await Navigator.push(
@@ -920,7 +954,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 imageBytes: bytes,
                 timestamp: waktuFoto,
                 position: lockData.position,
-                address: lockData.address.isNotEmpty ? lockData.address : _currentAddress,
+                address: alamat,
                 weather: lockData.weather,
               ),
             ),
@@ -948,7 +982,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           ? _lockManager.lockData!.address
           : _currentAddress.isNotEmpty
               ? _currentAddress
-              : _cachedAddress ?? await _getAddressCached(_bestPosition);
+              : await _getAddressCached(_bestPosition);
       final cuaca = _lockManager.lockData?.weather ?? _cachedWeather ?? '';
 
       if (mounted) {
@@ -1115,7 +1149,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
 
-            // Settings Button (perbaiki posisi)
+            // Settings Button
             Positioned(
               top: (_isLocationServiceDisabled ? 90 : 0) + 4,
               right: 4,

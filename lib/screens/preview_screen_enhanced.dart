@@ -711,7 +711,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  Future<void> _sharePhoto() async {
+ Future<void> _sharePhoto() async {
   if (_isSharing || _displayImagePath == null) return;
   setState(() {
     _isSharing = true;
@@ -722,9 +722,9 @@ class _PreviewScreenState extends State<PreviewScreen>
     final file = File(_displayImagePath!);
     if (!await file.exists()) throw Exception('File tidak ada');
     
-    // Gunakan Share.shareFiles (cara yang lebih stabil)
-    await Share.shareFiles(
-      [file.path],
+    // Gunakan shareXFiles (kompatibel dengan semua versi share_plus)
+    await Share.shareXFiles(
+      [XFile(file.path)],
       text: 'Foto dengan GPS dari TermulLog',
       subject: 'Foto GPS TermulLog',
     );
@@ -739,7 +739,23 @@ class _PreviewScreenState extends State<PreviewScreen>
     });
   }
 }
-
+  void _showErrorSnackbar(String msg) {
+  if (!mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg)),
+        ],
+      ),
+      backgroundColor: Colors.red.shade700,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+    ),
+  );
+}
   // ─────────────────────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────────────────────

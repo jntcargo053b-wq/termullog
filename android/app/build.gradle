@@ -23,7 +23,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "com.example.termullog"
+    namespace "com.example.termullog"   // ganti dengan package name Anda yang sesuai
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -41,12 +41,12 @@ android {
     }
 
     defaultConfig {
-    applicationId "com.example.termullog"
-    minSdkVersion 21
-    targetSdkVersion flutter.targetSdkVersion
-    versionCode flutterVersionCode.toInteger()
-    versionName flutterVersionName
-}
+        applicationId "com.example.termullog"
+        minSdkVersion 21
+        targetSdkVersion flutter.targetSdkVersion
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+    }
 
     buildTypes {
         release {

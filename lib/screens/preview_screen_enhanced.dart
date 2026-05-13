@@ -162,9 +162,9 @@ class _PreviewScreenState extends State<PreviewScreen>
       final watermarkPosition = results[3] as String;
       final showMiniMap = results[4] as bool;
 
-      // Fetch mini map only if needed (Professional layout)
+      // Fetch mini map jika diperlukan (semua layout yang support)
       Uint8List? mapBytes;
-      if (showMiniMap && hasPosition && layout == WatermarkLayout.professional) {
+      if (showMiniMap && hasPosition) {
         _processingStep.value = 'Menambahkan peta...';
         try {
           mapBytes = await LocationWeatherService.fetchMapWithRetry(

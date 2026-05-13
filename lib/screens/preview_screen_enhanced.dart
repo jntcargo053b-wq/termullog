@@ -59,11 +59,13 @@ class _PreviewScreenState extends State<PreviewScreen>
   bool _isFileInUse = false;
   late AnimationController _checkAnimController;
   late Animation<double> _checkAnim;
-  final TransformationController _transformController = TransformationController();
+  final TransformationController _transformController =
+      TransformationController();
   Offset? _lastDoubleTapPos;
   final Random _rng = Random.secure();
   CancelableOperation<Uint8List>? _cancelableCompute;
-  final ValueNotifier<String> _processingStep = ValueNotifier<String>('Memuat gambar...');
+  final ValueNotifier<String> _processingStep =
+      ValueNotifier<String>('Memuat gambar...');
 
   @override
   void initState() {
@@ -79,6 +81,10 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     if (widget.imagePath != null) {
       _displayImagePath = widget.imagePath;
+      // Jika gambar sudah ada path-nya, tetap proses watermark jika perlu
+      if (widget.imageBytes != null || widget.timestamp != null) {
+        _processImageAsync();
+      }
     } else {
       _processImageAsync();
     }
@@ -87,7 +93,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   @override
   void dispose() {
     _cancelableCompute?.cancel();
-    // File riwayat tidak dihapus – tetap tersimpan di folder dokumen
     _checkAnimController.dispose();
     _transformController.dispose();
     super.dispose();
@@ -116,9 +121,23 @@ class _PreviewScreenState extends State<PreviewScreen>
     _processingStep.value = 'Memuat gambar...';
 
     try {
-      final bytes = widget.imageBytes!;
-      final timestamp = widget.timestamp!;
+      // Load image bytes
+      Uint8List bytes;
+      if (widget.imageBytes != null) {
+        bytes = widget.imageBytes!;
+        debugPrint('Using provided imageBytes: ${bytes.length} bytes');
+      } else if (widget.imagePath != null) {
+        bytes = await File(widget.imagePath!).readAsBytes();
+        debugPrint('Loaded image from path: ${bytes.length} bytes');
+      } else {
+        throw Exception('Tidak ada data gambar');
+      }
+
+      final timestamp = widget.timestamp ?? DateTime.now();
       final hasPosition = widget.latitude != null && widget.longitude != null;
+      
+      debugPrint('Image info - hasPosition: $hasPosition');
+      debugPrint('Coordinates: lat=${widget.latitude}, lon=${widget.longitude}');
 
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
@@ -126,29 +145,43 @@ class _PreviewScreenState extends State<PreviewScreen>
       // Fetch geocoding & weather if needed
       if (hasPosition && (address.isEmpty || weather.isEmpty)) {
         _processingStep.value = 'Mengambil alamat & cuaca...';
+        debugPrint('Fetching address & weather...');
         try {
           final dummyPos = Position(
             latitude: widget.latitude!,
             longitude: widget.longitude!,
             accuracy: widget.accuracy ?? 0,
-            altitude: 0, altitudeAccuracy: 0,
-            heading: 0, headingAccuracy: 0,
-            speed: 0, speedAccuracy: 0,
+            altitude: 0,
+            altitudeAccuracy: 0,
+            heading: 0,
+            headingAccuracy: 0,
+            speed: 0,
+            speedAccuracy: 0,
             timestamp: DateTime.now(),
           );
           final result = await LocationWeatherService.fetchFromPosition(dummyPos)
               .timeout(const Duration(seconds: 10));
-          if (address.isEmpty) address = result.address;
-          if (weather.isEmpty) weather = result.weather;
+          if (address.isEmpty) {
+            address = result.address;
+            debugPrint('Address fetched: $address');
+          }
+          if (weather.isEmpty) {
+            weather = result.weather;
+            debugPrint('Weather fetched: $weather');
+          }
         } catch (e) {
           debugPrint('Geocoding/weather error: $e');
-          if (address.isEmpty) address = 'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
+          if (address.isEmpty && hasPosition) {
+            address =
+                'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
+          }
         }
       } else if (address.isEmpty && !hasPosition) {
         address = 'Tidak ada lokasi';
       }
 
       // Get settings
+      _processingStep.value = 'Memuat pengaturan...';
       final results = await Future.wait([
         SettingsCache.layout,
         SettingsCache.showWeather,
@@ -156,28 +189,51 @@ class _PreviewScreenState extends State<PreviewScreen>
         SettingsCache.watermarkPosition,
         SettingsCache.showMiniMap,
       ]);
+      
       final layout = results[0] as WatermarkLayout;
       final showWeather = results[1] as bool;
       final showAccuracy = results[2] as bool;
       final watermarkPosition = results[3] as String;
       final showMiniMap = results[4] as bool;
 
-      // Fetch mini map jika diperlukan (semua layout yang support)
+      debugPrint('Settings loaded:');
+      debugPrint('  layout: $layout');
+      debugPrint('  showWeather: $showWeather');
+      debugPrint('  showAccuracy: $showAccuracy');
+      debugPrint('  watermarkPosition: $watermarkPosition');
+      debugPrint('  showMiniMap: $showMiniMap');
+
+      // Fetch mini map jika diperlukan
       Uint8List? mapBytes;
       if (showMiniMap && hasPosition) {
-        _processingStep.value = 'Menambahkan peta...';
+        _processingStep.value = 'Mengunduh peta...';
+        debugPrint('Fetching mini map for coordinates: ${widget.latitude}, ${widget.longitude}');
+        
         try {
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             widget.latitude!,
             widget.longitude!,
           );
-        } catch (e) {
+          
+          if (mapBytes != null && mapBytes.isNotEmpty) {
+            debugPrint('Mini map fetched successfully: ${mapBytes.length} bytes');
+          } else {
+            debugPrint('Mini map fetched but is null or empty');
+            mapBytes = null;
+          }
+        } catch (e, stackTrace) {
           debugPrint('Mini map fetch error: $e');
+          debugPrint('Stack trace: $stackTrace');
+          mapBytes = null;
         }
+      } else {
+        debugPrint('Skipping mini map: showMiniMap=$showMiniMap, hasPosition=$hasPosition');
       }
 
       // Process watermark
       _processingStep.value = 'Membuat watermark...';
+      debugPrint('Creating watermark params with mapBytes: ${mapBytes != null}');
+      
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
         timestamp: timestamp,
@@ -194,30 +250,35 @@ class _PreviewScreenState extends State<PreviewScreen>
         mapBytes: mapBytes,
       );
 
+      debugPrint('Starting watermark processing in isolate...');
       _cancelableCompute = CancelableOperation.fromFuture(
         compute(WatermarkEngine.applyFromMap, params.toMap()),
       );
-      
+
       final processedBytes = await _cancelableCompute!.value;
+      debugPrint('Watermark processing completed: ${processedBytes.length} bytes');
 
       // Simpan permanen ke folder dokumen (untuk riwayat)
+      _processingStep.value = 'Menyimpan file...';
       final historyDir = await _getHistoryDirectory();
       final fileName = _uniqueFileName(timestamp);
       final permanentFile = File('${historyDir.path}/$fileName');
       await permanentFile.writeAsBytes(processedBytes);
+      debugPrint('File saved permanently: ${permanentFile.path}');
 
       if (mounted) {
         setState(() {
-          _displayImagePath = permanentFile.path; // gunakan file permanen
+          _displayImagePath = permanentFile.path;
           _isProcessing = false;
         });
+        debugPrint('Preview updated with new image path');
       }
     } catch (e, stackTrace) {
       debugPrint('Processing error: $e');
       debugPrint('Stack trace: $stackTrace');
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
+          _errorMessage = 'Error: ${e.toString()}';
           _isProcessing = false;
         });
       }
@@ -264,13 +325,13 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     try {
       final bool? result = await GallerySaver.saveImage(
-        _displayImagePath!, 
+        _displayImagePath!,
         albumName: 'TermulLog',
       );
       if (!mounted) return;
 
       if (result == true) {
-        _isFileSaved = true; // tetap kita tandai tersimpan, tapi file tidak dihapus
+        _isFileSaved = true;
         setState(() => _saveStatus = SaveStatus.saved);
         _checkAnimController.forward(from: 0);
         HapticFeedback.mediumImpact();
@@ -313,10 +374,12 @@ class _PreviewScreenState extends State<PreviewScreen>
       debugPrint('Share error: $e');
       _showErrorSnackbar('Gagal membagikan: ${e.toString().substring(0, 50)}');
     } finally {
-      if (mounted) setState(() {
-        _isSharing = false;
-        _isFileInUse = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSharing = false;
+          _isFileInUse = false;
+        });
+      }
     }
   }
 
@@ -324,11 +387,13 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(children: [
-          const Icon(Icons.error_outline, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(msg)),
-        ]),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
         backgroundColor: Colors.red.shade700,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 3),
@@ -344,8 +409,10 @@ class _PreviewScreenState extends State<PreviewScreen>
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Preview Foto', 
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+        title: const Text(
+          'Preview Foto',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        ),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
@@ -368,12 +435,22 @@ class _PreviewScreenState extends State<PreviewScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
+          const CircularProgressIndicator(color: Colors.white),
+          const SizedBox(height: 24),
           ValueListenableBuilder<String>(
             valueListenable: _processingStep,
-            builder: (_, step, __) => 
-              Text(step, style: const TextStyle(color: Colors.white70)),
+            builder: (_, step, __) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                step,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+            ),
           ),
         ],
       ),
@@ -382,41 +459,74 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   Widget _buildErrorView() {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.broken_image, color: Colors.red, size: 64),
-          const SizedBox(height: 16),
-          Text('Terjadi kesalahan: $_errorMessage',
-            style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Kembali'),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.broken_image, color: Colors.red, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              'Terjadi kesalahan',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () {
-                  setState(() => _errorMessage = null);
-                  _processImageAsync();
-                },
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Coba Lagi'),
-              ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage!,
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back, size: 16),
+                  label: const Text('Kembali'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade800,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() => _errorMessage = null);
+                    _processImageAsync();
+                  },
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Coba Lagi'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade600,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildEmptyView() {
     return const Center(
-      child: Text('Tidak ada gambar', 
-        style: TextStyle(color: Colors.white70)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.image_not_supported, color: Colors.white38, size: 64),
+          SizedBox(height: 16),
+          Text(
+            'Tidak ada gambar',
+            style: TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+        ],
+      ),
     );
   }
 
@@ -425,12 +535,15 @@ class _PreviewScreenState extends State<PreviewScreen>
       children: [
         Expanded(
           child: GestureDetector(
-            onDoubleTapDown: (details) => _lastDoubleTapPos = details.localPosition,
+            onDoubleTapDown: (details) =>
+                _lastDoubleTapPos = details.localPosition,
             onDoubleTap: () {
               final scale = _transformController.value.getMaxScaleOnAxis();
               if (scale > 1.0) {
+                // Reset zoom
                 _transformController.value = Matrix4.identity();
               } else {
+                // Zoom in ke posisi double tap
                 final pos = _lastDoubleTapPos ?? const Offset(0, 0);
                 final x = -pos.dx * (2.5 - 1);
                 final y = -pos.dy * (2.5 - 1);
@@ -453,10 +566,13 @@ class _PreviewScreenState extends State<PreviewScreen>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.broken_image, color: Colors.white38, size: 64),
+                          Icon(Icons.broken_image,
+                              color: Colors.white38, size: 64),
                           SizedBox(height: 12),
-                          Text('Gagal memuat foto',
-                            style: TextStyle(color: Colors.white38)),
+                          Text(
+                            'Gagal memuat foto',
+                            style: TextStyle(color: Colors.white38),
+                          ),
                         ],
                       ),
                     ),
@@ -487,7 +603,8 @@ class _PreviewScreenState extends State<PreviewScreen>
                 side: const BorderSide(color: Colors.white38),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
@@ -495,9 +612,14 @@ class _PreviewScreenState extends State<PreviewScreen>
           _ActionButton(
             onPressed: _isSharing ? null : _sharePhoto,
             icon: _isSharing
-                ? const SizedBox(width: 18, height: 18, 
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
                     child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.share_outlined, size: 20),
             label: 'Bagikan',
             color: Colors.blue.shade600,
@@ -506,7 +628,8 @@ class _PreviewScreenState extends State<PreviewScreen>
           _SaveButton(
             status: _saveStatus,
             checkAnim: _checkAnim,
-            onPressed: _saveStatus == SaveStatus.saving ? null : _saveToGallery,
+            onPressed:
+                _saveStatus == SaveStatus.saving ? null : _saveToGallery,
           ),
         ],
       ),
@@ -539,7 +662,8 @@ class _ActionButton extends StatelessWidget {
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(10),
+          ),
           elevation: 0,
         ),
       ),
@@ -572,26 +696,38 @@ class _SaveButton extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: onPressed,
         icon: isSaving
-            ? const SizedBox(width: 18, height: 18,
+            ? const SizedBox(
+                width: 18,
+                height: 18,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white))
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
             : isSaved
                 ? ScaleTransition(
                     scale: checkAnim,
-                    child: const Icon(Icons.check_circle, size: 20))
+                    child: const Icon(Icons.check_circle, size: 20),
+                  )
                 : isError
                     ? const Icon(Icons.error_outline, size: 20)
                     : const Icon(Icons.save_alt, size: 20),
-        label: Text(isSaving ? 'Menyimpan...' 
-            : isSaved ? 'Tersimpan!' 
-            : isError ? 'Gagal' 
-            : 'Simpan'),
+        label: Text(
+          isSaving
+              ? 'Menyimpan...'
+              : isSaved
+                  ? 'Tersimpan!'
+                  : isError
+                      ? 'Gagal'
+                      : 'Simpan',
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: bgColor,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(10),
+          ),
           elevation: 0,
         ),
       ),

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p; // Tambahkan ini
+import 'package:path/path.dart' as p;
 import 'package:image/image.dart' as img;
 import 'package:share_plus/share_plus.dart';
 
@@ -24,10 +24,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _loadAllPhotos();
   }
 
+  Future<Directory> _getHistoryDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final historyDir = Directory('${appDir.path}/termullog_history');
+    if (!await historyDir.exists()) {
+      await historyDir.create(recursive: true);
+    }
+    return historyDir;
+  }
+
   Future<void> _loadAllPhotos() async {
     setState(() => _isLoading = true);
     try {
-      final dir = await getTemporaryDirectory();
+      final dir = await _getHistoryDirectory(); // ← bukan getTemporaryDirectory()
       final files = dir.listSync()
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('termullog_'))
@@ -64,6 +73,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('Error loading history: $e');
       setState(() => _isLoading = false);
     }
   }

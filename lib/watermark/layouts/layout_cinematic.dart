@@ -44,20 +44,20 @@ class LayoutCinematic extends WatermarkLayoutBase {
     int cy = isTop ? 16 : gradY0 + 12;
 
     img.drawString(src, DateFormat('HH : mm : ss').format(timestamp), 
-      font: font, x: padX, y: cy, color: white);
+      font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
     cy += lineH;
     img.drawString(src, DateFormat('dd  MMMM  yyyy').format(timestamp), 
-      font: font, x: padX, y: cy, color: blue);
+      font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
     cy += lineH + 8;
 
     if (hasPosition) {
       img.drawString(src,
           '${lat!.toStringAsFixed(5)}°N   ${lon!.toStringAsFixed(5)}°E',
-          font: font, x: padX, y: cy, color: offWhite);
+          font: font, x: padX, y: cy, color: WatermarkLayoutBase.offWhite);
       cy += lineH;
       if (showAccuracy) {
         img.drawString(src, 'ACCURACY  ±${acc?.toStringAsFixed(0) ?? '?'} M',
-            font: font, x: padX, y: cy, color: grey);
+            font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
         cy += lineH;
       }
     }
@@ -65,15 +65,15 @@ class LayoutCinematic extends WatermarkLayoutBase {
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       String sh = address.length > maxAddressLen 
           ? '${address.substring(0, maxAddressLen - 1)}…' : address;
-      img.drawString(src, sh, font: font, x: padX, y: cy, color: grey);
+      img.drawString(src, sh, font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
       cy += lineH;
     }
 
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: blue);
+      img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
     }
 
-    return encodeJpg(src);
+    return WatermarkLayoutBase.encodeJpg(src);
   }
 
   void _applyGradient(img.Image src, int gradY0, bool isTop) {

@@ -49,6 +49,9 @@ dependencies:
   # Permission handler (Android 13+)
   permission_handler: ^11.3.1
 
+  # Async utilities
+  async: ^2.11.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

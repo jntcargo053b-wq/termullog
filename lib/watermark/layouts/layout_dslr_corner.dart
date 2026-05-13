@@ -58,51 +58,51 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     final int xT = x0 + padX;
 
     img.drawString(src, DateFormat('dd  MMM  yyyy').format(timestamp), 
-      font: font, x: xT, y: cy, color: blue);
+      font: font, x: xT, y: cy, color: WatermarkLayoutBase.blue);
     cy += lineH;
     img.drawString(src, DateFormat('HH : mm : ss').format(timestamp), 
-      font: font, x: xT, y: cy, color: white);
+      font: font, x: xT, y: cy, color: WatermarkLayoutBase.white);
     cy += lineH;
 
     if (hasPosition) {
       img.drawString(src, 'N ${lat!.toStringAsFixed(6)}', 
-        font: font, x: xT, y: cy, color: offWhite);
+        font: font, x: xT, y: cy, color: WatermarkLayoutBase.offWhite);
       cy += lineH;
       img.drawString(src, 'E ${lon!.toStringAsFixed(6)}', 
-        font: font, x: xT, y: cy, color: offWhite);
+        font: font, x: xT, y: cy, color: WatermarkLayoutBase.offWhite);
       cy += lineH;
       if (showAccuracy) {
         img.drawString(src, 'ACC  ±${acc?.toStringAsFixed(0) ?? '?'} m', 
-          font: font, x: xT, y: cy, color: grey);
+          font: font, x: xT, y: cy, color: WatermarkLayoutBase.grey);
         cy += lineH;
       }
     }
 
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       String sh = address.length > 50 ? '${address.substring(0, 47)}…' : address;
-      img.drawString(src, sh, font: font, x: xT, y: cy, color: grey);
+      img.drawString(src, sh, font: font, x: xT, y: cy, color: WatermarkLayoutBase.grey);
       cy += lineH;
     }
 
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: xT, y: cy, color: blue);
+      img.drawString(src, weather, font: font, x: xT, y: cy, color: WatermarkLayoutBase.blue);
     }
 
-    return encodeJpg(src);
+    return WatermarkLayoutBase.encodeJpg(src);
   }
 
   void _drawCornerBrackets(img.Image src, int x0, int y0, int x1, int y1) {
     // Top-left
-    img.fillRect(src, x1: x0, y1: y0, x2: x0 + brkLen, y2: y0 + brkW, color: blue);
-    img.fillRect(src, x1: x0, y1: y0, x2: x0 + brkW, y2: y0 + brkLen, color: blue);
+    img.fillRect(src, x1: x0, y1: y0, x2: x0 + brkLen, y2: y0 + brkW, color: WatermarkLayoutBase.blue);
+    img.fillRect(src, x1: x0, y1: y0, x2: x0 + brkW, y2: y0 + brkLen, color: WatermarkLayoutBase.blue);
     // Top-right
-    img.fillRect(src, x1: x1 - brkLen, y1: y0, x2: x1, y2: y0 + brkW, color: blue);
-    img.fillRect(src, x1: x1 - brkW, y1: y0, x2: x1, y2: y0 + brkLen, color: blue);
+    img.fillRect(src, x1: x1 - brkLen, y1: y0, x2: x1, y2: y0 + brkW, color: WatermarkLayoutBase.blue);
+    img.fillRect(src, x1: x1 - brkW, y1: y0, x2: x1, y2: y0 + brkLen, color: WatermarkLayoutBase.blue);
     // Bottom-left
-    img.fillRect(src, x1: x0, y1: y1 - brkW, x2: x0 + brkLen, y2: y1, color: blue);
-    img.fillRect(src, x1: x0, y1: y1 - brkLen, x2: x0 + brkW, y2: y1, color: blue);
+    img.fillRect(src, x1: x0, y1: y1 - brkW, x2: x0 + brkLen, y2: y1, color: WatermarkLayoutBase.blue);
+    img.fillRect(src, x1: x0, y1: y1 - brkLen, x2: x0 + brkW, y2: y1, color: WatermarkLayoutBase.blue);
     // Bottom-right
-    img.fillRect(src, x1: x1 - brkLen, y1: y1 - brkW, x2: x1, y2: y1, color: blue);
-    img.fillRect(src, x1: x1 - brkW, y1: y1 - brkLen, x2: x1, y2: y1, color: blue);
+    img.fillRect(src, x1: x1 - brkLen, y1: y1 - brkW, x2: x1, y2: y1, color: WatermarkLayoutBase.blue);
+    img.fillRect(src, x1: x1 - brkW, y1: y1 - brkLen, x2: x1, y2: y1, color: WatermarkLayoutBase.blue);
   }
 }

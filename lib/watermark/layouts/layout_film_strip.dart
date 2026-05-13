@@ -37,15 +37,15 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
     final int stripH = borderH + rows * lineH + 10;
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - stripH;
-    if (y0 < 0) return encodeJpg(src);
+    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
     // Background strip
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: src.height - 1,
         color: img.ColorRgba8(0, 0, 8, 255));
     
     // Border atas dan bawah
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + borderH, color: blue);
-    img.fillRect(src, x1: 0, y1: src.height - borderH, x2: src.width - 1, y2: src.height - 1, color: blue);
+    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + borderH, color: WatermarkLayoutBase.blue);
+    img.fillRect(src, x1: 0, y1: src.height - borderH, x2: src.width - 1, y2: src.height - 1, color: WatermarkLayoutBase.blue);
     
     // Recording dot
     img.fillCircle(src, x: padX + 6, y: y0 + borderH + 18, radius: 7,
@@ -57,7 +57,7 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
     // Date & Time
     img.drawString(src, 
       '   ${DateFormat('yyyy-MM-dd').format(timestamp)}  ${DateFormat('HH:mm:ss').format(timestamp)}',
-      font: font, x: padX, y: cy, color: white);
+      font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
     cy += lineH;
 
     // GPS Coordinates
@@ -65,7 +65,7 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
       final accStr = showAccuracy ? '  ±${acc?.toStringAsFixed(0) ?? '?'}m' : '';
       img.drawString(src,
           '${lat!.toStringAsFixed(6)}  ${lon!.toStringAsFixed(6)}$accStr',
-          font: font, x: padX, y: cy, color: blue);
+          font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
       cy += lineH;
     }
 
@@ -73,15 +73,15 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       String shortAddr = address.length > maxAddressLen 
           ? '${address.substring(0, maxAddressLen - 1)}…' : address;
-      img.drawString(src, shortAddr, font: font, x: padX, y: cy, color: grey);
+      img.drawString(src, shortAddr, font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
       cy += lineH;
     }
 
     // Weather
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: blue);
+      img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
     }
 
-    return encodeJpg(src);
+    return WatermarkLayoutBase.encodeJpg(src);
   }
 }

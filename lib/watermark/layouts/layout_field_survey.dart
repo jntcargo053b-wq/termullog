@@ -44,7 +44,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       _addMiniMapTopRight(src, mapBytes, watermarkHeight: wmHeight);
     }
     
-    return encodeJpg(src);
+    return WatermarkLayoutBase.encodeJpg(src);
   }
 
   /// Menggambar tabel field survey dan mengembalikan tinggi watermark

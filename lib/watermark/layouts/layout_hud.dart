@@ -1,4 +1,3 @@
-
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -38,7 +37,7 @@ class LayoutHUD extends WatermarkLayoutBase {
     final int panelH = padY * 2 + rows * lineH + (rows - 1) * 6 + accentH;
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - panelH;
-    if (y0 < 0) return encodeJpg(src);
+    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
     // Apply glass effect
     _applyGlassEffect(src, y0, panelH, isTop);
@@ -48,7 +47,7 @@ class LayoutHUD extends WatermarkLayoutBase {
         color: img.ColorRgba8(30, 144, 255, 120));
     // Bottom accent bar
     img.fillRect(src, x1: 0, y1: src.height - accentH, 
-        x2: src.width - 1, y2: src.height - 1, color: blue);
+        x2: src.width - 1, y2: src.height - 1, color: WatermarkLayoutBase.blue);
 
     final font = img.arial24;
     int cy = y0 + padY;
@@ -56,7 +55,7 @@ class LayoutHUD extends WatermarkLayoutBase {
     // Date & Time
     img.drawString(src,
         '${DateFormat('dd MMM yyyy').format(timestamp)}   ${DateFormat('HH:mm:ss').format(timestamp)}',
-        font: font, x: padX, y: cy, color: white);
+        font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
     cy += lineH + 6;
 
     // GPS
@@ -64,7 +63,7 @@ class LayoutHUD extends WatermarkLayoutBase {
       final accStr = showAccuracy ? '   ±${acc?.toStringAsFixed(0) ?? '?'}m' : '';
       img.drawString(src,
           '${lat!.toStringAsFixed(5)}, ${lon!.toStringAsFixed(5)}$accStr',
-          font: font, x: padX, y: cy, color: blue);
+          font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
       cy += lineH + 6;
     }
 
@@ -72,16 +71,16 @@ class LayoutHUD extends WatermarkLayoutBase {
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       String sh = address.length > maxAddressLen 
           ? '${address.substring(0, maxAddressLen - 1)}…' : address;
-      img.drawString(src, sh, font: font, x: padX, y: cy, color: grey);
+      img.drawString(src, sh, font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
       cy += lineH + 6;
     }
 
     // Weather
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: white);
+      img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
     }
 
-    return encodeJpg(src);
+    return WatermarkLayoutBase.encodeJpg(src);
   }
 
   void _applyGlassEffect(img.Image src, int y0, int panelH, bool isTop) {

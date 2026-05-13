@@ -1,0 +1,2 @@
+# termullog
+jarak dan waktu

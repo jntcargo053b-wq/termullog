@@ -1,4 +1,3 @@
-// preview_screen_enhanced.dart (final - improved)
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -10,25 +9,16 @@ import 'package:flutter/services.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:image/image.dart' as img;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:async/async.dart';
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
-import '../core/constants.dart';
+import '../watermark/watermark_params.dart';
+import '../watermark/watermark_engine.dart';
 
 enum SaveStatus { idle, saving, saved, error }
-const int _kMaxAddressLen = 55;
-
-final _blue = kColorLightBlue;
-final _white = kColorWhite;
-final _offWhite = kColorOffWhite;
-final _grey = kColorDarkGrey;
-final _dark = kColorVeryDarkBg;
-final _darker = kColorBlackerBg;
 
 class PreviewScreen extends StatefulWidget {
   final String? imagePath;
@@ -116,14 +106,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     return 'termullog_${ts.millisecondsSinceEpoch}_$suffix.jpg';
   }
 
-  static img.Image _decodeOrThrow(Uint8List bytes) {
-    if (bytes.isEmpty) throw Exception('Data gambar kosong');
-    if (bytes.length < 100) throw Exception('Data gambar terlalu kecil, mungkin corrupt');
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw Exception('Format gambar tidak didukung');
-    return decoded;
-  }
-
   Future<void> _processImageAsync() async {
     setState(() {
       _isProcessing = true;
@@ -139,6 +121,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
 
+      // Fetch geocoding & weather if needed
       if (hasPosition && (address.isEmpty || weather.isEmpty)) {
         _processingStep.value = 'Mengambil alamat & cuaca...';
         try {
@@ -163,6 +146,7 @@ class _PreviewScreenState extends State<PreviewScreen>
         address = 'Tidak ada lokasi';
       }
 
+      // Get settings
       final results = await Future.wait([
         SettingsCache.layout,
         SettingsCache.showWeather,
@@ -176,6 +160,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final watermarkPosition = results[3] as String;
       final showMiniMap = results[4] as bool;
 
+      // Fetch mini map if needed
       Uint8List? mapBytes;
       if (showMiniMap && hasPosition && layout == WatermarkLayout.professional) {
         _processingStep.value = 'Menambahkan peta...';
@@ -184,24 +169,36 @@ class _PreviewScreenState extends State<PreviewScreen>
             widget.latitude!,
             widget.longitude!,
           );
-          if (mapBytes != null) {
-            debugPrint('Mini map fetched successfully');
-          } else {
-            debugPrint('Mini map fetch returned null');
-          }
         } catch (e) {
           debugPrint('Mini map fetch error: $e');
         }
       }
 
+      // Process watermark
       _processingStep.value = 'Membuat watermark...';
-      final processedBytes = await _computeWatermark(
-        bytes, timestamp,
-        widget.latitude, widget.longitude, widget.accuracy,
-        address, weather,
-        layout, showWeather, showAccuracy, watermarkPosition, showMiniMap, mapBytes,
+      final params = WatermarkEngine.createParams(
+        imageBytes: bytes,
+        timestamp: timestamp,
+        layoutIndex: layout.index,
+        address: address,
+        weather: weather,
+        showWeather: showWeather,
+        showAccuracy: showAccuracy,
+        watermarkPosition: watermarkPosition,
+        showMiniMap: showMiniMap,
+        lat: widget.latitude,
+        lon: widget.longitude,
+        acc: widget.accuracy,
+        mapBytes: mapBytes,
       );
 
+      _cancelableCompute = CancelableOperation.fromFuture(
+        compute(WatermarkEngine.applyFromMap, params.toMap()),
+      );
+      
+      final processedBytes = await _cancelableCompute!.value;
+
+      // Save to temp file
       final dir = await getTemporaryDirectory();
       final fileName = _uniqueTempName(timestamp);
       final tempFile = File('${dir.path}/$fileName');
@@ -225,588 +222,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  Future<Uint8List> _computeWatermark(
-    Uint8List imageBytes,
-    DateTime timestamp,
-    double? lat,
-    double? lon,
-    double? acc,
-    String address,
-    String weather,
-    WatermarkLayout layout,
-    bool showWeather,
-    bool showAccuracy,
-    String watermarkPosition,
-    bool showMiniMap,
-    Uint8List? mapBytes,
-  ) async {
-    final transferable = TransferableTypedData.fromList([imageBytes]);
-    final mapTransferable = mapBytes != null
-        ? TransferableTypedData.fromList([mapBytes])
-        : null;
-
-    final params = {
-      'transferable': transferable,
-      'mapTransferable': mapTransferable,
-      'timestamp': timestamp,
-      'address': address,
-      'weather': weather,
-      'layout': layout.index,
-      'showWeather': showWeather,
-      'showAccuracy': showAccuracy,
-      'watermarkPosition': watermarkPosition,
-      'showMiniMap': showMiniMap,
-      'posLat': lat,
-      'posLon': lon,
-      'posAcc': acc,
-    };
-
-    _cancelableCompute = CancelableOperation.fromFuture(
-      compute(_applyWatermarkTransfer, params),
-    );
-    return await _cancelableCompute!.value;
-  }
-
-  static Uint8List _applyWatermarkTransfer(Map<String, dynamic> params) {
-    final transferable = params['transferable'] as TransferableTypedData;
-    final bytes = transferable.materialize().asUint8List();
-    final mapTransferable = params['mapTransferable'] as TransferableTypedData?;
-    final mapBytes = mapTransferable?.materialize().asUint8List();
-
-    final newParams = Map<String, dynamic>.from(params);
-    newParams['bytes'] = bytes;
-    newParams['mapBytes'] = mapBytes;
-    newParams.remove('transferable');
-    newParams.remove('mapTransferable');
-    return _applyWatermark(newParams);
-  }
-
-  static Uint8List _applyWatermark(Map<String, dynamic> params) {
-    final bytes = params['bytes'] as Uint8List;
-    final timestamp = params['timestamp'] as DateTime;
-    final address = params['address'] as String;
-    final weather = params['weather'] as String;
-    final layoutIndex = params['layout'] as int;
-    final showWeather = params['showWeather'] as bool;
-    final showAccuracy = params['showAccuracy'] as bool;
-    final watermarkPosition = params['watermarkPosition'] as String;
-    final showMiniMap = params['showMiniMap'] as bool? ?? false;
-    final mapBytes = params['mapBytes'] as Uint8List?;
-
-    final posLat = params['posLat'] as double?;
-    final posLon = params['posLon'] as double?;
-    final posAcc = params['posAcc'] as double?;
-    final hasPosition = posLat != null && posLon != null;
-
-    final layout = WatermarkLayout.values[layoutIndex];
-
-    img.Image src = _decodeOrThrow(bytes);
-    if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
-      src = img.copyResize(src,
-          width: src.width > src.height ? kMaxOutputWidth : null,
-          height: src.height > src.width ? kMaxOutputWidth : null,
-          interpolation: img.Interpolation.average);
-    }
-
-    Uint8List result;
-    switch (layout) {
-      case WatermarkLayout.minimal:
-        result = _layoutFilmStrip(src, timestamp, hasPosition, posLat, posLon, posAcc,
-            address, weather, showWeather, showAccuracy, watermarkPosition);
-        break;
-      case WatermarkLayout.modern:
-        result = _layoutDSLRCorner(src, timestamp, hasPosition, posLat, posLon, posAcc,
-            address, weather, showWeather, showAccuracy, watermarkPosition);
-        break;
-      case WatermarkLayout.elegant:
-        result = _layoutCinematic(src, timestamp, hasPosition, posLat, posLon, posAcc,
-            address, weather, showWeather, showAccuracy, watermarkPosition);
-        break;
-      case WatermarkLayout.professional:
-        final wmHeight = _drawFieldSurveyOnSrc(
-          src, timestamp, hasPosition, posLat, posLon, posAcc,
-          address, weather, showWeather, showAccuracy, watermarkPosition,
-        );
-        if (showMiniMap && mapBytes != null && hasPosition && wmHeight > 0) {
-          _addMiniMapTopRight(src, mapBytes, watermarkHeight: wmHeight);
-        }
-        result = Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
-        break;
-      case WatermarkLayout.semiTransparent:
-        result = _layoutHUD(src, timestamp, hasPosition, posLat, posLon, posAcc,
-            address, weather, showWeather, showAccuracy, watermarkPosition);
-        break;
-    }
-
-    if (result.isEmpty) throw Exception('Layout gagal menghasilkan data gambar');
-    return result;
-  }
-
-  // ================= LAYOUT 1: FILM STRIP =================
-  static Uint8List _layoutFilmStrip(
-    img.Image src, DateTime timestamp,
-    bool hasPosition, double? lat, double? lon, double? acc,
-    String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
-  ) {
-    int rows = 3;
-    if (hasPosition) rows++;
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows++;
-    if (showWeather && weather.isNotEmpty) rows++;
-    const int lineH = 28;
-    const int borderH = 4;
-    const int padX = 24;
-    final int stripH = borderH + rows * lineH + 10;
-    final bool isTop = watermarkPosition == 'top';
-    final int y0 = isTop ? 0 : src.height - stripH;
-    if (y0 < 0) return Uint8List(0);
-
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: src.height - 1,
-        color: img.ColorRgba8(0, 0, 8, 255));
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + borderH,
-        color: img.ColorRgba8(30, 144, 255, 255));
-    img.fillRect(src, x1: 0, y1: src.height - borderH, x2: src.width - 1, y2: src.height - 1,
-        color: img.ColorRgba8(30, 144, 255, 255));
-    img.fillCircle(src, x: padX + 6, y: y0 + borderH + 18, radius: 7,
-        color: img.ColorRgba8(220, 30, 30, 255));
-
-    final font = img.arial24;
-    int cy = y0 + borderH + 10;
-
-    img.drawString(src, '   ${DateFormat('yyyy-MM-dd').format(timestamp)}  ${DateFormat('HH:mm:ss').format(timestamp)}',
-        font: font, x: padX, y: cy, color: _white);
-    cy += lineH;
-
-    if (hasPosition) {
-      final accStr = showAccuracy ? '  ±${acc?.toStringAsFixed(0) ?? '?'}m' : '';
-      img.drawString(src,
-          '${lat!.toStringAsFixed(6)}  ${lon!.toStringAsFixed(6)}$accStr',
-          font: font, x: padX, y: cy, color: _blue);
-      cy += lineH;
-    }
-
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      String shortAddr = address.length > _kMaxAddressLen ? '${address.substring(0, _kMaxAddressLen - 1)}…' : address;
-      img.drawString(src, shortAddr, font: font, x: padX, y: cy, color: _grey);
-      cy += lineH;
-    }
-
-    if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: _blue);
-    }
-
-    return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
-  }
-
-  // ================= LAYOUT 2: DSLR CORNER =================
-  static Uint8List _layoutDSLRCorner(
-    img.Image src, DateTime timestamp,
-    bool hasPosition, double? lat, double? lon, double? acc,
-    String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
-  ) {
-    const int padX = 18;
-    const int padY = 16;
-    const int lineH = 26;
-    const int brkLen = 22;
-    const int brkW = 4;
-
-    int rows = 2;
-    if (hasPosition) rows += 2;
-    if (showAccuracy && hasPosition) rows += 1;
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows += 1;
-    if (showWeather && weather.isNotEmpty) rows += 1;
-
-    final int boxH = padY * 2 + rows * lineH;
-    final int boxW = (src.width * 0.55).toInt().clamp(300, src.width - 30);
-    final bool isTop = watermarkPosition == 'top';
-    final int x0 = 20;
-    final int y0 = isTop ? 20 : src.height - boxH - 20;
-    final int x1 = x0 + boxW;
-    final int y1 = y0 + boxH;
-
-    final region = img.copyCrop(src, x: x0, y: y0, width: boxW, height: boxH);
-    img.adjustColor(region, brightness: -0.85);
-    img.compositeImage(src, region, dstX: x0, dstY: y0);
-
-    final blueColor = img.ColorRgba8(30, 144, 255, 255);
-    img.fillRect(src, x1: x0, y1: y0, x2: x0 + brkLen, y2: y0 + brkW, color: blueColor);
-    img.fillRect(src, x1: x0, y1: y0, x2: x0 + brkW, y2: y0 + brkLen, color: blueColor);
-    img.fillRect(src, x1: x1 - brkLen, y1: y0, x2: x1, y2: y0 + brkW, color: blueColor);
-    img.fillRect(src, x1: x1 - brkW, y1: y0, x2: x1, y2: y0 + brkLen, color: blueColor);
-    img.fillRect(src, x1: x0, y1: y1 - brkW, x2: x0 + brkLen, y2: y1, color: blueColor);
-    img.fillRect(src, x1: x0, y1: y1 - brkLen, x2: x0 + brkW, y2: y1, color: blueColor);
-    img.fillRect(src, x1: x1 - brkLen, y1: y1 - brkW, x2: x1, y2: y1, color: blueColor);
-    img.fillRect(src, x1: x1 - brkW, y1: y1 - brkLen, x2: x1, y2: y1, color: blueColor);
-
-    final font = img.arial24;
-    int cy = y0 + padY;
-    final int xT = x0 + padX;
-
-    img.drawString(src, DateFormat('dd  MMM  yyyy').format(timestamp), font: font, x: xT, y: cy, color: _blue);
-    cy += lineH;
-    img.drawString(src, DateFormat('HH : mm : ss').format(timestamp), font: font, x: xT, y: cy, color: _white);
-    cy += lineH;
-
-    if (hasPosition) {
-      img.drawString(src, 'N ${lat!.toStringAsFixed(6)}', font: font, x: xT, y: cy, color: _offWhite);
-      cy += lineH;
-      img.drawString(src, 'E ${lon!.toStringAsFixed(6)}', font: font, x: xT, y: cy, color: _offWhite);
-      cy += lineH;
-      if (showAccuracy) {
-        img.drawString(src, 'ACC  ±${acc?.toStringAsFixed(0) ?? '?'} m', font: font, x: xT, y: cy, color: _grey);
-        cy += lineH;
-      }
-    }
-
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      String sh = address.length > 50 ? '${address.substring(0, 47)}…' : address;
-      img.drawString(src, sh, font: font, x: xT, y: cy, color: _grey);
-      cy += lineH;
-    }
-
-    if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: xT, y: cy, color: _blue);
-    }
-
-    return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
-  }
-
-  // ================= LAYOUT 3: CINEMATIC =================
-  static Uint8List _layoutCinematic(
-    img.Image src, DateTime timestamp,
-    bool hasPosition, double? lat, double? lon, double? acc,
-    String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
-  ) {
-    const int gradH = 180;
-    const int padX = 36;
-    const int lineH = 28;
-    final bool isTop = watermarkPosition == 'top';
-    final int gradY0 = isTop ? 0 : src.height - gradH;
-
-    for (int y = gradY0; y < gradY0 + gradH; y++) {
-      if (y < 0 || y >= src.height) continue;
-      final t = isTop ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
-      final alpha = (t * 200).toInt().clamp(0, 200);
-      for (int x = 0; x < src.width; x++) {
-        final px = src.getPixel(x, y);
-        src.setPixel(x, y, img.ColorRgba8(
-          ((px.r * (255 - alpha)) ~/ 255),
-          ((px.g * (255 - alpha)) ~/ 255),
-          ((px.b * (255 - alpha)) ~/ 255), 255));
-      }
-    }
-
-    final int divY = isTop ? gradH - 40 : gradY0 + 36;
-    img.fillRect(src, x1: padX, y1: divY, x2: src.width - padX, y2: divY + 2,
-        color: img.ColorRgba8(30, 144, 255, 200));
-
-    final font = img.arial24;
-    int cy = isTop ? 16 : gradY0 + 12;
-
-    img.drawString(src, DateFormat('HH : mm : ss').format(timestamp), font: font, x: padX, y: cy, color: _white);
-    cy += lineH;
-    img.drawString(src, DateFormat('dd  MMMM  yyyy').format(timestamp), font: font, x: padX, y: cy, color: _blue);
-    cy += lineH + 8;
-
-    if (hasPosition) {
-      img.drawString(src,
-          '${lat!.toStringAsFixed(5)}°N   ${lon!.toStringAsFixed(5)}°E',
-          font: font, x: padX, y: cy, color: _offWhite);
-      cy += lineH;
-      if (showAccuracy) {
-        img.drawString(src, 'ACCURACY  ±${acc?.toStringAsFixed(0) ?? '?'} M',
-            font: font, x: padX, y: cy, color: _grey);
-        cy += lineH;
-      }
-    }
-
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      String sh = address.length > _kMaxAddressLen ? '${address.substring(0, _kMaxAddressLen - 1)}…' : address;
-      img.drawString(src, sh, font: font, x: padX, y: cy, color: _grey);
-      cy += lineH;
-    }
-
-    if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: _blue);
-    }
-
-    return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
-  }
-
-  // ================= LAYOUT 4: FIELD SURVEY (IMPROVED) =================
-  static int _drawFieldSurveyOnSrc(
-    img.Image src, DateTime timestamp,
-    bool hasPosition, double? lat, double? lon, double? acc,
-    String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
-  ) {
-    const int headerH = 32;
-    const int rowH = 28;
-    const int padX = 16;
-    const int colVal = 130;
-
-    // Bangun data baris
-    final List<List<String>> rows = [
-      ['DATE', DateFormat('yyyy-MM-dd').format(timestamp)],
-      ['TIME', DateFormat('HH:mm:ss').format(timestamp)],
-    ];
-    
-    if (hasPosition) {
-      rows.add(['LAT', '${lat!.toStringAsFixed(6)}°']);
-      rows.add(['LON', '${lon!.toStringAsFixed(6)}°']);
-      if (showAccuracy) rows.add(['ACC', '±${acc?.toStringAsFixed(0) ?? '?'} m']);
-    }
-    
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      rows.add(['ADDR', address.length > 50 ? '${address.substring(0, 47)}…' : address]);
-    }
-    
-    if (showWeather && weather.isNotEmpty) {
-      rows.add(['WX', weather]);
-    }
-
-    final int totalRows = rows.length;
-    final int totalH = headerH + totalRows * rowH + 12 + 3; // +12 padding, +3 garis penutup
-    final bool isTop = watermarkPosition == 'top';
-    final int y0 = isTop ? 0 : src.height - totalH;
-    
-    // Return 0 jika tidak cukup ruang
-    if (y0 < 0) {
-      debugPrint('Field survey: Not enough space (needed: $totalH, available: ${src.height})');
-      return 0;
-    }
-
-    // Gambar header biru
-    img.fillRect(
-      src, 
-      x1: 0, 
-      y1: y0, 
-      x2: src.width - 1, 
-      y2: y0 + headerH,
-      color: img.ColorRgba8(30, 144, 255, 255),
-    );
-    
-    img.drawString(
-      src, 
-      'TERMULOG  GEOTAGGED PHOTO',
-      font: img.arial24, 
-      x: padX, 
-      y: y0 + 8,
-      color: img.ColorRgba8(0, 0, 0, 255),
-    );
-
-    // Gambar baris data
-    final font = img.arial24;
-    int cy = y0 + headerH;
-    
-    for (int i = 0; i < rows.length; i++) {
-      final bool isEven = i.isEven;
-      
-      // Background baris (zebra stripe)
-      img.fillRect(
-        src, 
-        x1: 0, 
-        y1: cy, 
-        x2: src.width - 1, 
-        y2: cy + rowH,
-        color: isEven 
-            ? img.ColorRgba8(0, 0, 12, 220) 
-            : img.ColorRgba8(10, 10, 28, 220),
-      );
-      
-      // Label (kolom kiri)
-      img.drawString(
-        src, 
-        rows[i][0], 
-        font: font, 
-        x: padX, 
-        y: cy + 6, 
-        color: _grey,
-      );
-      
-      // Value (kolom kanan) - warna berbeda untuk 2 baris pertama
-      img.drawString(
-        src, 
-        rows[i][1], 
-        font: font, 
-        x: padX + colVal, 
-        y: cy + 6,
-        color: i < 2 ? _white : _blue,
-      );
-      
-      cy += rowH;
-    }
-
-    // Garis penutup bawah
-    img.fillRect(
-      src, 
-      x1: 0, 
-      y1: cy, 
-      x2: src.width - 1, 
-      y2: cy + 3,
-      color: img.ColorRgba8(30, 144, 255, 200),
-    );
-
-    return totalH; // Kembalikan tinggi total watermark
-  }
-
-  // ================= MINI MAP (IMPROVED) =================
-  static void _addMiniMapTopRight(img.Image src, Uint8List? mapBytes, {int watermarkHeight = 0}) {
-    if (mapBytes == null || mapBytes.isEmpty) {
-      debugPrint('Mini map: mapBytes is null or empty');
-      return;
-    }
-    
-    try {
-      final mapImage = img.decodeImage(mapBytes);
-      if (mapImage == null) {
-        debugPrint('Mini map: Failed to decode image');
-        return;
-      }
-      
-      const int mapWidth = 220;
-      const int mapHeight = 140;
-      const int margin = 16;
-      
-      // Resize hanya jika dimensi berbeda (optimasi)
-      final resizedMap = (mapImage.width != mapWidth || mapImage.height != mapHeight)
-          ? img.copyResize(mapImage, width: mapWidth, height: mapHeight)
-          : mapImage;
-      
-      // Hitung posisi X (kanan)
-      final mapX = src.width - mapWidth - margin;
-      
-      // Hitung posisi Y (di atas watermark)
-      final mapY = src.height - watermarkHeight - mapHeight - margin;
-      
-      // Validasi posisi
-      if (mapX < 0 || mapY < 0) {
-        debugPrint(
-          'Mini map: Position out of bounds '
-          '(mapX: $mapX, mapY: $mapY, '
-          'src: ${src.width}x${src.height}, '
-          'watermarkH: $watermarkHeight)'
-        );
-        return;
-      }
-      
-      // Cek apakah area tersedia cukup
-      if (mapX + mapWidth > src.width || mapY + mapHeight > src.height) {
-        debugPrint('Mini map: Map area exceeds image bounds');
-        return;
-      }
-      
-      // Gambar mini map
-      img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY);
-      
-      // Border biru
-      img.drawRect(
-        src,
-        x1: mapX - 1,
-        y1: mapY - 1,
-        x2: mapX + mapWidth,
-        y2: mapY + mapHeight,
-        color: img.ColorRgba8(30, 144, 255, 255),
-        thickness: 2,
-      );
-      
-      // Pin lokasi di tengah map
-      final int centerX = mapX + mapWidth ~/ 2;
-      final int centerY = mapY + mapHeight ~/ 2;
-      
-      // Lingkaran luar (merah)
-      img.fillCircle(
-        src,
-        x: centerX,
-        y: centerY,
-        radius: 6,
-        color: img.ColorRgba8(255, 50, 50, 255),
-      );
-      
-      // Lingkaran dalam (putih) - titik pusat
-      img.fillCircle(
-        src,
-        x: centerX,
-        y: centerY,
-        radius: 3,
-        color: img.ColorRgba8(255, 255, 255, 255),
-      );
-      
-      debugPrint('Mini map added successfully at position ($mapX, $mapY)');
-      
-    } catch (e, stackTrace) {
-      debugPrint('Add mini map error: $e');
-      debugPrint('Stack trace: $stackTrace');
-    }
-  }
-
-  // ================= LAYOUT 5: HUD =================
-  static Uint8List _layoutHUD(
-    img.Image src, DateTime timestamp,
-    bool hasPosition, double? lat, double? lon, double? acc,
-    String address, String weather, bool showWeather, bool showAccuracy, String watermarkPosition,
-  ) {
-    const int padX = 36;
-    const int padY = 20;
-    const int lineH = 28;
-    const int accentH = 6;
-
-    int rows = 2;
-    if (hasPosition) rows += 1;
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) rows += 1;
-    if (showWeather && weather.isNotEmpty) rows += 1;
-
-    final int panelH = padY * 2 + rows * lineH + (rows - 1) * 6 + accentH;
-    final bool isTop = watermarkPosition == 'top';
-    final int y0 = isTop ? 0 : src.height - panelH;
-    if (y0 < 0) return Uint8List(0);
-
-    final int yEnd = isTop ? y0 + panelH : src.height - accentH;
-    for (int y = y0; y < yEnd; y++) {
-      final progress = (y - y0) / (panelH).clamp(0.0, 1.0);
-      final alpha = (140 + (progress * 80)).toInt().clamp(0, 220);
-      for (int x = 0; x < src.width; x++) {
-        final px = src.getPixel(x, y);
-        src.setPixel(x, y, img.ColorRgba8(
-          ((px.r * (255 - alpha)) ~/ 255),
-          ((px.g * (255 - alpha)) ~/ 255),
-          ((px.b * (255 - alpha)) ~/ 255), 255));
-      }
-    }
-
-    img.fillRect(src, x1: 0, y1: src.height - accentH, x2: src.width - 1, y2: src.height - 1,
-        color: img.ColorRgba8(30, 144, 255, 255));
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + 2,
-        color: img.ColorRgba8(30, 144, 255, 120));
-
-    final font = img.arial24;
-    int cy = y0 + padY;
-
-    img.drawString(src,
-        '${DateFormat('dd MMM yyyy').format(timestamp)}   ${DateFormat('HH:mm:ss').format(timestamp)}',
-        font: font, x: padX, y: cy, color: _white);
-    cy += lineH + 6;
-
-    if (hasPosition) {
-      final accStr = showAccuracy ? '   ±${acc?.toStringAsFixed(0) ?? '?'}m' : '';
-      img.drawString(src,
-          '${lat!.toStringAsFixed(5)}, ${lon!.toStringAsFixed(5)}$accStr',
-          font: font, x: padX, y: cy, color: img.ColorRgba8(30, 144, 255, 255));
-      cy += lineH + 6;
-    }
-
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      String sh = address.length > _kMaxAddressLen ? '${address.substring(0, _kMaxAddressLen - 1)}…' : address;
-      img.drawString(src, sh, font: font, x: padX, y: cy, color: _grey);
-      cy += lineH + 6;
-    }
-
-    if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: _white);
-    }
-
-    return Uint8List.fromList(img.encodeJpg(src, quality: kJpegQuality));
-  }
-
-  // ================= PERMISSION & SAVE/SHARE =================
+  // ============== SAVE & SHARE LOGIC ==============
   Future<bool> _requestStoragePermission() async {
     if (!Platform.isAndroid) return true;
     final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -815,18 +231,12 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (sdkInt >= 33) {
       final status = await Permission.photos.request();
       if (status.isGranted) return true;
-      if (status.isPermanentlyDenied) {
-        openAppSettings();
-        return false;
-      }
+      if (status.isPermanentlyDenied) openAppSettings();
       return false;
     } else {
       final status = await Permission.storage.request();
       if (status.isGranted) return true;
-      if (status.isPermanentlyDenied) {
-        openAppSettings();
-        return false;
-      }
+      if (status.isPermanentlyDenied) openAppSettings();
       return false;
     }
   }
@@ -837,7 +247,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (Platform.isAndroid) {
       final granted = await _requestStoragePermission();
       if (!granted) {
-        _showErrorSnackbar('Izin penyimpanan diperlukan untuk menyimpan foto');
+        _showErrorSnackbar('Izin penyimpanan diperlukan');
         return;
       }
     } else if (Platform.isIOS) {
@@ -851,7 +261,10 @@ class _PreviewScreenState extends State<PreviewScreen>
     setState(() => _saveStatus = SaveStatus.saving);
 
     try {
-      final bool? result = await GallerySaver.saveImage(_displayImagePath!, albumName: 'TermulLog');
+      final bool? result = await GallerySaver.saveImage(
+        _displayImagePath!, 
+        albumName: 'TermulLog',
+      );
       if (!mounted) return;
 
       if (result == true) {
@@ -859,7 +272,7 @@ class _PreviewScreenState extends State<PreviewScreen>
           final tempFile = File(_displayImagePath!);
           if (await tempFile.exists()) await tempFile.delete();
         } catch (e) {
-          debugPrint('Failed to delete temp file after save: $e');
+          debugPrint('Failed to delete temp: $e');
         }
         _isFileSaved = true;
         setState(() => _saveStatus = SaveStatus.saved);
@@ -870,16 +283,14 @@ class _PreviewScreenState extends State<PreviewScreen>
         });
       } else {
         setState(() => _saveStatus = SaveStatus.error);
-        _showErrorSnackbar('Gagal menyimpan foto ke galeri');
+        _showErrorSnackbar('Gagal menyimpan foto');
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) setState(() => _saveStatus = SaveStatus.idle);
         });
       }
     } catch (e) {
       setState(() => _saveStatus = SaveStatus.error);
-      String errorMsg = e.toString();
-      if (errorMsg.length > 50) errorMsg = errorMsg.substring(0, 50);
-      _showErrorSnackbar('Gagal menyimpan: $errorMsg');
+      _showErrorSnackbar('Gagal menyimpan: ${e.toString().substring(0, 50)}');
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => _saveStatus = SaveStatus.idle);
       });
@@ -904,7 +315,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       HapticFeedback.lightImpact();
     } catch (e) {
       debugPrint('Share error: $e');
-      _showErrorSnackbar('Gagal membagikan foto: ${e.toString().substring(0, 50)}');
+      _showErrorSnackbar('Gagal membagikan: ${e.toString().substring(0, 50)}');
     } finally {
       if (mounted) setState(() {
         _isSharing = false;
@@ -917,13 +328,11 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: Text(msg)),
-          ],
-        ),
+        content: Row(children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg)),
+        ]),
         backgroundColor: Colors.red.shade700,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 3),
@@ -931,6 +340,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     );
   }
 
+  // ============== UI BUILD ==============
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -938,7 +348,8 @@ class _PreviewScreenState extends State<PreviewScreen>
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Preview Foto', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+        title: const Text('Preview Foto', 
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
@@ -950,63 +361,70 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   Widget _buildBody() {
-    if (_isProcessing) {
-      final bool needGeocoding = (widget.address == null || widget.address!.isEmpty) || (widget.weather == null || widget.weather!.isEmpty);
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            ValueListenableBuilder<String>(
-              valueListenable: _processingStep,
-              builder: (_, step, __) => Text(step, style: const TextStyle(color: Colors.white70)),
-            ),
-            if (needGeocoding) ...[
-              const SizedBox(height: 8),
-              const Text('Mengambil alamat & cuaca', style: TextStyle(color: Colors.white38, fontSize: 12)),
+    if (_isProcessing) return _buildProcessingView();
+    if (_errorMessage != null) return _buildErrorView();
+    if (_displayImagePath == null) return _buildEmptyView();
+    return _buildImageView();
+  }
+
+  Widget _buildProcessingView() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          ValueListenableBuilder<String>(
+            valueListenable: _processingStep,
+            builder: (_, step, __) => 
+              Text(step, style: const TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.broken_image, color: Colors.red, size: 64),
+          const SizedBox(height: 16),
+          Text('Terjadi kesalahan: $_errorMessage',
+            style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Kembali'),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  setState(() => _errorMessage = null);
+                  _processImageAsync();
+                },
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Coba Lagi'),
+              ),
             ],
-          ],
-        ),
-      );
-    }
+          ),
+        ],
+      ),
+    );
+  }
 
-    if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.broken_image, color: Colors.red, size: 64),
-            const SizedBox(height: 16),
-            Text('Terjadi kesalahan: $_errorMessage', style: const TextStyle(color: Colors.white70)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Kembali'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() => _errorMessage = null);
-                    _processImageAsync();
-                  },
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Coba Lagi'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
+  Widget _buildEmptyView() {
+    return const Center(
+      child: Text('Tidak ada gambar', 
+        style: TextStyle(color: Colors.white70)),
+    );
+  }
 
-    if (_displayImagePath == null) {
-      return const Center(child: Text('Tidak ada gambar', style: TextStyle(color: Colors.white70)));
-    }
-
+  Widget _buildImageView() {
     return Column(
       children: [
         Expanded(
@@ -1041,7 +459,8 @@ class _PreviewScreenState extends State<PreviewScreen>
                         children: [
                           Icon(Icons.broken_image, color: Colors.white38, size: 64),
                           SizedBox(height: 12),
-                          Text('Gagal memuat foto', style: TextStyle(color: Colors.white38)),
+                          Text('Gagal memuat foto',
+                            style: TextStyle(color: Colors.white38)),
                         ],
                       ),
                     ),
@@ -1051,43 +470,50 @@ class _PreviewScreenState extends State<PreviewScreen>
             ),
           ),
         ),
-        Container(
-          color: Colors.grey.shade900,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                  label: const Text('Foto Lagi'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white38),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              _ActionButton(
-                onPressed: _isSharing ? null : _sharePhoto,
-                icon: _isSharing
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.share_outlined, size: 20),
-                label: 'Bagikan',
-                color: Colors.blue.shade600,
-              ),
-              const SizedBox(width: 10),
-              _SaveButton(
-                status: _saveStatus,
-                checkAnim: _checkAnim,
-                onPressed: _saveStatus == SaveStatus.saving ? null : _saveToGallery,
-              ),
-            ],
-          ),
-        ),
+        _buildBottomBar(),
       ],
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return Container(
+      color: Colors.grey.shade900,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.camera_alt_outlined, size: 18),
+              label: const Text('Foto Lagi'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white38),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          _ActionButton(
+            onPressed: _isSharing ? null : _sharePhoto,
+            icon: _isSharing
+                ? const SizedBox(width: 18, height: 18, 
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.share_outlined, size: 20),
+            label: 'Bagikan',
+            color: Colors.blue.shade600,
+          ),
+          const SizedBox(width: 10),
+          _SaveButton(
+            status: _saveStatus,
+            checkAnim: _checkAnim,
+            onPressed: _saveStatus == SaveStatus.saving ? null : _saveToGallery,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1116,7 +542,8 @@ class _ActionButton extends StatelessWidget {
           backgroundColor: color,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10)),
           elevation: 0,
         ),
       ),
@@ -1149,20 +576,26 @@ class _SaveButton extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: onPressed,
         icon: isSaving
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            ? const SizedBox(width: 18, height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white))
             : isSaved
-                ? ScaleTransition(scale: checkAnim, child: const Icon(Icons.check_circle, size: 20))
+                ? ScaleTransition(
+                    scale: checkAnim,
+                    child: const Icon(Icons.check_circle, size: 20))
                 : isError
                     ? const Icon(Icons.error_outline, size: 20)
                     : const Icon(Icons.save_alt, size: 20),
-        label: Text(
-          isSaving ? 'Menyimpan...' : isSaved ? 'Tersimpan!' : isError ? 'Gagal' : 'Simpan',
-        ),
+        label: Text(isSaving ? 'Menyimpan...' 
+            : isSaved ? 'Tersimpan!' 
+            : isError ? 'Gagal' 
+            : 'Simpan'),
         style: ElevatedButton.styleFrom(
           backgroundColor: bgColor,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10)),
           elevation: 0,
         ),
       ),

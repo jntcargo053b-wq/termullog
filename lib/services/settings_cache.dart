@@ -1,4 +1,5 @@
-import 'package:termullog/core/constants.dart';
+// lib/services/settings_cache.dart
+import '../core/constants.dart';
 import 'settings_service.dart';
 
 class SettingsCache {
@@ -27,18 +28,22 @@ class SettingsCache {
     await preload();
     return _layout!;
   }
+
   static Future<bool> get showWeather async {
     await preload();
     return _showWeather!;
   }
+
   static Future<bool> get showAccuracy async {
     await preload();
     return _showAccuracy!;
   }
+
   static Future<String> get watermarkPosition async {
     await preload();
     return _watermarkPosition!;
   }
+
   static Future<bool> get showMiniMap async {
     await preload();
     return _showMiniMap!;

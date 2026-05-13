@@ -36,5 +36,5 @@ jobs:
         with:
           tag_name: v1.${{ github.run_number }}
           files: build/app/outputs/flutter-apk/app-release.apk
-          overwrite_files: true   # ← perbaikan: gunakan overwrite_files
+          make_latest: true
           generate_release_notes: true

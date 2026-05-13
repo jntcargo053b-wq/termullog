@@ -81,7 +81,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     if (widget.imagePath != null) {
       _displayImagePath = widget.imagePath;
-      // Jika gambar sudah ada path-nya, tetap proses watermark jika perlu
+      // Tetap proses watermark jika ada data tambahan
       if (widget.imageBytes != null || widget.timestamp != null) {
         _processImageAsync();
       }
@@ -125,19 +125,23 @@ class _PreviewScreenState extends State<PreviewScreen>
       Uint8List bytes;
       if (widget.imageBytes != null) {
         bytes = widget.imageBytes!;
-        debugPrint('Using provided imageBytes: ${bytes.length} bytes');
+        debugPrint('✅ Using provided imageBytes: ${bytes.length} bytes');
       } else if (widget.imagePath != null) {
         bytes = await File(widget.imagePath!).readAsBytes();
-        debugPrint('Loaded image from path: ${bytes.length} bytes');
+        debugPrint('✅ Loaded image from path: ${bytes.length} bytes');
       } else {
         throw Exception('Tidak ada data gambar');
       }
 
       final timestamp = widget.timestamp ?? DateTime.now();
       final hasPosition = widget.latitude != null && widget.longitude != null;
-      
-      debugPrint('Image info - hasPosition: $hasPosition');
-      debugPrint('Coordinates: lat=${widget.latitude}, lon=${widget.longitude}');
+
+      debugPrint('📍 Image info:');
+      debugPrint('   hasPosition: $hasPosition');
+      debugPrint('   lat: ${widget.latitude}, lon: ${widget.longitude}');
+      debugPrint('   accuracy: ${widget.accuracy}');
+      debugPrint('   initial address: "${widget.address ?? ""}"');
+      debugPrint('   initial weather: "${widget.weather ?? ""}"');
 
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
@@ -145,7 +149,8 @@ class _PreviewScreenState extends State<PreviewScreen>
       // Fetch geocoding & weather if needed
       if (hasPosition && (address.isEmpty || weather.isEmpty)) {
         _processingStep.value = 'Mengambil alamat & cuaca...';
-        debugPrint('Fetching address & weather...');
+        debugPrint('🌐 Fetching address & weather...');
+        
         try {
           final dummyPos = Position(
             latitude: widget.latitude!,
@@ -159,29 +164,38 @@ class _PreviewScreenState extends State<PreviewScreen>
             speedAccuracy: 0,
             timestamp: DateTime.now(),
           );
+          
           final result = await LocationWeatherService.fetchFromPosition(dummyPos)
               .timeout(const Duration(seconds: 10));
-          if (address.isEmpty) {
+          
+          if (address.isEmpty && result.address.isNotEmpty) {
             address = result.address;
-            debugPrint('Address fetched: $address');
+            debugPrint('✅ Address fetched: $address');
           }
-          if (weather.isEmpty) {
+          
+          if (weather.isEmpty && result.weather.isNotEmpty) {
             weather = result.weather;
-            debugPrint('Weather fetched: $weather');
+            debugPrint('✅ Weather fetched: $weather');
           }
-        } catch (e) {
-          debugPrint('Geocoding/weather error: $e');
+        } catch (e, stackTrace) {
+          debugPrint('❌ Geocoding/weather error: $e');
+          debugPrint('Stack trace: $stackTrace');
+          
           if (address.isEmpty && hasPosition) {
             address =
                 'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
+            debugPrint('⚠️ Using GPS fallback: $address');
           }
         }
       } else if (address.isEmpty && !hasPosition) {
         address = 'Tidak ada lokasi';
+        debugPrint('⚠️ No position data available');
       }
 
       // Get settings
       _processingStep.value = 'Memuat pengaturan...';
+      debugPrint('⚙️ Loading settings...');
+      
       final results = await Future.wait([
         SettingsCache.layout,
         SettingsCache.showWeather,
@@ -189,50 +203,63 @@ class _PreviewScreenState extends State<PreviewScreen>
         SettingsCache.watermarkPosition,
         SettingsCache.showMiniMap,
       ]);
-      
+
       final layout = results[0] as WatermarkLayout;
       final showWeather = results[1] as bool;
       final showAccuracy = results[2] as bool;
       final watermarkPosition = results[3] as String;
       final showMiniMap = results[4] as bool;
 
-      debugPrint('Settings loaded:');
-      debugPrint('  layout: $layout');
-      debugPrint('  showWeather: $showWeather');
-      debugPrint('  showAccuracy: $showAccuracy');
-      debugPrint('  watermarkPosition: $watermarkPosition');
-      debugPrint('  showMiniMap: $showMiniMap');
+      debugPrint('⚙️ Settings loaded:');
+      debugPrint('   layout: $layout (index: ${layout.index})');
+      debugPrint('   showWeather: $showWeather');
+      debugPrint('   showAccuracy: $showAccuracy');
+      debugPrint('   watermarkPosition: $watermarkPosition');
+      debugPrint('   showMiniMap: $showMiniMap');
 
       // Fetch mini map jika diperlukan
       Uint8List? mapBytes;
       if (showMiniMap && hasPosition) {
-        _processingStep.value = 'Mengunduh peta...';
-        debugPrint('Fetching mini map for coordinates: ${widget.latitude}, ${widget.longitude}');
+        _processingStep.value = 'Mengunduh peta mini...';
+        debugPrint('🗺️ Fetching mini map...');
+        debugPrint('   Coordinates: ${widget.latitude}, ${widget.longitude}');
         
         try {
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             widget.latitude!,
             widget.longitude!,
+            maxRetries: 2,
           );
-          
+
           if (mapBytes != null && mapBytes.isNotEmpty) {
-            debugPrint('Mini map fetched successfully: ${mapBytes.length} bytes');
-          } else {
-            debugPrint('Mini map fetched but is null or empty');
+            debugPrint('✅ Mini map fetched successfully: ${mapBytes.length} bytes');
+          } else if (mapBytes != null && mapBytes.isEmpty) {
+            debugPrint('⚠️ Mini map fetched but EMPTY (0 bytes)');
             mapBytes = null;
+          } else {
+            debugPrint('❌ Mini map is NULL');
           }
         } catch (e, stackTrace) {
-          debugPrint('Mini map fetch error: $e');
+          debugPrint('❌ Mini map fetch error: $e');
           debugPrint('Stack trace: $stackTrace');
           mapBytes = null;
         }
       } else {
-        debugPrint('Skipping mini map: showMiniMap=$showMiniMap, hasPosition=$hasPosition');
+        if (!showMiniMap) {
+          debugPrint('⚠️ Mini map SKIPPED: showMiniMap is FALSE');
+        }
+        if (!hasPosition) {
+          debugPrint('⚠️ Mini map SKIPPED: no position data');
+        }
       }
 
       // Process watermark
       _processingStep.value = 'Membuat watermark...';
-      debugPrint('Creating watermark params with mapBytes: ${mapBytes != null}');
+      debugPrint('🎨 Creating watermark params...');
+      debugPrint('   mapBytes provided: ${mapBytes != null}');
+      if (mapBytes != null) {
+        debugPrint('   mapBytes size: ${mapBytes.length} bytes');
+      }
       
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
@@ -250,13 +277,18 @@ class _PreviewScreenState extends State<PreviewScreen>
         mapBytes: mapBytes,
       );
 
-      debugPrint('Starting watermark processing in isolate...');
+      debugPrint('🎨 Watermark params created:');
+      debugPrint('   showMiniMap: ${params.showMiniMap}');
+      debugPrint('   hasMapBytes: ${params.mapBytes != null}');
+      debugPrint('   layout: ${params.layoutIndex}');
+
+      debugPrint('🔄 Starting watermark processing in isolate...');
       _cancelableCompute = CancelableOperation.fromFuture(
         compute(WatermarkEngine.applyFromMap, params.toMap()),
       );
 
       final processedBytes = await _cancelableCompute!.value;
-      debugPrint('Watermark processing completed: ${processedBytes.length} bytes');
+      debugPrint('✅ Watermark processing completed: ${processedBytes.length} bytes');
 
       // Simpan permanen ke folder dokumen (untuk riwayat)
       _processingStep.value = 'Menyimpan file...';
@@ -264,17 +296,17 @@ class _PreviewScreenState extends State<PreviewScreen>
       final fileName = _uniqueFileName(timestamp);
       final permanentFile = File('${historyDir.path}/$fileName');
       await permanentFile.writeAsBytes(processedBytes);
-      debugPrint('File saved permanently: ${permanentFile.path}');
+      debugPrint('💾 File saved permanently: ${permanentFile.path}');
 
       if (mounted) {
         setState(() {
           _displayImagePath = permanentFile.path;
           _isProcessing = false;
         });
-        debugPrint('Preview updated with new image path');
+        debugPrint('✅ Preview updated successfully');
       }
     } catch (e, stackTrace) {
-      debugPrint('Processing error: $e');
+      debugPrint('❌ Processing error: $e');
       debugPrint('Stack trace: $stackTrace');
       if (mounted) {
         setState(() {
@@ -466,9 +498,9 @@ class _PreviewScreenState extends State<PreviewScreen>
           children: [
             const Icon(Icons.broken_image, color: Colors.red, size: 64),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Terjadi kesalahan',
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -540,10 +572,8 @@ class _PreviewScreenState extends State<PreviewScreen>
             onDoubleTap: () {
               final scale = _transformController.value.getMaxScaleOnAxis();
               if (scale > 1.0) {
-                // Reset zoom
                 _transformController.value = Matrix4.identity();
               } else {
-                // Zoom in ke posisi double tap
                 final pos = _lastDoubleTapPos ?? const Offset(0, 0);
                 final x = -pos.dx * (2.5 - 1);
                 final y = -pos.dy * (2.5 - 1);

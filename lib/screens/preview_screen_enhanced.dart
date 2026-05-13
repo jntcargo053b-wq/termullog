@@ -87,24 +87,25 @@ class _PreviewScreenState extends State<PreviewScreen>
   @override
   void dispose() {
     _cancelableCompute?.cancel();
-    final pathToDelete = _displayImagePath;
-    final shouldDelete = !_isFileSaved && !_isProcessing && !_isFileInUse;
+    // File riwayat tidak dihapus – tetap tersimpan di folder dokumen
     _checkAnimController.dispose();
     _transformController.dispose();
     super.dispose();
-    Future.microtask(() async {
-      if (pathToDelete != null && shouldDelete) {
-        try {
-          final f = File(pathToDelete);
-          if (await f.exists()) await f.delete();
-        } catch (_) {}
-      }
-    });
   }
 
-  String _uniqueTempName(DateTime ts) {
+  String _uniqueFileName(DateTime ts) {
     final suffix = _rng.nextInt(0xFFFF).toRadixString(16).padLeft(4, '0');
     return 'termullog_${ts.millisecondsSinceEpoch}_$suffix.jpg';
+  }
+
+  /// Mendapatkan (dan membuat jika perlu) direktori riwayat permanen
+  Future<Directory> _getHistoryDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final historyDir = Directory('${appDir.path}/termullog_history');
+    if (!await historyDir.exists()) {
+      await historyDir.create(recursive: true);
+    }
+    return historyDir;
   }
 
   Future<void> _processImageAsync() async {
@@ -161,7 +162,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final watermarkPosition = results[3] as String;
       final showMiniMap = results[4] as bool;
 
-      // Fetch mini map if needed
+      // Fetch mini map only if needed (Professional layout)
       Uint8List? mapBytes;
       if (showMiniMap && hasPosition && layout == WatermarkLayout.professional) {
         _processingStep.value = 'Menambahkan peta...';
@@ -199,15 +200,15 @@ class _PreviewScreenState extends State<PreviewScreen>
       
       final processedBytes = await _cancelableCompute!.value;
 
-      // Save to temp file
-      final dir = await getTemporaryDirectory();
-      final fileName = _uniqueTempName(timestamp);
-      final tempFile = File('${dir.path}/$fileName');
-      await tempFile.writeAsBytes(processedBytes);
+      // Simpan permanen ke folder dokumen (untuk riwayat)
+      final historyDir = await _getHistoryDirectory();
+      final fileName = _uniqueFileName(timestamp);
+      final permanentFile = File('${historyDir.path}/$fileName');
+      await permanentFile.writeAsBytes(processedBytes);
 
       if (mounted) {
         setState(() {
-          _displayImagePath = tempFile.path;
+          _displayImagePath = permanentFile.path; // gunakan file permanen
           _isProcessing = false;
         });
       }
@@ -269,13 +270,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (!mounted) return;
 
       if (result == true) {
-        try {
-          final tempFile = File(_displayImagePath!);
-          if (await tempFile.exists()) await tempFile.delete();
-        } catch (e) {
-          debugPrint('Failed to delete temp: $e');
-        }
-        _isFileSaved = true;
+        _isFileSaved = true; // tetap kita tandai tersimpan, tapi file tidak dihapus
         setState(() => _saveStatus = SaveStatus.saved);
         _checkAnimController.forward(from: 0);
         HapticFeedback.mediumImpact();

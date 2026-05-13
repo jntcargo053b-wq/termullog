@@ -7,10 +7,10 @@ abstract class WatermarkLayoutBase {
   String get name;
   
   /// Konstanta warna yang digunakan oleh semua layout
-  static const white = img.ColorRgba8(255, 255, 255, 255);
-  static const offWhite = img.ColorRgba8(230, 230, 230, 255);
-  static const blue = img.ColorRgba8(30, 144, 255, 255);
-  static const grey = img.ColorRgba8(150, 150, 150, 255);
+  static final white    = img.ColorRgba8(255, 255, 255, 255);
+  static final offWhite = img.ColorRgba8(230, 230, 230, 255);
+  static final blue     = img.ColorRgba8(30, 144, 255, 255);
+  static final grey     = img.ColorRgba8(150, 150, 150, 255);
   
   /// Apply watermark ke gambar
   Uint8List apply({

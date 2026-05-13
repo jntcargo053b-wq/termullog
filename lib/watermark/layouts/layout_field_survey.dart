@@ -84,7 +84,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     final int bottomY = y0 + headerH + totalRows * rowH;
     img.fillRect(
       src, x1: 0, y1: bottomY, x2: src.width - 1, y2: bottomY + 3,
-      color: blue..a = 200,
+      color: img.ColorRgba8(30, 144, 255, 200),
     );
 
     return totalH;
@@ -135,7 +135,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
   void _drawHeader(img.Image src, int y0) {
     img.fillRect(
       src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + headerH,
-      color: blue,
+      color: WatermarkLayoutBase.blue,
     );
     img.drawString(
       src, 'TERMULOG  GEOTAGGED PHOTO',
@@ -160,12 +160,12 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       
       // Label
       img.drawString(src, rows[i][0], font: font, 
-        x: padX, y: cy + 6, color: grey);
+        x: padX, y: cy + 6, color: WatermarkLayoutBase.grey);
       
       // Value - warna putih untuk header, biru untuk data
       img.drawString(src, rows[i][1], font: font, 
         x: padX + colVal, y: cy + 6,
-        color: i < 2 ? white : blue);
+        color: i < 2 ? WatermarkLayoutBase.white : WatermarkLayoutBase.blue);
       
       cy += rowH;
     }
@@ -206,7 +206,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       img.drawRect(src,
         x1: mapX - 1, y1: mapY - 1,
         x2: mapX + mapWidth, y2: mapY + mapHeight,
-        color: blue, thickness: 2);
+        color: WatermarkLayoutBase.blue, thickness: 2);
       
       // Pin lokasi
       final int cx = mapX + mapWidth ~/ 2;
@@ -215,7 +215,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       img.fillCircle(src, x: cx, y: cy, radius: 6,
         color: img.ColorRgba8(255, 50, 50, 255));
       img.fillCircle(src, x: cx, y: cy, radius: 3,
-        color: white);
+        color: WatermarkLayoutBase.white);
         
     } catch (e) {
       // Silent fail - mini map is optional

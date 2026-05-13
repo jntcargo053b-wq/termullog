@@ -80,6 +80,12 @@ class LayoutHUD extends WatermarkLayoutBase {
       img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
     }
 
+    // Mini map
+    if (showMiniMap && mapBytes != null && hasPosition) {
+      WatermarkLayoutBase.drawMiniMap(src, mapBytes,
+          watermarkHeight: panelH, isTop: isTop);
+    }
+
     return WatermarkLayoutBase.encodeJpg(src);
   }
 

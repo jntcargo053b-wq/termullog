@@ -34,6 +34,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     Uint8List? mapBytes,
   }) {
     // Gambar tabel field survey
+    final bool isTop = watermarkPosition == 'top';
     final wmHeight = _drawTable(
       src, timestamp, hasPosition, lat, lon, acc,
       address, weather, showWeather, showAccuracy, watermarkPosition,
@@ -41,7 +42,8 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     
     // Tambahkan mini map jika tersedia
     if (showMiniMap && mapBytes != null && hasPosition && wmHeight > 0) {
-      _addMiniMapTopRight(src, mapBytes, watermarkHeight: wmHeight);
+      WatermarkLayoutBase.drawMiniMap(src, mapBytes,
+          watermarkHeight: wmHeight, isTop: isTop);
     }
     
     return WatermarkLayoutBase.encodeJpg(src);
@@ -171,54 +173,4 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     }
   }
 
-  /// Menambahkan mini map di pojok kanan bawah, di atas watermark
-  void _addMiniMapTopRight(
-    img.Image src, 
-    Uint8List? mapBytes, 
-    {int watermarkHeight = 0}
-  ) {
-    if (mapBytes == null || mapBytes.isEmpty) return;
-    
-    try {
-      final mapImage = img.decodeImage(mapBytes);
-      if (mapImage == null) return;
-      
-      const int mapWidth = 220;
-      const int mapHeight = 140;
-      const int margin = 16;
-      
-      // Resize optimal
-      final resizedMap = (mapImage.width != mapWidth || mapImage.height != mapHeight)
-          ? img.copyResize(mapImage, width: mapWidth, height: mapHeight)
-          : mapImage;
-      
-      // Posisi: kanan, di atas watermark
-      final mapX = src.width - mapWidth - margin;
-      final mapY = src.height - watermarkHeight - mapHeight - margin;
-      
-      if (mapX < 0 || mapY < 0) return;
-      if (mapX + mapWidth > src.width || mapY + mapHeight > src.height) return;
-      
-      // Composite mini map
-      img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY);
-      
-      // Border
-      img.drawRect(src,
-        x1: mapX - 1, y1: mapY - 1,
-        x2: mapX + mapWidth, y2: mapY + mapHeight,
-        color: WatermarkLayoutBase.blue, thickness: 2);
-      
-      // Pin lokasi
-      final int cx = mapX + mapWidth ~/ 2;
-      final int cy = mapY + mapHeight ~/ 2;
-      
-      img.fillCircle(src, x: cx, y: cy, radius: 6,
-        color: img.ColorRgba8(255, 50, 50, 255));
-      img.fillCircle(src, x: cx, y: cy, radius: 3,
-        color: WatermarkLayoutBase.white);
-        
-    } catch (e) {
-      // Silent fail - mini map is optional
-    }
-  }
 }

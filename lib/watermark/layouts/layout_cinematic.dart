@@ -73,6 +73,12 @@ class LayoutCinematic extends WatermarkLayoutBase {
       img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
     }
 
+    // Mini map
+    if (showMiniMap && mapBytes != null && hasPosition) {
+      WatermarkLayoutBase.drawMiniMap(src, mapBytes,
+          watermarkHeight: gradH, isTop: isTop);
+    }
+
     return WatermarkLayoutBase.encodeJpg(src);
   }
 

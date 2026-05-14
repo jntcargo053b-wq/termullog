@@ -42,18 +42,17 @@ class WatermarkEngine {
   }
 
   static Future<Uint8List> _applyWatermark(WatermarkParams params) async {
-    img.Image? original = img.decodeImage(params.imageBytes);
+    final img.Image? original = img.decodeImage(params.imageBytes);
     if (original == null) throw Exception('Failed to decode original image');
 
     img.Image? miniMap;
     if (params.showMiniMap && params.mapBytes != null && params.mapBytes!.isNotEmpty) {
       miniMap = img.decodeImage(params.mapBytes!);
-      debugPrint(miniMap != null
-          ? '✅ Mini map decoded: ${miniMap.width}x${miniMap.height}'
-          : '⚠️ Failed to decode mini map');
+      if (miniMap == null) debugPrint('⚠️ Failed to decode mini map');
     }
 
-    img.Image output = img.copyResize(original, width: original.width, height: original.height);
+    // Work on a copy
+    final output = img.copyResize(original, width: original.width, height: original.height);
 
     _drawTextWatermark(output, params);
     if (miniMap != null) _drawMiniMap(output, miniMap, params.watermarkPosition);
@@ -62,15 +61,13 @@ class WatermarkEngine {
   }
 
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
-    final timestampStr = _formatTimestamp(params.timestamp);
-    final locationStr = params.address.isNotEmpty ? params.address : 'No location';
-    final weatherStr = params.showWeather && params.weather.isNotEmpty ? ' | ${params.weather}' : '';
-    final accStr = params.showAccuracy && params.acc != null ? ' | ±${params.acc!.toStringAsFixed(0)}m' : '';
-    final text = '$timestampStr | $locationStr$weatherStr$accStr';
+    final text = _buildText(params);
+    const fontSize = 20;
+    final font = img.arial_24; // available in image 4.x
 
-    final font = img.arial_24;
+    // Measure text size
     final textWidth = img.getStringWidth(font, text);
-    const textHeight = 24;
+    final textHeight = fontSize + 6; // approximate
 
     int x, y;
     switch (params.watermarkPosition.toLowerCase()) {
@@ -91,14 +88,20 @@ class WatermarkEngine {
         y = 16;
     }
 
-    // Background rectangle
-    img.drawRect(image,
-        x - 4, y - 4,
-        x + textWidth + 4, y + textHeight + 4,
-        img.ColorRgba8(0, 0, 0, 180));
+    // Draw background rectangle
+    img.drawRect(image, x - 4, y - 4, x + textWidth + 4, y + textHeight + 4,
+        fillColor: img.ColorRgba8(0, 0, 0, 180));
 
-    // Text
-    img.drawString(image, font, x, y, text, color: img.ColorRgba8(255, 255, 255, 255));
+    // Draw text (using named parameters)
+    img.drawString(image, text, x: x, y: y, font: font, color: img.ColorRgba8(255, 255, 255, 255));
+  }
+
+  static String _buildText(WatermarkParams params) {
+    final timestampStr = _formatTimestamp(params.timestamp);
+    final locationStr = params.address.isNotEmpty ? params.address : 'No location';
+    final weatherStr = params.showWeather && params.weather.isNotEmpty ? ' | ${params.weather}' : '';
+    final accStr = params.showAccuracy && params.acc != null ? ' | ±${params.acc!.toStringAsFixed(0)}m' : '';
+    return '$timestampStr | $locationStr$weatherStr$accStr';
   }
 
   static void _drawMiniMap(img.Image canvas, img.Image miniMap, String position) {
@@ -129,13 +132,10 @@ class WatermarkEngine {
         y = 80;
     }
 
-    // White border
-    img.drawRect(canvas,
-        x - 2, y - 2,
-        x + resized.width + 2, y + resized.height + 2,
-        img.ColorRgba8(255, 255, 255, 200));
-
-    // Composite image dengan named parameters (dx, dy)
+    // Draw white border (fillColor makes it a filled rectangle, but we use it as outline by drawing a smaller inner rect)
+    img.drawRect(canvas, x - 2, y - 2, x + resized.width + 2, y + resized.height + 2,
+        fillColor: img.ColorRgba8(255, 255, 255, 200));
+    // Composite the map over it
     img.compositeImage(canvas, resized, dx: x, dy: y);
   }
 

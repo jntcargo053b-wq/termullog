@@ -64,7 +64,7 @@ class WatermarkEngine {
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
     final text = _buildText(params);
     // Gunakan font Arial24 (pastikan ada di image 4.8.0)
-    final font = img.Arial24;
+    final font = img.arial24;
     final metrics = font.measureText(text);
     final double textWidth = metrics.width;
     final double textHeight = metrics.height;

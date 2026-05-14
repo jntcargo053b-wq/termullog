@@ -4,6 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'watermark_params.dart';
 
+// Import semua layout yang sudah Anda buat
+import 'layouts/layout_film_strip.dart';
+import 'layouts/layout_dslr_corner.dart';
+import 'layouts/layout_cinematic.dart';
+import 'layouts/layout_field_survey.dart';
+import 'layouts/layout_hud.dart';
+
 class WatermarkEngine {
   static WatermarkParams createParams({
     required Uint8List imageBytes,
@@ -22,9 +29,10 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null
-          ? TransferableTypedData.fromList([mapBytes])
-          : null,
+      mapTransferable:
+          mapBytes != null
+              ? TransferableTypedData.fromList([mapBytes])
+              : null,
       timestamp: timestamp,
       address: address,
       weather: weather,
@@ -45,129 +53,45 @@ class WatermarkEngine {
   }
 
   static Future<Uint8List> _applyWatermark(WatermarkParams params) async {
+    // 1. Decode image utama (hanya sekali)
     final img.Image? original = img.decodeImage(params.imageBytes);
     if (original == null) throw Exception('Failed to decode original image');
 
+    // 2. Ambil mapBytes SEKALI (hindari multiple materialize)
+    final Uint8List? mapBytes = params.mapBytes; // ← getter hanya dipanggil sekali
     img.Image? miniMap;
-    if (params.showMiniMap && params.mapBytes != null && params.mapBytes!.isNotEmpty) {
-      miniMap = img.decodeImage(params.mapBytes!);
+    if (params.showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
+      miniMap = img.decodeImage(mapBytes);
       debugPrint(miniMap != null
           ? '✅ Mini map decoded: ${miniMap.width}x${miniMap.height}'
           : '⚠️ Failed to decode mini map');
     }
 
-    final output = img.copyResize(original, width: original.width, height: original.height);
-
-    _drawTextWatermark(output, params);
-    if (miniMap != null) _drawMiniMap(output, miniMap, params.watermarkPosition);
-
-    return Uint8List.fromList(img.encodeJpg(output, quality: 90));
-  }
-
-  static void _drawTextWatermark(img.Image image, WatermarkParams params) {
-    final text = _buildText(params);
-    // Gunakan font arial24 (tersedia di image 4.8.0)
-    final font = img.arial24;
-    
-    // ✅ Perbaikan untuk image 4.8.0: tidak ada measureText, kita hitung manual
-    final int textWidth = (text.length * (font.base ~/ 2)).toInt();
-    final int textHeight = font.lineHeight;
-
-    int x, y;
-    switch (params.watermarkPosition.toLowerCase()) {
-      case 'top-right':
-        x = image.width - textWidth - 16;
-        y = 16;
+    // 3. Pilih layout berdasarkan layoutIndex
+    late final img.Image Function(img.Image, WatermarkParams, img.Image?) layout;
+    switch (params.layoutIndex) {
+      case 0:
+        layout = LayoutFilmStrip.apply;
         break;
-      case 'bottom-left':
-        x = 16;
-        y = image.height - textHeight - 16;
+      case 1:
+        layout = LayoutDSLRCorner.apply;
         break;
-      case 'bottom-right':
-        x = image.width - textWidth - 16;
-        y = image.height - textHeight - 16;
+      case 2:
+        layout = LayoutCinematic.apply;
         break;
-      default: // top-left
-        x = 16;
-        y = 16;
-    }
-
-    // Batasi agar tidak keluar gambar
-    x = x.clamp(4, image.width - textWidth - 4);
-    y = y.clamp(4, image.height - textHeight - 4);
-
-    // Background semi-transparan
-    img.fillRect(
-      image,
-      x1: x - 4,
-      y1: y - 4,
-      x2: x + textWidth + 4,
-      y2: y + textHeight + 4,
-      color: img.ColorRgba8(0, 0, 0, 180),
-    );
-
-    // Teks putih
-    img.drawString(
-      image,
-      text,
-      x: x,
-      y: y,
-      font: font,
-      color: img.ColorRgba8(255, 255, 255, 255),
-    );
-  }
-
-  static String _buildText(WatermarkParams params) {
-    final timestampStr = _formatTimestamp(params.timestamp);
-    final locationStr = params.address.isNotEmpty ? params.address : 'No location';
-    final weatherStr = params.showWeather && params.weather.isNotEmpty ? ' | ${params.weather}' : '';
-    final accStr = params.showAccuracy && params.acc != null ? ' | ±${params.acc!.toStringAsFixed(0)}m' : '';
-    return '$timestampStr | $locationStr$weatherStr$accStr';
-  }
-
-  static void _drawMiniMap(img.Image canvas, img.Image miniMap, String position) {
-    int targetWidth = 150;
-    int targetHeight = (miniMap.height * targetWidth / miniMap.width).toInt();
-    if (targetHeight > 150) {
-      targetHeight = 150;
-      targetWidth = (miniMap.width * targetHeight / miniMap.height).toInt();
-    }
-    final resized = img.copyResize(miniMap, width: targetWidth, height: targetHeight);
-
-    int x, y;
-    switch (position.toLowerCase()) {
-      case 'top-right':
-        x = canvas.width - resized.width - 16;
-        y = 80;
+      case 3:
+        layout = LayoutFieldSurvey.apply;
         break;
-      case 'bottom-left':
-        x = 16;
-        y = canvas.height - resized.height - 80;
-        break;
-      case 'bottom-right':
-        x = canvas.width - resized.width - 16;
-        y = canvas.height - resized.height - 80;
+      case 4:
+        layout = LayoutHUD.apply;
         break;
       default:
-        x = 16;
-        y = 80;
+        layout = LayoutFilmStrip.apply; // fallback
     }
 
-    // Border putih (outline)
-    img.drawRect(
-      canvas,
-      x1: x - 2,
-      y1: y - 2,
-      x2: x + resized.width + 2,
-      y2: y + resized.height + 2,
-      color: img.ColorRgba8(255, 255, 255, 200),
-    );
+    // 4. Terapkan layout (fungsi layout akan menggambar teks & mini map)
+    final img.Image output = layout(original, params, miniMap);
 
-    // Composite map dengan named parameters dstX, dstY
-    img.compositeImage(canvas, resized, dstX: x, dstY: y);
-  }
-
-  static String _formatTimestamp(DateTime dt) {
-    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    return Uint8List.fromList(img.encodeJpg(output, quality: 90));
   }
 }

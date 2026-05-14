@@ -4,13 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'watermark_params.dart';
 
-// Import semua layout yang sudah Anda buat
-import 'layouts/layout_film_strip.dart';
-import 'layouts/layout_dslr_corner.dart';
-import 'layouts/layout_cinematic.dart';
-import 'layouts/layout_field_survey.dart';
-import 'layouts/layout_hud.dart';
-
 class WatermarkEngine {
   static WatermarkParams createParams({
     required Uint8List imageBytes,
@@ -53,12 +46,12 @@ class WatermarkEngine {
   }
 
   static Future<Uint8List> _applyWatermark(WatermarkParams params) async {
-    // 1. Decode image utama (hanya sekali)
+    // 1. Decode original image
     final img.Image? original = img.decodeImage(params.imageBytes);
     if (original == null) throw Exception('Failed to decode original image');
 
-    // 2. Ambil mapBytes SEKALI (hindari multiple materialize)
-    final Uint8List? mapBytes = params.mapBytes; // ← getter hanya dipanggil sekali
+    // 2. Materialize mapBytes HANYA SEKALI (hindari error)
+    final Uint8List? mapBytes = params.mapBytes; // getter dipanggil sekali
     img.Image? miniMap;
     if (params.showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
       miniMap = img.decodeImage(mapBytes);
@@ -67,31 +60,153 @@ class WatermarkEngine {
           : '⚠️ Failed to decode mini map');
     }
 
-    // 3. Pilih layout berdasarkan layoutIndex
-    late final img.Image Function(img.Image, WatermarkParams, img.Image?) layout;
-    switch (params.layoutIndex) {
-      case 0:
-        layout = LayoutFilmStrip.apply;
-        break;
-      case 1:
-        layout = LayoutDSLRCorner.apply;
-        break;
-      case 2:
-        layout = LayoutCinematic.apply;
-        break;
-      case 3:
-        layout = LayoutFieldSurvey.apply;
-        break;
-      case 4:
-        layout = LayoutHUD.apply;
-        break;
-      default:
-        layout = LayoutFilmStrip.apply; // fallback
+    // 3. Kerjakan salinan gambar
+    final img.Image output = img.copyResize(original, width: original.width, height: original.height);
+
+    // 4. Gambar watermark teks (dengan variasi layout)
+    _drawTextWatermark(output, params);
+
+    // 5. Gambar mini map jika ada
+    if (miniMap != null) {
+      _drawMiniMap(output, miniMap, params.watermarkPosition);
     }
 
-    // 4. Terapkan layout (fungsi layout akan menggambar teks & mini map)
-    final img.Image output = layout(original, params, miniMap);
-
     return Uint8List.fromList(img.encodeJpg(output, quality: 90));
+  }
+
+  static void _drawTextWatermark(img.Image image, WatermarkParams params) {
+    final text = _buildText(params);
+    final font = img.arial24; // font bawaan
+    final int textWidth = (text.length * (font.base ~/ 2)).toInt();
+    final int textHeight = font.lineHeight;
+
+    int x, y;
+
+    // Gunakan layoutIndex untuk sedikit variasi (contoh)
+    switch (params.layoutIndex) {
+      case 0: // Film strip – watermark di bawah
+        x = 16;
+        y = image.height - textHeight - 16;
+        break;
+      case 1: // DSLR corner – mengikuti posisi yang dipilih
+        // posisi ditentukan oleh watermarkPosition
+        _setPositionByPreference(image.width, image.height, textWidth, textHeight,
+            params.watermarkPosition, outX: (v) => x = v, outY: (v) => y = v);
+        break;
+      case 2: // Cinematic – di tengah bawah
+        x = (image.width - textWidth) ~/ 2;
+        y = image.height - textHeight - 32;
+        break;
+      case 3: // Field survey – di atas, rata kanan
+        x = image.width - textWidth - 16;
+        y = 16;
+        break;
+      case 4: // HUD – di pojok kanan bawah
+        x = image.width - textWidth - 16;
+        y = image.height - textHeight - 16;
+        break;
+      default:
+        _setPositionByPreference(image.width, image.height, textWidth, textHeight,
+            params.watermarkPosition, outX: (v) => x = v, outY: (v) => y = v);
+    }
+
+    // Batasi agar tidak keluar gambar
+    x = x.clamp(4, image.width - textWidth - 4);
+    y = y.clamp(4, image.height - textHeight - 4);
+
+    // Background semi-transparan
+    img.fillRect(
+      image,
+      x1: x - 4,
+      y1: y - 4,
+      x2: x + textWidth + 4,
+      y2: y + textHeight + 4,
+      color: img.ColorRgba8(0, 0, 0, 180),
+    );
+
+    // Teks putih
+    img.drawString(
+      image,
+      text,
+      x: x,
+      y: y,
+      font: font,
+      color: img.ColorRgba8(255, 255, 255, 255),
+    );
+  }
+
+  static void _setPositionByPreference(int imgW, int imgH, int tw, int th,
+      String pos, {required void Function(int) outX, required void Function(int) outY}) {
+    switch (pos.toLowerCase()) {
+      case 'top-right':
+        outX(imgW - tw - 16);
+        outY(16);
+        break;
+      case 'bottom-left':
+        outX(16);
+        outY(imgH - th - 16);
+        break;
+      case 'bottom-right':
+        outX(imgW - tw - 16);
+        outY(imgH - th - 16);
+        break;
+      default: // top-left
+        outX(16);
+        outY(16);
+    }
+  }
+
+  static String _buildText(WatermarkParams params) {
+    final timestampStr = _formatTimestamp(params.timestamp);
+    final locationStr = params.address.isNotEmpty ? params.address : 'No location';
+    final weatherStr = params.showWeather && params.weather.isNotEmpty ? ' | ${params.weather}' : '';
+    final accStr = params.showAccuracy && params.acc != null ? ' | ±${params.acc!.toStringAsFixed(0)}m' : '';
+    return '$timestampStr | $locationStr$weatherStr$accStr';
+  }
+
+  static void _drawMiniMap(img.Image canvas, img.Image miniMap, String position) {
+    int targetWidth = 150;
+    int targetHeight = (miniMap.height * targetWidth / miniMap.width).toInt();
+    if (targetHeight > 150) {
+      targetHeight = 150;
+      targetWidth = (miniMap.width * targetHeight / miniMap.height).toInt();
+    }
+    final resized = img.copyResize(miniMap, width: targetWidth, height: targetHeight);
+
+    int x, y;
+    switch (position.toLowerCase()) {
+      case 'top-right':
+        x = canvas.width - resized.width - 16;
+        y = 80;
+        break;
+      case 'bottom-left':
+        x = 16;
+        y = canvas.height - resized.height - 80;
+        break;
+      case 'bottom-right':
+        x = canvas.width - resized.width - 16;
+        y = canvas.height - resized.height - 80;
+        break;
+      default: // top-left
+        x = 16;
+        y = 80;
+    }
+
+    // Border putih
+    img.drawRect(
+      canvas,
+      x1: x - 2,
+      y1: y - 2,
+      x2: x + resized.width + 2,
+      y2: y + resized.height + 2,
+      color: img.ColorRgba8(255, 255, 255, 200),
+    );
+
+    // Composite map
+    img.compositeImage(canvas, resized, dstX: x, dstY: y);
+  }
+
+  static String _formatTimestamp(DateTime dt) {
+    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

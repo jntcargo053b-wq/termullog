@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
 import 'dart:math';
-import 'dart:isolate';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:async/async.dart';
+import 'package:http/http.dart' as http;
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../core/constants.dart';
@@ -120,17 +121,14 @@ class _PreviewScreenState extends State<PreviewScreen>
     return historyDir;
   }
 
-  // PERBAIKAN: Method untuk membersihkan cache yang expired
   void _cleanMapCache() {
     final now = DateTime.now();
     _mapCache.removeWhere(
         (key, entry) => now.difference(entry.timestamp) > _cacheExpiry);
-
-    // Jika masih terlalu banyak, hapus yang paling lama
     if (_mapCache.length > _maxCacheSize) {
       final sortedKeys = _mapCache.keys.toList()
-        ..sort(
-            (a, b) => _mapCache[a]!.timestamp.compareTo(_mapCache[b]!.timestamp));
+        ..sort((a, b) =>
+            _mapCache[a]!.timestamp.compareTo(_mapCache[b]!.timestamp));
       final keysToRemove =
           sortedKeys.sublist(0, _mapCache.length - _maxCacheSize);
       for (final key in keysToRemove) {
@@ -139,7 +137,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // PERBAIKAN: Validasi koordinat GPS
   bool _isValidCoordinate(double? lat, double? lon) {
     if (lat == null || lon == null) return false;
     return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
@@ -245,103 +242,61 @@ class _PreviewScreenState extends State<PreviewScreen>
       debugPrint('   watermarkPosition: $watermarkPosition');
       debugPrint('   showMiniMap: $showMiniMap');
 
-      // 4. PERBAIKAN: Fetch mini map dengan validasi, cache, dan error handling lebih baik
+      // 4. Fetch mini map with detailed debugging
       Uint8List? mapBytes;
+      
+      debugPrint('=' * 60);
+      debugPrint('🗺️ MINI MAP DECISION:');
+      debugPrint('   showMiniMap setting: $showMiniMap');
+      debugPrint('   hasPosition: $hasPosition');
+      debugPrint('   latitude: ${widget.latitude}');
+      debugPrint('   longitude: ${widget.longitude}');
+      debugPrint('   isValidCoordinate: ${_isValidCoordinate(widget.latitude, widget.longitude)}');
+      debugPrint('=' * 60);
+      
       if (showMiniMap && hasPosition) {
-        // Validasi koordinat
         if (!_isValidCoordinate(widget.latitude, widget.longitude)) {
-          debugPrint(
-              '❌ Invalid coordinates: ${widget.latitude}, ${widget.longitude}');
+          debugPrint('❌ MINI MAP: Invalid coordinates!');
           setState(() => _miniMapError = 'Koordinat tidak valid');
         } else {
           setState(() => _isMiniMapLoading = true);
           _processingStep.value = 'Mengunduh peta mini...';
-          debugPrint('🗺️ Fetching mini map...');
-          debugPrint('   Coordinates: ${widget.latitude}, ${widget.longitude}');
-
-          // Cek cache dulu
-          final cacheKey =
-              '${widget.latitude!.toStringAsFixed(5)},${widget.longitude!.toStringAsFixed(5)}';
-          _cleanMapCache();
-
-          if (_mapCache.containsKey(cacheKey)) {
-            final cachedEntry = _mapCache[cacheKey]!;
-            final age = DateTime.now().difference(cachedEntry.timestamp);
-            if (age < _cacheExpiry) {
-              mapBytes = cachedEntry.bytes;
-              debugPrint('✅ Using cached mini map (age: ${age.inSeconds}s)');
-              setState(() {
-                _isMiniMapLoading = false;
-                _miniMapError = null;
-              });
+          
+          try {
+            debugPrint('🔄 MINI MAP: Starting fetch...');
+            debugPrint('   Target: ${widget.latitude}, ${widget.longitude}');
+            
+            // Coba fetch dengan multiple attempts
+            mapBytes = await _fetchMiniMapWithDetailedLogging(
+              widget.latitude!,
+              widget.longitude!,
+            );
+            
+            if (mapBytes != null && mapBytes.isNotEmpty) {
+              debugPrint('✅ MINI MAP: SUCCESS! ${mapBytes.length} bytes');
+              setState(() => _miniMapError = null);
             } else {
-              _mapCache.remove(cacheKey);
-            }
-          }
-
-          // Jika tidak ada di cache, fetch dari API
-          if (mapBytes == null) {
-            try {
-              mapBytes = await LocationWeatherService.fetchMapWithRetry(
-                widget.latitude!,
-                widget.longitude!,
-                maxRetries: 2,
-              ).timeout(const Duration(seconds: 15));
-
-              if (mapBytes != null && mapBytes.isNotEmpty) {
-                debugPrint(
-                    '✅ Mini map fetched successfully: ${mapBytes.length} bytes');
-
-                // Simpan ke cache
-                _mapCache[cacheKey] = _MapCacheEntry(
-                  bytes: mapBytes,
-                  timestamp: DateTime.now(),
-                );
-
-                setState(() => _miniMapError = null);
-              } else if (mapBytes != null && mapBytes.isEmpty) {
-                debugPrint('⚠️ Mini map fetched but EMPTY (0 bytes)');
-                setState(() => _miniMapError = 'Peta kosong');
-                mapBytes = null;
-              } else {
-                debugPrint('❌ Mini map is NULL');
-                setState(() => _miniMapError = 'Gagal mengunduh peta');
-                mapBytes = null;
-              }
-            } on TimeoutException {
-              debugPrint('⏱️ Mini map download timeout');
-              setState(() => _miniMapError = 'Waktu unduh habis');
-              mapBytes = null;
-            } on FormatException catch (e) {
-              debugPrint('❌ Mini map format error: $e');
-              setState(() => _miniMapError = 'Format peta tidak valid');
-              mapBytes = null;
-            } catch (e, stackTrace) {
-              debugPrint('❌ Mini map fetch error: $e');
-              debugPrint('Stack trace: $stackTrace');
+              debugPrint('❌ MINI MAP: FAILED - map is null or empty');
               setState(() => _miniMapError = 'Gagal mengunduh peta');
-              mapBytes = null;
-            } finally {
-              setState(() => _isMiniMapLoading = false);
             }
+          } catch (e, stackTrace) {
+            debugPrint('❌ MINI MAP: EXCEPTION - $e');
+            debugPrint('Stack trace: $stackTrace');
+            setState(() => _miniMapError = 'Error: ${e.toString().substring(0, 50)}');
+          } finally {
+            setState(() => _isMiniMapLoading = false);
           }
         }
       } else {
-        if (!showMiniMap) {
-          debugPrint('⚠️ Mini map SKIPPED: showMiniMap is FALSE');
-        }
-        if (!hasPosition) {
-          debugPrint('⚠️ Mini map SKIPPED: no position data');
-        }
+        if (!showMiniMap) debugPrint('⚠️ MINI MAP SKIPPED: showMiniMap is FALSE');
+        if (!hasPosition) debugPrint('⚠️ MINI MAP SKIPPED: no position data');
       }
 
       // 5. Create watermark params and process
       _processingStep.value = 'Membuat watermark...';
       debugPrint('🎨 Creating watermark params...');
       debugPrint('   mapBytes provided: ${mapBytes != null}');
-      if (mapBytes != null) {
-        debugPrint('   mapBytes size: ${mapBytes!.length} bytes');
-      }
+      if (mapBytes != null) debugPrint('   mapBytes size: ${mapBytes!.length} bytes');
 
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
@@ -389,7 +344,6 @@ class _PreviewScreenState extends State<PreviewScreen>
         debugPrint('✅ Preview updated successfully');
       }
     } catch (e, stackTrace) {
-      // Check if error is from cancelled operation
       if (e.toString().contains('Cancel') || e.toString().contains('cancel')) {
         debugPrint('⏹️ Processing cancelled');
         if (mounted) {
@@ -406,6 +360,150 @@ class _PreviewScreenState extends State<PreviewScreen>
         }
       }
     }
+  }
+
+  // PERBAIKAN: Method khusus untuk fetch mini map dengan logging detail
+  Future<Uint8List?> _fetchMiniMapWithDetailedLogging(
+    double lat,
+    double lon,
+  ) async {
+    debugPrint('🔄 _fetchMiniMapWithDetailedLogging called');
+    debugPrint('   Parameters: lat=$lat, lon=$lon');
+    
+    // Test 1: Cek koneksi ke server OSM
+    try {
+      debugPrint('🧪 TEST 1: Checking connection to OSM server...');
+      final client = http.Client();
+      final testUrl = Uri.parse(
+        'https://staticmap.openstreetmap.de/staticmap.php'
+        '?center=0,0'
+        '&zoom=1'
+        '&size=10x10'
+      );
+      debugPrint('   Test URL: $testUrl');
+      
+      final testResponse = await client.get(
+        testUrl,
+        headers: {
+          'User-Agent': 'TermulLog/1.0',
+          'Accept': 'image/png',
+        },
+      ).timeout(const Duration(seconds: 10));
+      
+      client.close();
+      
+      debugPrint('   Test Response:');
+      debugPrint('   - Status Code: ${testResponse.statusCode}');
+      debugPrint('   - Body Length: ${testResponse.bodyBytes.length}');
+      debugPrint('   - Headers: ${testResponse.headers}');
+      
+      if (testResponse.statusCode != 200) {
+        debugPrint('   ❌ Server returned non-200 status');
+        return null;
+      }
+      
+      // Cek apakah response adalah gambar
+      final testBytes = Uint8List.fromList(testResponse.bodyBytes);
+      if (testBytes.length >= 4) {
+        debugPrint('   - First bytes: ${testBytes[0]}, ${testBytes[1]}, ${testBytes[2]}, ${testBytes[3]}');
+        if (testBytes[0] == 0x89 && testBytes[1] == 0x50) {
+          debugPrint('   ✅ Response is valid PNG');
+        } else {
+          debugPrint('   ⚠️ Response might not be PNG');
+          // Coba decode sebagai text
+          try {
+            final text = utf8.decode(testBytes.take(200).toList());
+            debugPrint('   Response text: $text');
+          } catch (_) {
+            debugPrint('   Could not decode as text');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('   ❌ TEST 1 FAILED: $e');
+      debugPrint('   This means device cannot connect to OSM server!');
+      return null;
+    }
+    
+    // Test 2: Fetch actual map
+    try {
+      debugPrint('🧪 TEST 2: Fetching actual map...');
+      final mapBytes = await LocationWeatherService.fetchMapWithRetry(
+        lat,
+        lon,
+        maxRetries: 1,
+      );
+      
+      if (mapBytes != null) {
+        debugPrint('   ✅ TEST 2 SUCCESS: Got map ${mapBytes.length} bytes');
+        
+        // Validasi PNG header
+        if (mapBytes.length >= 4) {
+          debugPrint('   First bytes: ${mapBytes[0]}, ${mapBytes[1]}, ${mapBytes[2]}, ${mapBytes[3]}');
+          if (mapBytes[0] == 0x89 && mapBytes[1] == 0x50 && 
+              mapBytes[2] == 0x4E && mapBytes[3] == 0x47) {
+            debugPrint('   ✅ Valid PNG header confirmed');
+            return mapBytes;
+          } else {
+            debugPrint('   ❌ NOT a valid PNG!');
+            // Coba lihat isinya
+            try {
+              final text = utf8.decode(mapBytes.take(500).toList());
+              debugPrint('   Content: $text');
+            } catch (_) {}
+          }
+        }
+      } else {
+        debugPrint('   ❌ TEST 2 FAILED: Map is null');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('   ❌ TEST 2 EXCEPTION: $e');
+      debugPrint('   Stack: $stackTrace');
+    }
+    
+    // Test 3: Coba URL alternatif
+    try {
+      debugPrint('🧪 TEST 3: Trying alternative URL format...');
+      final client = http.Client();
+      
+      // Coba tanpa parameter markers
+      final altUrl = Uri.parse(
+        'https://staticmap.openstreetmap.de/staticmap.php'
+        '?center=$lat,$lon'
+        '&zoom=15'
+        '&size=300x200'
+        '&maptype=mapnik'
+      );
+      
+      debugPrint('   Alt URL: $altUrl');
+      
+      final altResponse = await client.get(
+        altUrl,
+        headers: {
+          'User-Agent': 'TermulLog/1.0',
+          'Accept': 'image/png',
+        },
+      ).timeout(const Duration(seconds: 10));
+      
+      client.close();
+      
+      debugPrint('   Alt Response:');
+      debugPrint('   - Status: ${altResponse.statusCode}');
+      debugPrint('   - Length: ${altResponse.bodyBytes.length}');
+      
+      if (altResponse.statusCode == 200 && altResponse.bodyBytes.length > 500) {
+        final altBytes = Uint8List.fromList(altResponse.bodyBytes);
+        if (altBytes[0] == 0x89 && altBytes[1] == 0x50) {
+          debugPrint('   ✅ Alternative URL works! Using map without marker.');
+          return altBytes;
+        }
+      }
+    } catch (e) {
+      debugPrint('   ❌ TEST 3 FAILED: $e');
+    }
+    
+    debugPrint('❌ All mini map fetch attempts failed');
+    return null;
   }
 
   // ============== SAVE & SHARE LOGIC ==============
@@ -552,7 +650,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     return _buildImageView();
   }
 
-  // PERBAIKAN: Enhanced processing view dengan indikator mini map
   Widget _buildProcessingView() {
     return Center(
       child: SingleChildScrollView(
@@ -566,7 +663,6 @@ class _PreviewScreenState extends State<PreviewScreen>
               valueListenable: _processingStep,
               builder: (_, step, __) => Column(
                 children: [
-                  // Main step indicator
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 24, vertical: 12),
@@ -581,8 +677,6 @@ class _PreviewScreenState extends State<PreviewScreen>
                       textAlign: TextAlign.center,
                     ),
                   ),
-
-                  // PERBAIKAN: Mini map loading indicator
                   if (_isMiniMapLoading) ...[
                     const SizedBox(height: 16),
                     Container(
@@ -619,8 +713,6 @@ class _PreviewScreenState extends State<PreviewScreen>
                       ),
                     ),
                   ],
-
-                  // PERBAIKAN: Mini map error indicator
                   if (_miniMapError != null && !_isMiniMapLoading) ...[
                     const SizedBox(height: 12),
                     Container(
@@ -838,7 +930,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 }
 
-// PERBAIKAN: Cache entry class untuk mini map
 class _MapCacheEntry {
   final Uint8List bytes;
   final DateTime timestamp;

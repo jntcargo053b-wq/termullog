@@ -63,45 +63,48 @@ class WatermarkEngine {
 
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
     final text = _buildText(params);
-    // Lebar teks estimasi (setiap karakter ~10px, font default)
-    final int textWidth = text.length * 10;
-    const int textHeight = 20;
+    // Gunakan font Arial24 (pastikan ada di image 4.8.0)
+    final font = img.Arial24;
+    final metrics = font.measureText(text);
+    final double textWidth = metrics.width;
+    final double textHeight = metrics.height;
 
     int x, y;
     switch (params.watermarkPosition.toLowerCase()) {
       case 'top-right':
-        x = image.width - textWidth - 16;
+        x = (image.width - textWidth - 16).toInt();
         y = 16;
         break;
       case 'bottom-left':
         x = 16;
-        y = image.height - textHeight - 16;
+        y = (image.height - textHeight - 16).toInt();
         break;
       case 'bottom-right':
-        x = image.width - textWidth - 16;
-        y = image.height - textHeight - 16;
+        x = (image.width - textWidth - 16).toInt();
+        y = (image.height - textHeight - 16).toInt();
         break;
       default:
         x = 16;
         y = 16;
     }
 
-    // Background hitam transparan
+    // Background rectangle (isi)
     img.fillRect(
       image,
-      x - 4,
-      y - 4,
-      x + textWidth + 4,
-      y + textHeight + 4,
+      x1: x - 4,
+      y1: y - 4,
+      x2: (x + textWidth + 4).toInt(),
+      y2: (y + textHeight + 4).toInt(),
       color: img.ColorRgba8(0, 0, 0, 180),
     );
 
-    // Teks putih
+    // Teks
     img.drawString(
       image,
       text,
       x: x,
       y: y,
+      font: font,
       color: img.ColorRgba8(255, 255, 255, 255),
     );
   }
@@ -142,18 +145,23 @@ class WatermarkEngine {
         y = 80;
     }
 
-    // Border putih (outline) menggunakan drawRect dengan color (tanpa fill)
+    // Border putih (hanya outline, tidak diisi)
     img.drawRect(
       canvas,
-      x - 2,
-      y - 2,
-      x + resized.width + 2,
-      y + resized.height + 2,
+      x1: x - 2,
+      y1: y - 2,
+      x2: x + resized.width + 2,
+      y2: y + resized.height + 2,
       color: img.ColorRgba8(255, 255, 255, 200),
     );
 
-    // Tampilkan peta mini (composite)
-    img.compositeImage(canvas, resized, x, y);
+    // Composite peta
+    img.compositeImage(
+      canvas,
+      resized,
+      dstX: x,
+      dstY: y,
+    );
   }
 
   static String _formatTimestamp(DateTime dt) {

@@ -279,7 +279,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
       debugPrint('🎨 Watermark params created:');
       debugPrint('   showMiniMap: ${params.showMiniMap}');
-      debugPrint('   hasMapBytes: ${params.mapBytes != null}');
+      debugPrint('   hasMapBytes: ${params.mapTransferable != null}');
       debugPrint('   layout: ${params.layoutIndex}');
 
       debugPrint('🔄 Starting watermark processing in isolate...');

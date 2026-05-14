@@ -58,6 +58,8 @@ class _PreviewScreenState extends State<PreviewScreen>
   bool _isSharing = false;
   bool _isFileSaved = false;
   bool _isFileInUse = false;
+  bool _isMiniMapLoading = false;
+  String? _miniMapError;
   late AnimationController _checkAnimController;
   late Animation<double> _checkAnim;
   final TransformationController _transformController =
@@ -67,6 +69,11 @@ class _PreviewScreenState extends State<PreviewScreen>
   CancelableOperation<Uint8List>? _cancelableCompute;
   final ValueNotifier<String> _processingStep =
       ValueNotifier<String>('Memuat gambar...');
+
+  // Simple in-memory cache for mini maps
+  static final Map<String, _MapCacheEntry> _mapCache = {};
+  static const int _maxCacheSize = 10;
+  static const Duration _cacheExpiry = Duration(minutes: 5);
 
   @override
   void initState() {
@@ -95,6 +102,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     _cancelableCompute?.cancel();
     _checkAnimController.dispose();
     _transformController.dispose();
+    _processingStep.dispose();
     super.dispose();
   }
 
@@ -112,10 +120,34 @@ class _PreviewScreenState extends State<PreviewScreen>
     return historyDir;
   }
 
+  // PERBAIKAN: Method untuk membersihkan cache yang expired
+  void _cleanMapCache() {
+    final now = DateTime.now();
+    _mapCache.removeWhere((key, entry) => now.difference(entry.timestamp) > _cacheExpiry);
+    
+    // Jika masih terlalu banyak, hapus yang paling lama
+    if (_mapCache.length > _maxCacheSize) {
+      final sortedKeys = _mapCache.keys.toList()
+        ..sort((a, b) => _mapCache[a]!.timestamp.compareTo(_mapCache[b]!.timestamp));
+      final keysToRemove = sortedKeys.sublist(0, _mapCache.length - _maxCacheSize);
+      for (final key in keysToRemove) {
+        _mapCache.remove(key);
+      }
+    }
+  }
+
+  // PERBAIKAN: Validasi koordinat GPS
+  bool _isValidCoordinate(double? lat, double? lon) {
+    if (lat == null || lon == null) return false;
+    return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+  }
+
   Future<void> _processImageAsync() async {
     setState(() {
       _isProcessing = true;
       _errorMessage = null;
+      _isMiniMapLoading = false;
+      _miniMapError = null;
     });
     _processingStep.value = 'Memuat gambar...';
 
@@ -210,30 +242,83 @@ class _PreviewScreenState extends State<PreviewScreen>
       debugPrint('   watermarkPosition: $watermarkPosition');
       debugPrint('   showMiniMap: $showMiniMap');
 
-      // 4. Fetch mini map if needed
+      // 4. PERBAIKAN: Fetch mini map dengan validasi, cache, dan error handling lebih baik
       Uint8List? mapBytes;
       if (showMiniMap && hasPosition) {
-        _processingStep.value = 'Mengunduh peta mini...';
-        debugPrint('🗺️ Fetching mini map...');
-        debugPrint('   Coordinates: ${widget.latitude}, ${widget.longitude}');
-        try {
-          mapBytes = await LocationWeatherService.fetchMapWithRetry(
-            widget.latitude!,
-            widget.longitude!,
-            maxRetries: 2,
-          );
-          if (mapBytes != null && mapBytes.isNotEmpty) {
-            debugPrint('✅ Mini map fetched successfully: ${mapBytes.length} bytes');
-          } else if (mapBytes != null && mapBytes.isEmpty) {
-            debugPrint('⚠️ Mini map fetched but EMPTY (0 bytes)');
-            mapBytes = null;
-          } else {
-            debugPrint('❌ Mini map is NULL');
+        // Validasi koordinat
+        if (!_isValidCoordinate(widget.latitude, widget.longitude)) {
+          debugPrint('❌ Invalid coordinates: ${widget.latitude}, ${widget.longitude}');
+          setState(() => _miniMapError = 'Koordinat tidak valid');
+        } else {
+          setState(() => _isMiniMapLoading = true);
+          _processingStep.value = 'Mengunduh peta mini...';
+          debugPrint('🗺️ Fetching mini map...');
+          debugPrint('   Coordinates: ${widget.latitude}, ${widget.longitude}');
+
+          // Cek cache dulu
+          final cacheKey = '${widget.latitude!.toStringAsFixed(5)},${widget.longitude!.toStringAsFixed(5)}';
+          _cleanMapCache();
+          
+          if (_mapCache.containsKey(cacheKey)) {
+            final cachedEntry = _mapCache[cacheKey]!;
+            final age = DateTime.now().difference(cachedEntry.timestamp);
+            if (age < _cacheExpiry) {
+              mapBytes = cachedEntry.bytes;
+              debugPrint('✅ Using cached mini map (age: ${age.inSeconds}s)');
+              setState(() {
+                _isMiniMapLoading = false;
+                _miniMapError = null;
+              });
+            } else {
+              _mapCache.remove(cacheKey);
+            }
           }
-        } catch (e, stackTrace) {
-          debugPrint('❌ Mini map fetch error: $e');
-          debugPrint('Stack trace: $stackTrace');
-          mapBytes = null;
+
+          // Jika tidak ada di cache, fetch dari API
+          if (mapBytes == null) {
+            try {
+              mapBytes = await LocationWeatherService.fetchMapWithRetry(
+                widget.latitude!,
+                widget.longitude!,
+                maxRetries: 2,
+              ).timeout(const Duration(seconds: 15));
+
+              if (mapBytes != null && mapBytes.isNotEmpty) {
+                debugPrint('✅ Mini map fetched successfully: ${mapBytes.length} bytes');
+                
+                // Simpan ke cache
+                _mapCache[cacheKey] = _MapCacheEntry(
+                  bytes: mapBytes,
+                  timestamp: DateTime.now(),
+                );
+                
+                setState(() => _miniMapError = null);
+              } else if (mapBytes != null && mapBytes.isEmpty) {
+                debugPrint('⚠️ Mini map fetched but EMPTY (0 bytes)');
+                setState(() => _miniMapError = 'Peta kosong');
+                mapBytes = null;
+              } else {
+                debugPrint('❌ Mini map is NULL');
+                setState(() => _miniMapError = 'Gagal mengunduh peta');
+                mapBytes = null;
+              }
+            } on TimeoutException {
+              debugPrint('⏱️ Mini map download timeout');
+              setState(() => _miniMapError = 'Waktu unduh habis');
+              mapBytes = null;
+            } on FormatException catch (e) {
+              debugPrint('❌ Mini map format error: $e');
+              setState(() => _miniMapError = 'Format peta tidak valid');
+              mapBytes = null;
+            } catch (e, stackTrace) {
+              debugPrint('❌ Mini map fetch error: $e');
+              debugPrint('Stack trace: $stackTrace');
+              setState(() => _miniMapError = 'Gagal mengunduh peta');
+              mapBytes = null;
+            } finally {
+              setState(() => _isMiniMapLoading = false);
+            }
+          }
         }
       } else {
         if (!showMiniMap) debugPrint('⚠️ Mini map SKIPPED: showMiniMap is FALSE');
@@ -264,7 +349,6 @@ class _PreviewScreenState extends State<PreviewScreen>
 
       debugPrint('🎨 Watermark params created:');
       debugPrint('   showMiniMap: ${params.showMiniMap}');
-      // FIX: Gunakan mapTransferable karena mapBytes adalah getter yang memanggil materialize()
       debugPrint('   hasMapBytes: ${params.mapTransferable != null}');
       debugPrint('   layout: ${params.layoutIndex}');
 
@@ -290,6 +374,11 @@ class _PreviewScreenState extends State<PreviewScreen>
           _isProcessing = false;
         });
         debugPrint('✅ Preview updated successfully');
+      }
+    } on CancelledException {
+      debugPrint('⏹️ Processing cancelled');
+      if (mounted) {
+        setState(() => _isProcessing = false);
       }
     } catch (e, stackTrace) {
       debugPrint('❌ Processing error: $e');
@@ -447,29 +536,110 @@ class _PreviewScreenState extends State<PreviewScreen>
     return _buildImageView();
   }
 
+  // PERBAIKAN: Enhanced processing view dengan indikator mini map
   Widget _buildProcessingView() {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(color: Colors.white),
-          const SizedBox(height: 24),
-          ValueListenableBuilder<String>(
-            valueListenable: _processingStep,
-            builder: (_, step, __) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                step,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
-                textAlign: TextAlign.center,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 24),
+            ValueListenableBuilder<String>(
+              valueListenable: _processingStep,
+              builder: (_, step, __) => Column(
+                children: [
+                  // Main step indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      step,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+
+                  // PERBAIKAN: Mini map loading indicator
+                  if (_isMiniMapLoading) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: Colors.amber.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Colors.amber.shade300,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Mengunduh peta mini...',
+                              style: TextStyle(
+                                color: Colors.amber.shade300,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // PERBAIKAN: Mini map error indicator
+                  if (_miniMapError != null && !_isMiniMapLoading) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: Colors.orange.shade300),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Peta: $_miniMapError\nMelanjutkan tanpa peta...',
+                              style: TextStyle(
+                                color: Colors.orange.shade300,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -650,6 +820,17 @@ class _PreviewScreenState extends State<PreviewScreen>
       ),
     );
   }
+}
+
+// PERBAIKAN: Cache entry class untuk mini map
+class _MapCacheEntry {
+  final Uint8List bytes;
+  final DateTime timestamp;
+
+  _MapCacheEntry({
+    required this.bytes,
+    required this.timestamp,
+  });
 }
 
 class _ActionButton extends StatelessWidget {

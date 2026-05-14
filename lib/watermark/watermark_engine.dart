@@ -1,4 +1,3 @@
-// lib/watermark/watermark_engine.dart
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
@@ -43,46 +42,35 @@ class WatermarkEngine {
   }
 
   static Future<Uint8List> _applyWatermark(WatermarkParams params) async {
-    // Decode original image
     img.Image? original = img.decodeImage(params.imageBytes);
-    if (original == null) throw Exception('Gagal decode gambar asli');
+    if (original == null) throw Exception('Failed to decode original image');
 
-    // Decode mini map if needed
     img.Image? miniMap;
     if (params.showMiniMap && params.mapBytes != null && params.mapBytes!.isNotEmpty) {
       miniMap = img.decodeImage(params.mapBytes!);
-      if (miniMap != null) {
-        debugPrint('✅ Mini map decoded: ${miniMap.width}x${miniMap.height}');
-      } else {
-        debugPrint('⚠️ Gagal decode mini map');
-      }
+      debugPrint(miniMap != null
+          ? '✅ Mini map decoded: ${miniMap.width}x${miniMap.height}'
+          : '⚠️ Failed to decode mini map');
     }
 
-    // Resize original to reasonable size (optional)
     img.Image output = img.copyResize(original, width: original.width, height: original.height);
 
-    // Draw text watermark
     _drawTextWatermark(output, params);
+    if (miniMap != null) _drawMiniMap(output, miniMap, params.watermarkPosition);
 
-    // Draw mini map if available
-    if (miniMap != null) {
-      _drawMiniMap(output, miniMap, params.watermarkPosition);
-    }
-
-    // Encode to JPEG
     return Uint8List.fromList(img.encodeJpg(output, quality: 90));
   }
 
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
     final timestampStr = _formatTimestamp(params.timestamp);
-    final locationStr = params.address.isNotEmpty ? params.address : 'Tidak ada lokasi';
+    final locationStr = params.address.isNotEmpty ? params.address : 'No location';
     final weatherStr = params.showWeather && params.weather.isNotEmpty ? ' | ${params.weather}' : '';
     final accStr = params.showAccuracy && params.acc != null ? ' | ±${params.acc!.toStringAsFixed(0)}m' : '';
     final text = '$timestampStr | $locationStr$weatherStr$accStr';
 
-    // Estimate text width (rough approximation)
-    int textWidth = text.length * 12; // ~12px per karakter
-    int textHeight = 20;
+    final font = img.arial_24;
+    final textWidth = img.getStringWidth(font, text);
+    const textHeight = 24;
 
     int x, y;
     switch (params.watermarkPosition.toLowerCase()) {
@@ -98,24 +86,22 @@ class WatermarkEngine {
         x = image.width - textWidth - 16;
         y = image.height - textHeight - 16;
         break;
-      default: // top-left
+      default:
         x = 16;
         y = 16;
     }
 
-    // Draw background rectangle for readability
+    // Background rectangle
     img.drawRect(image,
-        x1: x - 4, y1: y - 4, x2: x + textWidth + 4, y2: y + textHeight + 4,
-        fillColor: img.ColorRgba8(0, 0, 0, 180));
+        x - 4, y - 4,
+        x + textWidth + 4, y + textHeight + 4,
+        img.ColorRgba8(0, 0, 0, 180));
 
-    // Draw text (using default font)
-    img.drawString(image, text,
-        x: x, y: y,
-        color: img.ColorRgba8(255, 255, 255, 255));
+    // Text
+    img.drawString(image, font, x, y, text, color: img.ColorRgba8(255, 255, 255, 255));
   }
 
   static void _drawMiniMap(img.Image canvas, img.Image miniMap, String position) {
-    // Resize mini map to max 150px width, maintain aspect ratio
     int targetWidth = 150;
     int targetHeight = (miniMap.height * targetWidth / miniMap.width).toInt();
     if (targetHeight > 150) {
@@ -138,18 +124,19 @@ class WatermarkEngine {
         x = canvas.width - resized.width - 16;
         y = canvas.height - resized.height - 80;
         break;
-      default: // top-left
+      default:
         x = 16;
         y = 80;
     }
 
-    // Draw white border
+    // White border
     img.drawRect(canvas,
-        x1: x - 2, y1: y - 2, x2: x + resized.width + 2, y2: y + resized.height + 2,
-        fillColor: img.ColorRgba8(255, 255, 255, 200));
+        x - 2, y - 2,
+        x + resized.width + 2, y + resized.height + 2,
+        img.ColorRgba8(255, 255, 255, 200));
 
-    // Composite image
-    img.compositeImage(canvas, resized, x, y);
+    // Composite image dengan named parameters (dx, dy)
+    img.compositeImage(canvas, resized, dx: x, dy: y);
   }
 
   static String _formatTimestamp(DateTime dt) {

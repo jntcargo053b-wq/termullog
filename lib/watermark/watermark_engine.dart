@@ -72,13 +72,17 @@ class WatermarkEngine {
     final int textWidth = (text.length * (font.base ~/ 2)).toInt();
     final int textHeight = font.lineHeight;
 
-    int x, y;
+    // Inisialisasi dengan nilai default (top-left)
+    int x = 16;
+    int y = 16;
+
+    // Tentukan posisi berdasarkan layoutIndex
     switch (params.layoutIndex) {
       case 0: // Film strip – bawah
         x = 16;
         y = image.height - textHeight - 16;
         break;
-      case 1: // DSLR corner – ikuti preferensi posisi
+      case 1: // DSLR corner – ikuti preferensi
         _setPositionByPreference(image.width, image.height, textWidth, textHeight,
             params.watermarkPosition, (v) => x = v, (v) => y = v);
         break;
@@ -95,9 +99,11 @@ class WatermarkEngine {
         y = image.height - textHeight - 16;
     }
 
+    // Batasi agar tidak keluar gambar
     x = x.clamp(4, image.width - textWidth - 4);
     y = y.clamp(4, image.height - textHeight - 4);
 
+    // Background semi-transparan
     img.fillRect(
       image,
       x1: x - 4,
@@ -107,6 +113,7 @@ class WatermarkEngine {
       color: img.ColorRgba8(0, 0, 0, 180),
     );
 
+    // Teks putih
     img.drawString(
       image,
       text,
@@ -174,6 +181,7 @@ class WatermarkEngine {
         y = 80;
     }
 
+    // Border putih
     img.drawRect(
       canvas,
       x1: x - 2,
@@ -183,6 +191,7 @@ class WatermarkEngine {
       color: img.ColorRgba8(255, 255, 255, 200),
     );
 
+    // Composite map
     img.compositeImage(canvas, resized, dstX: x, dstY: y);
   }
 

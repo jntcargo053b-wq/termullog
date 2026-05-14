@@ -1,75 +1,25 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">   <!-- ← tambahkan tools namespace -->
-
-    <!-- ==================== PERMISSIONS YANG DIPERLUKAN ==================== -->
+    package="com.example.termullog">
     
-    <!-- Internet & Network -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    
-    <!-- Camera -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    
-    <!-- GPS Location -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- ACCESS_BACKGROUND_LOCATION dihapus: ForegroundNotificationConfig sudah cukup -->
-    
-    <!-- Storage (Android 13+ & below) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    
-    <!-- FIX: tambahkan tools:replace untuk mengatasi konflik dengan plugin camera -->
+    <!-- PERBAIKAN: Pastikan semua permission diperlukan ada -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
-                     android:maxSdkVersion="32"
-                     tools:replace="android:maxSdkVersion" />
-    
-    <!-- RECORD_AUDIO dihapus: enableAudio: false di CameraController -->
-    
-    <!-- Wake Lock untuk GPS foreground service -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    
-    <!-- Notifikasi untuk foreground service (Android 13+ / API 33+) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    
-    <!-- ==================== FITUR YANG DIPERLUKAN ==================== -->
-    
-    <!-- GPS Hardware (wajib untuk akurasi tinggi) -->
-    <uses-feature
-        android:name="android.hardware.location.gps"
-        android:required="false" />
-    
-    <uses-feature
-        android:name="android.hardware.camera"
-        android:required="true" />
-    
-    <uses-feature
-        android:name="android.hardware.camera.autofocus"
-        android:required="false" />
-
-    <!-- ==================== APPLICATION ==================== -->
+        android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
+        android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     
     <application
-        android:label="termullog"
+        android:label="TermulLog"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
+        <!-- PERBAIKAN: Izinkan clear text traffic untuk development -->
         android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true"
-        android:allowBackup="true"
-        android:supportsRtl="true">
-        
-        <!-- Flutter Embedding -->
-        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
-        
-        <!-- Google Location Service (wajib untuk Fused Location Provider) -->
-        <meta-data
-            android:name="com.google.android.gms.version"
-            android:value="@integer/google_play_services_version" />
-        
-        <!-- ==================== MAIN ACTIVITY ==================== -->
+        android:networkSecurityConfig="@xml/network_security_config">
         
         <activity
             android:name=".MainActivity"
@@ -82,40 +32,23 @@
             
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme" />
+                android:resource="@style/NormalTheme"/>
             
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            
         </activity>
         
-        <!-- ==================== FOREGROUND SERVICE (wajib untuk GPS realtime) ==================== -->
-        
+        <!-- PERBAIKAN: Metadata untuk Google Maps jika digunakan -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2"/>
+            
+        <!-- PERBAIKAN: Gunakan LocationService untuk background -->
         <service
-            android:name="com.baseflow.geolocator.GeolocatorService"
+            android:name="com.example.termullog.LocationService"
             android:foregroundServiceType="location"
-            android:exported="false" />
-        
-        <!-- Untuk Android 14+ -->
-        <service
-            android:name="com.baseflow.geolocator.GeolocatorForegroundService"
-            android:foregroundServiceType="location"
-            android:exported="false" />
-        
-        <!-- ==================== FILE PROVIDER (untuk save photo) ==================== -->
-        
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
-        
+            android:exported="false"/>
     </application>
-    
 </manifest>

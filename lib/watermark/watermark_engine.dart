@@ -1,4 +1,3 @@
-// lib/watermark/watermark_engine.dart
 import 'dart:typed_data';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
@@ -23,7 +22,9 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null,
+      mapTransferable: mapBytes != null
+          ? TransferableTypedData.fromList([mapBytes])
+          : null,
       timestamp: timestamp,
       address: address,
       weather: weather,
@@ -50,7 +51,9 @@ class WatermarkEngine {
     img.Image? miniMap;
     if (params.showMiniMap && params.mapBytes != null && params.mapBytes!.isNotEmpty) {
       miniMap = img.decodeImage(params.mapBytes!);
-      if (miniMap == null) debugPrint('⚠️ Failed to decode mini map');
+      debugPrint(miniMap != null
+          ? '✅ Mini map decoded: ${miniMap.width}x${miniMap.height}'
+          : '⚠️ Failed to decode mini map');
     }
 
     final output = img.copyResize(original, width: original.width, height: original.height);
@@ -63,42 +66,47 @@ class WatermarkEngine {
 
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
     final text = _buildText(params);
-    // Gunakan font Arial24 (pastikan ada di image 4.8.0)
+    // Gunakan font arial24 (tersedia di image 4.8.0)
     final font = img.arial24;
-    final metrics = font.measureText(text);
-    final double textWidth = metrics.width;
-    final double textHeight = metrics.height;
+    
+    // ✅ Perbaikan untuk image 4.8.0: tidak ada measureText, kita hitung manual
+    final int textWidth = (text.length * (font.base ~/ 2)).toInt();
+    final int textHeight = font.lineHeight;
 
     int x, y;
     switch (params.watermarkPosition.toLowerCase()) {
       case 'top-right':
-        x = (image.width - textWidth - 16).toInt();
+        x = image.width - textWidth - 16;
         y = 16;
         break;
       case 'bottom-left':
         x = 16;
-        y = (image.height - textHeight - 16).toInt();
+        y = image.height - textHeight - 16;
         break;
       case 'bottom-right':
-        x = (image.width - textWidth - 16).toInt();
-        y = (image.height - textHeight - 16).toInt();
+        x = image.width - textWidth - 16;
+        y = image.height - textHeight - 16;
         break;
-      default:
+      default: // top-left
         x = 16;
         y = 16;
     }
 
-    // Background rectangle (isi)
+    // Batasi agar tidak keluar gambar
+    x = x.clamp(4, image.width - textWidth - 4);
+    y = y.clamp(4, image.height - textHeight - 4);
+
+    // Background semi-transparan
     img.fillRect(
       image,
       x1: x - 4,
       y1: y - 4,
-      x2: (x + textWidth + 4).toInt(),
-      y2: (y + textHeight + 4).toInt(),
+      x2: x + textWidth + 4,
+      y2: y + textHeight + 4,
       color: img.ColorRgba8(0, 0, 0, 180),
     );
 
-    // Teks
+    // Teks putih
     img.drawString(
       image,
       text,
@@ -145,7 +153,7 @@ class WatermarkEngine {
         y = 80;
     }
 
-    // Border putih (hanya outline, tidak diisi)
+    // Border putih (outline)
     img.drawRect(
       canvas,
       x1: x - 2,
@@ -155,13 +163,8 @@ class WatermarkEngine {
       color: img.ColorRgba8(255, 255, 255, 200),
     );
 
-    // Composite peta
-    img.compositeImage(
-      canvas,
-      resized,
-      dstX: x,
-      dstY: y,
-    );
+    // Composite map dengan named parameters dstX, dstY
+    img.compositeImage(canvas, resized, dstX: x, dstY: y);
   }
 
   static String _formatTimestamp(DateTime dt) {

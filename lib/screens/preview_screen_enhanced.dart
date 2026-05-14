@@ -1,3 +1,4 @@
+// lib/screens/preview_screen.dart
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -81,7 +82,6 @@ class _PreviewScreenState extends State<PreviewScreen>
 
     if (widget.imagePath != null) {
       _displayImagePath = widget.imagePath;
-      // Tetap proses watermark jika ada data tambahan
       if (widget.imageBytes != null || widget.timestamp != null) {
         _processImageAsync();
       }
@@ -103,7 +103,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     return 'termullog_${ts.millisecondsSinceEpoch}_$suffix.jpg';
   }
 
-  /// Mendapatkan (dan membuat jika perlu) direktori riwayat permanen
   Future<Directory> _getHistoryDirectory() async {
     final appDir = await getApplicationDocumentsDirectory();
     final historyDir = Directory('${appDir.path}/termullog_history');
@@ -121,7 +120,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     _processingStep.value = 'Memuat gambar...';
 
     try {
-      // Load image bytes
+      // 1. Load image bytes
       Uint8List bytes;
       if (widget.imageBytes != null) {
         bytes = widget.imageBytes!;
@@ -143,14 +142,13 @@ class _PreviewScreenState extends State<PreviewScreen>
       debugPrint('   initial address: "${widget.address ?? ""}"');
       debugPrint('   initial weather: "${widget.weather ?? ""}"');
 
+      // 2. Get address & weather if needed
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
 
-      // Fetch geocoding & weather if needed
       if (hasPosition && (address.isEmpty || weather.isEmpty)) {
         _processingStep.value = 'Mengambil alamat & cuaca...';
         debugPrint('🌐 Fetching address & weather...');
-        
         try {
           final dummyPos = Position(
             latitude: widget.latitude!,
@@ -164,15 +162,12 @@ class _PreviewScreenState extends State<PreviewScreen>
             speedAccuracy: 0,
             timestamp: DateTime.now(),
           );
-          
           final result = await LocationWeatherService.fetchFromPosition(dummyPos)
               .timeout(const Duration(seconds: 10));
-          
           if (address.isEmpty && result.address.isNotEmpty) {
             address = result.address;
             debugPrint('✅ Address fetched: $address');
           }
-          
           if (weather.isEmpty && result.weather.isNotEmpty) {
             weather = result.weather;
             debugPrint('✅ Weather fetched: $weather');
@@ -180,7 +175,6 @@ class _PreviewScreenState extends State<PreviewScreen>
         } catch (e, stackTrace) {
           debugPrint('❌ Geocoding/weather error: $e');
           debugPrint('Stack trace: $stackTrace');
-          
           if (address.isEmpty && hasPosition) {
             address =
                 'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
@@ -192,10 +186,9 @@ class _PreviewScreenState extends State<PreviewScreen>
         debugPrint('⚠️ No position data available');
       }
 
-      // Get settings
+      // 3. Load settings
       _processingStep.value = 'Memuat pengaturan...';
       debugPrint('⚙️ Loading settings...');
-      
       final results = await Future.wait([
         SettingsCache.layout,
         SettingsCache.showWeather,
@@ -217,20 +210,18 @@ class _PreviewScreenState extends State<PreviewScreen>
       debugPrint('   watermarkPosition: $watermarkPosition');
       debugPrint('   showMiniMap: $showMiniMap');
 
-      // Fetch mini map jika diperlukan
+      // 4. Fetch mini map if needed
       Uint8List? mapBytes;
       if (showMiniMap && hasPosition) {
         _processingStep.value = 'Mengunduh peta mini...';
         debugPrint('🗺️ Fetching mini map...');
         debugPrint('   Coordinates: ${widget.latitude}, ${widget.longitude}');
-        
         try {
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             widget.latitude!,
             widget.longitude!,
             maxRetries: 2,
           );
-
           if (mapBytes != null && mapBytes.isNotEmpty) {
             debugPrint('✅ Mini map fetched successfully: ${mapBytes.length} bytes');
           } else if (mapBytes != null && mapBytes.isEmpty) {
@@ -245,22 +236,16 @@ class _PreviewScreenState extends State<PreviewScreen>
           mapBytes = null;
         }
       } else {
-        if (!showMiniMap) {
-          debugPrint('⚠️ Mini map SKIPPED: showMiniMap is FALSE');
-        }
-        if (!hasPosition) {
-          debugPrint('⚠️ Mini map SKIPPED: no position data');
-        }
+        if (!showMiniMap) debugPrint('⚠️ Mini map SKIPPED: showMiniMap is FALSE');
+        if (!hasPosition) debugPrint('⚠️ Mini map SKIPPED: no position data');
       }
 
-      // Process watermark
+      // 5. Create watermark params and process
       _processingStep.value = 'Membuat watermark...';
       debugPrint('🎨 Creating watermark params...');
       debugPrint('   mapBytes provided: ${mapBytes != null}');
-      if (mapBytes != null) {
-        debugPrint('   mapBytes size: ${mapBytes.length} bytes');
-      }
-      
+      if (mapBytes != null) debugPrint('   mapBytes size: ${mapBytes!.length} bytes');
+
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
         timestamp: timestamp,
@@ -279,6 +264,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
       debugPrint('🎨 Watermark params created:');
       debugPrint('   showMiniMap: ${params.showMiniMap}');
+      // FIX: Gunakan mapTransferable karena mapBytes adalah getter yang memanggil materialize()
       debugPrint('   hasMapBytes: ${params.mapTransferable != null}');
       debugPrint('   layout: ${params.layoutIndex}');
 
@@ -290,7 +276,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final processedBytes = await _cancelableCompute!.value;
       debugPrint('✅ Watermark processing completed: ${processedBytes.length} bytes');
 
-      // Simpan permanen ke folder dokumen (untuk riwayat)
+      // 6. Save permanently
       _processingStep.value = 'Menyimpan file...';
       final historyDir = await _getHistoryDirectory();
       final fileName = _uniqueFileName(timestamp);
@@ -322,7 +308,6 @@ class _PreviewScreenState extends State<PreviewScreen>
     if (!Platform.isAndroid) return true;
     final androidInfo = await DeviceInfoPlugin().androidInfo;
     final sdkInt = androidInfo.version.sdkInt;
-
     if (sdkInt >= 33) {
       final status = await Permission.photos.request();
       if (status.isGranted) return true;

@@ -23,7 +23,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "com.example.termullog"   // ganti dengan package name Anda yang sesuai
+    namespace "com.example.termullog"
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -48,10 +48,39 @@ android {
         versionName flutterVersionName
     }
 
+    // PERBAIKAN: Konfigurasi build types
     buildTypes {
         release {
+            // Gunakan signingConfigs.debug untuk testing
             signingConfig signingConfigs.debug
+            
+            // PERBAIKAN: Matikan minification untuk hindari masalah
+            minifyEnabled false
+            shrinkResources false
+            
+            // PERBAIKAN: Tambahkan proguard rules jika diperlukan
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        
+        // PERBAIKAN: Tambahkan debug build type untuk testing
+        debug {
+            minifyEnabled false
+            shrinkResources false
+            debuggable true
+        }
+    }
+    
+    // PERBAIKAN: Packaging options untuk hindari konflik
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/license.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/notice.txt'
+        exclude 'META-INF/ASL2.0'
+        exclude 'META-INF/*.kotlin_module'
     }
 }
 

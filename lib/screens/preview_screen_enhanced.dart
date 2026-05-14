@@ -123,13 +123,16 @@ class _PreviewScreenState extends State<PreviewScreen>
   // PERBAIKAN: Method untuk membersihkan cache yang expired
   void _cleanMapCache() {
     final now = DateTime.now();
-    _mapCache.removeWhere((key, entry) => now.difference(entry.timestamp) > _cacheExpiry);
-    
+    _mapCache.removeWhere(
+        (key, entry) => now.difference(entry.timestamp) > _cacheExpiry);
+
     // Jika masih terlalu banyak, hapus yang paling lama
     if (_mapCache.length > _maxCacheSize) {
       final sortedKeys = _mapCache.keys.toList()
-        ..sort((a, b) => _mapCache[a]!.timestamp.compareTo(_mapCache[b]!.timestamp));
-      final keysToRemove = sortedKeys.sublist(0, _mapCache.length - _maxCacheSize);
+        ..sort(
+            (a, b) => _mapCache[a]!.timestamp.compareTo(_mapCache[b]!.timestamp));
+      final keysToRemove =
+          sortedKeys.sublist(0, _mapCache.length - _maxCacheSize);
       for (final key in keysToRemove) {
         _mapCache.remove(key);
       }
@@ -247,7 +250,8 @@ class _PreviewScreenState extends State<PreviewScreen>
       if (showMiniMap && hasPosition) {
         // Validasi koordinat
         if (!_isValidCoordinate(widget.latitude, widget.longitude)) {
-          debugPrint('❌ Invalid coordinates: ${widget.latitude}, ${widget.longitude}');
+          debugPrint(
+              '❌ Invalid coordinates: ${widget.latitude}, ${widget.longitude}');
           setState(() => _miniMapError = 'Koordinat tidak valid');
         } else {
           setState(() => _isMiniMapLoading = true);
@@ -256,9 +260,10 @@ class _PreviewScreenState extends State<PreviewScreen>
           debugPrint('   Coordinates: ${widget.latitude}, ${widget.longitude}');
 
           // Cek cache dulu
-          final cacheKey = '${widget.latitude!.toStringAsFixed(5)},${widget.longitude!.toStringAsFixed(5)}';
+          final cacheKey =
+              '${widget.latitude!.toStringAsFixed(5)},${widget.longitude!.toStringAsFixed(5)}';
           _cleanMapCache();
-          
+
           if (_mapCache.containsKey(cacheKey)) {
             final cachedEntry = _mapCache[cacheKey]!;
             final age = DateTime.now().difference(cachedEntry.timestamp);
@@ -284,14 +289,15 @@ class _PreviewScreenState extends State<PreviewScreen>
               ).timeout(const Duration(seconds: 15));
 
               if (mapBytes != null && mapBytes.isNotEmpty) {
-                debugPrint('✅ Mini map fetched successfully: ${mapBytes.length} bytes');
-                
+                debugPrint(
+                    '✅ Mini map fetched successfully: ${mapBytes.length} bytes');
+
                 // Simpan ke cache
                 _mapCache[cacheKey] = _MapCacheEntry(
                   bytes: mapBytes,
                   timestamp: DateTime.now(),
                 );
-                
+
                 setState(() => _miniMapError = null);
               } else if (mapBytes != null && mapBytes.isEmpty) {
                 debugPrint('⚠️ Mini map fetched but EMPTY (0 bytes)');
@@ -321,15 +327,21 @@ class _PreviewScreenState extends State<PreviewScreen>
           }
         }
       } else {
-        if (!showMiniMap) debugPrint('⚠️ Mini map SKIPPED: showMiniMap is FALSE');
-        if (!hasPosition) debugPrint('⚠️ Mini map SKIPPED: no position data');
+        if (!showMiniMap) {
+          debugPrint('⚠️ Mini map SKIPPED: showMiniMap is FALSE');
+        }
+        if (!hasPosition) {
+          debugPrint('⚠️ Mini map SKIPPED: no position data');
+        }
       }
 
       // 5. Create watermark params and process
       _processingStep.value = 'Membuat watermark...';
       debugPrint('🎨 Creating watermark params...');
       debugPrint('   mapBytes provided: ${mapBytes != null}');
-      if (mapBytes != null) debugPrint('   mapBytes size: ${mapBytes!.length} bytes');
+      if (mapBytes != null) {
+        debugPrint('   mapBytes size: ${mapBytes!.length} bytes');
+      }
 
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
@@ -358,7 +370,8 @@ class _PreviewScreenState extends State<PreviewScreen>
       );
 
       final processedBytes = await _cancelableCompute!.value;
-      debugPrint('✅ Watermark processing completed: ${processedBytes.length} bytes');
+      debugPrint(
+          '✅ Watermark processing completed: ${processedBytes.length} bytes');
 
       // 6. Save permanently
       _processingStep.value = 'Menyimpan file...';
@@ -375,19 +388,22 @@ class _PreviewScreenState extends State<PreviewScreen>
         });
         debugPrint('✅ Preview updated successfully');
       }
-    } on CancelledException {
-      debugPrint('⏹️ Processing cancelled');
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
     } catch (e, stackTrace) {
-      debugPrint('❌ Processing error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Error: ${e.toString()}';
-          _isProcessing = false;
-        });
+      // Check if error is from cancelled operation
+      if (e.toString().contains('Cancel') || e.toString().contains('cancel')) {
+        debugPrint('⏹️ Processing cancelled');
+        if (mounted) {
+          setState(() => _isProcessing = false);
+        }
+      } else {
+        debugPrint('❌ Processing error: $e');
+        debugPrint('Stack trace: $stackTrace');
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'Error: ${e.toString()}';
+            _isProcessing = false;
+          });
+        }
       }
     }
   }

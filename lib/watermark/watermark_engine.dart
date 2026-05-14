@@ -22,7 +22,9 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null,
+      mapTransferable: mapBytes != null
+          ? TransferableTypedData.fromList([mapBytes])
+          : null,
       timestamp: timestamp,
       address: address,
       weather: weather,
@@ -43,7 +45,6 @@ class WatermarkEngine {
   }
 
   static Future<Uint8List> _applyWatermark(WatermarkParams params) async {
-    // Decode original image
     final img.Image? original = img.decodeImage(params.imageBytes);
     if (original == null) throw Exception('Failed to decode original image');
 
@@ -59,7 +60,6 @@ class WatermarkEngine {
 
     final output = img.copyResize(original, width: original.width, height: original.height);
 
-    // Gunakan layoutIndex untuk variasi posisi
     _drawTextWatermark(output, params);
     if (miniMap != null) _drawMiniMap(output, miniMap, params.watermarkPosition);
 
@@ -78,7 +78,7 @@ class WatermarkEngine {
         x = 16;
         y = image.height - textHeight - 16;
         break;
-      case 1: // DSLR corner – ikuti preferensi
+      case 1: // DSLR corner – ikuti preferensi posisi
         _setPositionByPreference(image.width, image.height, textWidth, textHeight,
             params.watermarkPosition, (v) => x = v, (v) => y = v);
         break;

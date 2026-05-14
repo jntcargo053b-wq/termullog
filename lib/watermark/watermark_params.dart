@@ -1,4 +1,3 @@
-// lib/watermark/watermark_params.dart
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
@@ -19,7 +18,7 @@ class WatermarkParams {
 
   const WatermarkParams({
     required this.transferable,
-    this.mapTransferable,
+    required this.mapTransferable,
     required this.timestamp,
     required this.address,
     required this.weather,

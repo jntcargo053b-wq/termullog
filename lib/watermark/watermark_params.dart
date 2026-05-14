@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'dart:isolate';                  // ← tambahkan ini
+import 'dart:isolate';                    // WAJIB untuk TransferableTypedData
 import 'package:flutter/foundation.dart';
 
 class WatermarkParams {

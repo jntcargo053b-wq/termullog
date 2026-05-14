@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'dart:isolate';                      // tambahkan
+import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'watermark_params.dart';
@@ -62,9 +62,8 @@ class WatermarkEngine {
 
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
     final text = _buildText(params);
-    // Gunakan font Arial24 bawaan image 4.x
-    final font = img.Arial24;
-    // Measure text – kembalikan objek TextMetrics
+    // Gunakan font arial_24 (tersedia di image 4.8.0)
+    final font = img.arial_24;
     final metrics = font.measureText(text);
     final double textWidth = metrics.width;
     final double textHeight = metrics.height;
@@ -88,17 +87,17 @@ class WatermarkEngine {
         y = 16;
     }
 
-    // Background rectangle – gunakan named parameters
-    img.drawRect(
+    // Background solid (filled rectangle)
+    img.fillRect(
       image,
-      x1: x - 4,
-      y1: y - 4,
-      x2: (x + textWidth + 4).toInt(),
-      y2: (y + textHeight + 4).toInt(),
-      fillColor: img.ColorRgba8(0, 0, 0, 180),
+      x - 4,
+      y - 4,
+      (x + textWidth + 4).toInt(),
+      (y + textHeight + 4).toInt(),
+      color: img.ColorRgba8(0, 0, 0, 180),
     );
 
-    // Draw text – named parameters
+    // Draw text
     img.drawString(
       image,
       text,
@@ -145,20 +144,18 @@ class WatermarkEngine {
         y = 80;
     }
 
-    // Border putih
+    // Border putih (outline) – menggunakan drawRect dengan parameter color
     img.drawRect(
       canvas,
-      x1: x - 2,
-      y1: y - 2,
-      x2: x + resized.width + 2,
-      y2: y + resized.height + 2,
-      fillColor: img.ColorRgba8(255, 255, 255, 200),
+      x - 2,
+      y - 2,
+      x + resized.width + 2,
+      y + resized.height + 2,
+      color: img.ColorRgba8(255, 255, 255, 200),
     );
 
-    // Composite map – gunakan dstX, dstY (posisional atau named?)
-    // Di image 4.8.0, compositeImage(Image dst, Image src, int dstX, int dstY, {...})
-    // Jadi kita panggil dengan posisional dstX, dstY
-    img.compositeImage(canvas, resized, x, y);
+    // Composite map – menggunakan named parameters dstX, dstY
+    img.compositeImage(canvas, resized, dstX: x, dstY: y);
   }
 
   static String _formatTimestamp(DateTime dt) {

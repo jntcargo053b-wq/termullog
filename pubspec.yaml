@@ -10,7 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-
+  
+  signature: ^5.5.0
+  # ... lain-lain
   # Camera
   camera: ^0.10.5+9
   camera_android_camerax: ^0.6.5+1
@@ -22,7 +24,7 @@ dependencies:
   path: ^1.9.0
 
   # Image processing
-  image: ^3.3.0
+  image: ^4.8.0
 
   # Date time
   intl: ^0.19.0

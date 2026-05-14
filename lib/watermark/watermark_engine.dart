@@ -22,10 +22,7 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable:
-          mapBytes != null
-              ? TransferableTypedData.fromList([mapBytes])
-              : null,
+      mapTransferable: mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null,
       timestamp: timestamp,
       address: address,
       weather: weather,
@@ -46,12 +43,12 @@ class WatermarkEngine {
   }
 
   static Future<Uint8List> _applyWatermark(WatermarkParams params) async {
-    // 1. Decode original image
+    // Decode original image
     final img.Image? original = img.decodeImage(params.imageBytes);
     if (original == null) throw Exception('Failed to decode original image');
 
-    // 2. Materialize mapBytes HANYA SEKALI (hindari error)
-    final Uint8List? mapBytes = params.mapBytes; // getter dipanggil sekali
+    // Hanya SATU kali materialize mapBytes
+    final Uint8List? mapBytes = params.mapBytes;
     img.Image? miniMap;
     if (params.showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
       miniMap = img.decodeImage(mapBytes);
@@ -60,61 +57,47 @@ class WatermarkEngine {
           : '⚠️ Failed to decode mini map');
     }
 
-    // 3. Kerjakan salinan gambar
-    final img.Image output = img.copyResize(original, width: original.width, height: original.height);
+    final output = img.copyResize(original, width: original.width, height: original.height);
 
-    // 4. Gambar watermark teks (dengan variasi layout)
+    // Gunakan layoutIndex untuk variasi posisi
     _drawTextWatermark(output, params);
-
-    // 5. Gambar mini map jika ada
-    if (miniMap != null) {
-      _drawMiniMap(output, miniMap, params.watermarkPosition);
-    }
+    if (miniMap != null) _drawMiniMap(output, miniMap, params.watermarkPosition);
 
     return Uint8List.fromList(img.encodeJpg(output, quality: 90));
   }
 
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
     final text = _buildText(params);
-    final font = img.arial24; // font bawaan
+    final font = img.arial24;
     final int textWidth = (text.length * (font.base ~/ 2)).toInt();
     final int textHeight = font.lineHeight;
 
     int x, y;
-
-    // Gunakan layoutIndex untuk sedikit variasi (contoh)
     switch (params.layoutIndex) {
-      case 0: // Film strip – watermark di bawah
+      case 0: // Film strip – bawah
         x = 16;
         y = image.height - textHeight - 16;
         break;
-      case 1: // DSLR corner – mengikuti posisi yang dipilih
-        // posisi ditentukan oleh watermarkPosition
+      case 1: // DSLR corner – ikuti preferensi
         _setPositionByPreference(image.width, image.height, textWidth, textHeight,
-            params.watermarkPosition, outX: (v) => x = v, outY: (v) => y = v);
+            params.watermarkPosition, (v) => x = v, (v) => y = v);
         break;
-      case 2: // Cinematic – di tengah bawah
+      case 2: // Cinematic – tengah bawah
         x = (image.width - textWidth) ~/ 2;
         y = image.height - textHeight - 32;
         break;
-      case 3: // Field survey – di atas, rata kanan
+      case 3: // Field survey – kanan atas
         x = image.width - textWidth - 16;
         y = 16;
         break;
-      case 4: // HUD – di pojok kanan bawah
+      default: // HUD atau fallback – kanan bawah
         x = image.width - textWidth - 16;
         y = image.height - textHeight - 16;
-        break;
-      default:
-        _setPositionByPreference(image.width, image.height, textWidth, textHeight,
-            params.watermarkPosition, outX: (v) => x = v, outY: (v) => y = v);
     }
 
-    // Batasi agar tidak keluar gambar
     x = x.clamp(4, image.width - textWidth - 4);
     y = y.clamp(4, image.height - textHeight - 4);
 
-    // Background semi-transparan
     img.fillRect(
       image,
       x1: x - 4,
@@ -124,7 +107,6 @@ class WatermarkEngine {
       color: img.ColorRgba8(0, 0, 0, 180),
     );
 
-    // Teks putih
     img.drawString(
       image,
       text,
@@ -136,23 +118,23 @@ class WatermarkEngine {
   }
 
   static void _setPositionByPreference(int imgW, int imgH, int tw, int th,
-      String pos, {required void Function(int) outX, required void Function(int) outY}) {
+      String pos, void Function(int) setX, void Function(int) setY) {
     switch (pos.toLowerCase()) {
       case 'top-right':
-        outX(imgW - tw - 16);
-        outY(16);
+        setX(imgW - tw - 16);
+        setY(16);
         break;
       case 'bottom-left':
-        outX(16);
-        outY(imgH - th - 16);
+        setX(16);
+        setY(imgH - th - 16);
         break;
       case 'bottom-right':
-        outX(imgW - tw - 16);
-        outY(imgH - th - 16);
+        setX(imgW - tw - 16);
+        setY(imgH - th - 16);
         break;
-      default: // top-left
-        outX(16);
-        outY(16);
+      default:
+        setX(16);
+        setY(16);
     }
   }
 
@@ -187,12 +169,11 @@ class WatermarkEngine {
         x = canvas.width - resized.width - 16;
         y = canvas.height - resized.height - 80;
         break;
-      default: // top-left
+      default:
         x = 16;
         y = 80;
     }
 
-    // Border putih
     img.drawRect(
       canvas,
       x1: x - 2,
@@ -202,7 +183,6 @@ class WatermarkEngine {
       color: img.ColorRgba8(255, 255, 255, 200),
     );
 
-    // Composite map
     img.compositeImage(canvas, resized, dstX: x, dstY: y);
   }
 

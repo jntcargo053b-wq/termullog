@@ -1,12 +1,10 @@
 // lib/watermark/watermark_engine.dart
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'watermark_params.dart';
 
 class WatermarkEngine {
-  /// Membuat parameter yang akan dikirim ke isolate
   static WatermarkParams createParams({
     required Uint8List imageBytes,
     required DateTime timestamp,
@@ -24,9 +22,7 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null
-          ? TransferableTypedData.fromList([mapBytes])
-          : null,
+      mapTransferable: mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null,
       timestamp: timestamp,
       address: address,
       weather: weather,
@@ -41,110 +37,119 @@ class WatermarkEngine {
     );
   }
 
-  /// Fungsi yang dijalankan di isolate
   static Future<Uint8List> applyFromMap(Map<String, dynamic> map) async {
     final params = WatermarkParams.fromMap(map);
     return await _applyWatermark(params);
   }
 
   static Future<Uint8List> _applyWatermark(WatermarkParams params) async {
-    // 1. Decode gambar asli
-    img.Image original = img.decodeImage(params.imageBytes)!;
-    if (original.width == 0 || original.height == 0) {
-      throw Exception('Gambar tidak valid');
-    }
+    // Decode original image
+    img.Image? original = img.decodeImage(params.imageBytes);
+    if (original == null) throw Exception('Gagal decode gambar asli');
 
-    // 2. Decode peta mini jika ada dan diaktifkan
+    // Decode mini map if needed
     img.Image? miniMap;
     if (params.showMiniMap && params.mapBytes != null && params.mapBytes!.isNotEmpty) {
       miniMap = img.decodeImage(params.mapBytes!);
-      debugPrint('✅ Mini map berhasil didecode: ${miniMap?.width}x${miniMap?.height}');
-    } else {
-      debugPrint('⚠️ Mini map tidak ditampilkan (showMiniMap=${params.showMiniMap}, mapBytes=${params.mapBytes != null})');
+      if (miniMap != null) {
+        debugPrint('✅ Mini map decoded: ${miniMap.width}x${miniMap.height}');
+      } else {
+        debugPrint('⚠️ Gagal decode mini map');
+      }
     }
 
-    // 3. Buat gambar baru dengan ukuran yang mungkin disesuaikan (opsional: tambahkan border)
+    // Resize original to reasonable size (optional)
     img.Image output = img.copyResize(original, width: original.width, height: original.height);
 
-    // 4. Gambar teks watermark (sesuai layout)
+    // Draw text watermark
     _drawTextWatermark(output, params);
 
-    // 5. Gambar peta mini jika ada
+    // Draw mini map if available
     if (miniMap != null) {
       _drawMiniMap(output, miniMap, params.watermarkPosition);
     }
 
-    // 6. Encode ke JPEG (kualitas 90)
+    // Encode to JPEG
     return Uint8List.fromList(img.encodeJpg(output, quality: 90));
   }
 
-  /// Fungsi untuk menggambar teks watermark (contoh sederhana)
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
-    final font = img.arial_48; // pastikan font tersedia, atau pakai default
     final timestampStr = _formatTimestamp(params.timestamp);
     final locationStr = params.address.isNotEmpty ? params.address : 'Tidak ada lokasi';
     final weatherStr = params.showWeather && params.weather.isNotEmpty ? ' | ${params.weather}' : '';
     final accStr = params.showAccuracy && params.acc != null ? ' | ±${params.acc!.toStringAsFixed(0)}m' : '';
+    final text = '$timestampStr | $locationStr$weatherStr$accStr';
 
-    String text = '$timestampStr | $locationStr$weatherStr$accStr';
+    // Estimate text width (rough approximation)
+    int textWidth = text.length * 12; // ~12px per karakter
+    int textHeight = 20;
 
-    // Posisi berdasarkan watermarkPosition
-    int x = 20, y = 20;
+    int x, y;
     switch (params.watermarkPosition.toLowerCase()) {
       case 'top-right':
-        x = image.width - 20 - 300; // estimasi lebar teks
-        y = 20;
+        x = image.width - textWidth - 16;
+        y = 16;
         break;
       case 'bottom-left':
-        x = 20;
-        y = image.height - 50;
+        x = 16;
+        y = image.height - textHeight - 16;
         break;
       case 'bottom-right':
-        x = image.width - 20 - 300;
-        y = image.height - 50;
+        x = image.width - textWidth - 16;
+        y = image.height - textHeight - 16;
         break;
       default: // top-left
-        x = 20;
-        y = 20;
+        x = 16;
+        y = 16;
     }
 
-    img.drawString(image, text, font: font, x: x, y: y, color: img.ColorRgba8(255, 255, 255, 200));
+    // Draw background rectangle for readability
+    img.drawRect(image,
+        x1: x - 4, y1: y - 4, x2: x + textWidth + 4, y2: y + textHeight + 4,
+        fillColor: img.ColorRgba8(0, 0, 0, 180));
+
+    // Draw text (using default font)
+    img.drawString(image, text,
+        x: x, y: y,
+        color: img.ColorRgba8(255, 255, 255, 255));
   }
 
-  /// Fungsi menggambar peta mini (resize dan posisi)
   static void _drawMiniMap(img.Image canvas, img.Image miniMap, String position) {
-    // Ukuran peta: maksimal 150px lebar, pertahankan rasio
+    // Resize mini map to max 150px width, maintain aspect ratio
     int targetWidth = 150;
     int targetHeight = (miniMap.height * targetWidth / miniMap.width).toInt();
     if (targetHeight > 150) {
       targetHeight = 150;
       targetWidth = (miniMap.width * targetHeight / miniMap.height).toInt();
     }
-    final resizedMap = img.copyResize(miniMap, width: targetWidth, height: targetHeight);
+    final resized = img.copyResize(miniMap, width: targetWidth, height: targetHeight);
 
-    // Tentukan posisi
     int x, y;
     switch (position.toLowerCase()) {
       case 'top-right':
-        x = canvas.width - resizedMap.width - 15;
+        x = canvas.width - resized.width - 16;
         y = 80;
         break;
       case 'bottom-left':
-        x = 15;
-        y = canvas.height - resizedMap.height - 80;
+        x = 16;
+        y = canvas.height - resized.height - 80;
         break;
       case 'bottom-right':
-        x = canvas.width - resizedMap.width - 15;
-        y = canvas.height - resizedMap.height - 80;
+        x = canvas.width - resized.width - 16;
+        y = canvas.height - resized.height - 80;
         break;
       default: // top-left
-        x = 15;
+        x = 16;
         y = 80;
     }
 
-    // Gambar dengan border putih tipis
-    img.drawRect(canvas, x - 2, y - 2, resizedMap.width + 4, resizedMap.height + 4, color: img.ColorRgba8(255, 255, 255, 200));
-    img.compositeImage(canvas, resizedMap, destX: x, destY: y);
+    // Draw white border
+    img.drawRect(canvas,
+        x1: x - 2, y1: y - 2, x2: x + resized.width + 2, y2: y + resized.height + 2,
+        fillColor: img.ColorRgba8(255, 255, 255, 200));
+
+    // Composite image
+    img.compositeImage(canvas, resized, x, y);
   }
 
   static String _formatTimestamp(DateTime dt) {

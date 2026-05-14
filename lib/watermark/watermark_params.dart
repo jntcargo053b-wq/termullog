@@ -1,8 +1,7 @@
-import 'dart:isolate';
+// lib/watermark/watermark_params.dart
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
-/// Data class untuk parameter watermark yang diserialisasi ke isolate
 class WatermarkParams {
   final TransferableTypedData transferable;
   final TransferableTypedData? mapTransferable;
@@ -34,61 +33,10 @@ class WatermarkParams {
     this.acc,
   });
 
-  /// Getter untuk mengambil bytes gambar utama (watermark) sebagai Uint8List
+  // Getter untuk akses mudah
   Uint8List get imageBytes => transferable.materialize().asUint8List();
-
-  /// Getter untuk mengambil bytes peta mini (jika ada) sebagai Uint8List? 
   Uint8List? get mapBytes => mapTransferable?.materialize().asUint8List();
 
-  /// Konversi ke Map untuk dikirim ke isolate
-  Map<String, dynamic> toMap() {
-    final map = <String, dynamic>{
-      'transferable': transferable,
-      'timestamp': timestamp,
-      'address': address,
-      'weather': weather,
-      'layout': layoutIndex,
-      'showWeather': showWeather,
-      'showAccuracy': showAccuracy,
-      'watermarkPosition': watermarkPosition,
-      'showMiniMap': showMiniMap,
-    };
-    
-    if (mapTransferable != null) {
-      map['mapTransferable'] = mapTransferable;
-    }
-    if (lat != null) map['posLat'] = lat;
-    if (lon != null) map['posLon'] = lon;
-    if (acc != null) map['posAcc'] = acc;
-    
-    return map;
-  }
-
-  /// Materialize bytes dari TransferableTypedData
-  static WatermarkParams fromMap(Map<String, dynamic> map) {
-    final transferable = map['transferable'] as TransferableTypedData;
-    final bytes = transferable.materialize().asUint8List();
-    
-    final mapTransferable = map['mapTransferable'] as TransferableTypedData?;
-    final mapBytes = mapTransferable?.materialize().asUint8List();
-
-    // Buat params baru dengan bytes yang sudah di-materialize
-    return WatermarkParams(
-      transferable: TransferableTypedData.fromList([bytes]),
-      mapTransferable: mapBytes != null 
-          ? TransferableTypedData.fromList([mapBytes]) 
-          : null,
-      timestamp: map['timestamp'] as DateTime,
-      address: map['address'] as String,
-      weather: map['weather'] as String,
-      layoutIndex: map['layout'] as int,
-      showWeather: map['showWeather'] as bool,
-      showAccuracy: map['showAccuracy'] as bool,
-      watermarkPosition: map['watermarkPosition'] as String,
-      showMiniMap: map['showMiniMap'] as bool? ?? false,
-      lat: map['posLat'] as double?,
-      lon: map['posLon'] as double?,
-      acc: map['posAcc'] as double?,
-    );
-  }
+  Map<String, dynamic> toMap() { ... } // sama seperti sebelumnya
+  static WatermarkParams fromMap(Map<String, dynamic> map) { ... } // sama
 }

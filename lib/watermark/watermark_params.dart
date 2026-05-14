@@ -1,4 +1,3 @@
-
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -34,6 +33,12 @@ class WatermarkParams {
     this.lon,
     this.acc,
   });
+
+  /// Getter untuk mengambil bytes gambar utama (watermark) sebagai Uint8List
+  Uint8List get imageBytes => transferable.materialize().asUint8List();
+
+  /// Getter untuk mengambil bytes peta mini (jika ada) sebagai Uint8List? 
+  Uint8List? get mapBytes => mapTransferable?.materialize().asUint8List();
 
   /// Konversi ke Map untuk dikirim ke isolate
   Map<String, dynamic> toMap() {

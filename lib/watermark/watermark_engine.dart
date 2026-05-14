@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:isolate';                      // tambahkan
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'watermark_params.dart';
@@ -51,7 +52,6 @@ class WatermarkEngine {
       if (miniMap == null) debugPrint('⚠️ Failed to decode mini map');
     }
 
-    // Work on a copy
     final output = img.copyResize(original, width: original.width, height: original.height);
 
     _drawTextWatermark(output, params);
@@ -62,38 +62,51 @@ class WatermarkEngine {
 
   static void _drawTextWatermark(img.Image image, WatermarkParams params) {
     final text = _buildText(params);
-    const fontSize = 20;
-    final font = img.arial_24; // available in image 4.x
-
-    // Measure text size
-    final textWidth = img.getStringWidth(font, text);
-    final textHeight = fontSize + 6; // approximate
+    // Gunakan font Arial24 bawaan image 4.x
+    final font = img.Arial24;
+    // Measure text – kembalikan objek TextMetrics
+    final metrics = font.measureText(text);
+    final double textWidth = metrics.width;
+    final double textHeight = metrics.height;
 
     int x, y;
     switch (params.watermarkPosition.toLowerCase()) {
       case 'top-right':
-        x = image.width - textWidth - 16;
+        x = (image.width - textWidth - 16).toInt();
         y = 16;
         break;
       case 'bottom-left':
         x = 16;
-        y = image.height - textHeight - 16;
+        y = (image.height - textHeight - 16).toInt();
         break;
       case 'bottom-right':
-        x = image.width - textWidth - 16;
-        y = image.height - textHeight - 16;
+        x = (image.width - textWidth - 16).toInt();
+        y = (image.height - textHeight - 16).toInt();
         break;
       default:
         x = 16;
         y = 16;
     }
 
-    // Draw background rectangle
-    img.drawRect(image, x - 4, y - 4, x + textWidth + 4, y + textHeight + 4,
-        fillColor: img.ColorRgba8(0, 0, 0, 180));
+    // Background rectangle – gunakan named parameters
+    img.drawRect(
+      image,
+      x1: x - 4,
+      y1: y - 4,
+      x2: (x + textWidth + 4).toInt(),
+      y2: (y + textHeight + 4).toInt(),
+      fillColor: img.ColorRgba8(0, 0, 0, 180),
+    );
 
-    // Draw text (using named parameters)
-    img.drawString(image, text, x: x, y: y, font: font, color: img.ColorRgba8(255, 255, 255, 255));
+    // Draw text – named parameters
+    img.drawString(
+      image,
+      text,
+      x: x,
+      y: y,
+      font: font,
+      color: img.ColorRgba8(255, 255, 255, 255),
+    );
   }
 
   static String _buildText(WatermarkParams params) {
@@ -132,11 +145,20 @@ class WatermarkEngine {
         y = 80;
     }
 
-    // Draw white border (fillColor makes it a filled rectangle, but we use it as outline by drawing a smaller inner rect)
-    img.drawRect(canvas, x - 2, y - 2, x + resized.width + 2, y + resized.height + 2,
-        fillColor: img.ColorRgba8(255, 255, 255, 200));
-    // Composite the map over it
-    img.compositeImage(canvas, resized, dx: x, dy: y);
+    // Border putih
+    img.drawRect(
+      canvas,
+      x1: x - 2,
+      y1: y - 2,
+      x2: x + resized.width + 2,
+      y2: y + resized.height + 2,
+      fillColor: img.ColorRgba8(255, 255, 255, 200),
+    );
+
+    // Composite map – gunakan dstX, dstY (posisional atau named?)
+    // Di image 4.8.0, compositeImage(Image dst, Image src, int dstX, int dstY, {...})
+    // Jadi kita panggil dengan posisional dstX, dstY
+    img.compositeImage(canvas, resized, x, y);
   }
 
   static String _formatTimestamp(DateTime dt) {

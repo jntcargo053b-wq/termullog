@@ -198,7 +198,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       if (mapX < 0 || mapY < 0) return;
       if (mapX + mapWidth > src.width || mapY + mapHeight > src.height) return;
       
-      // PERBAIKAN: tambahkan parameter blend
+      // Composite mini map dengan blend mode alpha
       img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY, blend: img.BlendMode.alpha);
       
       // Border
@@ -216,10 +216,8 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       img.fillCircle(src, x: cx, y: cy, radius: 3,
         color: WatermarkLayoutBase.white);
         
-    } catch (e) {
-      // Silent fail - mini map is optional
-      // PERBAIKAN: tambahkan log untuk debug
-      debugPrint('Mini map render error: $e');
+    } catch (_) {
+      // Mini map gagal, lanjutkan (tidak fatal)
     }
   }
 }

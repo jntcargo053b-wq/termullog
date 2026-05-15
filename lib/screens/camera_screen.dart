@@ -18,7 +18,7 @@ import '../services/location_weather_service.dart';
 import '../services/gps_lock_manager.dart';
 import '../services/gps_stabilizer.dart';
 import '../services/settings_cache.dart';
-import 'preview_screen_enhanced.dart';
+import 'preview_screen.dart';
 import 'settings_screen.dart';
 
 class CameraConstants {

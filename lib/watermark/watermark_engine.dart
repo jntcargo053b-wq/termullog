@@ -11,9 +11,12 @@ import 'layouts/layout_cinematic.dart';
 import 'layouts/layout_field_survey.dart';
 import 'layouts/layout_hud.dart';
 
-/// Engine untuk apply watermark via isolate
+/// Wrapper function untuk compute() isolate
+Uint8List _applyWatermarkWrapper(dynamic params) {
+  return WatermarkEngine.applyFromMap(params as Map<String, dynamic>);
+}
+
 class WatermarkEngine {
-  // Registry layout
   static final Map<int, WatermarkLayoutBase> _layouts = {
     0: LayoutFilmStrip(),
     1: LayoutDSLRCorner(),
@@ -22,9 +25,7 @@ class WatermarkEngine {
     4: LayoutHUD(),
   };
 
-  /// Entry point untuk compute() isolate
   static Uint8List applyFromMap(Map<String, dynamic> params) {
-    // Materialize bytes
     final wmParams = WatermarkParams.fromMap(params);
     final transferable = wmParams.transferable;
     final bytes = transferable.materialize().asUint8List();
@@ -34,7 +35,6 @@ class WatermarkEngine {
       mapBytes = wmParams.mapTransferable!.materialize().asUint8List();
     }
 
-    // Decode & resize source image
     img.Image src = WatermarkLayoutBase.decodeOrThrow(bytes);
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
       src = img.copyResize(src,
@@ -43,14 +43,11 @@ class WatermarkEngine {
         interpolation: img.Interpolation.average);
     }
 
-    // Get layout
     final layout = _layouts[wmParams.layoutIndex];
     if (layout == null) {
       throw Exception('Layout tidak ditemukan: ${wmParams.layoutIndex}');
     }
 
-    // PERBAIKAN: Kirim mapBytes mentah ke layout.
-    //            Layout sendiri yang akan melakukan decode dengan try‑catch.
     final result = layout.apply(
       src: src,
       timestamp: wmParams.timestamp,
@@ -64,13 +61,13 @@ class WatermarkEngine {
       showAccuracy: wmParams.showAccuracy,
       watermarkPosition: wmParams.watermarkPosition,
       showMiniMap: wmParams.showMiniMap,
-      mapBytes: mapBytes,               // ← hanya kirim bytes mentah
+      mapBytes: mapBytes,
+      mapSize: wmParams.mapSize,
     );
 
     return result;
   }
 
-  /// Factory method untuk membuat params
   static WatermarkParams createParams({
     required Uint8List imageBytes,
     required DateTime timestamp,
@@ -85,6 +82,8 @@ class WatermarkEngine {
     double? lon,
     double? acc,
     Uint8List? mapBytes,
+    String mapSize = 'medium',
+    int mapZoomLevel = 16,
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
@@ -102,6 +101,8 @@ class WatermarkEngine {
       lat: lat,
       lon: lon,
       acc: acc,
+      mapSize: mapSize,
+      mapZoomLevel: mapZoomLevel,
     );
   }
 }

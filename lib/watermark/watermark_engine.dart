@@ -1,4 +1,3 @@
-
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -29,7 +28,7 @@ class WatermarkEngine {
     final wmParams = WatermarkParams.fromMap(params);
     final transferable = wmParams.transferable;
     final bytes = transferable.materialize().asUint8List();
-    
+
     Uint8List? mapBytes;
     if (wmParams.mapTransferable != null) {
       mapBytes = wmParams.mapTransferable!.materialize().asUint8List();
@@ -50,6 +49,22 @@ class WatermarkEngine {
       throw Exception('Layout tidak ditemukan: ${wmParams.layoutIndex}');
     }
 
+    // ============================================
+    // PERBAIKAN: Decode mapBytes dengan try-catch
+    // ============================================
+    img.Image? mapImage;
+    if (mapBytes != null && mapBytes.isNotEmpty) {
+      try {
+        mapImage = img.decodeImage(mapBytes);
+        if (mapImage == null) {
+          debugPrint('❌ Mini map decode returned null');
+        }
+      } catch (e) {
+        debugPrint('❌ Decode mini map gagal: $e');
+        mapImage = null;   // pastikan null agar tidak diproses
+      }
+    }
+
     // Apply watermark
     final result = layout.apply(
       src: src,
@@ -64,7 +79,10 @@ class WatermarkEngine {
       showAccuracy: wmParams.showAccuracy,
       watermarkPosition: wmParams.watermarkPosition,
       showMiniMap: wmParams.showMiniMap,
+      // Kirim mapImage yang sudah didecode (atau null) ke layout
+      // Layout tidak perlu mendecode ulang – bisa langsung copyInto
       mapBytes: mapBytes,
+      mapImage: mapImage,   // <-- properti baru (opsional)
     );
 
     return result;

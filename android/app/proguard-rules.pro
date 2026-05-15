@@ -59,3 +59,6 @@
 -keepclassmembers class kotlin.Metadata {
     public <methods>;
 }
+
+# Abaikan kelas Play Core yang hilang (tidak digunakan) - perbaikan R8
+-dontwarn com.google.android.play.core.**

@@ -8,43 +8,124 @@ class SettingsCache {
   static String? _watermarkPosition;
   static bool? _showMiniMap;
   static DateTime? _lastLoad;
+  static Future<void>? _loadingFuture; // Mencegah race condition
 
   static bool get _isStale =>
       _lastLoad == null ||
       DateTime.now().difference(_lastLoad!) > const Duration(minutes: 5);
 
+  // Perbaikan: preload dengan lock dan error handling
   static Future<void> preload() async {
-    if (!_isStale) return;
+    // Jika data masih fresh, langsung kembali
+    if (!_isStale && _lastLoad != null) return;
+
+    // Jika sedang loading, tunggu proses yang sedang berjalan
+    if (_loadingFuture != null) return _loadingFuture!;
+
+    _loadingFuture = _performPreload();
+    await _loadingFuture;
+    _loadingFuture = null;
+  }
+
+  static Future<void> _performPreload() async {
+    try {
+      final results = await Future.wait([
+        SettingsService.getWatermarkLayout(),
+        SettingsService.getShowWeather(),
+        SettingsService.getShowAccuracy(),
+        SettingsService.getWatermarkPosition(),
+        SettingsService.getShowMiniMap(),
+      ]);
+
+      _layout = results[0] as WatermarkLayout;
+      _showWeather = results[1] as bool;
+      _showAccuracy = results[2] as bool;
+      _watermarkPosition = results[3] as String;
+      _showMiniMap = results[4] as bool;
+      _lastLoad = DateTime.now();
+    } catch (e) {
+      // Jika gagal, jangan menyimpan data yang tidak lengkap
+      // Tetap gunakan cache lama, tapi tandai sebagai stale
+      _lastLoad = null;
+      rethrow; // Biarkan caller tahu ada error
+    }
+  }
+
+  // Getter dengan pengecekan null yang aman
+  static Future<WatermarkLayout> get layout async {
+    await preload();
+    if (_layout == null) {
+      throw StateError('WatermarkLayout gagal dimuat');
+    }
+    return _layout!;
+  }
+
+  static Future<bool> get showWeather async {
+    await preload();
+    if (_showWeather == null) {
+      throw StateError('showWeather gagal dimuat');
+    }
+    return _showWeather!;
+  }
+
+  static Future<bool> get showAccuracy async {
+    await preload();
+    if (_showAccuracy == null) {
+      throw StateError('showAccuracy gagal dimuat');
+    }
+    return _showAccuracy!;
+  }
+
+  static Future<String> get watermarkPosition async {
+    await preload();
+    if (_watermarkPosition == null) {
+      throw StateError('watermarkPosition gagal dimuat');
+    }
+    return _watermarkPosition!;
+  }
+
+  static Future<bool> get showMiniMap async {
+    await preload();
+    if (_showMiniMap == null) {
+      throw StateError('showMiniMap gagal dimuat');
+    }
+    return _showMiniMap!;
+  }
+
+  // Invalidate seluruh cache
+  static void invalidate() {
+    _lastLoad = null;
+    _loadingFuture = null; // Reset loading state
+  }
+
+  // Method refresh individual (opsional)
+  static Future<void> refreshLayout() async {
     _layout = await SettingsService.getWatermarkLayout();
+    _lastLoad = DateTime.now();
+  }
+
+  static Future<void> refreshShowWeather() async {
     _showWeather = await SettingsService.getShowWeather();
+    _lastLoad = DateTime.now();
+  }
+
+  static Future<void> refreshShowAccuracy() async {
     _showAccuracy = await SettingsService.getShowAccuracy();
+    _lastLoad = DateTime.now();
+  }
+
+  static Future<void> refreshWatermarkPosition() async {
     _watermarkPosition = await SettingsService.getWatermarkPosition();
+    _lastLoad = DateTime.now();
+  }
+
+  static Future<void> refreshShowMiniMap() async {
     _showMiniMap = await SettingsService.getShowMiniMap();
     _lastLoad = DateTime.now();
   }
 
-  static Future<WatermarkLayout> get layout async {
-    await preload();
-    return _layout!;
-  }
-  static Future<bool> get showWeather async {
-    await preload();
-    return _showWeather!;
-  }
-  static Future<bool> get showAccuracy async {
-    await preload();
-    return _showAccuracy!;
-  }
-  static Future<String> get watermarkPosition async {
-    await preload();
-    return _watermarkPosition!;
-  }
-  static Future<bool> get showMiniMap async {
-    await preload();
-    return _showMiniMap!;
-  }
-
-  static void invalidate() {
-    _lastLoad = null;
+  // Refresh semua sekaligus
+  static Future<void> refreshAll() async {
+    await _performPreload();
   }
 }

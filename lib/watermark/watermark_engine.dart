@@ -11,11 +11,6 @@ import 'layouts/layout_cinematic.dart';
 import 'layouts/layout_field_survey.dart';
 import 'layouts/layout_hud.dart';
 
-/// Wrapper function untuk compute() isolate
-Uint8List _applyWatermarkWrapper(dynamic params) {
-  return WatermarkEngine.applyFromMap(params as Map<String, dynamic>);
-}
-
 class WatermarkEngine {
   static final Map<int, WatermarkLayoutBase> _layouts = {
     0: LayoutFilmStrip(),
@@ -48,6 +43,7 @@ class WatermarkEngine {
       throw Exception('Layout tidak ditemukan: ${wmParams.layoutIndex}');
     }
 
+    // Hanya kirim parameter yang ada di SEMUA layout
     final result = layout.apply(
       src: src,
       timestamp: wmParams.timestamp,
@@ -62,7 +58,6 @@ class WatermarkEngine {
       watermarkPosition: wmParams.watermarkPosition,
       showMiniMap: wmParams.showMiniMap,
       mapBytes: mapBytes,
-      mapSize: wmParams.mapSize,
     );
 
     return result;

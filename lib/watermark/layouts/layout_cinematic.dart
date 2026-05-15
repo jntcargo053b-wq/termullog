@@ -1,4 +1,3 @@
-
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -12,6 +11,11 @@ class LayoutCinematic extends WatermarkLayoutBase {
   static const int padX = 36;
   static const int lineH = 28;
   static const int maxAddressLen = 55;
+
+  // Konstanta untuk mini map
+  static const int mapWidth = 120;
+  static const int mapHeight = 90;
+  static const int mapMargin = 16;
 
   @override
   Uint8List apply({
@@ -71,6 +75,37 @@ class LayoutCinematic extends WatermarkLayoutBase {
 
     if (showWeather && weather.isNotEmpty) {
       img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
+    }
+
+    // ── Mini Map (ditambahkan dengan aman) ───────────────────────────────
+    if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
+      img.Image? mapImage;
+      try {
+        mapImage = img.decodeImage(mapBytes);
+      } catch (e) {
+        // biarkan mapImage tetap null
+      }
+
+      if (mapImage != null) {
+        try {
+          // Resize ke ukuran kecil
+          final resized = img.copyResize(mapImage,
+              width: mapWidth, height: mapHeight,
+              interpolation: img.Interpolation.average);
+
+          // Tentukan posisi: pojok kanan di area gradient
+          final int mapX = src.width - mapWidth - mapMargin;
+          final int mapY = isTop ? mapMargin : src.height - mapHeight - mapMargin;
+
+          // Pastikan koordinat tidak keluar gambar
+          if (mapX >= 0 && mapY >= 0 && mapX + mapWidth <= src.width && mapY + mapHeight <= src.height) {
+            img.compositeImage(src, resized,
+                dstX: mapX, dstY: mapY, blend: false);
+          }
+        } catch (_) {
+          // gagal memasang mini map bukanlah hal fatal
+        }
+      }
     }
 
     return WatermarkLayoutBase.encodeJpg(src);

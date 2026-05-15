@@ -335,11 +335,32 @@ class LocationWeatherService {
       
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
+        // PERBAIKAN: parsing address objek untuk mendapatkan nama jalan
+        final addressObj = data['address'] as Map<String, dynamic>?;
+        if (addressObj != null) {
+          final parts = <String>[];
+          final road = addressObj['road'] as String?;
+          final suburb = (addressObj['suburb'] ?? addressObj['neighbourhood']) as String?;
+          final city = (addressObj['city'] ?? addressObj['town'] ?? addressObj['village']) as String?;
+          final state = addressObj['state'] as String?;
+          
+          if (road?.isNotEmpty == true) parts.add(road!);
+          if (suburb?.isNotEmpty == true) parts.add(suburb!);
+          if (city?.isNotEmpty == true) parts.add(city!);
+          if (state?.isNotEmpty == true) parts.add(state!);
+          
+          if (parts.isNotEmpty) {
+            final address = parts.join(', ');
+            debugPrint('Address from Nominatim (detail): $address');
+            return address;
+          }
+        }
+        // Fallback ke display_name
         final displayName = data['display_name'] as String?;
         if (displayName != null && displayName.isNotEmpty) {
           final parts = displayName.split(',').take(4).toList();
           final address = parts.join(', ');
-          debugPrint('Address from Nominatim: $address');
+          debugPrint('Address from Nominatim (display_name): $address');
           return address;
         }
       }
@@ -421,28 +442,33 @@ class LocationWeatherService {
     }
     
     try {
-      // OSM Static Map service (reliable, gratis)
+      // PERBAIKAN: gunakan marker yang valid 'ol-marker' bukan 'lightblue1'
       final url = Uri.parse(
         'https://staticmap.openstreetmap.de/staticmap.php'
         '?center=$lat,$lon'
         '&zoom=16'
         '&size=400x250'
         '&maptype=mapnik'
-        '&markers=$lat,$lon,lightblue1'
+        '&markers=$lat,$lon,ol-marker'    // ← diperbaiki
       );
       
       final response = await _client.get(url).timeout(const Duration(seconds: 8));
       
-      if (response.statusCode == 200) {
-        debugPrint('OSM Static Map fetched: ${response.bodyBytes.length} bytes');
-        
-        // Simpan ke cache
-        if (_mapCache.length >= _mapCacheMaxSize) {
-          _mapCache.remove(_mapCache.keys.first);
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        final bytes = Uint8List.fromList(response.bodyBytes);
+        // Validasi header PNG
+        if (bytes.length > 8 &&
+            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+          debugPrint('OSM Static Map fetched: ${bytes.length} bytes');
+          // Simpan ke cache
+          if (_mapCache.length >= _mapCacheMaxSize) {
+            _mapCache.remove(_mapCache.keys.first);
+          }
+          _mapCache[cacheKey] = bytes;
+          return bytes;
+        } else {
+          debugPrint('OSM Static Map: response bukan PNG valid');
         }
-        _mapCache[cacheKey] = response.bodyBytes;
-        
-        return response.bodyBytes;
       } else {
         debugPrint('OSM Static Map error: ${response.statusCode}');
       }
@@ -464,23 +490,28 @@ class LocationWeatherService {
     }
     
     try {
+      // PERBAIKAN: marker valid
       final url = Uri.parse(
         'https://staticmap.openstreetmap.de/staticmap.php'
         '?center=$lat,$lon'
         '&zoom=$zoom'
         '&size=${width}x$height'
         '&maptype=mapnik'
-        '&markers=$lat,$lon,lightblue1'
+        '&markers=$lat,$lon,ol-marker'    // ← diperbaiki
       );
       
       final response = await _client.get(url).timeout(const Duration(seconds: 8));
       
-      if (response.statusCode == 200) {
-        if (_mapCache.length >= _mapCacheMaxSize) {
-          _mapCache.remove(_mapCache.keys.first);
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        final bytes = Uint8List.fromList(response.bodyBytes);
+        if (bytes.length > 8 &&
+            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+          if (_mapCache.length >= _mapCacheMaxSize) {
+            _mapCache.remove(_mapCache.keys.first);
+          }
+          _mapCache[cacheKey] = bytes;
+          return bytes;
         }
-        _mapCache[cacheKey] = response.bodyBytes;
-        return response.bodyBytes;
       }
     } catch (e) {
       debugPrint('OSM Static Map custom error: $e');
@@ -488,20 +519,55 @@ class LocationWeatherService {
     return null;
   }
 
-  /// Fetch mini map dengan retry mechanism
+  /// Fetch mini map dengan retry mechanism + fallback OSM tile
   static Future<Uint8List?> fetchMapWithRetry(double lat, double lon, {int maxRetries = 2}) async {
+    // Coba static map dulu
     for (int i = 0; i < maxRetries; i++) {
       try {
         final result = await fetchOSMStaticMap(lat, lon);
         if (result != null) return result;
-        
-        // Tunggu sebelum retry
         if (i < maxRetries - 1) {
           await Future.delayed(Duration(seconds: i + 1));
         }
       } catch (e) {
         debugPrint('Map fetch retry $i error: $e');
       }
+    }
+    
+    // Fallback: OSM tile langsung
+    debugPrint('Static map gagal, mencoba OSM tile...');
+    return await _fetchOsmTileBytes(lat, lon, zoom: 15);
+  }
+
+  // ============================================================
+  // FALLBACK: Direct OSM tile download
+  // ============================================================
+  static Future<Uint8List?> _fetchOsmTileBytes(double lat, double lng, {int zoom = 15}) async {
+    try {
+      final n = pow(2, zoom).toInt();
+      final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
+      final latRad = lat * pi / 180;
+      final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
+          .toInt()
+          .clamp(0, n - 1);
+
+      const subdomains = ['a', 'b', 'c'];
+      final sub = subdomains[tileX % 3];
+      final url = 'https://$sub.tile.openstreetmap.org/$zoom/$tileX/$tileY.png';
+
+      final response = await _client.get(Uri.parse(url), headers: {
+        'User-Agent': 'TermulLog/1.0',
+      }).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        final bytes = Uint8List.fromList(response.bodyBytes);
+        if (bytes.length > 4 && bytes[0] == 0x89 && bytes[1] == 0x50) {
+          debugPrint('OSM tile success: ${bytes.length} bytes');
+          return bytes;
+        }
+      }
+    } catch (e) {
+      debugPrint('OSM tile error: $e');
     }
     return null;
   }

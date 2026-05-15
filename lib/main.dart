@@ -6,12 +6,16 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/camera_registry.dart';
 import 'ui/app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inisialisasi locale untuk intl (wajib untuk DateFormat dengan locale 'id_ID')
+  await initializeDateFormatting('id', null);
 
   // Set preferred orientations (portrait only)
   await SystemChrome.setPreferredOrientations([

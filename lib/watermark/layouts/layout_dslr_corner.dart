@@ -88,12 +88,6 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
       img.drawString(src, weather, font: font, x: xT, y: cy, color: WatermarkLayoutBase.blue);
     }
 
-    // Mini map
-    if (showMiniMap && mapBytes != null && hasPosition) {
-      WatermarkLayoutBase.drawMiniMap(src, mapBytes,
-          watermarkHeight: boxH + 20, isTop: isTop);
-    }
-
     return WatermarkLayoutBase.encodeJpg(src);
   }
 

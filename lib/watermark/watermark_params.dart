@@ -1,4 +1,3 @@
-
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -18,6 +17,8 @@ class WatermarkParams {
   final double? lat;
   final double? lon;
   final double? acc;
+  final String mapSize;        // <-- TAMBAHKAN
+  final int mapZoomLevel;      // <-- TAMBAHKAN (opsional, untuk zoom level)
 
   const WatermarkParams({
     required this.transferable,
@@ -33,57 +34,49 @@ class WatermarkParams {
     this.lat,
     this.lon,
     this.acc,
+    this.mapSize = 'medium',        // default
+    this.mapZoomLevel = 16,         // default
   });
 
-  /// Konversi ke Map untuk dikirim ke isolate
+  /// Serialisasi ke Map untuk dikirim ke isolate
   Map<String, dynamic> toMap() {
-    final map = <String, dynamic>{
+    return {
       'transferable': transferable,
+      'mapTransferable': mapTransferable,
       'timestamp': timestamp,
       'address': address,
       'weather': weather,
-      'layout': layoutIndex,
+      'layoutIndex': layoutIndex,
       'showWeather': showWeather,
       'showAccuracy': showAccuracy,
       'watermarkPosition': watermarkPosition,
       'showMiniMap': showMiniMap,
+      'lat': lat,
+      'lon': lon,
+      'acc': acc,
+      'mapSize': mapSize,            // <-- TAMBAHKAN
+      'mapZoomLevel': mapZoomLevel,  // <-- TAMBAHKAN
     };
-    
-    if (mapTransferable != null) {
-      map['mapTransferable'] = mapTransferable;
-    }
-    if (lat != null) map['posLat'] = lat;
-    if (lon != null) map['posLon'] = lon;
-    if (acc != null) map['posAcc'] = acc;
-    
-    return map;
   }
 
-  /// Materialize bytes dari TransferableTypedData
-  static WatermarkParams fromMap(Map<String, dynamic> map) {
-    final transferable = map['transferable'] as TransferableTypedData;
-    final bytes = transferable.materialize().asUint8List();
-    
-    final mapTransferable = map['mapTransferable'] as TransferableTypedData?;
-    final mapBytes = mapTransferable?.materialize().asUint8List();
-
-    // Buat params baru dengan bytes yang sudah di-materialize
+  /// Deserialisasi dari Map (dipakai di dalam isolate)
+  factory WatermarkParams.fromMap(Map<String, dynamic> map) {
     return WatermarkParams(
-      transferable: TransferableTypedData.fromList([bytes]),
-      mapTransferable: mapBytes != null 
-          ? TransferableTypedData.fromList([mapBytes]) 
-          : null,
+      transferable: map['transferable'] as TransferableTypedData,
+      mapTransferable: map['mapTransferable'] as TransferableTypedData?,
       timestamp: map['timestamp'] as DateTime,
-      address: map['address'] as String,
-      weather: map['weather'] as String,
-      layoutIndex: map['layout'] as int,
-      showWeather: map['showWeather'] as bool,
-      showAccuracy: map['showAccuracy'] as bool,
-      watermarkPosition: map['watermarkPosition'] as String,
+      address: map['address'] as String? ?? '',
+      weather: map['weather'] as String? ?? '',
+      layoutIndex: map['layoutIndex'] as int,
+      showWeather: map['showWeather'] as bool? ?? true,
+      showAccuracy: map['showAccuracy'] as bool? ?? true,
+      watermarkPosition: map['watermarkPosition'] as String? ?? 'bottom',
       showMiniMap: map['showMiniMap'] as bool? ?? false,
-      lat: map['posLat'] as double?,
-      lon: map['posLon'] as double?,
-      acc: map['posAcc'] as double?,
+      lat: map['lat'] as double?,
+      lon: map['lon'] as double?,
+      acc: map['acc'] as double?,
+      mapSize: map['mapSize'] as String? ?? 'medium',           // <-- TAMBAHKAN
+      mapZoomLevel: map['mapZoomLevel'] as int? ?? 16,          // <-- TAMBAHKAN
     );
   }
 }

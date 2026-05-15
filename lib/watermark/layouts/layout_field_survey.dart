@@ -1,4 +1,3 @@
-
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -199,8 +198,8 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       if (mapX < 0 || mapY < 0) return;
       if (mapX + mapWidth > src.width || mapY + mapHeight > src.height) return;
       
-      // Composite mini map
-      img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY);
+      // PERBAIKAN: tambahkan parameter blend
+      img.compositeImage(src, resizedMap, dstX: mapX, dstY: mapY, blend: img.BlendMode.alpha);
       
       // Border
       img.drawRect(src,
@@ -219,6 +218,8 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
         
     } catch (e) {
       // Silent fail - mini map is optional
+      // PERBAIKAN: tambahkan log untuk debug
+      debugPrint('Mini map render error: $e');
     }
   }
 }

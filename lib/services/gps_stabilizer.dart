@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GPS STABILIZER
+// GPS STABILIZER (v2 – dengan filter kecepatan)
 //
 // Masalah:  GPS ponsel memberi reading yang loncat-loncat karena sensor belum
 //           stabil (terutama 1–3 detik pertama). Reverse geocoding yang dijalankan
@@ -12,7 +12,9 @@ import 'package:geolocator/geolocator.dart';
 //
 // Solusi:   1. Kumpulkan beberapa reading selama maksimum [maxWaitMs] ms.
 //           2. Pilih reading dengan accuracy terkecil (paling akurat).
-//           3. Tolak reading yang accuracy-nya di atas [maxAccuracyMeters].
+//           3. Tolak reading yang accuracy-nya di atas [maxAccuracyMeters]
+//              atau kecepatan > 40 m/s (144 km/jam) – untuk hindari
+//              posisi saat bergerak cepat yang tidak mewakili alamat statis.
 //           4. Cache hasil geocoding: jika foto berikutnya diambil di titik
 //              yang berjarak < [cacheRadiusMeters] dari cache, gunakan alamat
 //              yang sudah ada tanpa request baru ke geocoder.
@@ -60,19 +62,32 @@ class GpsStabilizer {
     late StreamSubscription<Position> sub;
     sub = Geolocator.getPositionStream(locationSettings: settings).listen(
       (pos) {
-        // Hanya simpan reading dengan accuracy yang masuk threshold
-        if (pos.accuracy <= _maxAccuracyMeters) {
+        // PERBAIKAN: Hanya simpan reading dengan accuracy ≤ batas
+        //            DAN kecepatan ≤ 40 m/s (≈144 km/jam).
+        //            Kecepatan 0 (diam) otomatis lolos.
+        final bool accuracyOk = pos.accuracy <= _maxAccuracyMeters;
+        final bool speedOk    = pos.speed <= 40;   // 0 termasuk di sini
+
+        if (accuracyOk && speedOk) {
           samples.add(pos);
           debugPrint(
             'GPS sample ${samples.length}/$_sampleCount'
             ' — acc: ${pos.accuracy.toStringAsFixed(1)}m'
+            ' speed: ${pos.speed.toStringAsFixed(1)} m/s'
             ' (${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)})',
           );
         } else {
-          debugPrint(
-            'GPS sample dibuang — acc: ${pos.accuracy.toStringAsFixed(1)}m'
-            ' (melebihi batas $_maxAccuracyMeters m)',
-          );
+          if (!accuracyOk) {
+            debugPrint(
+              'GPS sample dibuang — acc: ${pos.accuracy.toStringAsFixed(1)}m'
+              ' (melebihi batas $_maxAccuracyMeters m)',
+            );
+          } else {
+            debugPrint(
+              'GPS sample dibuang — speed: ${pos.speed.toStringAsFixed(1)} m/s'
+              ' (melebihi batas 40 m/s)',
+            );
+          }
         }
 
         if (samples.length >= _sampleCount && !done.isCompleted) {
@@ -112,6 +127,7 @@ class GpsStabilizer {
     final best = samples.first;
     debugPrint(
       'GPS terpilih: acc=${best.accuracy.toStringAsFixed(1)}m'
+      ' speed=${best.speed.toStringAsFixed(1)} m/s'
       ' dari ${samples.length} sample',
     );
     return best;

@@ -23,7 +23,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "com.example.termullog"   // ganti dengan package name Anda yang sesuai
+    namespace "com.example.termullog"
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -51,6 +51,9 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
+            // NONAKTIFKAN R8 UNTUK MENGHINDARI ERROR PLAY CORE
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }

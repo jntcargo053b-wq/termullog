@@ -418,21 +418,24 @@ class _PreviewScreenState extends State<PreviewScreen>
   // ============================================
   // SAVE & SHARE LOGIC
   // ============================================
+  /// Memeriksa dan meminta izin penyimpanan yang sesuai dengan versi Android.
+  /// Android 10+ tidak memerlukan izin runtime untuk menyimpan file media.
   Future<bool> _requestStoragePermission() async {
     if (!Platform.isAndroid) return true;
+
     final androidInfo = await DeviceInfoPlugin().androidInfo;
     final sdkInt = androidInfo.version.sdkInt;
-    if (sdkInt >= 33) {
-      final status = await Permission.photos.request();
-      if (status.isGranted) return true;
-      if (status.isPermanentlyDenied) openAppSettings();
-      return false;
-    } else {
-      final status = await Permission.storage.request();
-      if (status.isGranted) return true;
-      if (status.isPermanentlyDenied) openAppSettings();
-      return false;
+
+    // Android 10 (SDK 29) ke atas menggunakan Scoped Storage → tidak perlu izin
+    if (sdkInt >= 29) {
+      return true;
     }
+
+    // Android 9 (SDK 28) ke bawah butuh WRITE_EXTERNAL_STORAGE
+    final status = await Permission.storage.request();
+    if (status.isGranted) return true;
+    if (status.isPermanentlyDenied) openAppSettings();
+    return false;
   }
 
   Future<void> _saveToGallery() async {

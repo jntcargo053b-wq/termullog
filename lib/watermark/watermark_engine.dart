@@ -49,23 +49,8 @@ class WatermarkEngine {
       throw Exception('Layout tidak ditemukan: ${wmParams.layoutIndex}');
     }
 
-    // ============================================
-    // PERBAIKAN: Decode mapBytes dengan try-catch
-    // ============================================
-    img.Image? mapImage;
-    if (mapBytes != null && mapBytes.isNotEmpty) {
-      try {
-        mapImage = img.decodeImage(mapBytes);
-        if (mapImage == null) {
-          debugPrint('❌ Mini map decode returned null');
-        }
-      } catch (e) {
-        debugPrint('❌ Decode mini map gagal: $e');
-        mapImage = null;   // pastikan null agar tidak diproses
-      }
-    }
-
-    // Apply watermark
+    // PERBAIKAN: Kirim mapBytes mentah ke layout.
+    //            Layout sendiri yang akan melakukan decode dengan try‑catch.
     final result = layout.apply(
       src: src,
       timestamp: wmParams.timestamp,
@@ -79,10 +64,7 @@ class WatermarkEngine {
       showAccuracy: wmParams.showAccuracy,
       watermarkPosition: wmParams.watermarkPosition,
       showMiniMap: wmParams.showMiniMap,
-      // Kirim mapImage yang sudah didecode (atau null) ke layout
-      // Layout tidak perlu mendecode ulang – bisa langsung copyInto
-      mapBytes: mapBytes,
-      mapImage: mapImage,   // <-- properti baru (opsional)
+      mapBytes: mapBytes,               // ← hanya kirim bytes mentah
     );
 
     return result;

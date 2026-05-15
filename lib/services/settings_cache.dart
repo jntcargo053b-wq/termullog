@@ -7,6 +7,8 @@ class SettingsCache {
   static bool? _showAccuracy;
   static String? _watermarkPosition;
   static bool? _showMiniMap;
+  static String? _mapSize;        // <-- TAMBAHKAN
+  static int? _mapZoomLevel;      // <-- TAMBAHKAN
   static DateTime? _lastLoad;
   static Future<void>? _loadingFuture; // Mencegah race condition
 
@@ -35,6 +37,8 @@ class SettingsCache {
         SettingsService.getShowAccuracy(),
         SettingsService.getWatermarkPosition(),
         SettingsService.getShowMiniMap(),
+        SettingsService.getMapSize(),        // <-- TAMBAHKAN
+        SettingsService.getMapZoomLevel(),   // <-- TAMBAHKAN
       ]);
 
       _layout = results[0] as WatermarkLayout;
@@ -42,6 +46,8 @@ class SettingsCache {
       _showAccuracy = results[2] as bool;
       _watermarkPosition = results[3] as String;
       _showMiniMap = results[4] as bool;
+      _mapSize = results[5] as String;       // <-- TAMBAHKAN
+      _mapZoomLevel = results[6] as int;     // <-- TAMBAHKAN
       _lastLoad = DateTime.now();
     } catch (e) {
       // Jika gagal, jangan menyimpan data yang tidak lengkap
@@ -92,6 +98,25 @@ class SettingsCache {
     return _showMiniMap!;
   }
 
+  // ============================================================
+  // TAMBAHKAN GETTER BARU
+  // ============================================================
+  static Future<String> get mapSize async {
+    await preload();
+    if (_mapSize == null) {
+      throw StateError('mapSize gagal dimuat');
+    }
+    return _mapSize!;
+  }
+
+  static Future<int> get mapZoomLevel async {
+    await preload();
+    if (_mapZoomLevel == null) {
+      throw StateError('mapZoomLevel gagal dimuat');
+    }
+    return _mapZoomLevel!;
+  }
+
   // Invalidate seluruh cache
   static void invalidate() {
     _lastLoad = null;
@@ -121,6 +146,19 @@ class SettingsCache {
 
   static Future<void> refreshShowMiniMap() async {
     _showMiniMap = await SettingsService.getShowMiniMap();
+    _lastLoad = DateTime.now();
+  }
+
+  // ============================================================
+  // TAMBAHKAN REFRESH INDIVIDUAL BARU
+  // ============================================================
+  static Future<void> refreshMapSize() async {
+    _mapSize = await SettingsService.getMapSize();
+    _lastLoad = DateTime.now();
+  }
+
+  static Future<void> refreshMapZoomLevel() async {
+    _mapZoomLevel = await SettingsService.getMapZoomLevel();
     _lastLoad = DateTime.now();
   }
 

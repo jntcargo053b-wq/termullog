@@ -99,8 +99,14 @@ class LayoutCinematic extends WatermarkLayoutBase {
 
           // Pastikan koordinat tidak keluar gambar
           if (mapX >= 0 && mapY >= 0 && mapX + mapWidth <= src.width && mapY + mapHeight <= src.height) {
-            img.compositeImage(src, resized,
-                dstX: mapX, dstY: mapY, blend: false);
+            // PERBAIKAN: gunakan copyInto yang menerima bool untuk blend
+            img.copyInto(
+              src,
+              resized,
+              dstX: mapX,
+              dstY: mapY,
+              blend: false,
+            );
           }
         } catch (_) {
           // gagal memasang mini map bukanlah hal fatal

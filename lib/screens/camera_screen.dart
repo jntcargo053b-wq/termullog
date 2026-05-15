@@ -12,13 +12,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:intl/intl.dart';  // <-- untuk DateFormat di overlay realtime
 
 import '../core/camera_registry.dart';
 import '../services/location_weather_service.dart';
 import '../services/gps_lock_manager.dart';
 import '../services/gps_stabilizer.dart';
 import '../services/settings_cache.dart';
-import 'preview_screen.dart';   // perbaikan: bukan preview_screen_enhanced.dart
+import 'preview_screen.dart';
 import 'settings_screen.dart';
 
 class CameraConstants {
@@ -755,11 +756,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     Overlay.of(context).insert(_focusOverlay!);
   }
 
-  // PERBAIKAN: Memastikan kamera siap sebelum takePicture
   Future<void> ensureCameraReady() async {
     if (_controller == null || _isDisposed) return;
 
-    // Jika controller tidak terinisialisasi, coba inisialisasi ulang
     if (!_controller!.value.isInitialized) {
       debugPrint('⚠️ Camera lost, reinitializing');
       try {
@@ -790,7 +789,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final camera = CameraRegistry.cameras.first;
       final controller = CameraController(
         camera,
-        ResolutionPreset.veryHigh,   // PERBAIKAN: lebih hemat memori
+        ResolutionPreset.veryHigh,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
@@ -1060,6 +1059,52 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   // ------------------------------------------------------------
+  // Overlay realtime di atas kamera
+  // ------------------------------------------------------------
+  Widget _buildRealtimeOverlay() {
+    final now = DateTime.now();
+    final timeStr = DateFormat('HH:mm:ss').format(now);
+    final dateStr = DateFormat('dd MMM yyyy').format(now);
+
+    final latStr = _bestPosition != null
+        ? _bestPosition!.latitude.toStringAsFixed(6)
+        : '--.------';
+    final lonStr = _bestPosition != null
+        ? _bestPosition!.longitude.toStringAsFixed(6)
+        : '--.------';
+    final accStr = _bestPosition != null
+        ? '±${_bestPosition!.accuracy.toStringAsFixed(0)}m'
+        : '';
+    final addrStr = _currentAddress.isNotEmpty ? _currentAddress : 'Mencari alamat...';
+    final weatherStr = _cachedWeather ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(dateStr, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          const SizedBox(height: 2),
+          Text(timeStr, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text('$latStr  $lonStr', style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+          if (accStr.isNotEmpty)
+            Text('Akurasi: $accStr', style: const TextStyle(color: Colors.amber, fontSize: 11)),
+          const SizedBox(height: 4),
+          Text(addrStr, style: const TextStyle(color: Colors.white70, fontSize: 10), maxLines: 2),
+          if (weatherStr.isNotEmpty)
+            Text(weatherStr, style: const TextStyle(color: Colors.lightBlueAccent, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------
   // Build
   // ------------------------------------------------------------
   @override
@@ -1083,27 +1128,37 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               )
             else if (_isInitialized && _controller != null && !_isWarmingUp)
-              GestureDetector(
-                onTapUp: (details) async {
-                  final ctrl = _controller;
-                  if (ctrl == null || !ctrl.value.isInitialized) return;
-                  final size = MediaQuery.of(context).size;
-                  final offset = Offset(
-                    details.localPosition.dx / size.width,
-                    details.localPosition.dy / size.height,
-                  );
-                  try {
-                    await ctrl.setFocusPoint(offset);
-                    await ctrl.setExposurePoint(offset);
-                    _showFocusIndicator(details.localPosition);
-                  } catch (_) {}
-                },
-                child: Container(
-                  width: double.infinity,
-                  height: double.infinity,
-                  color: Colors.black,
-                  child: CameraPreview(_controller!),
-                ),
+              Stack(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    color: Colors.black,
+                    child: GestureDetector(
+                      onTapUp: (details) async {
+                        final ctrl = _controller;
+                        if (ctrl == null || !ctrl.value.isInitialized) return;
+                        final size = MediaQuery.of(context).size;
+                        final offset = Offset(
+                          details.localPosition.dx / size.width,
+                          details.localPosition.dy / size.height,
+                        );
+                        try {
+                          await ctrl.setFocusPoint(offset);
+                          await ctrl.setExposurePoint(offset);
+                          _showFocusIndicator(details.localPosition);
+                        } catch (_) {}
+                      },
+                      child: CameraPreview(_controller!),
+                    ),
+                  ),
+                  // Overlay realtime
+                  Positioned(
+                    left: 16,
+                    bottom: 120, // di atas tombol capture
+                    child: _buildRealtimeOverlay(),
+                  ),
+                ],
               )
             else
               const Center(

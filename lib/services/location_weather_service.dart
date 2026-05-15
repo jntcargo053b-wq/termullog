@@ -121,86 +121,92 @@ class LocationWeatherService {
     }
   }
 
-  /// Fetch peta mini dari OpenStreetMap static map API
+  /// Fetch mini map dengan fallback provider (FIX FINAL)
   static Future<Uint8List?> fetchMapWithRetry(
     double lat,
     double lon, {
-    int maxRetries = 2,
+    int maxRetries = 3,
   }) async {
-    int attempt = 0;
+    final urls = [
+      // Provider utama: OpenStreetMap static map
+      Uri.parse(
+        'https://staticmap.openstreetmap.de/staticmap.php'
+        '?center=$lat,$lon'
+        '&zoom=16'
+        '&size=400x300'
+        '&maptype=mapnik'
+        '&markers=$lat,$lon,red-pushpin',
+      ),
+      // Fallback provider: LocationIQ (ganti API key jika perlu)
+      Uri.parse(
+        'https://maps.locationiq.com/v3/staticmap'
+        '?key=pk.8c0f4d6c7d8f4d6c7d8f4d6c7d8f4d6c'   // <-- GANTI dengan API key Anda sendiri!
+        '&center=$lat,$lon'
+        '&zoom=16'
+        '&size=400x300'
+        '&markers=icon:large-red-cutout|$lat,$lon',
+      ),
+    ];
 
-    while (attempt < maxRetries) {
-      try {
-        attempt++;
-        debugPrint('🗺️ Map fetch attempt $attempt/$maxRetries');
-        debugPrint('   lat: $lat, lon: $lon');
+    for (final url in urls) {
+      for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        http.Client? client;
 
-        final client = http.Client();
+        try {
+          debugPrint('🗺️ Fetching mini map');
+          debugPrint('URL: $url');
+          debugPrint('Attempt: $attempt/$maxRetries');
 
-        // Valid markers: ol-marker, ol-marker-blue, ol-marker-green,
-        // ol-marker-red, ol-marker-gold, ol-marker-black
-        final url = Uri.parse(
-          'https://staticmap.openstreetmap.de/staticmap.php'
-          '?center=$lat,$lon'
-          '&zoom=16'
-          '&size=400x300'
-          '&maptype=mapnik'
-          '&markers=$lat,$lon,ol-marker',
-        );
+          client = http.Client();
 
-        debugPrint('🗺️ Map URL: $url');
+          final response = await client
+              .get(
+                url,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0',
+                  'Accept': 'image/png,image/*,*/*',
+                  'Connection': 'keep-alive',
+                },
+              )
+              .timeout(const Duration(seconds: 20));
 
-        final response = await client.get(
-          url,
-          headers: {
-            'User-Agent': 'TermulLog/1.0',
-            'Accept': 'image/png',
-          },
-        ).timeout(const Duration(seconds: 15));
+          if (response.statusCode == 200 &&
+              response.bodyBytes.isNotEmpty) {
+            final bytes = Uint8List.fromList(response.bodyBytes);
 
-        client.close();
+            // Validasi PNG/JPG
+            final isPng =
+                bytes.length > 4 &&
+                bytes[0] == 0x89 &&
+                bytes[1] == 0x50;
 
-        if (response.statusCode == 200) {
-          final bytes = Uint8List.fromList(response.bodyBytes);
+            final isJpg =
+                bytes.length > 4 &&
+                bytes[0] == 0xFF &&
+                bytes[1] == 0xD8;
 
-          // Validasi bahwa response benar-benar gambar PNG
-          if (bytes.length > 8 &&
-              bytes[0] == 0x89 &&
-              bytes[1] == 0x50 &&
-              bytes[2] == 0x4E &&
-              bytes[3] == 0x47) {
-            debugPrint('✅ Valid PNG map received: ${bytes.length} bytes');
-            return bytes;
-          } else {
-            // Mungkin error text dari server
-            if (bytes.isNotEmpty && bytes.length < 1000) {
-              final text = utf8.decode(bytes, allowMalformed: true);
-              debugPrint('❌ Response bukan gambar PNG (${bytes.length} bytes): $text');
-            } else {
-              debugPrint('❌ Response bukan gambar PNG: ${bytes.length} bytes');
+            if (isPng || isJpg) {
+              debugPrint('✅ Mini map berhasil diunduh');
+              return bytes;
             }
-            return null;
+
+            debugPrint('❌ Response bukan image valid');
+          } else {
+            debugPrint(
+              '❌ HTTP ${response.statusCode} - ${response.reasonPhrase}',
+            );
           }
-        } else {
-          debugPrint('❌ Map API returned HTTP ${response.statusCode}');
-          if (response.body.isNotEmpty) {
-            debugPrint('   Response body: ${response.body.substring(0, 200)}');
-          }
-          if (attempt < maxRetries) {
-            await Future.delayed(Duration(seconds: attempt * 2));
-          }
+        } catch (e) {
+          debugPrint('❌ Mini map error: $e');
+        } finally {
+          client?.close();
         }
-      } on TimeoutException {
-        debugPrint('⏱️ Map fetch timeout (attempt $attempt)');
-        if (attempt >= maxRetries) return null;
-        await Future.delayed(Duration(seconds: attempt * 2));
-      } catch (e) {
-        debugPrint('❌ Map fetch error (attempt $attempt): $e');
-        if (attempt >= maxRetries) return null;
-        await Future.delayed(Duration(seconds: attempt * 2));
+
+        await Future.delayed(const Duration(seconds: 2));
       }
     }
 
+    debugPrint('❌ Semua provider mini map gagal');
     return null;
   }
 }

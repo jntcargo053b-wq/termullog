@@ -1,29 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- PERBAIKAN: Izinkan semua traffic untuk development -->
+
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    
-    <!-- Domain untuk map services -->
+
     <domain-config cleartextTrafficPermitted="true">
-        <!-- OpenStreetMap -->
-        <domain includeSubdomains="true">openstreetmap.org</domain>
-        <domain includeSubdomains="true">staticmap.openstreetmap.de</domain>
-        
-        <!-- Google Maps -->
-        <domain includeSubdomains="true">maps.googleapis.com</domain>
-        <domain includeSubdomains="true">maps.gstatic.com</domain>
-        
-        <!-- Mapbox -->
-        <domain includeSubdomains="true">api.mapbox.com</domain>
-        
-        <!-- Nominatim (geocoding) -->
-        <domain includeSubdomains="true">nominatim.openstreetmap.org</domain>
-        
-        <!-- OpenWeatherMap -->
-        <domain includeSubdomains="true">api.openweathermap.org</domain>
+
+        <domain includeSubdomains="true">
+            staticmap.openstreetmap.de
+        </domain>
+
+        <domain includeSubdomains="true">
+            maps.locationiq.com
+        </domain>
+
     </domain-config>
+
 </network-security-config>

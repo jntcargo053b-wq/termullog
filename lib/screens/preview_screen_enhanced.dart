@@ -221,7 +221,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       debugPrint('   showMiniMap: $showMiniMap');
 
       // ============================================
-      // 4. FETCH MINI MAP (PERBAIKAN: Hapus kondisi layout)
+      // 4. FETCH MINI MAP (DENGAN FALLBACK OSM TILE)
       // ============================================
       Uint8List? mapBytes;
 
@@ -234,38 +234,51 @@ class _PreviewScreenState extends State<PreviewScreen>
       debugPrint('   layout: $layout');
       debugPrint('=' * 70);
 
-      // PERBAIKAN UTAMA: Hapus "layout == WatermarkLayout.professional"
-      // Mini map sekarang tersedia untuk SEMUA layout
+      // Tidak ada batasan layout – semua layout bisa menampilkan mini map
       if (showMiniMap && hasPosition) {
-        
         debugPrint('✅ ALL CONDITIONS MET - Starting mini map fetch...');
-        
+
         setState(() => _isMiniMapLoading = true);
         _processingStep.value = 'Mengunduh peta mini...';
 
         try {
-          debugPrint('🔄 Calling LocationWeatherService.fetchMapWithRetry...');
-          debugPrint('   Parameters: lat=${widget.latitude}, lon=${widget.longitude}');
-          
+          debugPrint('🔄 Step 1: LocationWeatherService.fetchMapWithRetry...');
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             widget.latitude!,
             widget.longitude!,
-          );
-
-          if (mapBytes != null && mapBytes.isNotEmpty) {
-            debugPrint('✅✅✅ MINI MAP SUCCESS! ${mapBytes.length} bytes ✅✅✅');
-            setState(() => _miniMapError = null);
-          } else {
-            debugPrint('❌❌❌ MINI MAP FAILED - map is null or empty ❌❌❌');
-            setState(() => _miniMapError = 'Gagal mengunduh peta');
-          }
-        } catch (e, stackTrace) {
-          debugPrint('❌❌❌ MINI MAP EXCEPTION: $e ❌❌❌');
-          debugPrint('Stack trace: $stackTrace');
-          setState(() => _miniMapError = 'Error: ${e.toString().substring(0, 50)}');
-        } finally {
-          setState(() => _isMiniMapLoading = false);
+          ).timeout(const Duration(seconds: 8));
+        } catch (e) {
+          debugPrint('⚠️ Service fetch error (timeout/exception): $e');
+          mapBytes = null;
         }
+
+        // ============================================
+        // FALLBACK: Ambil tile OpenStreetMap langsung
+        // ============================================
+        if (mapBytes == null) {
+          debugPrint('🔄 Step 2: Fallback – fetch OSM tile langsung...');
+          try {
+            mapBytes = await _fetchOsmTileBytes(
+              widget.latitude!,
+              widget.longitude!,
+              zoom: 15,
+            ).timeout(const Duration(seconds: 8));
+          } catch (e) {
+            debugPrint('❌ OSM tile fallback error: $e');
+            mapBytes = null;
+          }
+        }
+
+        // Evaluasi hasil akhir
+        if (mapBytes != null && mapBytes.isNotEmpty) {
+          debugPrint('✅✅✅ MINI MAP SUCCESS! ${mapBytes.length} bytes ✅✅✅');
+          setState(() => _miniMapError = null);
+        } else {
+          debugPrint('❌❌❌ MINI MAP FAILED (both service & fallback) ❌❌❌');
+          setState(() => _miniMapError = 'Gagal mengunduh peta');
+        }
+
+        setState(() => _isMiniMapLoading = false);
       } else {
         debugPrint('⚠️ MINI MAP SKIPPED because:');
         if (!showMiniMap) {
@@ -348,6 +361,57 @@ class _PreviewScreenState extends State<PreviewScreen>
           });
         }
       }
+    }
+  }
+
+  // ============================================
+  // FALLBACK: Direct OSM tile download
+  // ============================================
+  /// Mengambil tile peta dari OpenStreetMap (raster .png)
+  /// berdasarkan koordinat geografis dan level zoom.
+  static Future<Uint8List?> _fetchOsmTileBytes(
+    double lat,
+    double lng, {
+    int zoom = 15,
+  }) async {
+    // Konversi lat/lng ke nomor tile OSM
+    final n = pow(2, zoom).toInt();
+    final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
+    final latRad = lat * pi / 180;
+    final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
+        .toInt()
+        .clamp(0, n - 1);
+
+    // Pilih subdomain acak untuk load balancing
+    const subdomains = ['a', 'b', 'c'];
+    final sub = subdomains[tileX % 3];
+    final url = 'https://$sub.tile.openstreetmap.org/$zoom/$tileX/$tileY.png';
+
+    debugPrint('🗺️ OSM Tile URL: $url');
+
+    final client = HttpClient();
+    client.userAgent = 'TermulLogApp/1.0 (flutter)';
+    try {
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close().timeout(
+            const Duration(seconds: 8),
+          );
+      if (response.statusCode != 200) {
+        debugPrint('❌ OSM tile HTTP ${response.statusCode}: $url');
+        return null;
+      }
+      final chunks = <List<int>>[];
+      await for (final chunk in response) {
+        chunks.add(chunk);
+      }
+      final bytes = Uint8List.fromList(chunks.expand((e) => e).toList());
+      debugPrint('✅ OSM tile downloaded: ${bytes.length} bytes');
+      return bytes;
+    } catch (e) {
+      debugPrint('❌ OSM tile fetch error: $e');
+      return null;
+    } finally {
+      client.close();
     }
   }
 

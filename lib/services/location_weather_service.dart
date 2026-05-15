@@ -9,10 +9,6 @@ import 'package:http/http.dart' as http;
 import 'package:geocoding/geocoding.dart';
 import 'package:image/image.dart' as img;
 
-// ============================================================
-// LocationWeatherResult
-// ============================================================
-
 class LocationWeatherResult {
   final String address;
   final String weather;
@@ -24,12 +20,8 @@ class LocationWeatherResult {
   });
 }
 
-// ============================================================
-// GeoHash untuk caching pintar
-// ============================================================
-
 class GeoHash {
-  static const int _precision = 4; // 4 desimal ≈ 10-20 meter
+  static const int _precision = 4;
   
   static String encode(double lat, double lon) {
     final latRounded = (lat * pow(10, _precision)).round() / pow(10, _precision);
@@ -38,7 +30,7 @@ class GeoHash {
   }
   
   static double distance(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371000; // Radius bumi dalam meter
+    const R = 6371000;
     final dLat = (lat2 - lat1) * pi / 180;
     final dLon = (lon2 - lon1) * pi / 180;
     final a = sin(dLat/2) * sin(dLat/2) +
@@ -47,10 +39,6 @@ class GeoHash {
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 }
-
-// ============================================================
-// Cache Entry
-// ============================================================
 
 class _CacheEntry {
   final String address;
@@ -67,29 +55,20 @@ class _CacheEntry {
   });
 }
 
-// ============================================================
-// Main Service
-// ============================================================
-
 class LocationWeatherService {
   LocationWeatherService._();
   
-  // Reusable HTTP client
   static final http.Client _client = http.Client();
   
-  // Cache untuk alamat
   static final Map<String, _CacheEntry> _addressCache = {};
   static const int _cacheMaxSize = 100;
   static const double _cacheRadiusMeters = 50.0;
   
-  // Cache untuk static map
   static final Map<String, Uint8List> _mapCache = {};
   static const int _mapCacheMaxSize = 50;
   
-  // Rate limiting untuk Nominatim
   static DateTime _lastNominatimRequest = DateTime.now().subtract(const Duration(seconds: 2));
   
-  // Event stream untuk progress
   static final _progressController = StreamController<String>.broadcast();
   static Stream<String> get onProgress => _progressController.stream;
   
@@ -97,16 +76,12 @@ class LocationWeatherService {
     _progressController.add(message);
   }
   
-  // Close client
   static void close() {
     _client.close();
     _progressController.close();
   }
 
-  // ============================================================
-  // Main Method
-  // ============================================================
-
+  // ────────────────────────────────────────────────────────
   static Future<LocationWeatherResult> fetchFromPosition(Position position) async {
     final lat = position.latitude;
     final lon = position.longitude;
@@ -115,13 +90,9 @@ class LocationWeatherService {
     
     _emitProgress('📍 Mencari lokasi...');
     
-    // Cek cache dengan radius 50 meter
     final cached = _findNearbyCache(lat, lon);
-    
     if (cached != null) {
       _emitProgress('📦 Menggunakan cache lokasi terdekat (${cached.distanceMeters.toStringAsFixed(0)}m)');
-      debugPrint('Address from nearby cache: ${cached.address} (${cached.distanceMeters.toStringAsFixed(0)}m away)');
-      
       final weather = await _fetchWeather(latStr, lonStr);
       return LocationWeatherResult(
         address: cached.address,
@@ -130,7 +101,6 @@ class LocationWeatherService {
       );
     }
 
-    // ─── PARALLEL REQUEST: Address + Weather ──────────────────────────────
     final results = await Future.wait([
       _fetchAddressWithProviders(lat, lon, latStr, lonStr),
       _fetchWeather(latStr, lonStr),
@@ -138,36 +108,25 @@ class LocationWeatherService {
 
     String finalAddress = results[0];
     String weather = results[1];
-    String rawAddress = finalAddress;
 
-    // Ultimate fallback: format DMS jika alamat kosong
     if (finalAddress.isEmpty) {
       final dmsLat = _formatDMS(lat, true);
       final dmsLon = _formatDMS(lon, false);
       finalAddress = '📍 $dmsLat, $dmsLon';
-      rawAddress = finalAddress;
-      _emitProgress('🌐 Menggunakan koordinat DMS');
     } else {
-      // Simpan ke cache
       if (_addressCache.length >= _cacheMaxSize) {
         _addressCache.remove(_addressCache.keys.first);
       }
-      final cacheKey = GeoHash.encode(lat, lon);
-      _addressCache[cacheKey] = _CacheEntry(
+      _addressCache[GeoHash.encode(lat, lon)] = _CacheEntry(
         address: finalAddress,
         lat: lat,
         lon: lon,
         timestamp: DateTime.now(),
       );
-      _emitProgress('✅ Alamat ditemukan');
     }
 
-    return LocationWeatherResult(address: finalAddress, weather: weather, rawAddress: rawAddress);
+    return LocationWeatherResult(address: finalAddress, weather: weather, rawAddress: finalAddress);
   }
-
-  // ============================================================
-  // Cache Helper
-  // ============================================================
 
   static _CacheEntry? _findNearbyCache(double lat, double lon) {
     for (var entry in _addressCache.values) {
@@ -180,163 +139,102 @@ class LocationWeatherService {
     return null;
   }
 
-  // ============================================================
-  // Format DMS (Degree, Minute, Second)
-  // ============================================================
-
   static String _formatDMS(double coord, bool isLat) {
     final degrees = coord.abs().floor();
     final minutes = ((coord.abs() - degrees) * 60).floor();
     final seconds = ((coord.abs() - degrees - minutes / 60) * 3600).toStringAsFixed(1);
-    final direction = isLat 
-        ? (coord >= 0 ? 'N' : 'S')
-        : (coord >= 0 ? 'E' : 'W');
+    final direction = isLat ? (coord >= 0 ? 'N' : 'S') : (coord >= 0 ? 'E' : 'W');
     return '${degrees}°${minutes}\'${seconds}" $direction';
   }
 
-  // ============================================================
-  // Fetch Address dengan Multiple Providers
-  // ============================================================
-
+  // ────────────────────────────────────────────────────────
   static Future<String> _fetchAddressWithProviders(
-    double lat, double lon, String latStr, String lonStr
-  ) async {
-    String address = '';
-
+    double lat, double lon, String latStr, String lonStr) async {
+    
+    // Prioritas 1: Geocoding package (biasanya lebih lengkap di Android/iOS)
     _emitProgress('🗺️ Mengambil data dari Geocoding...');
-    address = await _fetchFromGeocoding(lat, lon);
-    if (address.isNotEmpty) return address;
+    String address = await _fetchFromGeocoding(lat, lon);
+    if (address.isNotEmpty) {
+      debugPrint('✅ Address from Geocoding: $address');
+      return address;
+    }
 
-    _emitProgress('📡 Mencoba Photon API...');
-    address = await _fetchFromPhoton(latStr, lonStr);
-    if (address.isNotEmpty) return address;
-
+    // Prioritas 2: Nominatim dengan parsing detail
     _emitProgress('🌍 Mencoba Nominatim...');
     address = await _fetchFromNominatim(latStr, lonStr);
-    if (address.isNotEmpty) return address;
+    if (address.isNotEmpty) {
+      debugPrint('✅ Address from Nominatim: $address');
+      return address;
+    }
 
-    return address;
+    // Prioritas 3: Photon (sebagai fallback)
+    _emitProgress('📡 Mencoba Photon API...');
+    address = await _fetchFromPhoton(latStr, lonStr);
+    if (address.isNotEmpty) {
+      debugPrint('✅ Address from Photon: $address');
+      return address;
+    }
+
+    return '';
   }
 
-  // ============================================================
-  // PROVIDER 1: Geocoding Package
-  // ============================================================
-
+  // ────────────────────────────────────────────────────────
   static Future<String> _fetchFromGeocoding(double lat, double lon) async {
     try {
-      final placemarks = await placemarkFromCoordinates(lat, lon).timeout(
-        const Duration(seconds: 5),
-      );
+      final placemarks = await placemarkFromCoordinates(lat, lon)
+          .timeout(const Duration(seconds: 5));
       
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
-        final parts = <String>[];
         
+        // Log lengkap untuk debugging
+        debugPrint('Geocoding result: street=${p.street}, subLocality=${p.subLocality}, '
+            'locality=${p.locality}, adminArea=${p.administrativeArea}, '
+            'subAdminArea=${p.subAdministrativeArea}, postalCode=${p.postalCode}');
+        
+        final parts = <String>[];
         if (p.street?.isNotEmpty == true) parts.add(p.street!);
         if (p.subLocality?.isNotEmpty == true) parts.add(p.subLocality!);
         if (p.subAdministrativeArea?.isNotEmpty == true) parts.add(p.subAdministrativeArea!);
         if (p.locality?.isNotEmpty == true) parts.add(p.locality!);
-        if (p.administrativeArea?.isNotEmpty == true && p.locality != p.administrativeArea) {
+        if (p.administrativeArea?.isNotEmpty == true && p.locality != p.administrativeArea)
           parts.add(p.administrativeArea!);
-        }
         if (p.postalCode?.isNotEmpty == true) parts.add(p.postalCode!);
         
         if (parts.isNotEmpty) {
-          final address = parts.join(', ');
-          debugPrint('Address from Geocoding: $address');
-          return address;
+          return parts.join(', ');
         }
       }
     } on TimeoutException {
       debugPrint('Geocoding timeout');
-    } on SocketException {
-      debugPrint('Geocoding network error');
     } catch (e) {
       debugPrint('Geocoding error: $e');
     }
     return '';
   }
 
-  // ============================================================
-  // PROVIDER 2: Photon
-  // ============================================================
-
-  static Future<String> _fetchFromPhoton(String latStr, String lonStr) async {
-    try {
-      final uri = Uri.parse(
-        'https://photon.komoot.io/reverse'
-        '?lat=$latStr&lon=$lonStr',
-      );
-      final res = await _client.get(uri).timeout(const Duration(seconds: 5));
-      
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final features = data['features'] as List?;
-        
-        if (features != null && features.isNotEmpty) {
-          final properties = features[0]['properties'] as Map<String, dynamic>?;
-          if (properties != null) {
-            final parts = <String>[];
-            
-            final street = properties['street'] as String?;
-            final city = properties['city'] as String?;
-            final state = properties['state'] as String?;
-            final postcode = properties['postcode'] as String?;
-            
-            if (street?.isNotEmpty == true) parts.add(street!);
-            if (city?.isNotEmpty == true) parts.add(city!);
-            if (state?.isNotEmpty == true) parts.add(state!);
-            if (postcode?.isNotEmpty == true) parts.add(postcode!);
-            
-            if (parts.isNotEmpty) {
-              final address = parts.join(', ');
-              debugPrint('Address from Photon: $address');
-              return address;
-            }
-          }
-        }
-      }
-    } on TimeoutException {
-      debugPrint('Photon timeout');
-    } on SocketException {
-      debugPrint('Photon network error');
-    } catch (e) {
-      debugPrint('Photon error: $e');
-    }
-    return '';
-  }
-
-  // ============================================================
-  // PROVIDER 3: Nominatim
-  // ============================================================
-
+  // ────────────────────────────────────────────────────────
   static Future<String> _fetchFromNominatim(String latStr, String lonStr) async {
-    // Rate limit compliance: minimum 1 detik antar request
     final now = DateTime.now();
     final timeSinceLastRequest = now.difference(_lastNominatimRequest);
     if (timeSinceLastRequest.inMilliseconds < 1000) {
-      final waitTime = Duration(milliseconds: 1000 - timeSinceLastRequest.inMilliseconds);
-      debugPrint('Nominatim rate limit: waiting ${waitTime.inMilliseconds}ms');
-      await Future.delayed(waitTime);
+      await Future.delayed(
+        Duration(milliseconds: 1000 - timeSinceLastRequest.inMilliseconds));
     }
     
     try {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse'
-        '?format=json&lat=$latStr&lon=$lonStr&zoom=18&addressdetails=1'
-        '&accept-language=id', // Bahasa Indonesia
-      );
-      final res = await _client.get(
-        uri,
-        headers: {'User-Agent': 'TermulLog/1.0'},
-      ).timeout(const Duration(seconds: 5));
-
+        '?format=json&lat=$latStr&lon=$lonStr&zoom=18&addressdetails=1&accept-language=id');
+      
+      final res = await _client.get(uri, headers: {'User-Agent': 'TermulLog/1.0'})
+          .timeout(const Duration(seconds: 5));
       _lastNominatimRequest = DateTime.now();
       
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        // PERBAIKAN: parsing address objek untuk mendapatkan nama jalan
         final addressObj = data['address'] as Map<String, dynamic>?;
+        
         if (addressObj != null) {
           final parts = <String>[];
           final road = addressObj['road'] as String?;
@@ -349,207 +247,149 @@ class LocationWeatherService {
           if (city?.isNotEmpty == true) parts.add(city!);
           if (state?.isNotEmpty == true) parts.add(state!);
           
-          if (parts.isNotEmpty) {
-            final address = parts.join(', ');
-            debugPrint('Address from Nominatim (detail): $address');
-            return address;
-          }
+          if (parts.isNotEmpty) return parts.join(', ');
         }
+        
         // Fallback ke display_name
         final displayName = data['display_name'] as String?;
         if (displayName != null && displayName.isNotEmpty) {
           final parts = displayName.split(',').take(4).toList();
-          final address = parts.join(', ');
-          debugPrint('Address from Nominatim (display_name): $address');
-          return address;
+          return parts.join(', ');
         }
       }
     } on TimeoutException {
       debugPrint('Nominatim timeout');
-    } on SocketException {
-      debugPrint('Nominatim network error');
     } catch (e) {
       debugPrint('Nominatim error: $e');
     }
     return '';
   }
 
-  // ============================================================
-  // FETCH WEATHER
-  // ============================================================
-
-  static Future<String> _fetchWeather(String latStr, String lonStr) async {
-    String weather = '';
-    
+  // ────────────────────────────────────────────────────────
+  static Future<String> _fetchFromPhoton(String latStr, String lonStr) async {
     try {
-      final wUri = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$latStr&longitude=$lonStr'
-        '&current=temperature_2m,weather_code&timezone=auto',
-      );
-      final wRes = await _client.get(wUri).timeout(const Duration(seconds: 6));
+      final uri = Uri.parse('https://photon.komoot.io/reverse?lat=$latStr&lon=$lonStr');
+      final res = await _client.get(uri).timeout(const Duration(seconds: 5));
       
-      if (wRes.statusCode == 200) {
-        final wData = jsonDecode(wRes.body) as Map<String, dynamic>;
-        final current = wData['current'] as Map<String, dynamic>?;
-        if (current != null) {
-          final temp = (current['temperature_2m'] as num?)?.toStringAsFixed(0) ?? '--';
-          final code = (current['weather_code'] as num?)?.toInt() ?? 0;
-          weather = '${_wmoDesc(code)} ${temp}°C';
-          debugPrint('Weather: $weather');
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final features = data['features'] as List?;
+        if (features != null && features.isNotEmpty) {
+          final props = features[0]['properties'] as Map<String, dynamic>?;
+          if (props != null) {
+            final parts = <String>[];
+            final street = props['street'] as String?;
+            final city = props['city'] as String?;
+            final state = props['state'] as String?;
+            if (street?.isNotEmpty == true) parts.add(street!);
+            if (city?.isNotEmpty == true) parts.add(city!);
+            if (state?.isNotEmpty == true) parts.add(state!);
+            if (parts.isNotEmpty) return parts.join(', ');
+          }
         }
       }
     } on TimeoutException {
-      debugPrint('Weather API timeout');
-    } on SocketException {
-      debugPrint('Weather API network error');
+      debugPrint('Photon timeout');
+    } catch (e) {
+      debugPrint('Photon error: $e');
+    }
+    return '';
+  }
+
+  // ────────────────────────────────────────────────────────
+  static Future<String> _fetchWeather(String latStr, String lonStr) async {
+    try {
+      final uri = Uri.parse(
+        'https://api.open-meteo.com/v1/forecast'
+        '?latitude=$latStr&longitude=$lonStr'
+        '&current=temperature_2m,weather_code&timezone=auto');
+      final res = await _client.get(uri).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final current = data['current'] as Map<String, dynamic>?;
+        if (current != null) {
+          final temp = (current['temperature_2m'] as num?)?.toStringAsFixed(0) ?? '--';
+          final code = (current['weather_code'] as num?)?.toInt() ?? 0;
+          return '${_wmoDesc(code)} $temp°C';
+        }
+      }
+    } on TimeoutException {
+      debugPrint('Weather timeout');
     } catch (e) {
       debugPrint('Weather error: $e');
     }
-    
-    return weather;
+    return '';
   }
 
-  // ============================================================
-  // WEATHER DESCRIPTION
-  // ============================================================
-
   static String _wmoDesc(int c) {
-    if (c == 0) return '☀️';
-    if (c <= 3) return '⛅';
-    if (c <= 49) return '🌫️';
-    if (c <= 59) return '🌦️';
-    if (c <= 67) return '🌧️';
-    if (c <= 77) return '❄️';
-    if (c <= 82) return '🌧️☔';
-    if (c <= 86) return '❄️🌨️';
-    if (c == 95) return '⚡';
+    if (c == 0) return '☀️ Cerah';
+    if (c <= 3) return '⛅ Berawan';
+    if (c <= 49) return '🌫️ Kabut';
+    if (c <= 59) return '🌦️ Gerimis';
+    if (c <= 67) return '🌧️ Hujan';
+    if (c <= 77) return '❄️ Salju';
+    if (c <= 82) return '☔ Hujan lebat';
+    if (c <= 86) return '🌨️ Badai salju';
+    if (c == 95) return '⚡ Badai petir';
     return '🌡️';
   }
 
-  // ============================================================
-  // OPENSTREETMAP STATIC MAP (GRATIS, TANPA API KEY)
-  // ============================================================
-
-  /// Fetch static map dari OpenStreetMap (GRATIS, TANPA API KEY)
+  // ────────────────────────────────────────────────────────
   static Future<Uint8List?> fetchOSMStaticMap(double lat, double lon) async {
     final cacheKey = '${lat.toStringAsFixed(3)},${lon.toStringAsFixed(3)}';
-    
-    // Cek cache
     if (_mapCache.containsKey(cacheKey)) {
-      debugPrint('Static map from cache: $cacheKey');
+      debugPrint('Static map from cache');
       return _mapCache[cacheKey];
     }
     
     try {
-      // PERBAIKAN: gunakan marker yang valid 'ol-marker' bukan 'lightblue1'
       final url = Uri.parse(
         'https://staticmap.openstreetmap.de/staticmap.php'
         '?center=$lat,$lon'
         '&zoom=16'
         '&size=400x250'
         '&maptype=mapnik'
-        '&markers=$lat,$lon,ol-marker'    // ← diperbaiki
-      );
+        '&markers=$lat,$lon,ol-marker');
       
       final response = await _client.get(url).timeout(const Duration(seconds: 8));
-      
       if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
         final bytes = Uint8List.fromList(response.bodyBytes);
-        // Validasi header PNG
-        if (bytes.length > 8 &&
-            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
-          debugPrint('OSM Static Map fetched: ${bytes.length} bytes');
-          // Simpan ke cache
+        if (bytes.length > 8 && bytes[0] == 0x89 && bytes[1] == 0x50) {
           if (_mapCache.length >= _mapCacheMaxSize) {
             _mapCache.remove(_mapCache.keys.first);
           }
           _mapCache[cacheKey] = bytes;
+          debugPrint('OSM Static Map fetched: ${bytes.length} bytes');
           return bytes;
         } else {
-          debugPrint('OSM Static Map: response bukan PNG valid');
+          debugPrint('OSM Static Map: response bukan PNG');
         }
-      } else {
-        debugPrint('OSM Static Map error: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('OSM Static Map exception: $e');
+      debugPrint('OSM Static Map error: $e');
     }
     return null;
   }
 
-  /// Fetch static map dengan ukuran kustom
-  static Future<Uint8List?> fetchOSMStaticMapCustom(
-    double lat, double lon, int width, int height, int zoom
-  ) async {
-    final cacheKey = '${lat.toStringAsFixed(3)},${lon.toStringAsFixed(3)}_${width}x${height}_z$zoom';
-    
-    // Cek cache
-    if (_mapCache.containsKey(cacheKey)) {
-      return _mapCache[cacheKey];
-    }
-    
-    try {
-      // PERBAIKAN: marker valid
-      final url = Uri.parse(
-        'https://staticmap.openstreetmap.de/staticmap.php'
-        '?center=$lat,$lon'
-        '&zoom=$zoom'
-        '&size=${width}x$height'
-        '&maptype=mapnik'
-        '&markers=$lat,$lon,ol-marker'    // ← diperbaiki
-      );
-      
-      final response = await _client.get(url).timeout(const Duration(seconds: 8));
-      
-      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-        final bytes = Uint8List.fromList(response.bodyBytes);
-        if (bytes.length > 8 &&
-            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
-          if (_mapCache.length >= _mapCacheMaxSize) {
-            _mapCache.remove(_mapCache.keys.first);
-          }
-          _mapCache[cacheKey] = bytes;
-          return bytes;
-        }
-      }
-    } catch (e) {
-      debugPrint('OSM Static Map custom error: $e');
-    }
-    return null;
-  }
-
-  /// Fetch mini map dengan retry mechanism + fallback OSM tile
   static Future<Uint8List?> fetchMapWithRetry(double lat, double lon, {int maxRetries = 2}) async {
-    // Coba static map dulu
+    // Coba static map
     for (int i = 0; i < maxRetries; i++) {
-      try {
-        final result = await fetchOSMStaticMap(lat, lon);
-        if (result != null) return result;
-        if (i < maxRetries - 1) {
-          await Future.delayed(Duration(seconds: i + 1));
-        }
-      } catch (e) {
-        debugPrint('Map fetch retry $i error: $e');
-      }
+      final result = await fetchOSMStaticMap(lat, lon);
+      if (result != null) return result;
+      if (i < maxRetries - 1) await Future.delayed(Duration(seconds: i + 1));
     }
-    
-    // Fallback: OSM tile langsung
+    // Fallback OSM tile
     debugPrint('Static map gagal, mencoba OSM tile...');
     return await _fetchOsmTileBytes(lat, lon, zoom: 15);
   }
 
-  // ============================================================
-  // FALLBACK: Direct OSM tile download
-  // ============================================================
   static Future<Uint8List?> _fetchOsmTileBytes(double lat, double lng, {int zoom = 15}) async {
     try {
       final n = pow(2, zoom).toInt();
       final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
       final latRad = lat * pi / 180;
       final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
-          .toInt()
-          .clamp(0, n - 1);
+          .toInt().clamp(0, n - 1);
 
       const subdomains = ['a', 'b', 'c'];
       final sub = subdomains[tileX % 3];

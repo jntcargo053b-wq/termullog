@@ -99,13 +99,13 @@ class LayoutCinematic extends WatermarkLayoutBase {
 
           // Pastikan koordinat tidak keluar gambar
           if (mapX >= 0 && mapY >= 0 && mapX + mapWidth <= src.width && mapY + mapHeight <= src.height) {
-            // PERBAIKAN: gunakan copyInto yang menerima bool untuk blend
-            img.copyInto(
+            // Gunakan compositeImage (tersedia di package image 4.x)
+            img.compositeImage(
               src,
               resized,
               dstX: mapX,
               dstY: mapY,
-              blend: false,
+              blend: img.BlendMode.alpha,
             );
           }
         } catch (_) {

@@ -18,7 +18,7 @@ import '../services/location_weather_service.dart';
 import '../services/gps_lock_manager.dart';
 import '../services/gps_stabilizer.dart';
 import '../services/settings_cache.dart';
-import 'preview_screen_enhanced.dart';
+import 'preview_screen.dart';   // perbaikan: bukan preview_screen_enhanced.dart
 import 'settings_screen.dart';
 
 class CameraConstants {
@@ -192,12 +192,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
+
+    // PERBAIKAN: minta permission runtime di awal
+    _requestAllPermissions();
+
     _initCamera();
     _preWarmGps();
     _startGpsTracking();
     _startGpsWatchdog();
     _cleanOldTempFiles();
     _showBatteryOptimizationDialog();
+  }
+
+  Future<void> _requestAllPermissions() async {
+    // Hanya untuk Android, iOS diatur di Info.plist
+    if (!Platform.isAndroid) return;
+
+    await Permission.camera.request();
+    await Permission.location.request();
+
+    // Android 13+ menggunakan photos, ≤12 menggunakan storage
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    if (androidInfo.version.sdkInt >= 33) {
+      await Permission.photos.request();
+    } else {
+      await Permission.storage.request();
+    }
   }
 
   @override
@@ -735,6 +755,26 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     Overlay.of(context).insert(_focusOverlay!);
   }
 
+  // PERBAIKAN: Memastikan kamera siap sebelum takePicture
+  Future<void> ensureCameraReady() async {
+    if (_controller == null || _isDisposed) return;
+
+    // Jika controller tidak terinisialisasi, coba inisialisasi ulang
+    if (!_controller!.value.isInitialized) {
+      debugPrint('⚠️ Camera lost, reinitializing');
+      try {
+        await _controller!.initialize();
+        await _controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
+        await _controller!.setFocusMode(FocusMode.auto);
+        await _controller!.setExposureMode(ExposureMode.auto);
+      } catch (e) {
+        debugPrint('Reinit camera error: $e');
+        _cameraError = e.toString();
+        if (mounted) setState(() => _isInitialized = false);
+      }
+    }
+  }
+
   Future<void> _initCamera() async {
     if (_isReinitializingCamera || _isDisposed) return;
     if (CameraRegistry.cameras.isEmpty) {
@@ -750,7 +790,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final camera = CameraRegistry.cameras.first;
       final controller = CameraController(
         camera,
-        ResolutionPreset.high,
+        ResolutionPreset.veryHigh,   // PERBAIKAN: lebih hemat memori
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
@@ -894,16 +934,24 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   // ------------------------------------------------------------
-  // _ambilFoto (sudah diperbaiki)
+  // _ambilFoto (dengan ensureCameraReady)
   // ------------------------------------------------------------
   Future<void> _ambilFoto() async {
     if (!_acquireLock()) return;
     try {
       final ctrl = _controller;
-      if (ctrl == null || !ctrl.value.isInitialized) {
+      if (ctrl == null) {
         _showCameraErrorDialog();
         return;
       }
+
+      // PERBAIKAN: Pastikan kamera siap sebelum mengambil foto
+      await ensureCameraReady();
+      if (!ctrl.value.isInitialized) {
+        _showCameraErrorDialog();
+        return;
+      }
+
       if (_isTakingPhoto || ctrl.value.isTakingPicture) return;
 
       if (mounted) setState(() => _isTakingPhoto = true);

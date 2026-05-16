@@ -3,43 +3,48 @@ import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
-/// Layout Cinematic — map strip di atas, teks di bawah (atau sebaliknya jika isTop).
+/// Layout "Cinematic / Optic Narrative"
 ///
-/// Struktur panel (isBottom / watermarkPosition == 'bottom'):
-///   ┌─────────────────────────────┐
-///   │  [MAP STRIP — full width]   │  mapStripH px
-///   ├─────────────────────────────┤
-///   │  HH : mm : ss    DD MMM YY  │  jam + tanggal satu baris
-///   │  ─────────────────────────  │  divider biru
-///   │  lat°N   lon°E              │  koordinat DMS
-///   │  ACCURACY ±X m              │  (opsional)
-///   │  Alamat baris 1             │  auto-wrap tidak dibatasi
-///   │  Alamat baris 2             │
-///   │  …                          │
-///   │  Cuaca                      │  (opsional)
-///   └─────────────────────────────┘
+/// Mengikuti desain referensi GPS Timestamp (updated_gps_timestamp_view):
+///
+///   ┌─────────────────────────────────┐  ← panel bg rgba(0,0,0,0.82), border putih 1px
+///   │  MAP STRIP  (full-width, 110px) │  grayscale + blue-tint, crosshair tengah
+///   ├─────────────────────────────────┤  separator putih 1px opacity-15
+///   │  🗓 Thu, 19 Jun 2025            │  ← baris tanggal  (JetBrains-style)
+///   │  🕐 10:07:07.829                │  ← baris jam
+///   │  ────────────────────           │  divider putih opacity-10
+///   │  Stall No 05, Galta Gate, …    │  ← alamat full, auto-wrap, putih terang
+///   │  26°54'16.2"N   75°48'51.3"E   │  ← koordinat DMS  (lebih kecil)
+///   │  ACCURACY ±X m                  │  (opsional)
+///   │  🌤 Cuaca                       │  (opsional)
+///   └─────────────────────────────────┘
 class LayoutCinematic extends WatermarkLayoutBase {
   @override
   String get name => 'Cinematic';
 
-  // ── Konstanta layout ────────────────────────────────────────────────────
-  static const int padX       = 28;
-  static const int padY       = 14;
-  static const int lineHLg    = 32;   // jam (arial24)
-  static const int lineHSm    = 22;   // semua baris arial14
-  static const int dividerGap = 8;    // jarak di atas & bawah garis biru
+  // ── Dimensi panel ───────────────────────────────────────────────────────
   static const int mapStripH  = 110;  // tinggi strip map
-  static const int mapBorder  = 2;
-  static const int recPillW   = 72;
-  static const int recPillH   = 20;
+  static const int padX       = 20;   // margin kiri/kanan
+  static const int padYInner  = 14;   // padding atas/bawah area teks
+  static const int lineHLg    = 28;   // baris tanggal / jam (arial24)
+  static const int lineHSm    = 20;   // baris metadata (arial14)
+  static const int divGap     = 6;    // jarak atas-bawah divider
 
-  // ── Palet ───────────────────────────────────────────────────────────────
-  static final img.Color cBlue     = img.ColorRgba8(30,  144, 255, 255);
-  static final img.Color cWhite    = img.ColorRgba8(255, 255, 255, 255);
-  static final img.Color cOffWhite = img.ColorRgba8(215, 215, 220, 255);
-  static final img.Color cGrey     = img.ColorRgba8(170, 170, 175, 220);
-  static final img.Color cRed      = img.ColorRgba8(255,  50,  50, 255);
-  static final img.Color cPanelBg  = img.ColorRgba8( 18,  18,  20, 215);
+  // ── Palet "Optic Narrative" ─────────────────────────────────────────────
+  // Panel BG  = #131313 @ 82% → blend alpha 209
+  static const int _bgR = 19, _bgG = 19, _bgB = 19, _bgA = 209;
+  // Separator = white @ 15%
+  static const int _sepA = 38;
+  // Divider   = white @ 10%
+  static const int _divA = 25;
+
+  static final img.Color cWhite    = img.ColorRgba8(229, 226, 225, 255); // on-surface
+  static final img.Color cDate     = img.ColorRgba8(198, 198, 199, 255); // secondary-fixed-dim
+  static final img.Color cAddr     = img.ColorRgba8(229, 226, 225, 230); // on-surface sedikit redup
+  static final img.Color cMeta     = img.ColorRgba8(165, 165, 168, 200); // redup
+  static final img.Color cAccent   = img.ColorRgba8(255, 180, 168, 255); // primary (#ffb4a8)
+  static final img.Color cRec      = img.ColorRgba8(190,   0,   0, 255); // primary-container
+  static final img.Color cCross    = img.ColorRgba8(255, 180, 168, 220); // crosshair
 
   @override
   Uint8List apply({
@@ -60,258 +65,278 @@ class LayoutCinematic extends WatermarkLayoutBase {
     final bool isTop  = watermarkPosition == 'top';
     final bool hasMap = showMiniMap && mapBytes != null && mapBytes.isNotEmpty;
 
-    // ── Hitung baris alamat (tidak dibatasi) ─────────────────────────────
+    // ── Siapkan baris alamat (tidak dibatasi) ───────────────────────────
     final bool showAddr = address.isNotEmpty &&
         address != 'Tidak ada lokasi' &&
         !address.startsWith('GPS:');
-    final int textW = src.width - padX * 2;
-    final List<String> addrLines = showAddr ? _wrapText(address, textW) : [];
+    final int textAreaW = src.width - padX * 2;
+    final List<String> addrLines =
+        showAddr ? _wrap(address, textAreaW) : const [];
 
-    // ── Hitung tinggi area teks ──────────────────────────────────────────
-    // jam+tanggal (satu baris arial24 + sedikit serif arial14 di bawah),
-    // divider, koordinat, accuracy, alamat, cuaca
-    int textH = padY
-        + lineHLg                        // jam & tanggal sejajar
-        + dividerGap + 2 + dividerGap   // divider
-        + (hasPosition ? lineHSm : 0)   // koordinat DMS
-        + (hasPosition && showAccuracy && acc != null ? lineHSm : 0)
+    // ── Hitung tinggi area teks ─────────────────────────────────────────
+    //   tanggal + jam + divider + alamat[] + koordinat + accuracy + cuaca + paddings
+    int textH = padYInner
+        + lineHLg             // tanggal
+        + lineHLg             // jam
+        + divGap + 1 + divGap // divider
         + addrLines.length * lineHSm
+        + (hasPosition ? lineHSm : 0)
+        + (hasPosition && showAccuracy && acc != null ? lineHSm : 0)
         + (showWeather && weather.isNotEmpty ? lineHSm : 0)
-        + padY;
+        + padYInner;
 
-    final int mapH   = hasMap ? mapStripH + mapBorder * 2 : 0;
-    final int panelH = mapH + textH;
+    final int stripH  = hasMap ? mapStripH + 1 : 0; // +1 px separator
+    final int panelH  = stripH + textH;
+    final int panelY0 = isTop ? 0 : (src.height - panelH).clamp(0, src.height);
+    final int panelY1 = (panelY0 + panelH).clamp(0, src.height);
 
-    // ── Posisi panel ─────────────────────────────────────────────────────
-    final int panelY = isTop ? 0 : src.height - panelH;
+    // ── 1. Panel background solid ───────────────────────────────────────
+    _blendRect(src, panelY0, panelY1);
 
-    // ── 1. Panel background solid ────────────────────────────────────────
-    _fillPanel(src, panelY, panelH);
+    // ── 2. Border atas/bawah panel (white 15%) ──────────────────────────
+    _hline(src, panelY0, _sepA);           // garis atas panel
+    _hline(src, panelY1 - 1, _sepA);      // garis bawah panel
 
-    // ── 2. Gradient transisi ke foto (sisi panel yang menempel foto) ─────
-    _applyEdgeGradient(src, panelY, panelH, isTop);
-
-    // ── 3. Map strip ─────────────────────────────────────────────────────
-    int textY; // y awal teks
+    // ── 3. Map strip ────────────────────────────────────────────────────
+    int textY0 = panelY0;
     if (hasMap) {
-      final int mapY = isTop ? panelY : panelY;          // map paling atas panel
-      _drawMapStrip(src, mapBytes!, mapY, mapStripH);
-      textY = isTop ? panelY + mapH : panelY + mapH;
-    } else {
-      textY = panelY;
+      final int my0 = panelY0;
+      final int my1 = (panelY0 + mapStripH).clamp(0, src.height);
+      _drawMap(src, mapBytes!, my0, my1);
+      // separator tipis bawah map
+      _hline(src, my1, _sepA);
+      textY0 = my1 + 1;
     }
 
-    // ── 4. Jam & Tanggal — satu baris ───────────────────────────────────
-    int cy = textY + padY;
+    // ── 4. Teks ─────────────────────────────────────────────────────────
+    int cy = textY0 + padYInner;
 
-    final String timeStr = DateFormat('HH : mm : ss').format(timestamp);
-    final String dateStr = DateFormat('EEE, dd MMM yyyy').format(timestamp).toUpperCase();
-
-    _drawText(src, timeStr, img.arial24, padX, cy, cWhite, shadow: 2);
-
-    // Tanggal di kanan, vertikal center terhadap jam
-    final int dateX = src.width - padX - _estimateTextWidth(dateStr, img.arial14);
-    final int dateY = cy + (lineHLg - lineHSm) ~/ 2 + 4;
-    _drawText(src, dateStr, img.arial14, dateX.clamp(padX, src.width - padX), dateY, cBlue, shadow: 1);
+    // Tanggal
+    _txt(src, DateFormat('EEE, dd MMM yyyy').format(timestamp),
+        img.arial24, padX, cy, cDate, sh: 1);
     cy += lineHLg;
 
-    // ── 5. Divider biru ──────────────────────────────────────────────────
-    cy += dividerGap;
-    img.fillRect(src, x1: padX, y1: cy, x2: src.width - padX, y2: cy + 2, color: cBlue);
-    cy += 2 + dividerGap;
+    // Jam
+    _txt(src, DateFormat('HH:mm:ss').format(timestamp),
+        img.arial24, padX, cy, cWhite, sh: 1);
+    cy += lineHLg;
 
-    // ── 6. Koordinat DMS ─────────────────────────────────────────────────
+    // REC pill: pojok kanan sejajar tanggal-jam
+    final int recPillY = textY0 + padYInner + (lineHLg * 2 - 20) ~/ 2;
+    _drawRec(src, recPillY);
+
+    // Divider putih tipis
+    cy += divGap;
+    _hlineRange(src, cy, padX, src.width - padX, _divA);
+    cy += 1 + divGap;
+
+    // Alamat (prioritas, warna terang)
+    for (final line in addrLines) {
+      _txt(src, line, img.arial14, padX, cy, cAddr, sh: 1);
+      cy += lineHSm;
+    }
+
+    // Koordinat DMS
     if (hasPosition && lat != null && lon != null) {
-      final latDms = _toDMS(lat.abs(), lat >= 0 ? 'N' : 'S');
-      final lonDms = _toDMS(lon.abs(), lon >= 0 ? 'E' : 'W');
-      _drawText(src, '$latDms   $lonDms', img.arial14, padX, cy, cOffWhite, shadow: 1);
+      final String coord =
+          '${_dms(lat.abs(), lat >= 0 ? 'N' : 'S')}   '
+          '${_dms(lon.abs(), lon >= 0 ? 'E' : 'W')}';
+      _txt(src, coord, img.arial14, padX, cy, cMeta, sh: 1);
       cy += lineHSm;
 
       if (showAccuracy && acc != null) {
-        _drawText(src, 'ACCURACY  ±${acc.toStringAsFixed(1)} m',
-            img.arial14, padX, cy, cGrey, shadow: 1);
+        _txt(src, 'ACCURACY  \u00b1${acc.toStringAsFixed(1)} m',
+            img.arial14, padX, cy, cMeta, sh: 1);
         cy += lineHSm;
       }
     }
 
-    // ── 7. Alamat (semua baris, auto-expand) ─────────────────────────────
-    for (final line in addrLines) {
-      _drawText(src, line, img.arial14, padX, cy, cGrey, shadow: 1);
-      cy += lineHSm;
-    }
-
-    // ── 8. Cuaca ─────────────────────────────────────────────────────────
+    // Cuaca
     if (showWeather && weather.isNotEmpty) {
-      _drawText(src, weather, img.arial14, padX, cy, cBlue, shadow: 1);
+      _txt(src, weather, img.arial14, padX, cy, cAccent, sh: 1);
     }
-
-    // ── 9. REC indicator (pojok kanan, sejajar jam) ──────────────────────
-    _drawRec(src, textY + padY + (lineHLg - recPillH) ~/ 2);
 
     return WatermarkLayoutBase.encodeJpg(src);
   }
 
-  // ── Panel background ─────────────────────────────────────────────────────
-  void _fillPanel(img.Image src, int y0, int h) {
-    final int y1 = (y0 + h).clamp(0, src.height);
-    final int y0c = y0.clamp(0, src.height);
-    for (int y = y0c; y < y1; y++) {
+  // ── Blend rect panel BG ─────────────────────────────────────────────────
+  void _blendRect(img.Image src, int y0, int y1) {
+    for (int y = y0.clamp(0, src.height); y < y1.clamp(0, src.height); y++) {
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);
-        final int a = cPanelBg.a.toInt();
         src.setPixel(x, y, img.ColorRgba8(
-          (px.r * (255 - a) ~/ 255) + (cPanelBg.r.toInt() * a ~/ 255),
-          (px.g * (255 - a) ~/ 255) + (cPanelBg.g.toInt() * a ~/ 255),
-          (px.b * (255 - a) ~/ 255) + (cPanelBg.b.toInt() * a ~/ 255),
+          (px.r.toInt() * (255 - _bgA) ~/ 255) + (_bgR * _bgA ~/ 255),
+          (px.g.toInt() * (255 - _bgA) ~/ 255) + (_bgG * _bgA ~/ 255),
+          (px.b.toInt() * (255 - _bgA) ~/ 255) + (_bgB * _bgA ~/ 255),
           255,
         ));
       }
     }
   }
 
-  // ── Gradient tipis di sisi panel yang menempel foto ──────────────────────
-  void _applyEdgeGradient(img.Image src, int panelY, int panelH, bool isTop) {
-    const int fadeH = 24;
-    // Sisi yang menempel foto:
-    // isTop  → bawah panel (panelY + panelH - fadeH .. panelY + panelH)
-    // isBot  → atas panel  (panelY .. panelY + fadeH)
-    final int fadeStart = isTop ? panelY + panelH - fadeH : panelY;
-    final int fadeEnd   = isTop ? panelY + panelH         : panelY + fadeH;
-
-    for (int y = fadeStart; y < fadeEnd; y++) {
-      if (y < 0 || y >= src.height) continue;
-      double t = (y - fadeStart) / fadeH; // 0→1
-      if (!isTop) t = 1.0 - t;            // isBottom: opak di atas, transparan di bawah
-      final int overlay = (t * 215).toInt().clamp(0, 215);
-      for (int x = 0; x < src.width; x++) {
-        final px = src.getPixel(x, y);
-        src.setPixel(x, y, img.ColorRgba8(
-          (px.r * (255 - overlay)) ~/ 255,
-          (px.g * (255 - overlay)) ~/ 255,
-          (px.b * (255 - overlay)) ~/ 255,
-          255,
-        ));
-      }
+  // ── Garis horizontal full-width ─────────────────────────────────────────
+  void _hline(img.Image src, int y, int alpha) {
+    if (y < 0 || y >= src.height) return;
+    for (int x = 0; x < src.width; x++) {
+      final px = src.getPixel(x, y);
+      src.setPixel(x, y, img.ColorRgba8(
+        (px.r.toInt() * (255 - alpha) ~/ 255) + (255 * alpha ~/ 255),
+        (px.g.toInt() * (255 - alpha) ~/ 255) + (255 * alpha ~/ 255),
+        (px.b.toInt() * (255 - alpha) ~/ 255) + (255 * alpha ~/ 255),
+        255,
+      ));
     }
   }
 
-  // ── Map strip full-width ──────────────────────────────────────────────────
-  void _drawMapStrip(img.Image src, Uint8List mapBytes, int mapY, int stripH) {
+  // ── Garis horizontal sebagian lebar ────────────────────────────────────
+  void _hlineRange(img.Image src, int y, int x0, int x1, int alpha) {
+    if (y < 0 || y >= src.height) return;
+    for (int x = x0; x < x1 && x < src.width; x++) {
+      final px = src.getPixel(x, y);
+      src.setPixel(x, y, img.ColorRgba8(
+        (px.r.toInt() * (255 - alpha) ~/ 255) + (255 * alpha ~/ 255),
+        (px.g.toInt() * (255 - alpha) ~/ 255) + (255 * alpha ~/ 255),
+        (px.b.toInt() * (255 - alpha) ~/ 255) + (255 * alpha ~/ 255),
+        255,
+      ));
+    }
+  }
+
+  // ── Map strip ───────────────────────────────────────────────────────────
+  void _drawMap(img.Image src, Uint8List mapBytes, int y0, int y1) {
     img.Image? mapImg;
     try { mapImg = img.decodeImage(mapBytes); } catch (_) {}
     if (mapImg == null) return;
 
+    final int h = y1 - y0;
+    if (h <= 0) return;
+
     try {
       final resized = img.copyResize(mapImg,
-          width: src.width, height: stripH,
+          width: src.width, height: h,
           interpolation: img.Interpolation.average);
 
-      // Batas atas/bawah map
-      final int y0 = mapY.clamp(0, src.height);
-      final int y1 = (mapY + stripH).clamp(0, src.height);
-      if (y1 <= y0) return;
+      img.compositeImage(src, resized, dstX: 0, dstY: y0);
 
-      img.compositeImage(src, resized, dstX: 0, dstY: y0, blend: img.BlendMode.alpha);
-
-      // Blue-dark tint supaya tetap terasa cinematic
-      for (int y = y0; y < y1; y++) {
+      // Grayscale + blue-dark tint (meniru `grayscale opacity-80` + bg-black/40)
+      for (int y = y0; y < y1 && y < src.height; y++) {
         for (int x = 0; x < src.width; x++) {
           final px = src.getPixel(x, y);
-          src.setPixel(x, y, img.ColorRgba8(
-            (px.r * 0.70).toInt().clamp(0, 255),
-            (px.g * 0.70).toInt().clamp(0, 255),
-            (px.b * 0.85).toInt().clamp(0, 255),
-            255,
-          ));
+          // Grayscale
+          final int lum = (px.r.toInt() * 299 +
+                           px.g.toInt() * 587 +
+                           px.b.toInt() * 114) ~/
+                          1000;
+          // Blue tint: gelapkan + geser ke biru sedikit
+          final int r = (lum * 55 ~/ 100).clamp(0, 255);
+          final int g = (lum * 55 ~/ 100).clamp(0, 255);
+          final int b = (lum * 70 ~/ 100).clamp(0, 255);
+          src.setPixel(x, y, img.ColorRgba8(r, g, b, 255));
         }
       }
 
-      // Garis pemisah biru di bawah map strip
-      final int sepY = (y1 - mapBorder).clamp(0, src.height - 1);
-      img.fillRect(src,
-          x1: 0, y1: sepY,
-          x2: src.width, y2: sepY + mapBorder,
-          color: img.ColorRgba8(30, 144, 255, 200));
+      // Gradient gelap kiri & kanan (dari-black/40)
+      final int fadeW = src.width ~/ 5;
+      for (int y = y0; y < y1 && y < src.height; y++) {
+        for (int xi = 0; xi < fadeW; xi++) {
+          final double t = 1.0 - xi / fadeW;
+          final int ov = (t * 100).toInt().clamp(0, 100);
+          for (final int x in [xi, src.width - 1 - xi]) {
+            if (x < 0 || x >= src.width) continue;
+            final px = src.getPixel(x, y);
+            src.setPixel(x, y, img.ColorRgba8(
+              (px.r.toInt() * (255 - ov) ~/ 255),
+              (px.g.toInt() * (255 - ov) ~/ 255),
+              (px.b.toInt() * (255 - ov) ~/ 255),
+              255,
+            ));
+          }
+        }
+      }
 
-      // Crosshair / dot posisi di tengah
+      // Crosshair tengah (ikon location_on style)
       final int cx = src.width ~/ 2;
-      final int cy = y0 + (y1 - y0) ~/ 2;
-      img.fillCircle(src, x: cx, y: cy, radius: 8, color: img.ColorRgba8(30, 144, 255, 180));
-      img.fillCircle(src, x: cx, y: cy, radius: 4, color: cWhite);
+      final int cy = y0 + h ~/ 2;
+      // Lingkaran luar accent
+      img.drawCircle(src, x: cx, y: cy, radius: 12,
+          color: img.ColorRgba8(cCross.r.toInt(), cCross.g.toInt(),
+                                cCross.b.toInt(), 160));
+      img.fillCircle(src, x: cx, y: cy, radius: 5, color: cCross);
+      img.fillCircle(src, x: cx, y: cy, radius: 2, color: cWhite);
 
     } catch (_) {}
   }
 
   // ── REC indicator ────────────────────────────────────────────────────────
-  void _drawRec(img.Image src, int pillY) {
-    final int pillX = src.width - recPillW - padX;
-    if (pillX < 0 || pillY < 0 || pillY + recPillH > src.height) return;
+  void _drawRec(img.Image src, int py) {
+    const int pw = 76, ph = 20;
+    final int px0 = src.width - pw - padX;
+    if (px0 < 0 || py < 0 || py + ph > src.height) return;
 
-    img.fillRect(src,
-        x1: pillX, y1: pillY,
-        x2: pillX + recPillW, y2: pillY + recPillH,
-        color: img.ColorRgba8(0, 0, 0, 160));
-    img.drawRect(src,
-        x1: pillX, y1: pillY,
-        x2: pillX + recPillW, y2: pillY + recPillH,
-        color: img.ColorRgba8(255, 255, 255, 30),
-        thickness: 1);
-    img.fillCircle(src,
-        x: pillX + 12, y: pillY + recPillH ~/ 2,
-        radius: 5, color: cRed);
-    _drawText(src, 'REC 4K', img.arial14, pillX + 22, pillY + 4, cWhite, shadow: 1);
+    // BG
+    for (int y = py; y < py + ph && y < src.height; y++) {
+      for (int x = px0; x < px0 + pw && x < src.width; x++) {
+        final p = src.getPixel(x, y);
+        src.setPixel(x, y, img.ColorRgba8(
+          (p.r.toInt() * 25 ~/ 255),
+          (p.g.toInt() * 25 ~/ 255),
+          (p.b.toInt() * 25 ~/ 255),
+          255,
+        ));
+      }
+    }
+    // Border putih tipis
+    img.drawRect(src, x1: px0, y1: py,
+        x2: px0 + pw, y2: py + ph,
+        color: img.ColorRgba8(255, 255, 255, 40), thickness: 1);
+    // Dot merah
+    img.fillCircle(src, x: px0 + 11, y: py + ph ~/ 2,
+        radius: 5, color: cRec);
+    // Label
+    _txt(src, 'REC 4K', img.arial14, px0 + 21, py + 4, cWhite, sh: 0);
   }
 
-  // ── Teks dengan drop-shadow ───────────────────────────────────────────────
-  void _drawText(
-    img.Image src, String text, img.BitmapFont font,
-    int x, int y, img.Color color, {int shadow = 1}
-  ) {
-    final sh = img.ColorRgba8(0, 0, 0, 180);
-    for (int dx = -shadow; dx <= shadow; dx++) {
-      for (int dy = -shadow; dy <= shadow; dy++) {
-        if (dx == 0 && dy == 0) continue;
-        img.drawString(src, text, font: font, x: x + dx, y: y + dy, color: sh);
+  // ── Teks + shadow ───────────────────────────────────────────────────────
+  void _txt(img.Image src, String text, img.BitmapFont font,
+      int x, int y, img.Color color, {int sh = 1}) {
+    if (sh > 0) {
+      final shadow = img.ColorRgba8(0, 0, 0, 190);
+      for (int dx = -sh; dx <= sh; dx++) {
+        for (int dy = -sh; dy <= sh; dy++) {
+          if (dx == 0 && dy == 0) continue;
+          img.drawString(src, text, font: font,
+              x: x + dx, y: y + dy, color: shadow);
+        }
       }
     }
     img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 
-  // ── Konversi desimal → DMS ────────────────────────────────────────────────
-  String _toDMS(double deg, String dir) {
+  // ── DMS ─────────────────────────────────────────────────────────────────
+  String _dms(double deg, String dir) {
     final int d = deg.floor();
-    final double minFull = (deg - d) * 60;
-    final int m = minFull.floor();
-    final double s = (minFull - m) * 60;
-    return "$d°${m.toString().padLeft(2, '0')}'${s.toStringAsFixed(1).padLeft(4, '0')}\"$dir";
+    final double mf = (deg - d) * 60;
+    final int m = mf.floor();
+    final double s = (mf - m) * 60;
+    return "$d\u00b0${m.toString().padLeft(2,'0')}'${s.toStringAsFixed(1).padLeft(4,'0')}\"$dir";
   }
 
-  // ── Estimasi lebar teks arial14 (~8px/char) ───────────────────────────────
-  int _estimateTextWidth(String text, img.BitmapFont font) {
-    return text.length * (font == img.arial24 ? 14 : 8);
-  }
-
-  // ── Word-wrap tanpa batas baris (auto-expand) ─────────────────────────────
-  List<String> _wrapText(String text, int maxWidth) {
-    const int charW = 8;
-    final int maxChars = (maxWidth / charW).floor().clamp(20, 200);
-
-    final words  = text.split(' ');
-    final lines  = <String>[];
-    var   current = '';
-
-    for (final word in words) {
-      final candidate = current.isEmpty ? word : '$current $word';
-      if (candidate.length <= maxChars) {
-        current = candidate;
+  // ── Word-wrap (tidak dibatasi baris) ────────────────────────────────────
+  List<String> _wrap(String text, int maxWidth) {
+    const int cw = 8; // estimasi arial14
+    final int mc = (maxWidth / cw).floor().clamp(20, 200);
+    final lines = <String>[];
+    var cur = '';
+    for (final w in text.split(' ')) {
+      final cand = cur.isEmpty ? w : '$cur $w';
+      if (cand.length <= mc) {
+        cur = cand;
       } else {
-        if (current.isNotEmpty) lines.add(current);
-        current = word.length > maxChars
-            ? '${word.substring(0, maxChars - 2)}..'
-            : word;
+        if (cur.isNotEmpty) lines.add(cur);
+        cur = w.length > mc ? '${w.substring(0, mc - 2)}..' : w;
       }
     }
-    if (current.isNotEmpty) lines.add(current);
+    if (cur.isNotEmpty) lines.add(cur);
     return lines;
   }
 }

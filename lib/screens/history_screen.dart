@@ -1,3 +1,4 @@
+// lib/screens/history_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -37,7 +38,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
       final List<Map<String, dynamic>> photos = [];
       for (var file in files) {
-        // Hanya cek file exists, tidak perlu decode penuh untuk thumbnail
         if (await file.exists()) {
           final fileName = p.basenameWithoutExtension(file.path);
           final parts = fileName.split('_');
@@ -64,6 +64,65 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  Future<void> _deletePhoto(String path) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Foto'),
+        content: const Text('Foto akan dihapus permanen.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+        _loadAllPhotos();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Gagal menghapus: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _deleteAllPhotos() async {
+    if (_photos.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Semua Foto'),
+        content: Text('Hapus ${_photos.length} foto secara permanen?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Hapus Semua'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      for (final photo in _photos) {
+        try {
+          final file = File(photo['path'] as String);
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+      _loadAllPhotos();
+    }
+  }
+
   Future<void> _sharePhoto(String path) async {
     try {
       await Share.shareXFiles(
@@ -84,26 +143,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
         backgroundColor: const Color(0xFF1A1F2E),
         foregroundColor: Colors.white,
         actions: [
-          if (_photos.isNotEmpty)
+          if (_photos.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.delete_sweep, color: Colors.redAccent),
+              onPressed: _deleteAllPhotos,
+              tooltip: 'Hapus Semua',
+            ),
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: _loadAllPhotos,
               tooltip: 'Muat Ulang',
             ),
+          ],
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF00B8D4)))
           : _photos.isEmpty
-              ? const Center(
+              ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text('Belum ada foto', style: TextStyle(color: Colors.grey)),
-                      SizedBox(height: 8),
-                      Text(
+                      const Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey),
+                      const SizedBox(height: 16),
+                      const Text('Belum ada foto', style: TextStyle(color: Colors.grey)),
+                      const SizedBox(height: 8),
+                      const Text(
                         'Foto yang belum disimpan ke galeri\nakan muncul di sini',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.grey, fontSize: 12),
@@ -128,13 +193,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         contentPadding: const EdgeInsets.all(8),
                         leading: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          // Image.file lebih efisien - tidak load semua bytes ke memory
                           child: Image.file(
                             File(path),
                             width: 60,
                             height: 60,
                             fit: BoxFit.cover,
-                            cacheWidth: 120, // 2x untuk layar HiDPI, hemat RAM
+                            cacheWidth: 120,
                             errorBuilder: (_, __, ___) => Container(
                               width: 60,
                               height: 60,
@@ -152,9 +216,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           DateFormat('EEEE', 'id').format(timestamp),
                           style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.share, color: Color(0xFF00B8D4)),
-                          onPressed: () => _sharePhoto(path),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.share, color: Color(0xFF00B8D4)),
+                              onPressed: () => _sharePhoto(path),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                              onPressed: () => _deletePhoto(path),
+                            ),
+                          ],
                         ),
                         onTap: () {
                           Navigator.push(
@@ -162,7 +235,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             MaterialPageRoute(
                               builder: (_) => _HistoryPhotoDetailScreen(imagePath: path),
                             ),
-                          ).then((_) => _loadAllPhotos()); // Refresh setelah kembali
+                          ).then((_) => _loadAllPhotos());
                         },
                       ),
                     );

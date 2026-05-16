@@ -186,7 +186,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   DateTime? _lastFetchTime;
   bool _earlyAddressFetched = false;
   bool _isShowingCachedAddress = false;
-  bool _isFetchingAddress = false;      // guard double fetch
+  bool _isFetchingAddress = false;
 
   // ────── GPS Lock Manager ────────────────────────────────────────
   final GpsLockManager _lockManager = GpsLockManager();
@@ -209,7 +209,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
     _requestAllPermissions();
 
-    _loadCachedLocationInstantly();   // cache instan
+    _loadCachedLocationInstantly();
 
     _initCamera();
     _preWarmGps();
@@ -409,7 +409,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _loadCachedLocationInstantly() async {
     final cached = await LastKnownLocationCache.load();
     if (cached == null || !mounted || _isDisposed) return;
-    // cache maksimal 6 jam
     if (DateTime.now().difference(cached.cachedAt).inHours >= 6) return;
 
     final fakePos = Position(
@@ -464,8 +463,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         safeSetState(() {
           _bestPosition = pos;
           _gpsText = '🟡 GPS ±${pos.accuracy.toStringAsFixed(0)}m';
-          // jangan langsung hilangkan status cache
-          // sampai alamat live benar-benar didapat
         });
       }
 
@@ -593,7 +590,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               CameraConstants.positionSampleLifespanSeconds) {
         _positionSamples.removeFirst();
       }
-      // Guard memory grow
       if (_positionSamples.length >= CameraConstants.maxGpsSamples) {
         _positionSamples.removeFirst();
       }
@@ -601,7 +597,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       _samplesCollected++;
 
-      // Fast path: sampel pertama dengan akurasi ≤ 12m
       if (_samplesCollected == 1 && pos.accuracy <= 12) {
         if (_bestPosition == null || pos.accuracy < _bestPosition!.accuracy) {
           safeSetState(() {
@@ -665,7 +660,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _savePersistentCache({
     required Position position,
     required String address,
-    String? weather,
+    String weather = '',   // ✅ perbaikan: String non-null
   }) async {
     final last = _lastFetchTime;
     if (last != null) {
@@ -987,7 +982,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         ? '±${_bestPosition!.accuracy.toStringAsFixed(0)}m'
         : null;
     final rawAddr = _currentAddress.isNotEmpty ? _currentAddress : 'Mencari alamat...';
-    // Stabilkan alamat agar tidak berkedip karena perubahan kecil
     final stableAddress = rawAddr.length > 80 ? '${rawAddr.substring(0, 80)}...' : rawAddr;
     final weatherStr = _cachedWeather;
 

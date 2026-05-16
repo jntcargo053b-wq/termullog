@@ -19,7 +19,7 @@ class LayoutCinematic extends WatermarkLayoutBase {
   static const int mapMar   = 24;
   static const int mapBorder = 2;
 
-  // ── Warna cinematic (non-const karena ColorRgba8 bukan const) ──
+  // ── Warna cinematic ──
   static final img.Color cinematicBlue = img.ColorRgba8(30, 144, 255, 255);
   static final img.Color cinematicWhite = img.ColorRgba8(255, 255, 255, 255);
   static final img.Color cinematicOffWhite = img.ColorRgba8(229, 226, 225, 255);
@@ -87,22 +87,21 @@ class LayoutCinematic extends WatermarkLayoutBase {
     final int textMaxX = src.width - padX - mapReservedWidth;
     final int textW = textMaxX - padX;
 
-    final fontDisplay = img.arial24;
-    final fontMeta = img.arial14;     // menggunakan arial14 (tersedia)
-    final fontSmall = img.arial12;    // menggunakan arial12 (tersedia)
+    final fontLarge = img.arial24;   // untuk jam
+    final fontMedium = img.arial14;  // untuk tanggal & metadata
 
     int cy = isTop ? padY + 8 : gradY0 + padY + 8;
 
     // ── JAM ──
     _drawDisplayText(src, 
         DateFormat('HH : mm : ss').format(timestamp),
-        fontDisplay, padX, cy, cinematicWhite);
+        fontLarge, padX, cy, cinematicWhite);
     cy += lineH;
 
     // ── TANGGAL ──
     _drawDisplayText(src, 
         DateFormat('dd MMMM yyyy').format(timestamp).toUpperCase(),
-        fontMeta, padX, cy, cinematicBlue);
+        fontMedium, padX, cy, cinematicBlue);
     cy += lineH + 10;
 
     // ── KOORDINAT ──
@@ -114,29 +113,29 @@ class LayoutCinematic extends WatermarkLayoutBase {
       
       _drawMetaText(src,
           '$latAbs°$latDir   $lonAbs°$lonDir',
-          fontSmall, padX, cy, cinematicOffWhite);
+          fontMedium, padX, cy, cinematicOffWhite);
       cy += lineHSm;
 
       if (showAccuracy && acc != null) {
         _drawMetaText(src,
             'ACCURACY  ±${acc.toStringAsFixed(1)}m',
-            fontSmall, padX, cy, cinematicGrey);
+            fontMedium, padX, cy, cinematicGrey);
         cy += lineHSm;
       }
     }
 
     // ── ALAMAT ──
     if (showAddr) {
-      final lines = _wrapText(address, textW, fontSmall, maxLines: 2);
+      final lines = _wrapText(address, textW, fontMedium, maxLines: 2);
       for (final line in lines) {
-        _drawMetaText(src, line, fontSmall, padX, cy, cinematicGrey);
+        _drawMetaText(src, line, fontMedium, padX, cy, cinematicGrey);
         cy += lineHSm;
       }
     }
 
     // ── WEATHER ──
     if (showWeather && weather.isNotEmpty) {
-      _drawMetaText(src, weather, fontSmall, padX, cy, cinematicBlue);
+      _drawMetaText(src, weather, fontMedium, padX, cy, cinematicBlue);
     }
 
     // 4. Mini-map
@@ -241,7 +240,7 @@ class LayoutCinematic extends WatermarkLayoutBase {
     img.fillCircle(src, x: dotX, y: dotY, radius: 5,
         color: cinematicRed);
     
-    _drawMetaText(src, "REC 4K", img.arial12,
+    _drawMetaText(src, "REC 4K", img.arial14,
         pillX + 22, pillY + 6, cinematicWhite);
   }
 
@@ -273,9 +272,12 @@ class LayoutCinematic extends WatermarkLayoutBase {
           x2: mapX + mapSize + mapBorder, y2: mapY + mapSize + mapBorder,
           color: img.ColorRgba8(20, 19, 19, 160));
       
-      // Border biru cinematic (tanpa withAlpha)
-      final blueBorder = img.ColorRgba8(
-          cinematicBlue.r, cinematicBlue.g, cinematicBlue.b, 100);
+      // Border biru cinematic
+      final int blueR = cinematicBlue.r.toInt();
+      final int blueG = cinematicBlue.g.toInt();
+      final int blueB = cinematicBlue.b.toInt();
+      final blueBorder = img.ColorRgba8(blueR, blueG, blueB, 100);
+      
       img.drawRect(src,
           x1: mapX - mapBorder, y1: mapY - mapBorder,
           x2: mapX + mapSize + mapBorder, y2: mapY + mapSize + mapBorder,
@@ -315,8 +317,8 @@ class LayoutCinematic extends WatermarkLayoutBase {
           color: cinematicWhite);
       
       // Label
-      _drawMetaText(src, "LIVE TRACK", img.arial10,
-          mapX + 6, mapY + mapSize - 14, cinematicGrey);
+      _drawMetaText(src, "LIVE TRACK", img.arial14,
+          mapX + 6, mapY + mapSize - 16, cinematicGrey);
           
     } catch (_) {}
   }
@@ -325,8 +327,7 @@ class LayoutCinematic extends WatermarkLayoutBase {
   List<String> _wrapText(String text, int maxWidth, img.BitmapFont font, {int maxLines = 3}) {
     int charW;
     if (font == img.arial24) charW = 14;
-    else if (font == img.arial14) charW = 8;
-    else charW = 7;
+    else charW = 8; // arial14
     
     final int maxChars = (maxWidth / charW).floor().clamp(25, 150);
 
@@ -352,6 +353,6 @@ class LayoutCinematic extends WatermarkLayoutBase {
 
   int _addressLineCount(int imageWidth, String address) {
     final int textW = imageWidth - padX * 2 - mapSize - mapMar - 20;
-    return _wrapText(address, textW, img.arial12).length;
+    return _wrapText(address, textW, img.arial14).length;
   }
 }

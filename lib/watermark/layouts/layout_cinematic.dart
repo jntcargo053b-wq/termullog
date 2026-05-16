@@ -8,17 +8,23 @@ class LayoutCinematic extends WatermarkLayoutBase {
   String get name => 'Cinematic';
 
   // ── Dimensi area gradient ───────────────────────────────────────────────
-  static const int gradH    = 220;   // lebih tinggi agar teks tidak terpotong
-  static const int padX     = 28;
-  static const int padY     = 14;    // jarak dari tepi atas/bawah
-  static const int lineH    = 30;    // tinggi baris normal
-  static const int lineHSm  = 24;    // tinggi baris kecil (accuracy, address)
+  static const int gradH    = 280;   // lebih tinggi untuk spacing cinematic
+  static const int padX     = 32;    // safe area horizontal
+  static const int padY     = 20;    
+  static const int lineH    = 34;    // tinggi baris untuk jam (display time)
+  static const int lineHSm  = 22;    // tinggi baris metadata kecil
 
-  // ── Mini-map ────────────────────────────────────────────────────────────
-  static const int mapW     = 110;
-  static const int mapH     = 82;
-  static const int mapMar   = 14;
+  // ── Mini-map (bulat dengan border cinematic) ────────────────────────────
+  static const int mapSize  = 120;   // ukuran mini-map persegi
+  static const int mapMar   = 24;
   static const int mapBorder = 2;
+
+  // warna cinematic palette
+  static const img.Color cinematicBlue = img.ColorRgba8(30, 144, 255, 255);
+  static const img.Color cinematicWhite = img.ColorRgba8(255, 255, 255, 255);
+  static const img.Color cinematicOffWhite = img.ColorRgba8(229, 226, 225, 255);
+  static const img.Color cinematicGrey = img.ColorRgba8(198, 198, 199, 180);
+  static const img.Color cinematicDarkOverlay = img.ColorRgba8(20, 19, 19, 200);
 
   @override
   Uint8List apply({
@@ -38,11 +44,11 @@ class LayoutCinematic extends WatermarkLayoutBase {
   }) {
     final bool isTop = watermarkPosition == 'top';
 
-    // Hitung berapa baris yang akan ditampilkan untuk menentukan gradH dinamis
-    int rowCount = 2; // jam + tanggal selalu ada
+    // Hitung tinggi gradient dinamis berdasarkan konten
+    int rowCount = 2; // jam + tanggal
     if (hasPosition) {
-      rowCount += 1;
-      if (showAccuracy) rowCount += 1;
+      rowCount += 1; // koordinat
+      if (showAccuracy) rowCount += 1; // accuracy
     }
     final bool showAddr = address.isNotEmpty &&
         address != 'Tidak ada lokasi' &&
@@ -50,124 +56,279 @@ class LayoutCinematic extends WatermarkLayoutBase {
     if (showAddr) rowCount += _addressLineCount(src.width, address);
     if (showWeather && weather.isNotEmpty) rowCount += 1;
 
-    // Tinggi area = padding atas + baris + spacer divider + padding bawah
-    final int dynGradH = (padY + lineH + lineH + 10 + // jam + tanggal + spasi
-        (rowCount - 2) * lineHSm +                    // baris sisanya
-        padY + 10)                                     // padding bawah
-        .clamp(gradH, gradH + 60);                    // clamp supaya tidak terlalu besar
+    final int dynGradH = (padY + lineH + lineH + 12 + 
+        (rowCount - 2) * lineHSm + padY + 20)
+        .clamp(gradH, gradH + 80);
 
     final int gradY0 = isTop ? 0 : src.height - dynGradH;
 
-    // 1. Gradient overlay
-    _applyGradient(src, gradY0, dynGradH, isTop);
+    // 1. Gradient cinematic (scrim bottom/top)
+    _applyCinematicGradient(src, gradY0, dynGradH, isTop);
 
-    // 2. Garis aksen biru
-    final int divY = isTop ? dynGradH - 38 : gradY0 + 34;
-    img.fillRect(src,
-        x1: padX, y1: divY,
-        x2: src.width - padX - (showMiniMap && mapBytes != null ? mapW + mapMar * 2 + 8 : 0),
-        y2: divY + 2,
-        color: img.ColorRgba8(30, 144, 255, 220));
+    // 2. Garis aksen biru (cinematic accent line)
+    final int accentLineY = isTop 
+        ? padY + lineH + lineH + 8 
+        : gradY0 + padY + lineH + lineH + 8;
+    
+    final int mapReservedWidth = (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) 
+        ? mapSize + mapMar + 12 
+        : 0;
+    final int accentLineWidth = src.width - padX * 2 - mapReservedWidth;
+    
+    if (accentLineWidth > 50) {
+      img.fillRect(src,
+          x1: padX, y1: accentLineY,
+          x2: padX + accentLineWidth, y2: accentLineY + 2,
+          color: cinematicBlue);
+    }
 
-    // 3. Area tulis teks (kiri, hindari mini-map di kanan)
-    final int textMaxX = src.width - padX -
-        (showMiniMap && mapBytes != null ? mapW + mapMar * 2 + 8 : 0);
+    // 3. Area teks (kiri)
+    final int textMaxX = src.width - padX - mapReservedWidth;
     final int textW = textMaxX - padX;
 
-    final fontLg = img.arial24;   // jam, tanggal
-    final fontSm = img.arial14;   // koordinat, address, weather
+    final fontDisplay = img.arial24;    // untuk jam
+    final fontMeta = img.arial16;       // untuk metadata (lebih besar dari sebelumnya)
+    final fontSmall = img.arial14;      // untuk address & accuracy
 
-    int cy = isTop ? padY : gradY0 + padY;
+    int cy = isTop ? padY + 8 : gradY0 + padY + 8;
 
-    // Jam
-    _drawOutlined(src, DateFormat('HH : mm : ss').format(timestamp),
-        fontLg, padX, cy, WatermarkLayoutBase.white);
+    // ── JAM (display time style) ──
+    _drawDisplayText(src, 
+        DateFormat('HH : mm : ss').format(timestamp),
+        fontDisplay, padX, cy, cinematicWhite, isBold: true);
     cy += lineH;
 
-    // Tanggal
-    _drawOutlined(src, DateFormat('dd  MMMM  yyyy').format(timestamp),
-        fontLg, padX, cy, WatermarkLayoutBase.blue);
-    cy += lineH + 8;
+    // ── TANGGAL (dengan warna biru cinematic) ──
+    _drawDisplayText(src, 
+        DateFormat('dd MMMM yyyy').format(timestamp).toUpperCase(),
+        fontMeta, padX, cy, cinematicBlue, isBold: true);
+    cy += lineH + 10;
 
-    // Koordinat
+    // ── KOORDINAT & GPS ──
     if (hasPosition) {
-      _drawOutlined(src,
-          '${lat!.toStringAsFixed(6)}°N   ${lon!.toStringAsFixed(6)}°E',
-          fontSm, padX, cy, WatermarkLayoutBase.offWhite);
+      final latDir = lat! >= 0 ? 'N' : 'S';
+      final lonDir = lon! >= 0 ? 'E' : 'S';
+      final latAbs = lat.abs().toStringAsFixed(6);
+      final lonAbs = lon.abs().toStringAsFixed(6);
+      
+      _drawMetaText(src,
+          '$latAbs°$latDir   $lonAbs°$lonDir',
+          fontSmall, padX, cy, cinematicOffWhite);
       cy += lineHSm;
 
-      if (showAccuracy) {
-        _drawOutlined(src,
-            'ACCURACY  ±${acc?.toStringAsFixed(1) ?? '?'} m',
-            fontSm, padX, cy, WatermarkLayoutBase.grey);
+      if (showAccuracy && acc != null) {
+        _drawMetaText(src,
+            'ACCURACY  ±${acc.toStringAsFixed(1)}m',
+            fontSmall, padX, cy, cinematicGrey);
         cy += lineHSm;
       }
     }
 
-    // Alamat – wrap otomatis supaya tidak terpotong
+    // ── ALAMAT (dengan wrap otomatis) ──
     if (showAddr) {
-      final lines = _wrapText(address, textW, fontSm);
+      final lines = _wrapText(address, textW, fontSmall, maxLines: 2);
       for (final line in lines) {
-        _drawOutlined(src, line, fontSm, padX, cy, WatermarkLayoutBase.grey);
+        _drawMetaText(src, line, fontSmall, padX, cy, cinematicGrey);
         cy += lineHSm;
       }
     }
 
-    // Cuaca
+    // ── WEATHER / STATUS ──
     if (showWeather && weather.isNotEmpty) {
-      _drawOutlined(src, weather, fontSm, padX, cy, WatermarkLayoutBase.blue);
+      _drawMetaText(src, weather, fontSmall, padX, cy, cinematicBlue);
     }
 
-    // 4. Mini-map
+    // 4. Mini-map cinematic (dengan efek glassmorphism)
     if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
-      _drawMiniMap(src, mapBytes, isTop, dynGradH, gradY0);
+      _drawCinematicMiniMap(src, mapBytes, isTop, dynGradH, gradY0);
+    }
+
+    // 5. REC indicator (cinematic touch)
+    if (isTop) {
+      _drawRecIndicator(src, padX, gradY0 + dynGradH - 28);
+    } else {
+      _drawRecIndicator(src, padX, gradY0 - 22);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
   }
 
-  // ── Gradient ─────────────────────────────────────────────────────────────
-  void _applyGradient(img.Image src, int gradY0, int dynGradH, bool isTop) {
-    for (int y = gradY0; y < gradY0 + dynGradH; y++) {
-      if (y < 0 || y >= src.height) continue;
-      final t = isTop
-          ? 1.0 - (y - gradY0) / dynGradH
-          : (y - gradY0) / dynGradH;
-      // Lebih gelap di tepi, lebih transparan di tengah
-      final alpha = (t * 210).toInt().clamp(0, 210);
+  // ── Gradient cinematic (mirip scrim di HTML) ──
+  void _applyCinematicGradient(img.Image src, int gradY0, int dynGradH, bool isTop) {
+    for (int y = gradY0; y < gradY0 + dynGradH && y < src.height; y++) {
+      if (y < 0) continue;
+      
+      double t;
+      if (isTop) {
+        // scrim top: lebih gelap di awal, transparan di akhir
+        t = 1.0 - ((y - gradY0) / dynGradH);
+        t = t * t; // easing quadratic
+      } else {
+        // scrim bottom: transparan di awal, gelap di akhir
+        t = (y - gradY0) / dynGradH;
+        t = t * t;
+      }
+      
+      final int alpha = (t * 230).toInt().clamp(0, 230);
+      
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);
-        src.setPixel(x, y, img.ColorRgba8(
-          ((px.r * (255 - alpha)) ~/ 255),
-          ((px.g * (255 - alpha)) ~/ 255),
-          ((px.b * (255 - alpha)) ~/ 255),
-          255,
-        ));
+        final int r = (px.r * (255 - alpha)) ~/ 255;
+        final int g = (px.g * (255 - alpha)) ~/ 255;
+        final int b = (px.b * (255 - alpha)) ~/ 255;
+        src.setPixel(x, y, img.ColorRgba8(r, g, b, 255));
       }
     }
   }
 
-  // ── Teks dengan outline tipis agar terbaca di semua background ───────────
-  void _drawOutlined(
+  // ── Teks dengan outline tebal agar terbaca (seperti di HTML) ──
+  void _drawDisplayText(
     img.Image src, String text, img.BitmapFont font,
-    int x, int y, img.Color color,
+    int x, int y, img.Color color, {bool isBold = false}
   ) {
-    final shadow = img.ColorRgba8(0, 0, 0, 160);
-    for (int dx = -1; dx <= 1; dx++) {
-      for (int dy = -1; dy <= 1; dy++) {
+    final shadowColor = img.ColorRgba8(0, 0, 0, 200);
+    
+    // outline lebih tebal untuk display text
+    for (int dx = -2; dx <= 2; dx++) {
+      for (int dy = -2; dy <= 2; dy++) {
         if (dx == 0 && dy == 0) continue;
+        if (dx.abs() + dy.abs() > 2) continue; // diamond pattern
         img.drawString(src, text, font: font,
-            x: x + dx, y: y + dy, color: shadow);
+            x: x + dx, y: y + dy, color: shadowColor);
       }
     }
     img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 
-  // ── Word-wrap sederhana berdasarkan perkiraan lebar karakter ────────────
-  List<String> _wrapText(String text, int maxWidth, img.BitmapFont font) {
-    // Estimasi lebar: arial14 ≈ 8px/char, arial24 ≈ 14px/char
-    final charW = (font == img.arial24) ? 14 : 8;
-    final maxChars = (maxWidth / charW).floor().clamp(20, 200);
+  void _drawMetaText(
+    img.Image src, String text, img.BitmapFont font,
+    int x, int y, img.Color color,
+  ) {
+    final shadowColor = img.ColorRgba8(0, 0, 0, 160);
+    
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dy = -1; dy <= 1; dy++) {
+        if (dx == 0 && dy == 0) continue;
+        img.drawString(src, text, font: font,
+            x: x + dx, y: y + dy, color: shadowColor);
+      }
+    }
+    img.drawString(src, text, font: font, x: x, y: y, color: color);
+  }
+
+  // ── REC Indicator (seperti di HTML) ──
+  void _drawRecIndicator(img.Image src, int x, int y) {
+    // background pill
+    final int pillW = 85;
+    final int pillH = 24;
+    final int pillX = src.width - pillW - padX;
+    final int pillY = y;
+    
+    img.fillRect(src,
+        x1: pillX, y1: pillY,
+        x2: pillX + pillW, y2: pillY + pillH,
+        color: img.ColorRgba8(0, 0, 0, 180));
+    
+    img.drawRect(src,
+        x1: pillX, y1: pillY,
+        x2: pillX + pillW, y2: pillY + pillH,
+        color: img.ColorRgba8(255, 255, 255, 40),
+        thickness: 1);
+    
+    // red dot
+    final int dotX = pillX + 10;
+    final int dotY = pillY + (pillH ~/ 2) - 4;
+    img.fillCircle(src, x: dotX, y: dotY, radius: 5,
+        color: img.ColorRgba8(255, 60, 60, 255));
+    
+    // text REC
+    _drawMetaText(src, "REC 4K", img.arial12,
+        pillX + 22, pillY + 6, cinematicWhite);
+  }
+
+  // ── Mini-map dengan border biru & efek glass ──
+  void _drawCinematicMiniMap(
+    img.Image src, Uint8List mapBytes,
+    bool isTop, int dynGradH, int gradY0,
+  ) {
+    img.Image? mapImage;
+    try { mapImage = img.decodeImage(mapBytes); } catch (_) {}
+    if (mapImage == null) return;
+
+    try {
+      final resized = img.copyResize(mapImage,
+          width: mapSize, height: mapSize,
+          interpolation: img.Interpolation.average);
+
+      final int mapX = src.width - mapSize - mapMar;
+      final int mapY = isTop
+          ? mapMar + padY
+          : src.height - mapSize - mapMar - padY - 8;
+
+      if (mapX < 0 || mapY < 0 ||
+          mapX + mapSize > src.width || mapY + mapSize > src.height) return;
+
+      // Glass panel background
+      img.fillRect(src,
+          x1: mapX - mapBorder, y1: mapY - mapBorder,
+          x2: mapX + mapSize + mapBorder, y2: mapY + mapSize + mapBorder,
+          color: img.ColorRgba8(20, 19, 19, 160));
+      
+      // Border biru cinematic
+      img.drawRect(src,
+          x1: mapX - mapBorder, y1: mapY - mapBorder,
+          x2: mapX + mapSize + mapBorder, y2: mapY + mapSize + mapBorder,
+          color: cinematicBlue.withAlpha(100),
+          thickness: mapBorder);
+      
+      // Inner border tipis
+      img.drawRect(src,
+          x1: mapX, y1: mapY,
+          x2: mapX + mapSize, y2: mapY + mapSize,
+          color: img.ColorRgba8(255, 255, 255, 30),
+          thickness: 1);
+
+      // Composite map dengan efek glass (blend overlay)
+      img.compositeImage(src, resized,
+          dstX: mapX, dstY: mapY, blend: img.BlendMode.alpha);
+      
+      // Overlay gelap tipis untuk efek cinematic
+      for (int y = mapY; y < mapY + mapSize; y++) {
+        for (int x = mapX; x < mapX + mapSize; x++) {
+          final px = src.getPixel(x, y);
+          src.setPixel(x, y, img.ColorRgba8(
+            (px.r * 0.7).toInt().clamp(0, 255),
+            (px.g * 0.7).toInt().clamp(0, 255),
+            (px.b * 0.9).toInt().clamp(0, 255),
+            255,
+          ));
+        }
+      }
+      
+      // Position dot di tengah map
+      final int dotX = mapX + (mapSize ~/ 2);
+      final int dotY = mapY + (mapSize ~/ 2);
+      img.fillCircle(src, x: dotX, y: dotY, radius: 5,
+          color: cinematicBlue);
+      img.fillCircle(src, x: dotX, y: dotY, radius: 2,
+          color: cinematicWhite);
+      
+      // Label "LIVE TRACK"
+      _drawMetaText(src, "LIVE TRACK", img.arial10,
+          mapX + 6, mapY + mapSize - 14, cinematicGrey);
+          
+    } catch (_) {}
+  }
+
+  // ── Word-wrap dengan estimasi lebar karakter yang lebih akurat ──
+  List<String> _wrapText(String text, int maxWidth, img.BitmapFont font, {int maxLines = 3}) {
+    // estimasi lebar karakter berdasarkan font
+    int charW;
+    if (font == img.arial24) charW = 14;
+    else if (font == img.arial16) charW = 9;
+    else charW = 8;
+    
+    final int maxChars = (maxWidth / charW).floor().clamp(25, 150);
 
     final words = text.split(' ');
     final lines = <String>[];
@@ -180,56 +341,17 @@ class LayoutCinematic extends WatermarkLayoutBase {
       } else {
         if (current.isNotEmpty) lines.add(current);
         current = word.length > maxChars
-            ? '${word.substring(0, maxChars - 1)}…'
+            ? '${word.substring(0, maxChars - 2)}..'
             : word;
       }
     }
-    if (current.isNotEmpty) lines.add(current);
-    return lines.take(3).toList(); // maks 3 baris address
+    if (current.isNotEmpty && lines.length < maxLines) lines.add(current);
+    
+    return lines;
   }
 
   int _addressLineCount(int imageWidth, String address) {
-    final textW = imageWidth - padX * 2 - mapW - mapMar * 2 - 8;
+    final int textW = imageWidth - padX * 2 - mapSize - mapMar - 20;
     return _wrapText(address, textW, img.arial14).length;
-  }
-
-  // ── Mini-map dengan border ────────────────────────────────────────────────
-  void _drawMiniMap(
-    img.Image src, Uint8List mapBytes,
-    bool isTop, int dynGradH, int gradY0,
-  ) {
-    img.Image? mapImage;
-    try { mapImage = img.decodeImage(mapBytes); } catch (_) {}
-    if (mapImage == null) return;
-
-    try {
-      final resized = img.copyResize(mapImage,
-          width: mapW, height: mapH,
-          interpolation: img.Interpolation.average);
-
-      final int mapX = src.width - mapW - mapMar;
-      final int mapY = isTop
-          ? mapMar + padY
-          : src.height - mapH - mapMar - padY;
-
-      if (mapX < 0 || mapY < 0 ||
-          mapX + mapW > src.width || mapY + mapH > src.height) return;
-
-      // Border gelap
-      img.fillRect(src,
-          x1: mapX - mapBorder, y1: mapY - mapBorder,
-          x2: mapX + mapW + mapBorder, y2: mapY + mapH + mapBorder,
-          color: img.ColorRgba8(0, 0, 0, 200));
-
-      // Aksen biru tipis
-      img.drawRect(src,
-          x1: mapX - mapBorder, y1: mapY - mapBorder,
-          x2: mapX + mapW + mapBorder, y2: mapY + mapH + mapBorder,
-          color: img.ColorRgba8(30, 144, 255, 180),
-          thickness: 1);
-
-      img.compositeImage(src, resized,
-          dstX: mapX, dstY: mapY, blend: img.BlendMode.alpha);
-    } catch (_) {}
   }
 }

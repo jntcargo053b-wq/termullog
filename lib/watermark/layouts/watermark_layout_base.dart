@@ -5,29 +5,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
+/// Base class untuk semua layout watermark
 abstract class WatermarkLayoutBase {
+  /// Nama layout untuk debugging
   String get name;
 
-  // Warna — pakai static const/getter biar PASTI bisa diakses
-  static const img.Color white    = img.ColorRgba8(255, 255, 255, 255);
-  static const img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
-  static const img.Color blue     = img.ColorRgba8(30, 144, 255, 255);
-  static const img.Color grey     = img.ColorRgba8(150, 150, 150, 255);
+  /// Konstanta warna (img.ColorRgba8 tidak bisa const — pakai static final)
+  static final img.Color white    = img.ColorRgba8(255, 255, 255, 255);
+  static final img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
+  static final img.Color blue     = img.ColorRgba8(30, 144, 255, 255);
+  static final img.Color grey     = img.ColorRgba8(150, 150, 150, 255);
 
-  // Alias
-  static const img.Color imgWhite    = white;
-  static const img.Color imgOffWhite = offWhite;
-  static const img.Color imgBlue     = blue;
-  static const img.Color imgGrey     = grey;
+  /// Alias untuk layout baru
+  static final img.Color imgWhite    = white;
+  static final img.Color imgOffWhite = offWhite;
+  static final img.Color imgBlue     = blue;
+  static final img.Color imgGrey     = grey;
 
-  // Warna dart:ui
+  /// Warna untuk dart:ui Canvas
   static const Color uiWhite    = Color(0xFFFFFFFF);
   static const Color uiBlue     = Color(0xFF1E90FF);
   static const Color uiGrey     = Color(0xFF969696);
   static const Color uiOffWhite = Color(0xFFE6E6E6);
 
+  /// Flag font sudah diload
   static bool _fontLoaded = false;
 
+  /// Load font Roboto dari assets (panggil sekali)
   static Future<void> loadFont() async {
     if (_fontLoaded) return;
     try {
@@ -41,6 +45,7 @@ abstract class WatermarkLayoutBase {
     }
   }
 
+  // ─── SYNC: wajib diimplementasikan ───────────────────────────────
   Uint8List apply({
     required img.Image src,
     required DateTime timestamp,
@@ -57,6 +62,7 @@ abstract class WatermarkLayoutBase {
     Uint8List? mapBytes,
   });
 
+  // ─── ASYNC: opsional ─────────────────────────────────────────────
   Future<Uint8List> applyAsync({
     required img.Image src,
     required DateTime timestamp,
@@ -80,7 +86,7 @@ abstract class WatermarkLayoutBase {
     );
   }
 
-  // Canvas helpers
+  // ─── CANVAS HELPERS ──────────────────────────────────────────────
   static void canvasDrawText(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14, double letterSpacing = 1.0}) {
     final tp = TextPainter(text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontFamily: 'Roboto', fontWeight: bold ? FontWeight.w700 : FontWeight.w400, letterSpacing: letterSpacing)), textDirection: TextDirection.ltr);
     tp.layout(); tp.paint(canvas, Offset(x, y));
@@ -99,6 +105,7 @@ abstract class WatermarkLayoutBase {
     canvas.drawRect(Rect.fromLTWH(x, y, width, height), Paint()..shader = ui.Gradient.linear(Offset(x, topToBottom ? y : y + height), Offset(x, topToBottom ? y + height : y), [color.withOpacity(startOpacity), color.withOpacity(endOpacity)]));
   }
 
+  // ─── KONVERSI IMAGE ──────────────────────────────────────────────
   static Future<ui.Image> toUiImage(img.Image src) async {
     final pngBytes = Uint8List.fromList(img.encodePng(src));
     final codec = await ui.instantiateImageCodec(pngBytes);
@@ -113,6 +120,7 @@ abstract class WatermarkLayoutBase {
     return img.decodePng(byteData!.buffer.asUint8List())!;
   }
 
+  // ─── IMG PACKAGE HELPERS ─────────────────────────────────────────
   static img.Image decodeOrThrow(Uint8List bytes) {
     if (bytes.isEmpty) throw Exception('Data gambar kosong');
     if (bytes.length < 100) throw Exception('Data gambar terlalu kecil');
@@ -121,6 +129,7 @@ abstract class WatermarkLayoutBase {
     return decoded;
   }
 
+  /// Encode ke JPEG
   static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
     return Uint8List.fromList(img.encodeJpg(src, quality: quality));
   }

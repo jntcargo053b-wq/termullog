@@ -205,7 +205,10 @@ class _PreviewScreenState extends State<PreviewScreen>
       _processingStep.value = 'Memuat pengaturan...';
       debugPrint('⚙️ Loading settings...');
 
+      // ✅ HANCURKAN CACHE SEBELUM MEMBACA — AMBIL NILAI TERBARU
+      SettingsCache.invalidate();
       await SettingsCache.preload();
+
       final layout = await SettingsCache.layout;
       final showWeather = await SettingsCache.showWeather;
       final showAccuracy = await SettingsCache.showAccuracy;

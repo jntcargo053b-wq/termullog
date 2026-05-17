@@ -1,3 +1,4 @@
+// lib/services/settings_cache.dart
 import 'package:termullog/core/constants.dart';
 import 'settings_service.dart';
 
@@ -7,21 +8,17 @@ class SettingsCache {
   static bool? _showAccuracy;
   static String? _watermarkPosition;
   static bool? _showMiniMap;
-  static String? _mapSize;        // <-- TAMBAHKAN
-  static int? _mapZoomLevel;      // <-- TAMBAHKAN
+  static String? _mapSize;
+  static int? _mapZoomLevel;
   static DateTime? _lastLoad;
-  static Future<void>? _loadingFuture; // Mencegah race condition
+  static Future<void>? _loadingFuture;
 
   static bool get _isStale =>
       _lastLoad == null ||
       DateTime.now().difference(_lastLoad!) > const Duration(minutes: 5);
 
-  // Perbaikan: preload dengan lock dan error handling
   static Future<void> preload() async {
-    // Jika data masih fresh, langsung kembali
     if (!_isStale && _lastLoad != null) return;
-
-    // Jika sedang loading, tunggu proses yang sedang berjalan
     if (_loadingFuture != null) return _loadingFuture!;
 
     _loadingFuture = _performPreload();
@@ -37,8 +34,8 @@ class SettingsCache {
         SettingsService.getShowAccuracy(),
         SettingsService.getWatermarkPosition(),
         SettingsService.getShowMiniMap(),
-        SettingsService.getMapSize(),        // <-- TAMBAHKAN
-        SettingsService.getMapZoomLevel(),   // <-- TAMBAHKAN
+        SettingsService.getMapSize(),
+        SettingsService.getMapZoomLevel(),
       ]);
 
       _layout = results[0] as WatermarkLayout;
@@ -46,84 +43,62 @@ class SettingsCache {
       _showAccuracy = results[2] as bool;
       _watermarkPosition = results[3] as String;
       _showMiniMap = results[4] as bool;
-      _mapSize = results[5] as String;       // <-- TAMBAHKAN
-      _mapZoomLevel = results[6] as int;     // <-- TAMBAHKAN
+      _mapSize = results[5] as String;
+      _mapZoomLevel = results[6] as int;
       _lastLoad = DateTime.now();
     } catch (e) {
-      // Jika gagal, jangan menyimpan data yang tidak lengkap
-      // Tetap gunakan cache lama, tapi tandai sebagai stale
       _lastLoad = null;
-      rethrow; // Biarkan caller tahu ada error
+      rethrow;
     }
   }
 
-  // Getter dengan pengecekan null yang aman
   static Future<WatermarkLayout> get layout async {
     await preload();
-    if (_layout == null) {
-      throw StateError('WatermarkLayout gagal dimuat');
-    }
+    if (_layout == null) throw StateError('WatermarkLayout gagal dimuat');
     return _layout!;
   }
 
   static Future<bool> get showWeather async {
     await preload();
-    if (_showWeather == null) {
-      throw StateError('showWeather gagal dimuat');
-    }
+    if (_showWeather == null) throw StateError('showWeather gagal dimuat');
     return _showWeather!;
   }
 
   static Future<bool> get showAccuracy async {
     await preload();
-    if (_showAccuracy == null) {
-      throw StateError('showAccuracy gagal dimuat');
-    }
+    if (_showAccuracy == null) throw StateError('showAccuracy gagal dimuat');
     return _showAccuracy!;
   }
 
   static Future<String> get watermarkPosition async {
     await preload();
-    if (_watermarkPosition == null) {
-      throw StateError('watermarkPosition gagal dimuat');
-    }
+    if (_watermarkPosition == null) throw StateError('watermarkPosition gagal dimuat');
     return _watermarkPosition!;
   }
 
   static Future<bool> get showMiniMap async {
     await preload();
-    if (_showMiniMap == null) {
-      throw StateError('showMiniMap gagal dimuat');
-    }
+    if (_showMiniMap == null) throw StateError('showMiniMap gagal dimuat');
     return _showMiniMap!;
   }
 
-  // ============================================================
-  // TAMBAHKAN GETTER BARU
-  // ============================================================
   static Future<String> get mapSize async {
     await preload();
-    if (_mapSize == null) {
-      throw StateError('mapSize gagal dimuat');
-    }
+    if (_mapSize == null) throw StateError('mapSize gagal dimuat');
     return _mapSize!;
   }
 
   static Future<int> get mapZoomLevel async {
     await preload();
-    if (_mapZoomLevel == null) {
-      throw StateError('mapZoomLevel gagal dimuat');
-    }
+    if (_mapZoomLevel == null) throw StateError('mapZoomLevel gagal dimuat');
     return _mapZoomLevel!;
   }
 
-  // Invalidate seluruh cache
   static void invalidate() {
     _lastLoad = null;
-    _loadingFuture = null; // Reset loading state
+    _loadingFuture = null;
   }
 
-  // Method refresh individual (opsional)
   static Future<void> refreshLayout() async {
     _layout = await SettingsService.getWatermarkLayout();
     _lastLoad = DateTime.now();
@@ -149,9 +124,6 @@ class SettingsCache {
     _lastLoad = DateTime.now();
   }
 
-  // ============================================================
-  // TAMBAHKAN REFRESH INDIVIDUAL BARU
-  // ============================================================
   static Future<void> refreshMapSize() async {
     _mapSize = await SettingsService.getMapSize();
     _lastLoad = DateTime.now();
@@ -162,7 +134,6 @@ class SettingsCache {
     _lastLoad = DateTime.now();
   }
 
-  // Refresh semua sekaligus
   static Future<void> refreshAll() async {
     await _performPreload();
   }

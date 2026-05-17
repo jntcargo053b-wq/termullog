@@ -19,9 +19,9 @@ import '../core/constants.dart';
 import '../watermark/watermark_params.dart';
 import '../watermark/watermark_engine.dart';
 
-/// Wrapper function untuk compute() isolate
-Uint8List _applyWatermarkWrapper(dynamic params) {
-  return WatermarkEngine.applyFromMap(params as Map<String, dynamic>);
+/// Top-level wrapper untuk compute() isolate — harus top-level agar bisa di-spawn.
+Uint8List _applyWatermarkWrapper(Map<String, dynamic> params) {
+  return WatermarkEngine.applyFromMap(params);
 }
 
 enum SaveStatus { idle, saving, saved, error }
@@ -60,8 +60,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   String? _errorMessage;
   SaveStatus _saveStatus = SaveStatus.idle;
   bool _isSharing = false;
-  bool _isFileSaved = false;
-  bool _isFileInUse = false;
   bool _isMiniMapLoading = false;
   String? _miniMapError;
   late AnimationController _checkAnimController;
@@ -69,7 +67,10 @@ class _PreviewScreenState extends State<PreviewScreen>
   final TransformationController _transformController =
       TransformationController();
   Offset? _lastDoubleTapPos;
-  final Random _rng = Random.secure();
+
+  // Cukup Random biasa untuk nama file — tidak perlu kriptografis
+  final Random _rng = Random();
+
   CancelableOperation<Uint8List>? _cancelableCompute;
   final ValueNotifier<String> _processingStep =
       ValueNotifier<String>('Memuat gambar...');
@@ -129,16 +130,12 @@ class _PreviewScreenState extends State<PreviewScreen>
     _processingStep.value = 'Memuat gambar...';
 
     try {
-      // ============================================
-      // 1. LOAD IMAGE BYTES
-      // ============================================
-      Uint8List bytes;
+      // ── 1. LOAD IMAGE BYTES ──────────────────────────────────────────────
+      final Uint8List bytes;
       if (widget.imageBytes != null) {
         bytes = widget.imageBytes!;
-        debugPrint('✅ Using provided imageBytes: ${bytes.length} bytes');
       } else if (widget.imagePath != null) {
         bytes = await File(widget.imagePath!).readAsBytes();
-        debugPrint('✅ Loaded image from path: ${bytes.length} bytes');
       } else {
         throw Exception('Tidak ada data gambar');
       }
@@ -146,22 +143,12 @@ class _PreviewScreenState extends State<PreviewScreen>
       final timestamp = widget.timestamp ?? DateTime.now();
       final hasPosition = widget.latitude != null && widget.longitude != null;
 
-      debugPrint('📍 Image info:');
-      debugPrint('   hasPosition: $hasPosition');
-      debugPrint('   lat: ${widget.latitude}, lon: ${widget.longitude}');
-      debugPrint('   accuracy: ${widget.accuracy}');
-      debugPrint('   initial address: "${widget.address ?? ""}"');
-      debugPrint('   initial weather: "${widget.weather ?? ""}"');
-
-      // ============================================
-      // 2. GET ADDRESS & WEATHER
-      // ============================================
+      // ── 2. GET ADDRESS & WEATHER ─────────────────────────────────────────
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
 
       if (hasPosition && (address.isEmpty || weather.isEmpty)) {
         _processingStep.value = 'Mengambil alamat & cuaca...';
-        debugPrint('🌐 Fetching address & weather...');
         try {
           final dummyPos = Position(
             latitude: widget.latitude!,
@@ -179,33 +166,23 @@ class _PreviewScreenState extends State<PreviewScreen>
               .timeout(const Duration(seconds: 10));
           if (address.isEmpty && result.address.isNotEmpty) {
             address = result.address;
-            debugPrint('✅ Address fetched: $address');
           }
           if (weather.isEmpty && result.weather.isNotEmpty) {
             weather = result.weather;
-            debugPrint('✅ Weather fetched: $weather');
           }
-        } catch (e, stackTrace) {
-          debugPrint('❌ Geocoding/weather error: $e');
-          debugPrint('Stack trace: $stackTrace');
-          if (address.isEmpty && hasPosition) {
+        } catch (_) {
+          // Fallback ke koordinat mentah jika geocoding gagal
+          if (address.isEmpty) {
             address =
                 'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
-            debugPrint('⚠️ Using GPS fallback: $address');
           }
         }
       } else if (address.isEmpty && !hasPosition) {
         address = 'Tidak ada lokasi';
-        debugPrint('⚠️ No position data available');
       }
 
-      // ============================================
-      // 3. LOAD SETTINGS
-      // ============================================
+      // ── 3. LOAD SETTINGS ─────────────────────────────────────────────────
       _processingStep.value = 'Memuat pengaturan...';
-      debugPrint('⚙️ Loading settings...');
-
-      // ✅ HANCURKAN CACHE SEBELUM MEMBACA — AMBIL NILAI TERBARU
       SettingsCache.invalidate();
       await SettingsCache.preload();
 
@@ -217,90 +194,45 @@ class _PreviewScreenState extends State<PreviewScreen>
       final mapSize = await SettingsCache.mapSize;
       final mapZoomLevel = await SettingsCache.mapZoomLevel;
 
-      debugPrint('⚙️ Settings loaded:');
-      debugPrint('   layout: $layout (index: ${layout.index})');
-      debugPrint('   showWeather: $showWeather');
-      debugPrint('   showAccuracy: $showAccuracy');
-      debugPrint('   watermarkPosition: $watermarkPosition');
-      debugPrint('   showMiniMap: $showMiniMap');
-      debugPrint('   mapSize: $mapSize');
-      debugPrint('   mapZoomLevel: $mapZoomLevel');
-
-      // ============================================
-      // 4. FETCH MINI MAP (DENGAN FALLBACK OSM TILE)
-      // ============================================
+      // ── 4. FETCH MINI MAP ─────────────────────────────────────────────────
       Uint8List? mapBytes;
 
-      debugPrint('=' * 70);
-      debugPrint('🗺️ MINI MAP DECISION:');
-      debugPrint('   showMiniMap setting: $showMiniMap');
-      debugPrint('   hasPosition: $hasPosition');
-      debugPrint('   latitude: ${widget.latitude}');
-      debugPrint('   longitude: ${widget.longitude}');
-      debugPrint('   layout: $layout');
-      debugPrint('   mapSize: $mapSize');
-      debugPrint('   mapZoomLevel: $mapZoomLevel');
-      debugPrint('=' * 70);
-
       if (showMiniMap && hasPosition) {
-        debugPrint('✅ ALL CONDITIONS MET - Starting mini map fetch...');
-
-        setState(() => _isMiniMapLoading = true);
+        if (mounted) setState(() => _isMiniMapLoading = true);
         _processingStep.value = 'Mengunduh peta mini...';
 
         try {
-          debugPrint('🔄 Step 1: LocationWeatherService.fetchMapWithRetry...');
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             widget.latitude!,
             widget.longitude!,
           ).timeout(const Duration(seconds: 8));
-        } catch (e) {
-          debugPrint('⚠️ Service fetch error (timeout/exception): $e');
+        } catch (_) {
           mapBytes = null;
         }
 
         if (mapBytes == null) {
-          debugPrint('🔄 Step 2: Fallback – fetch OSM tile langsung...');
           try {
             mapBytes = await _fetchOsmTileBytes(
               widget.latitude!,
               widget.longitude!,
               zoom: mapZoomLevel,
             ).timeout(const Duration(seconds: 8));
-          } catch (e) {
-            debugPrint('❌ OSM tile fallback error: $e');
+          } catch (_) {
             mapBytes = null;
           }
         }
 
-        if (mapBytes != null && mapBytes.isNotEmpty) {
-          debugPrint('✅✅✅ MINI MAP SUCCESS! ${mapBytes.length} bytes ✅✅✅');
-          setState(() => _miniMapError = null);
-        } else {
-          debugPrint('❌❌❌ MINI MAP FAILED (both service & fallback) ❌❌❌');
-          setState(() => _miniMapError = 'Gagal mengunduh peta');
-        }
-
-        setState(() => _isMiniMapLoading = false);
-      } else {
-        debugPrint('⚠️ MINI MAP SKIPPED because:');
-        if (!showMiniMap) {
-          debugPrint('   ❌ showMiniMap setting is FALSE');
-        }
-        if (!hasPosition) {
-          debugPrint('   ❌ No GPS position (lat or lon is null)');
+        if (mounted) {
+          setState(() {
+            _isMiniMapLoading = false;
+            _miniMapError =
+                (mapBytes == null || mapBytes.isEmpty) ? 'Gagal mengunduh peta' : null;
+          });
         }
       }
 
-      // ============================================
-      // 5. CREATE WATERMARK PARAMS
-      // ============================================
+      // ── 5. CREATE WATERMARK PARAMS ────────────────────────────────────────
       _processingStep.value = 'Membuat watermark...';
-      debugPrint('🎨 Creating watermark params...');
-      debugPrint('   mapBytes: ${mapBytes != null ? "${mapBytes!.length} bytes" : "NULL"}');
-      debugPrint('   mapSize: $mapSize');
-      debugPrint('   mapZoomLevel: $mapZoomLevel');
-
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
         timestamp: timestamp,
@@ -319,62 +251,44 @@ class _PreviewScreenState extends State<PreviewScreen>
         mapZoomLevel: mapZoomLevel,
       );
 
-      debugPrint('🎨 Watermark params created:');
-      debugPrint('   showMiniMap: ${params.showMiniMap}');
-      debugPrint('   hasMapBytes: ${params.mapTransferable != null}');
-      debugPrint('   layout: ${params.layoutIndex}');
-      debugPrint('   mapSize: ${params.mapSize}');
-
-      // ============================================
-      // 6. PROCESS IN ISOLATE
-      // ============================================
-      debugPrint('🔄 Starting watermark processing in isolate...');
+      // ── 6. PROCESS IN ISOLATE ─────────────────────────────────────────────
       _cancelableCompute = CancelableOperation.fromFuture(
         compute(_applyWatermarkWrapper, params.toMap()),
       );
-
       final processedBytes = await _cancelableCompute!.value;
-      debugPrint('✅ Watermark processing completed: ${processedBytes.length} bytes');
+      _cancelableCompute = null;
 
-      // ============================================
-      // 7. SAVE PERMANENTLY
-      // ============================================
+      // ── 7. SAVE TO APP DIRECTORY ──────────────────────────────────────────
       _processingStep.value = 'Menyimpan file...';
       final historyDir = await _getHistoryDirectory();
-      final fileName = _uniqueFileName(timestamp);
-      final permanentFile = File('${historyDir.path}/$fileName');
+      final permanentFile =
+          File('${historyDir.path}/${_uniqueFileName(timestamp)}');
       await permanentFile.writeAsBytes(processedBytes);
-      debugPrint('💾 File saved permanently: ${permanentFile.path}');
 
       if (mounted) {
         setState(() {
           _displayImagePath = permanentFile.path;
           _isProcessing = false;
         });
-        debugPrint('✅ Preview updated successfully');
       }
     } catch (e, stackTrace) {
-      if (e.toString().contains('Cancel') || e.toString().contains('cancel')) {
-        debugPrint('⏹️ Processing cancelled');
-        if (mounted) {
-          setState(() => _isProcessing = false);
-        }
-      } else {
-        debugPrint('❌ Processing error: $e');
-        debugPrint('Stack trace: $stackTrace');
-        if (mounted) {
-          setState(() {
-            _errorMessage = 'Error: ${e.toString()}';
-            _isProcessing = false;
-          });
-        }
+      final msg = e.toString();
+      // Abaikan error dari cancel — bukan kegagalan nyata
+      if (msg.toLowerCase().contains('cancel')) {
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+      debugPrint('❌ PreviewScreen processing error: $e\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error: $msg';
+          _isProcessing = false;
+        });
       }
     }
   }
 
-  // ============================================
-  // FALLBACK: Direct OSM tile download
-  // ============================================
+  // ── OSM TILE FALLBACK ──────────────────────────────────────────────────────
   static Future<Uint8List?> _fetchOsmTileBytes(
     double lat,
     double lng, {
@@ -383,67 +297,50 @@ class _PreviewScreenState extends State<PreviewScreen>
     final n = pow(2, zoom).toInt();
     final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
     final latRad = lat * pi / 180;
-    final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
-        .toInt()
-        .clamp(0, n - 1);
+    final tileY =
+        ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
+            .toInt()
+            .clamp(0, n - 1);
 
     const subdomains = ['a', 'b', 'c'];
     final sub = subdomains[tileX % 3];
     final url = 'https://$sub.tile.openstreetmap.org/$zoom/$tileX/$tileY.png';
 
-    debugPrint('🗺️ OSM Tile URL: $url');
-
-    final client = HttpClient();
-    client.userAgent = 'TermulLogApp/1.0 (flutter)';
+    final client = HttpClient()
+      ..userAgent = 'TermulLogApp/1.0 (flutter)'
+      ..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close().timeout(
-            const Duration(seconds: 8),
-          );
-      if (response.statusCode != 200) {
-        debugPrint('❌ OSM tile HTTP ${response.statusCode}: $url');
-        return null;
-      }
+      final response = await request.close();
+      if (response.statusCode != 200) return null;
       final chunks = <List<int>>[];
       await for (final chunk in response) {
         chunks.add(chunk);
       }
-      final bytes = Uint8List.fromList(chunks.expand((e) => e).toList());
-      debugPrint('✅ OSM tile downloaded: ${bytes.length} bytes');
-      return bytes;
-    } catch (e) {
-      debugPrint('❌ OSM tile fetch error: $e');
+      return Uint8List.fromList(chunks.expand((e) => e).toList());
+    } catch (_) {
       return null;
     } finally {
-      client.close();
+      // Selalu close client, bahkan jika getUrl() throw
+      client.close(force: true);
     }
   }
 
-  // ============================================
-  // SAVE & SHARE LOGIC
-  // ============================================
+  // ── PERMISSION & SAVE ──────────────────────────────────────────────────────
   Future<bool> _requestStoragePermission() async {
     if (!Platform.isAndroid) return true;
-
-    final androidInfo = await DeviceInfoPlugin().androidInfo;
-    final sdkInt = androidInfo.version.sdkInt;
-
-    if (sdkInt >= 29) {
-      return true;
-    }
-
+    final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+    if (sdkInt >= 29) return true;
     final status = await Permission.storage.request();
-    if (status.isGranted) return true;
     if (status.isPermanentlyDenied) openAppSettings();
-    return false;
+    return status.isGranted;
   }
 
   Future<void> _saveToGallery() async {
     if (_saveStatus == SaveStatus.saving || _displayImagePath == null) return;
 
     if (Platform.isAndroid) {
-      final granted = await _requestStoragePermission();
-      if (!granted) {
+      if (!await _requestStoragePermission()) {
         _showErrorSnackbar('Izin penyimpanan diperlukan');
         return;
       }
@@ -458,14 +355,13 @@ class _PreviewScreenState extends State<PreviewScreen>
     setState(() => _saveStatus = SaveStatus.saving);
 
     try {
-      final bool? result = await GallerySaver.saveImage(
+      final result = await GallerySaver.saveImage(
         _displayImagePath!,
         albumName: 'TermulLog',
       );
       if (!mounted) return;
 
       if (result == true) {
-        _isFileSaved = true;
         setState(() => _saveStatus = SaveStatus.saved);
         _checkAnimController.forward(from: 0);
         HapticFeedback.mediumImpact();
@@ -473,27 +369,26 @@ class _PreviewScreenState extends State<PreviewScreen>
           if (mounted) setState(() => _saveStatus = SaveStatus.idle);
         });
       } else {
-        setState(() => _saveStatus = SaveStatus.error);
-        _showErrorSnackbar('Gagal menyimpan foto');
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) setState(() => _saveStatus = SaveStatus.idle);
-        });
+        _handleSaveError('Gagal menyimpan foto');
       }
     } catch (e) {
-      setState(() => _saveStatus = SaveStatus.error);
-      _showErrorSnackbar('Gagal menyimpan: ${e.toString().substring(0, 50)}');
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _saveStatus = SaveStatus.idle);
-      });
+      final msg = e.toString();
+      _handleSaveError('Gagal menyimpan: ${msg.length > 60 ? '${msg.substring(0, 60)}…' : msg}');
     }
+  }
+
+  void _handleSaveError(String msg) {
+    if (!mounted) return;
+    setState(() => _saveStatus = SaveStatus.error);
+    _showErrorSnackbar(msg);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _saveStatus = SaveStatus.idle);
+    });
   }
 
   Future<void> _sharePhoto() async {
     if (_isSharing || _displayImagePath == null) return;
-    setState(() {
-      _isSharing = true;
-      _isFileInUse = true;
-    });
+    setState(() => _isSharing = true);
 
     try {
       final file = File(_displayImagePath!);
@@ -505,15 +400,11 @@ class _PreviewScreenState extends State<PreviewScreen>
       );
       HapticFeedback.lightImpact();
     } catch (e) {
-      debugPrint('Share error: $e');
-      _showErrorSnackbar('Gagal membagikan: ${e.toString().substring(0, 50)}');
+      final msg = e.toString();
+      _showErrorSnackbar(
+          'Gagal membagikan: ${msg.length > 60 ? '${msg.substring(0, 60)}…' : msg}');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSharing = false;
-          _isFileInUse = false;
-        });
-      }
+      if (mounted) setState(() => _isSharing = false);
     }
   }
 
@@ -535,9 +426,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     );
   }
 
-  // ============================================
-  // UI BUILD
-  // ============================================
+  // ── UI ─────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -583,7 +472,7 @@ class _PreviewScreenState extends State<PreviewScreen>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
+                      color: Colors.white.withAlpha(25),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -599,10 +488,9 @@ class _PreviewScreenState extends State<PreviewScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.1),
+                        color: Colors.amber.withAlpha(25),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: Colors.amber.withOpacity(0.3)),
+                        border: Border.all(color: Colors.amber.withAlpha(76)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -635,10 +523,10 @@ class _PreviewScreenState extends State<PreviewScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: Colors.orange.withAlpha(25),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: Colors.orange.withOpacity(0.3)),
+                        border:
+                            Border.all(color: Colors.orange.withAlpha(76)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -753,11 +641,9 @@ class _PreviewScreenState extends State<PreviewScreen>
               if (scale > 1.0) {
                 _transformController.value = Matrix4.identity();
               } else {
-                final pos = _lastDoubleTapPos ?? const Offset(0, 0);
-                final x = -pos.dx * (2.5 - 1);
-                final y = -pos.dy * (2.5 - 1);
+                final pos = _lastDoubleTapPos ?? Offset.zero;
                 _transformController.value = Matrix4.identity()
-                  ..translate(x, y)
+                  ..translate(-pos.dx * (2.5 - 1), -pos.dy * (2.5 - 1))
                   ..scale(2.5);
               }
             },
@@ -846,6 +732,8 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 }
 
+// ── Reusable widgets ──────────────────────────────────────────────────────────
+
 class _ActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget icon;
@@ -897,39 +785,40 @@ class _SaveButton extends StatelessWidget {
     final isError = status == SaveStatus.error;
     final isSaving = status == SaveStatus.saving;
 
-    Color bgColor = Colors.green.shade600;
-    if (isError) bgColor = Colors.red.shade600;
-    if (isSaved) bgColor = Colors.green.shade800;
+    final bgColor = isError
+        ? Colors.red.shade600
+        : isSaved
+            ? Colors.green.shade800
+            : Colors.green.shade600;
+
+    final icon = isSaving
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          )
+        : isSaved
+            ? ScaleTransition(
+                scale: checkAnim,
+                child: const Icon(Icons.check_circle, size: 20),
+              )
+            : isError
+                ? const Icon(Icons.error_outline, size: 20)
+                : const Icon(Icons.save_alt, size: 20);
+
+    final labelText = isSaving
+        ? 'Menyimpan...'
+        : isSaved
+            ? 'Tersimpan!'
+            : isError
+                ? 'Gagal'
+                : 'Simpan';
 
     return Expanded(
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: isSaving
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : isSaved
-                ? ScaleTransition(
-                    scale: checkAnim,
-                    child: const Icon(Icons.check_circle, size: 20),
-                  )
-                : isError
-                    ? const Icon(Icons.error_outline, size: 20)
-                    : const Icon(Icons.save_alt, size: 20),
-        label: Text(
-          isSaving
-              ? 'Menyimpan...'
-              : isSaved
-                  ? 'Tersimpan!'
-                  : isError
-                      ? 'Gagal'
-                      : 'Simpan',
-        ),
+        icon: icon,
+        label: Text(labelText),
         style: ElevatedButton.styleFrom(
           backgroundColor: bgColor,
           foregroundColor: Colors.white,

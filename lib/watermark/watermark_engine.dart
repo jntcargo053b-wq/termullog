@@ -14,6 +14,8 @@ import 'layouts/layout_hud.dart';
 import 'layouts/layout_gps_card.dart';
 import 'layouts/layout_polaroid.dart';
 import 'layouts/layout_side_panel.dart';
+import 'layouts/layout_cinematic_v2.dart';
+import 'layouts/layout_timemark_style.dart';
 
 class WatermarkEngine {
   static final Map<int, WatermarkLayoutBase> _layouts = {
@@ -25,6 +27,8 @@ class WatermarkEngine {
     5: LayoutGpsCard(),
     6: LayoutPolaroid(),
     7: LayoutSidePanel(),
+    8: LayoutCinematicV2(),
+    9: LayoutTimeMarkStyle(),
   };
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {

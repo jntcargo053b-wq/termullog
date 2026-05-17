@@ -27,11 +27,14 @@ const int kLogoMaxWidth = 90;
 
 /// Enum untuk memilih gaya tampilan watermark
 enum WatermarkLayout {
-  minimal,          // Film Strip style
-  modern,           // DSLR Corner style
-  elegant,          // Cinematic style
-  professional,     // Field Survey style
-  semiTransparent,  // HUD Modern style
+  minimal,          // 0 - Film Strip style
+  modern,           // 1 - DSLR Corner style
+  elegant,          // 2 - Cinematic style
+  professional,     // 3 - Field Survey style
+  semiTransparent,  // 4 - HUD Modern style
+  gpsCard,          // 5 - GPS Card style
+  polaroid,         // 6 - Polaroid style
+  sidePanel,        // 7 - Side Panel style
 }
 
 /// Extension untuk mendapatkan nama tampilan dan deskripsi
@@ -48,6 +51,12 @@ extension WatermarkLayoutExtension on WatermarkLayout {
         return 'Field Survey';
       case WatermarkLayout.semiTransparent:
         return 'HUD Modern';
+      case WatermarkLayout.gpsCard:
+        return 'GPS Card';
+      case WatermarkLayout.polaroid:
+        return 'Polaroid';
+      case WatermarkLayout.sidePanel:
+        return 'Side Panel';
     }
   }
   
@@ -63,6 +72,12 @@ extension WatermarkLayoutExtension on WatermarkLayout {
         return 'Gaya form survey dengan tabel data terstruktur';
       case WatermarkLayout.semiTransparent:
         return 'Heads-Up Display modern dengan efek transparan';
+      case WatermarkLayout.gpsCard:
+        return 'Panel GPS dengan map strip adaptif';
+      case WatermarkLayout.polaroid:
+        return 'Gaya polaroid klasik dengan bingkai ivory';
+      case WatermarkLayout.sidePanel:
+        return 'Panel samping vertikal dengan jam besar';
     }
   }
 }
@@ -150,6 +165,25 @@ final img.Color kColorLightGrey = img.ColorRgb8(200, 200, 205);
 
 /// Emas / kuning untuk aksen
 final img.Color kColorGold = img.ColorRgb8(255, 180, 50);
+
+// ============================================================
+// WARNA TAMBAHAN UNTUK LAYOUT BARU
+// ============================================================
+
+/// Putih ivory untuk background polaroid
+final img.Color kColorIvory = img.ColorRgb8(248, 245, 235);
+
+/// Teks gelap untuk polaroid
+final img.Color kColorDarkText = img.ColorRgb8(40, 40, 40);
+
+/// Navy untuk side panel
+final img.Color kColorNavy = img.ColorRgba8(10, 15, 40, 240);
+
+/// Background panel GPS
+final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
+
+/// Aksen biru untuk GPS Card
+final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
 
 // ============================================================
 // UI COLOURS (untuk Flutter Widget) - HINDARI DUPLIKASI

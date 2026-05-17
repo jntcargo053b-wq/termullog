@@ -32,37 +32,30 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     final int newW = src.width + borderSide * 2;
     final int newH = src.height + borderTop + borderBottom;
 
-    // Canvas ivory
     final canvas = img.Image(width: newW, height: newH);
     img.fillRect(canvas, x1: 0, y1: 0, x2: newW - 1, y2: newH - 1,
         color: img.ColorRgba8(248, 245, 235, 255));
 
-    // Shadow
     img.fillRect(canvas,
         x1: borderSide + 3, y1: borderTop + 3,
         x2: borderSide + src.width + 3, y2: borderTop + src.height + 3,
         color: img.ColorRgba8(0, 0, 0, 25));
 
-    // Foto
     img.compositeImage(canvas, src, dstX: borderSide, dstY: borderTop, blend: img.BlendMode.alpha);
 
-    // Border subtle
     img.drawRect(canvas,
         x1: borderSide, y1: borderTop,
         x2: borderSide + src.width - 1, y2: borderTop + src.height - 1,
         color: img.ColorRgba8(200, 195, 185, 80), thickness: 1);
 
-    // Teks di area bawah
     final font = img.arial24;
     final textColor = img.ColorRgba8(40, 40, 40, 255);
     int cy = src.height + borderTop + 12;
 
-    // Tanggal
     img.drawString(canvas, DateFormat('dd MMM yyyy').format(timestamp),
         font: font, x: borderSide + 2, y: cy, color: textColor);
     cy += 24;
 
-    // Koordinat
     if (hasPosition) {
       String coord = '${lat!.toStringAsFixed(4)}, ${lon!.toStringAsFixed(4)}';
       if (showAccuracy) coord += '  ±${acc?.toStringAsFixed(0) ?? '?'}m';
@@ -71,7 +64,6 @@ class LayoutPolaroid extends WatermarkLayoutBase {
       cy += 22;
     }
 
-    // Alamat
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       String addr = address.length > maxAddrLen
           ? '${address.substring(0, maxAddrLen - 1)}…' : address;
@@ -79,6 +71,6 @@ class LayoutPolaroid extends WatermarkLayoutBase {
           color: img.ColorRgba8(100, 100, 100, 255));
     }
 
-    return encodeJpg(canvas);
+    return WatermarkLayoutBase.encodeJpg(canvas);
   }
 }

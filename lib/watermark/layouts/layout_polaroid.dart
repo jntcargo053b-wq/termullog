@@ -1,3 +1,4 @@
+// lib/watermark/layouts/layout_polaroid.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -6,7 +7,7 @@ import 'watermark_layout_base.dart';
 class LayoutPolaroid extends WatermarkLayoutBase {
   @override
   String get name => 'Polaroid';
-  
+
   static const int borderTop = 24;
   static const int borderSide = 24;
   static const int borderBottom = 70;
@@ -31,22 +32,21 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     final int newW = src.width + borderSide * 2;
     final int newH = src.height + borderTop + borderBottom;
 
-    // Buat canvas putih ivory
+    // Canvas ivory
     final canvas = img.Image(width: newW, height: newH);
     img.fillRect(canvas, x1: 0, y1: 0, x2: newW - 1, y2: newH - 1,
         color: img.ColorRgba8(248, 245, 235, 255));
 
-    // Shadow di bawah foto (efek polaroid)
-    final int shadowOffset = 3;
+    // Shadow
     img.fillRect(canvas,
-        x1: borderSide + shadowOffset, y1: borderTop + shadowOffset,
-        x2: borderSide + src.width + shadowOffset + 1, y2: borderTop + src.height + shadowOffset + 1,
+        x1: borderSide + 3, y1: borderTop + 3,
+        x2: borderSide + src.width + 3, y2: borderTop + src.height + 3,
         color: img.ColorRgba8(0, 0, 0, 25));
 
-    // Tempel foto asli
+    // Foto
     img.compositeImage(canvas, src, dstX: borderSide, dstY: borderTop, blend: img.BlendMode.alpha);
 
-    // Border subtle di sekitar foto
+    // Border subtle
     img.drawRect(canvas,
         x1: borderSide, y1: borderTop,
         x2: borderSide + src.width - 1, y2: borderTop + src.height - 1,
@@ -57,7 +57,7 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     final textColor = img.ColorRgba8(40, 40, 40, 255);
     int cy = src.height + borderTop + 12;
 
-    // Tanggal — teks bold (simulasi dengan draw dua kali offset 0.5)
+    // Tanggal
     img.drawString(canvas, DateFormat('dd MMM yyyy').format(timestamp),
         font: font, x: borderSide + 2, y: cy, color: textColor);
     cy += 24;
@@ -73,11 +73,12 @@ class LayoutPolaroid extends WatermarkLayoutBase {
 
     // Alamat
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      String addr = address.length > maxAddrLen ? '${address.substring(0, maxAddrLen - 1)}…' : address;
+      String addr = address.length > maxAddrLen
+          ? '${address.substring(0, maxAddrLen - 1)}…' : address;
       img.drawString(canvas, addr, font: font, x: borderSide + 2, y: cy,
           color: img.ColorRgba8(100, 100, 100, 255));
     }
 
-    return WatermarkLayoutBase.encodeJpg(canvas);
+    return encodeJpg(canvas);
   }
 }

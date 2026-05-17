@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../core/constants.dart';
 import '../services/settings_service.dart';
-
+import '../services/settings_cache.dart';
 // ============================================================
 // SETTINGS SCREEN
 // ============================================================

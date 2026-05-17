@@ -5,21 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
-/// Base class untuk semua layout watermark
 abstract class WatermarkLayoutBase {
-  /// Nama layout untuk debugging
   String get name;
-  
-  /// Konstanta warna yang digunakan oleh semua layout (img package)
-  static final white    = img.ColorRgba8(255, 255, 255, 255);
-  static final offWhite = img.ColorRgba8(230, 230, 230, 255);
-  static final blue     = img.ColorRgba8(30, 144, 255, 255);
-  static final grey     = img.ColorRgba8(150, 150, 150, 255);
-  
-  /// Flag untuk menandai apakah font sudah diload
+
+  // Warna untuk img package
+  static final imgWhite    = img.ColorRgba8(255, 255, 255, 255);
+  static final imgOffWhite = img.ColorRgba8(230, 230, 230, 255);
+  static final imgBlue     = img.ColorRgba8(30, 144, 255, 255);
+  static final imgGrey     = img.ColorRgba8(150, 150, 150, 255);
+
+  // Warna untuk dart:ui Canvas
+  static const uiWhite    = Color(0xFFFFFFFF);
+  static const uiBlue     = Color(0xFF1E90FF);
+  static const uiGrey     = Color(0xFF969696);
+  static const uiOffWhite = Color(0xFFE6E6E6);
+
   static bool _fontLoaded = false;
 
-  /// Load font Roboto dari assets (dipanggil sekali)
   static Future<void> loadFont() async {
     if (_fontLoaded) return;
     try {
@@ -29,14 +31,10 @@ abstract class WatermarkLayoutBase {
       await fontLoader.load();
       _fontLoaded = true;
     } catch (e) {
-      // Font tidak ditemukan — fallback ke font sistem
-      _fontLoaded = true; // jangan coba lagi
+      _fontLoaded = true;
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // SYNC VERSION — untuk pipeline img package (wajib diimplementasikan)
-  // ────────────────────────────────────────────────────────────────
   Uint8List apply({
     required img.Image src,
     required DateTime timestamp,
@@ -53,10 +51,6 @@ abstract class WatermarkLayoutBase {
     Uint8List? mapBytes,
   });
 
-  // ────────────────────────────────────────────────────────────────
-  // ASYNC VERSION — untuk pipeline dart:ui Canvas (opsional)
-  // Default: panggil sync version untuk backward compatibility
-  // ────────────────────────────────────────────────────────────────
   Future<Uint8List> applyAsync({
     required img.Image src,
     required DateTime timestamp,
@@ -73,106 +67,65 @@ abstract class WatermarkLayoutBase {
     Uint8List? mapBytes,
   }) async {
     return apply(
-      src: src,
-      timestamp: timestamp,
-      hasPosition: hasPosition,
-      lat: lat,
-      lon: lon,
-      acc: acc,
-      address: address,
-      weather: weather,
-      showWeather: showWeather,
-      showAccuracy: showAccuracy,
-      watermarkPosition: watermarkPosition,
-      showMiniMap: showMiniMap,
-      mapBytes: mapBytes,
+      src: src, timestamp: timestamp, hasPosition: hasPosition,
+      lat: lat, lon: lon, acc: acc, address: address, weather: weather,
+      showWeather: showWeather, showAccuracy: showAccuracy,
+      watermarkPosition: watermarkPosition, showMiniMap: showMiniMap, mapBytes: mapBytes,
     );
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // HELPERS — untuk dart:ui Canvas rendering
-  // ────────────────────────────────────────────────────────────────
-
-  /// Gambar teks dengan TextPainter (font Roboto)
-  static void drawText(
-    Canvas canvas,
-    String text, {
-    required double x,
-    required double y,
-    Color color = Colors.white,
-    bool bold = false,
-    double size = 14,
-    double letterSpacing = 1.0,
-  }) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color,
-          fontSize: size,
-          fontFamily: 'Roboto',
-          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-          letterSpacing: letterSpacing,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(x, y));
+  // ─── CANVAS HELPERS ──────────────────────────────────────────
+  static void canvasDrawText(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14, double letterSpacing = 1.0}) {
+    final tp = TextPainter(text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontFamily: 'Roboto', fontWeight: bold ? FontWeight.w700 : FontWeight.w400, letterSpacing: letterSpacing)), textDirection: TextDirection.ltr);
+    tp.layout(); tp.paint(canvas, Offset(x, y));
   }
 
-  /// Gambar teks dengan shadow
-  static void drawTextWithShadow(
-    Canvas canvas,
-    String text, {
-    required double x,
-    required double y,
-    Color color = Colors.white,
-    Color shadowColor = Colors.black54,
-    bool bold = false,
-    double size = 14,
-    double shadowOffset = 1.0,
-  }) {
-    drawText(canvas, text, x: x + shadowOffset, y: y + shadowOffset, color: shadowColor, bold: bold, size: size);
-    drawText(canvas, text, x: x, y: y, color: color, bold: bold, size: size);
+  static void canvasDrawTextShadow(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14}) {
+    canvasDrawText(canvas, text, x: x + 1, y: y + 1, color: Colors.black54, bold: bold, size: size);
+    canvasDrawText(canvas, text, x: x, y: y, color: color, bold: bold, size: size);
   }
 
-  /// Konversi img.Image → ui.Image
-  static Future<ui.Image> imgToUiImage(img.Image src) async {
+  static void canvasDrawChip(Canvas canvas, {required double x, required double y, required double width, required double height, Color color = uiBlue, double opacity = 0.15}) {
+    final paint = Paint()..color = color.withOpacity(opacity);
+    canvas.drawRRect(RRect.fromLTRBR(x, y, x + width, y + height, const Radius.circular(4)), paint);
+  }
+
+  static void canvasDrawGradient(Canvas canvas, {required double x, required double y, required double width, required double height, Color color = Colors.black, double startOpacity = 0.8, double endOpacity = 0.0, bool topToBottom = true}) {
+    final paint = Paint()..shader = ui.Gradient.linear(Offset(x, topToBottom ? y : y + height), Offset(x, topToBottom ? y + height : y), [color.withOpacity(startOpacity), color.withOpacity(endOpacity)]);
+    canvas.drawRect(Rect.fromLTWH(x, y, width, height), paint);
+  }
+
+  // ─── KONVERSI IMAGE ──────────────────────────────────────────
+  static Future<ui.Image> toUiImage(img.Image src) async {
     final pngBytes = Uint8List.fromList(img.encodePng(src));
     final codec = await ui.instantiateImageCodec(pngBytes);
     final frame = await codec.getNextFrame();
     return frame.image;
   }
 
-  /// Konversi ui.Image → img.Image
-  static Future<img.Image> uiImageToImg(ui.Image src) async {
-    final byteData = await src.toByteData(format: ui.ImageByteFormat.png);
-    final pngBytes = byteData!.buffer.asUint8List();
-    return img.decodePng(pngBytes)!;
-  }
-
-  /// Render Canvas → img.Image
-  static Future<img.Image> canvasToImg(ui.PictureRecorder recorder, ui.Image uiImage) async {
+  static Future<img.Image> recorderToImg(ui.PictureRecorder recorder, ui.Image uiImage) async {
     final picture = recorder.endRecording();
     final newUiImage = await picture.toImage(uiImage.width, uiImage.height);
-    return uiImageToImg(newUiImage);
+    final byteData = await newUiImage.toByteData(format: ui.ImageByteFormat.png);
+    return img.decodePng(byteData!.buffer.asUint8List())!;
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // HELPERS — untuk img package (sync)
-  // ────────────────────────────────────────────────────────────────
+  static Future<img.Image> recorderToImgBySize(ui.PictureRecorder recorder, int width, int height) async {
+    final picture = recorder.endRecording();
+    final newUiImage = await picture.toImage(width, height);
+    final byteData = await newUiImage.toByteData(format: ui.ImageByteFormat.png);
+    return img.decodePng(byteData!.buffer.asUint8List())!;
+  }
 
-  /// Helper untuk decode gambar dengan validasi
+  // ─── IMG PACKAGE HELPERS ─────────────────────────────────────
   static img.Image decodeOrThrow(Uint8List bytes) {
     if (bytes.isEmpty) throw Exception('Data gambar kosong');
-    if (bytes.length < 100) throw Exception('Data gambar terlalu kecil, mungkin corrupt');
+    if (bytes.length < 100) throw Exception('Data gambar terlalu kecil');
     final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw Exception('Format gambar tidak didukung');
+    if (decoded == null) throw Exception('Format tidak didukung');
     return decoded;
   }
-  
-  /// Encode ke JPEG dengan quality standar
+
   static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
     return Uint8List.fromList(img.encodeJpg(src, quality: quality));
   }

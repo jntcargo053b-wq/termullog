@@ -9,25 +9,25 @@ import 'package:image/image.dart' as img;
 abstract class WatermarkLayoutBase {
   /// Nama layout untuk debugging
   String get name;
-  
-  /// Konstanta warna yang digunakan oleh semua layout (img package) — KOMPATIBEL
-  static final white    = img.ColorRgba8(255, 255, 255, 255);
-  static final offWhite = img.ColorRgba8(230, 230, 230, 255);
-  static final blue     = img.ColorRgba8(30, 144, 255, 255);
-  static final grey     = img.ColorRgba8(150, 150, 150, 255);
 
-  /// Nama alternatif untuk layout baru (biar tidak bentrok)
-  static final imgWhite    = white;
-  static final imgOffWhite = offWhite;
-  static final imgBlue     = blue;
-  static final imgGrey     = grey;
+  /// Konstanta warna untuk img package — pakai static getter biar pasti ada
+  static img.Color get white    => img.ColorRgba8(255, 255, 255, 255);
+  static img.Color get offWhite => img.ColorRgba8(230, 230, 230, 255);
+  static img.Color get blue     => img.ColorRgba8(30, 144, 255, 255);
+  static img.Color get grey     => img.ColorRgba8(150, 150, 150, 255);
+
+  /// Alias untuk layout baru
+  static img.Color get imgWhite    => white;
+  static img.Color get imgOffWhite => offWhite;
+  static img.Color get imgBlue     => blue;
+  static img.Color get imgGrey     => grey;
 
   /// Warna untuk dart:ui Canvas
-  static const uiWhite    = Color(0xFFFFFFFF);
-  static const uiBlue     = Color(0xFF1E90FF);
-  static const uiGrey     = Color(0xFF969696);
-  static const uiOffWhite = Color(0xFFE6E6E6);
-  
+  static const Color uiWhite    = Color(0xFFFFFFFF);
+  static const Color uiBlue     = Color(0xFF1E90FF);
+  static const Color uiGrey     = Color(0xFF969696);
+  static const Color uiOffWhite = Color(0xFFE6E6E6);
+
   /// Flag font sudah diload
   static bool _fontLoaded = false;
 
@@ -62,7 +62,7 @@ abstract class WatermarkLayoutBase {
     Uint8List? mapBytes,
   });
 
-  // ─── ASYNC: opsional, default ke sync ─────────────────────────────
+  // ─── ASYNC: opsional ─────────────────────────────────────────────
   Future<Uint8List> applyAsync({
     required img.Image src,
     required DateTime timestamp,
@@ -79,107 +79,33 @@ abstract class WatermarkLayoutBase {
     Uint8List? mapBytes,
   }) async {
     return apply(
-      src: src,
-      timestamp: timestamp,
-      hasPosition: hasPosition,
-      lat: lat,
-      lon: lon,
-      acc: acc,
-      address: address,
-      weather: weather,
-      showWeather: showWeather,
-      showAccuracy: showAccuracy,
-      watermarkPosition: watermarkPosition,
-      showMiniMap: showMiniMap,
-      mapBytes: mapBytes,
+      src: src, timestamp: timestamp, hasPosition: hasPosition,
+      lat: lat, lon: lon, acc: acc, address: address, weather: weather,
+      showWeather: showWeather, showAccuracy: showAccuracy,
+      watermarkPosition: watermarkPosition, showMiniMap: showMiniMap, mapBytes: mapBytes,
     );
   }
 
   // ─── CANVAS HELPERS ──────────────────────────────────────────────
-
-  /// Gambar teks dengan TextPainter (Roboto)
-  static void canvasDrawText(
-    Canvas canvas,
-    String text, {
-    required double x,
-    required double y,
-    Color color = uiWhite,
-    bool bold = false,
-    double size = 14,
-    double letterSpacing = 1.0,
-  }) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color,
-          fontSize: size,
-          fontFamily: 'Roboto',
-          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-          letterSpacing: letterSpacing,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    tp.layout();
-    tp.paint(canvas, Offset(x, y));
+  static void canvasDrawText(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14, double letterSpacing = 1.0}) {
+    final tp = TextPainter(text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontFamily: 'Roboto', fontWeight: bold ? FontWeight.w700 : FontWeight.w400, letterSpacing: letterSpacing)), textDirection: TextDirection.ltr);
+    tp.layout(); tp.paint(canvas, Offset(x, y));
   }
 
-  /// Gambar teks dengan shadow
-  static void canvasDrawTextShadow(
-    Canvas canvas,
-    String text, {
-    required double x,
-    required double y,
-    Color color = uiWhite,
-    bool bold = false,
-    double size = 14,
-  }) {
+  static void canvasDrawTextShadow(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14}) {
     canvasDrawText(canvas, text, x: x + 1, y: y + 1, color: Colors.black54, bold: bold, size: size);
     canvasDrawText(canvas, text, x: x, y: y, color: color, bold: bold, size: size);
   }
 
-  /// Gambar chip background (rounded rect)
-  static void canvasDrawChip(
-    Canvas canvas, {
-    required double x,
-    required double y,
-    required double width,
-    required double height,
-    Color color = uiBlue,
-    double opacity = 0.15,
-  }) {
-    final paint = Paint()..color = color.withOpacity(opacity);
-    canvas.drawRRect(
-      RRect.fromLTRBR(x, y, x + width, y + height, const Radius.circular(4)),
-      paint,
-    );
+  static void canvasDrawChip(Canvas canvas, {required double x, required double y, required double width, required double height, Color color = uiBlue, double opacity = 0.15}) {
+    canvas.drawRRect(RRect.fromLTRBR(x, y, x + width, y + height, const Radius.circular(4)), Paint()..color = color.withOpacity(opacity));
   }
 
-  /// Gradient overlay
-  static void canvasDrawGradient(
-    Canvas canvas, {
-    required double x,
-    required double y,
-    required double width,
-    required double height,
-    Color color = Colors.black,
-    double startOpacity = 0.8,
-    double endOpacity = 0.0,
-    bool topToBottom = true,
-  }) {
-    final paint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(x, topToBottom ? y : y + height),
-        Offset(x, topToBottom ? y + height : y),
-        [color.withOpacity(startOpacity), color.withOpacity(endOpacity)],
-      );
-    canvas.drawRect(Rect.fromLTWH(x, y, width, height), paint);
+  static void canvasDrawGradient(Canvas canvas, {required double x, required double y, required double width, required double height, Color color = Colors.black, double startOpacity = 0.8, double endOpacity = 0.0, bool topToBottom = true}) {
+    canvas.drawRect(Rect.fromLTWH(x, y, width, height), Paint()..shader = ui.Gradient.linear(Offset(x, topToBottom ? y : y + height), Offset(x, topToBottom ? y + height : y), [color.withOpacity(startOpacity), color.withOpacity(endOpacity)]));
   }
 
   // ─── KONVERSI IMAGE ──────────────────────────────────────────────
-
-  /// img.Image → ui.Image
   static Future<ui.Image> toUiImage(img.Image src) async {
     final pngBytes = Uint8List.fromList(img.encodePng(src));
     final codec = await ui.instantiateImageCodec(pngBytes);
@@ -187,7 +113,6 @@ abstract class WatermarkLayoutBase {
     return frame.image;
   }
 
-  /// ui.PictureRecorder → img.Image (via width/height)
   static Future<img.Image> recorderToImg(ui.PictureRecorder recorder, int width, int height) async {
     final picture = recorder.endRecording();
     final uiImage = await picture.toImage(width, height);
@@ -196,7 +121,6 @@ abstract class WatermarkLayoutBase {
   }
 
   // ─── IMG PACKAGE HELPERS ─────────────────────────────────────────
-
   static img.Image decodeOrThrow(Uint8List bytes) {
     if (bytes.isEmpty) throw Exception('Data gambar kosong');
     if (bytes.length < 100) throw Exception('Data gambar terlalu kecil');
@@ -205,6 +129,7 @@ abstract class WatermarkLayoutBase {
     return decoded;
   }
 
+  /// Encode ke JPEG — PASTI ADA untuk semua layout
   static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
     return Uint8List.fromList(img.encodeJpg(src, quality: quality));
   }

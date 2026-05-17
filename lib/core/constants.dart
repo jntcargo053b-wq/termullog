@@ -35,6 +35,8 @@ enum WatermarkLayout {
   gpsCard,          // 5 - GPS Card style
   polaroid,         // 6 - Polaroid style
   sidePanel,        // 7 - Side Panel style
+  cinematicV2,      // 8 - Cinematic V2 (Canvas font Roboto)
+  timeMarkStyle,    // 9 - TimeMark Camera Style
 }
 
 /// Extension untuk mendapatkan nama tampilan dan deskripsi
@@ -57,6 +59,10 @@ extension WatermarkLayoutExtension on WatermarkLayout {
         return 'Polaroid';
       case WatermarkLayout.sidePanel:
         return 'Side Panel';
+      case WatermarkLayout.cinematicV2:
+        return 'Cinematic V2';
+      case WatermarkLayout.timeMarkStyle:
+        return 'TimeMark Style';
     }
   }
   
@@ -78,6 +84,10 @@ extension WatermarkLayoutExtension on WatermarkLayout {
         return 'Gaya polaroid klasik dengan bingkai ivory';
       case WatermarkLayout.sidePanel:
         return 'Panel samping vertikal dengan jam besar';
+      case WatermarkLayout.cinematicV2:
+        return 'Gaya sinematik dengan font modern Roboto (Canvas)';
+      case WatermarkLayout.timeMarkStyle:
+        return 'Gaya GPS TimeMark Camera dengan font modern';
     }
   }
 }

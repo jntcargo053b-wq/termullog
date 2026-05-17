@@ -5,9 +5,34 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import '../core/constants.dart';
 import 'watermark_params.dart';
-import 'layout_registry.dart';  // ← import registry
+import 'layouts/watermark_layout_base.dart';
+import 'layouts/layout_film_strip.dart';
+import 'layouts/layout_dslr_corner.dart';
+import 'layouts/layout_cinematic.dart';
+import 'layouts/layout_field_survey.dart';
+import 'layouts/layout_hud.dart';
+import 'layouts/layout_gps_card.dart';
+import 'layouts/layout_polaroid.dart';
+import 'layouts/layout_side_panel.dart';
+import 'layouts/layout_cinematic_v2.dart';
+import 'layouts/layout_timemark_style.dart';
+import 'layouts/layout_kodak_date_stamp.dart';
 
 class WatermarkEngine {
+  static final Map<int, WatermarkLayoutBase> _layouts = {
+    0: LayoutFilmStrip(),
+    1: LayoutDSLRCorner(),
+    2: LayoutCinematic(),
+    3: LayoutFieldSurvey(),
+    4: LayoutHUD(),
+    5: LayoutGpsCard(),
+    6: LayoutPolaroid(),
+    7: LayoutSidePanel(),
+    8: LayoutCinematicV2(),
+    9: LayoutTimeMarkStyle(),
+    10: LayoutKodakDateStamp(),
+  };
+
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);
     final transferable = wmParams.transferable;
@@ -25,9 +50,7 @@ class WatermarkEngine {
 
     img.Image src;
     try {
-      // Gunakan decoder dari registry (layout 0 memiliki static decodeOrThrow)
-      src = LayoutRegistry.get(0)?.decodeOrThrow(bytes) ??
-          (throw Exception('Decoder tidak tersedia'));
+      src = WatermarkLayoutBase.decodeOrThrow(bytes);
     } catch (e) {
       debugPrint('WatermarkEngine: gagal decode gambar — $e');
       return bytes; // kembalikan gambar asli tanpa watermark
@@ -44,10 +67,10 @@ class WatermarkEngine {
       }
     }
 
-    final layout = LayoutRegistry.get(wmParams.layoutIndex);
+    final layout = _layouts[wmParams.layoutIndex];
     if (layout == null) {
       debugPrint('WatermarkEngine: layout index ${wmParams.layoutIndex} tidak ditemukan');
-      return img.encodeJpg(src) as Uint8List;
+      return WatermarkLayoutBase.encodeJpg(src);
     }
 
     debugPrint('WatermarkEngine: apply layout [${wmParams.layoutIndex}] ${layout.name}');
@@ -73,7 +96,8 @@ class WatermarkEngine {
     } catch (e, stackTrace) {
       debugPrint('WatermarkEngine: error saat apply layout — $e');
       debugPrintStack(stackTrace: stackTrace);
-      return img.encodeJpg(src) as Uint8List;
+      // Fallback: kembalikan gambar asli tanpa watermark
+      return WatermarkLayoutBase.encodeJpg(src);
     }
   }
 

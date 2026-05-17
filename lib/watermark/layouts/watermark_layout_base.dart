@@ -24,8 +24,8 @@ abstract class WatermarkLayoutBase {
     if (_fontLoaded) return;
     try {
       final fontLoader = FontLoader('Roboto')
-        ..addFont(await rootBundle.load('fonts/Roboto-Regular.ttf'))
-        ..addFont(await rootBundle.load('fonts/Roboto-Bold.ttf'));
+        ..addFont(rootBundle.load('fonts/Roboto-Regular.ttf'))
+        ..addFont(rootBundle.load('fonts/Roboto-Bold.ttf'));
       await fontLoader.load();
       _fontLoaded = true;
     } catch (e) {

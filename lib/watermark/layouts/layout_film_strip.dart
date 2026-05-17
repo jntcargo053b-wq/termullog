@@ -31,30 +31,23 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
   }) {
     final bool isTop = watermarkPosition == 'top';
     final int y0 = isTop ? 0 : src.height - panelH;
-    if (y0 < 0) return encodeJpg(src);
+    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
-    // Background hitam semi-transparan
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + panelH,
         color: img.ColorRgba8(0, 0, 0, 200));
-
-    // Garis aksen ATAS — kuning/emas
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + 4,
         color: img.ColorRgba8(255, 180, 50, 255));
-
-    // Garis aksen BAWAH — kuning/emas
     img.fillRect(src, x1: 0, y1: y0 + panelH - 4, x2: src.width - 1, y2: y0 + panelH,
         color: img.ColorRgba8(255, 180, 50, 255));
 
     final font = img.arial24;
     int cy = y0 + 12;
 
-    // Tanggal & Jam — putih
     img.drawString(src,
         '${DateFormat('yyyy-MM-dd').format(timestamp)}  ${DateFormat('HH:mm:ss').format(timestamp)}',
-        font: font, x: padX, y: cy, color: white);
+        font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
     cy += lineH;
 
-    // Koordinat — emas
     if (hasPosition) {
       final accStr = showAccuracy ? '  ±${acc?.toStringAsFixed(0) ?? '?'}m' : '';
       img.drawString(src,
@@ -63,19 +56,17 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
       cy += lineH;
     }
 
-    // Alamat — abu-abu
     if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       final shortAddr = address.length > maxAddrLen
           ? '${address.substring(0, maxAddrLen - 1)}…' : address;
-      img.drawString(src, shortAddr, font: font, x: padX, y: cy, color: grey);
+      img.drawString(src, shortAddr, font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
       cy += lineH;
     }
 
-    // Cuaca — biru
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: blue);
+      img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
     }
 
-    return encodeJpg(src);
+    return WatermarkLayoutBase.encodeJpg(src);
   }
 }

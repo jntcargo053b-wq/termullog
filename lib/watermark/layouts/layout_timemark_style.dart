@@ -10,9 +10,11 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
   @override
   String get name => 'TimeMark Style';
 
-  static const int padX = 16;
-  static const int padY = 12;
-  static const int mapSize = 120;
+  static const double _padX   = 20;
+  static const double _padY   = 14;
+  static const double _mapSz  = 130;
+  static const double _panelH = 210;
+  static const double _radius = 10;
 
   // ─── SYNC FALLBACK ────────────────────────────────────────────────
   @override
@@ -32,84 +34,84 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     Uint8List? mapBytes,
   }) {
     final bool isTop = watermarkPosition == 'top';
-    final int panelH = 200;
+    final int panelH = _panelH.toInt();
     final int y0 = isTop ? 0 : src.height - panelH;
-    if (y0 < 0) return encodeJpg(src);
+    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
-    // Background semi-transparan
-    img.fillRect(src, x1: 10, y1: y0 + 10, x2: src.width - 10, y2: y0 + panelH - 10,
-        color: img.ColorRgba8(0, 0, 0, 180));
+    const m = 10;
+    img.fillRect(src,
+        x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
+        color: img.ColorRgba8(0, 0, 0, 185));
+    img.drawRect(src,
+        x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
+        color: img.ColorRgba8(255, 255, 255, 35), thickness: 1);
 
-    // Border putih tipis
-    img.drawRect(src, x1: 10, y1: y0 + 10, x2: src.width - 10, y2: y0 + panelH - 10,
-        color: img.ColorRgba8(255, 255, 255, 40), thickness: 1);
+    final f14 = img.arial14;
+    final f24 = img.arial24;
+    int cx = (_padX + m).toInt();
+    int cy = (y0 + _padY + m).toInt();
 
-    final font = img.arial24;
-    int cx = padX + 10;
-    int cy = y0 + padY + 10;
-
-    // Waktu besar
+    // Waktu
     img.drawString(src, DateFormat('HH:mm').format(timestamp),
-        font: font, x: cx, y: cy, color: imgWhite);
-    // Detik kecil di samping
+        font: f24, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
+    img.drawString(src, DateFormat('HH:mm').format(timestamp),
+        font: f24, x: cx, y: cy, color: img.ColorRgba8(255, 255, 255, 255));
     img.drawString(src, DateFormat('ss').format(timestamp),
-        font: font, x: cx + 80, y: cy + 6, color: imgBlue);
+        font: f14, x: cx + 88, y: cy + 10,
+        color: img.ColorRgba8(30, 144, 255, 255));
 
-    cy += 30;
-    // Tanggal panjang
-    img.drawString(src, DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
-        font: font, x: cx, y: cy, color: imgOffWhite);
+    cy += 36;
+    // Tanggal
+    img.drawString(src,
+        DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
+        font: f14, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
+    img.drawString(src,
+        DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
+        font: f14, x: cx, y: cy, color: img.ColorRgba8(230, 230, 230, 255));
 
-    cy += 28;
+    cy += 24;
     if (hasPosition) {
-      // Koordinat DMS
-      final dmsLat = _toDMS(lat!, true);
-      final dmsLon = _toDMS(lon!, false);
-      img.drawString(src, '$dmsLat  $dmsLon',
-          font: font, x: cx, y: cy, color: imgBlue);
-      cy += 24;
+      final coord = '${_toDMS(lat!, true)}   ${_toDMS(lon!, false)}';
+      img.drawString(src, coord, font: f14, x: cx + 1, y: cy + 1,
+          color: img.ColorRgba8(0, 0, 0, 100));
+      img.drawString(src, coord, font: f14, x: cx, y: cy,
+          color: img.ColorRgba8(30, 144, 255, 255));
+      cy += 22;
     }
 
     if (showAccuracy && hasPosition) {
-      img.drawString(src, 'Accuracy: ±${acc?.toStringAsFixed(0) ?? '?'} m',
-          font: font, x: cx, y: cy, color: imgGrey);
-      cy += 24;
+      img.drawString(src, '± ${acc?.toStringAsFixed(0) ?? '?'} m',
+          font: f14, x: cx, y: cy,
+          color: img.ColorRgba8(160, 160, 160, 255));
+      cy += 20;
     }
 
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      final lines = _splitAddress(address);
-      for (final line in lines) {
-        img.drawString(src, line, font: font, x: cx, y: cy, color: imgOffWhite);
-        cy += 22;
+    if (address.isNotEmpty &&
+        address != 'Tidak ada lokasi' &&
+        !address.startsWith('GPS:')) {
+      for (final line in _splitAddress(address)) {
+        img.drawString(src, line, font: f14, x: cx, y: cy,
+            color: img.ColorRgba8(220, 220, 220, 255));
+        cy += 20;
       }
     }
 
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: cx, y: cy, color: imgBlue);
+      img.drawString(src, weather, font: f14, x: cx, y: cy,
+          color: img.ColorRgba8(30, 144, 255, 255));
     }
 
-    // Mini map di kanan bawah
     if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
-      try {
-        final mapImage = img.decodeImage(mapBytes);
-        if (mapImage != null) {
-          final resized = img.copyResize(mapImage, width: mapSize, height: mapSize);
-          final mapX = src.width - mapSize - padX - 10;
-          final mapY = y0 + panelH - mapSize - padY - 10;
-          img.compositeImage(src, resized, dstX: mapX, dstY: mapY, blend: img.BlendMode.alpha);
-          img.drawRect(src, x1: mapX-1, y1: mapY-1, x2: mapX+mapSize, y2: mapY+mapSize,
-              color: img.ColorRgba8(255, 255, 255, 60), thickness: 1);
-        }
-      } catch (_) {}
+      _drawMiniMapSync(src, mapBytes, y0: y0, panelH: panelH);
     }
 
-    return encodeJpg(src);
+    return WatermarkLayoutBase.encodeJpg(src);
   }
 
   // ─── ASYNC CANVAS VERSION ─────────────────────────────────────────
   @override
   Future<Uint8List> applyAsync({
-    required img.Image srcImg,
+    required img.Image src,
     required DateTime timestamp,
     required bool hasPosition,
     required double? lat,
@@ -123,9 +125,9 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     required bool showMiniMap,
     Uint8List? mapBytes,
   }) async {
-    await loadFont();
+    await WatermarkLayoutBase.loadFont();
 
-    final uiImage = await toUiImage(srcImg);
+    final uiImage = await WatermarkLayoutBase.imgToUiImage(src);
     final w = uiImage.width.toDouble();
     final h = uiImage.height.toDouble();
 
@@ -134,99 +136,180 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     canvas.drawImage(uiImage, Offset.zero, Paint());
 
     final bool isTop = watermarkPosition == 'top';
-    const double panelH = 200;
-    final double y0 = isTop ? 0.0 : h - panelH;
-    const double margin = 10.0;
+    final double y0 = isTop ? 0.0 : h - _panelH;
+    const double m = 10.0;
 
-    // Background card
-    final cardRect = RRect.fromLTRBR(margin, y0 + margin, w - margin, y0 + panelH - margin, const Radius.circular(8));
-    canvas.drawRRect(cardRect, Paint()..color = Colors.black.withOpacity(0.7));
-    canvas.drawRRect(cardRect, Paint()..color = Colors.white.withOpacity(0.1)..style = PaintingStyle.stroke..strokeWidth = 1);
+    // Card background
+    final cardRect = RRect.fromLTRBR(
+      m, y0 + m, w - m, y0 + _panelH - m,
+      Radius.circular(_radius),
+    );
+    canvas.drawRRect(cardRect,
+        Paint()..color = Colors.black.withOpacity(0.72));
+    canvas.drawRRect(cardRect,
+        Paint()
+          ..color = Colors.white.withOpacity(0.12)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2);
 
-    double cx = padX + margin;
-    double cy = y0 + padY + margin;
+    // Garis aksen kiri biru
+    canvas.drawRRect(
+      RRect.fromLTRBR(m, y0 + m, m + 4, y0 + _panelH - m, Radius.circular(2)),
+      Paint()..color = const Color(0xFF1E90FF),
+    );
 
-    // Waktu — jam:menit besar
-    canvasDrawText(canvas, DateFormat('HH:mm').format(timestamp),
-        x: cx, y: cy, color: uiWhite, bold: true, size: 28, letterSpacing: 2);
-    // Detik kecil
-    canvasDrawText(canvas, DateFormat('ss').format(timestamp),
-        x: cx + 90, y: cy + 8, color: uiBlue, bold: false, size: 14);
+    double cx = _padX + m + 10; // geser kanan karena ada aksen biru
+    double cy = y0 + _padY + m;
 
-    cy += 34;
-    // Tanggal
-    canvasDrawText(canvas, DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
-        x: cx, y: cy, color: uiOffWhite, bold: false, size: 12);
+    // ── Jam besar ──
+    WatermarkLayoutBase.drawText(canvas,
+        DateFormat('HH:mm').format(timestamp),
+        x: cx, y: cy,
+        color: Colors.white, bold: true, size: 32, letterSpacing: 2);
+    // Detik kecil (superscript style)
+    WatermarkLayoutBase.drawText(canvas,
+        DateFormat('ss').format(timestamp),
+        x: cx + 104, y: cy + 6,
+        color: const Color(0xFF1E90FF), bold: false, size: 15);
 
-    cy += 26;
+    cy += 40;
+
+    // ── Tanggal ──
+    WatermarkLayoutBase.drawText(canvas,
+        DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
+        x: cx, y: cy,
+        color: const Color(0xFFE6E6E6), bold: false, size: 13);
+
+    cy += 24;
+
+    // ── Koordinat DMS ──
     if (hasPosition) {
-      final dmsLat = _toDMS(lat!, true);
-      final dmsLon = _toDMS(lon!, false);
-      canvasDrawText(canvas, '$dmsLat  $dmsLon',
-          x: cx, y: cy, color: uiBlue, bold: false, size: 13);
+      WatermarkLayoutBase.drawText(canvas,
+          '${_toDMS(lat!, true)}   ${_toDMS(lon!, false)}',
+          x: cx, y: cy,
+          color: const Color(0xFF1E90FF), bold: false, size: 13);
       cy += 22;
     }
 
+    // ── Akurasi ──
     if (showAccuracy && hasPosition) {
-      canvasDrawText(canvas, 'Accuracy: ±${acc?.toStringAsFixed(0) ?? '?'} m',
-          x: cx, y: cy, color: uiGrey, bold: false, size: 12);
-      cy += 22;
+      WatermarkLayoutBase.drawText(canvas,
+          '± ${acc?.toStringAsFixed(0) ?? '?'} m',
+          x: cx, y: cy,
+          color: Colors.grey, bold: false, size: 12);
+      cy += 20;
     }
 
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      final lines = _splitAddress(address);
-      for (final line in lines) {
-        canvasDrawText(canvas, line, x: cx, y: cy, color: uiOffWhite, bold: false, size: 12);
-        cy += 20;
+    // ── Alamat ──
+    if (address.isNotEmpty &&
+        address != 'Tidak ada lokasi' &&
+        !address.startsWith('GPS:')) {
+      for (final line in _splitAddress(address)) {
+        WatermarkLayoutBase.drawText(canvas, line,
+            x: cx, y: cy,
+            color: const Color(0xFFDCDCDC), bold: false, size: 12);
+        cy += 19;
       }
     }
 
+    // ── Cuaca ──
     if (showWeather && weather.isNotEmpty) {
-      canvasDrawChip(canvas, x: cx, y: cy - 2, width: 160, height: 22);
-      canvasDrawText(canvas, weather, x: cx + 6, y: cy + 2, color: uiBlue, bold: false, size: 11);
+      // Chip background
+      final chipRect = RRect.fromLTRBR(
+        cx - 4, cy - 2, cx + 170, cy + 18,
+        const Radius.circular(4),
+      );
+      canvas.drawRRect(chipRect,
+          Paint()..color = const Color(0xFF1E90FF).withOpacity(0.18));
+      canvas.drawRRect(chipRect,
+          Paint()
+            ..color = const Color(0xFF1E90FF).withOpacity(0.5)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.8);
+      WatermarkLayoutBase.drawText(canvas, weather,
+          x: cx + 2, y: cy + 1,
+          color: const Color(0xFF1E90FF), bold: false, size: 12);
     }
 
-    // Mini map
+    // ── Mini map ──
     if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
       try {
-        final mapImg = img.decodeImage(mapBytes);
-        if (mapImg != null) {
-          final mapUi = await toUiImage(mapImg);
-          final double mapX = w - mapSize - padX - margin;
-          final double mapY = y0 + panelH - mapSize - padY - margin;
+        final mapImgData = img.decodeImage(mapBytes);
+        if (mapImgData != null) {
+          final mapUi = await WatermarkLayoutBase.imgToUiImage(mapImgData);
+          final double mapX = w - _mapSz - _padX - m;
+          final double mapY = y0 + _panelH - _mapSz - _padY - m;
+
+          // Shadow
+          canvas.drawRect(
+            Rect.fromLTWH(mapX + 2, mapY + 2, _mapSz, _mapSz),
+            Paint()..color = Colors.black.withOpacity(0.4),
+          );
+          // Map image
           canvas.drawImageRect(
             mapUi,
             Rect.fromLTWH(0, 0, mapUi.width.toDouble(), mapUi.height.toDouble()),
-            Rect.fromLTWH(mapX, mapY, mapSize.toDouble(), mapSize.toDouble()),
+            Rect.fromLTWH(mapX, mapY, _mapSz, _mapSz),
             Paint(),
           );
+          // Border biru
           canvas.drawRect(
-            Rect.fromLTWH(mapX, mapY, mapSize.toDouble(), mapSize.toDouble()),
-            Paint()..color = Colors.white.withOpacity(0.2)..style = PaintingStyle.stroke..strokeWidth = 1,
+            Rect.fromLTWH(mapX, mapY, _mapSz, _mapSz),
+            Paint()
+              ..color = const Color(0xFF1E90FF).withOpacity(0.8)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5,
           );
+          // Pin
+          final pinX = mapX + _mapSz / 2;
+          final pinY = mapY + _mapSz / 2;
+          canvas.drawCircle(Offset(pinX + 1, pinY + 1), 7,
+              Paint()..color = Colors.black.withOpacity(0.4));
+          canvas.drawCircle(Offset(pinX, pinY), 7,
+              Paint()..color = const Color(0xFFFF3232));
+          canvas.drawCircle(Offset(pinX, pinY), 3,
+              Paint()..color = Colors.white);
         }
       } catch (_) {}
     }
 
-    final resultImg = await recorderToImg(recorder, uiImage.width, uiImage.height);
-    return encodeJpg(resultImg);
+    final resultImg = await WatermarkLayoutBase.canvasToImg(recorder, uiImage);
+    return WatermarkLayoutBase.encodeJpg(resultImg);
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────────
+
   String _toDMS(double coord, bool isLat) {
     final d = coord.abs().floor();
     final m = ((coord.abs() - d) * 60).floor();
     final s = ((coord.abs() - d - m / 60) * 3600).toStringAsFixed(1);
     final dir = isLat ? (coord >= 0 ? 'N' : 'S') : (coord >= 0 ? 'E' : 'W');
-    return '${d}°$m\'$s"$dir';
+    return '$d°$m\'$s"$dir';
   }
 
   List<String> _splitAddress(String address) {
-    // Split alamat menjadi 2 baris maksimal
     final parts = address.split(',');
-    if (parts.length <= 2) return [address];
+    if (parts.length <= 2) return [address.length > 52 ? '${address.substring(0, 49)}…' : address];
     final line1 = parts.take(2).join(',').trim();
-    final line2 = parts.skip(2).join(',').trim();
-    return [line1, line2.length > 50 ? '${line2.substring(0, 47)}…' : line2];
+    final raw2  = parts.skip(2).join(',').trim();
+    final line2 = raw2.length > 52 ? '${raw2.substring(0, 49)}…' : raw2;
+    return [line1, line2];
+  }
+
+  void _drawMiniMapSync(img.Image src, Uint8List mapBytes,
+      {required int y0, required int panelH}) {
+    try {
+      final mapImage = img.decodeImage(mapBytes);
+      if (mapImage == null) return;
+      final sz  = _mapSz.toInt();
+      final mx  = src.width - sz - _padX.toInt() - 10;
+      final my  = y0 + panelH - sz - _padY.toInt() - 10;
+      if (mx < 0 || my < 0) return;
+      final resized = img.copyResize(mapImage, width: sz, height: sz);
+      img.compositeImage(src, resized, dstX: mx, dstY: my,
+          blend: img.BlendMode.alpha);
+      img.drawRect(src, x1: mx - 1, y1: my - 1, x2: mx + sz, y2: my + sz,
+          color: img.ColorRgba8(30, 144, 255, 180), thickness: 2);
+    } catch (_) {}
   }
 }

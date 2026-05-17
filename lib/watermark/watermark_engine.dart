@@ -1,11 +1,11 @@
-// lib/watermark/watermark_engine.dart (update)
+// lib/watermark/watermark_engine.dart
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import '../core/constants.dart';
 import 'watermark_params.dart';
-import 'layout_registry.dart';
+import 'layout_registry.dart';  // ← import registry
 
 class WatermarkEngine {
   static Uint8List applyFromMap(Map<String, dynamic> params) {
@@ -25,11 +25,12 @@ class WatermarkEngine {
 
     img.Image src;
     try {
+      // Gunakan decoder dari registry (layout 0 memiliki static decodeOrThrow)
       src = LayoutRegistry.get(0)?.decodeOrThrow(bytes) ??
           (throw Exception('Decoder tidak tersedia'));
     } catch (e) {
       debugPrint('WatermarkEngine: gagal decode gambar — $e');
-      return bytes;
+      return bytes; // kembalikan gambar asli tanpa watermark
     }
 
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {

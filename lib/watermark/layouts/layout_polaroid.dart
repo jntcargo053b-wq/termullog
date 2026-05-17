@@ -1,35 +1,16 @@
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
-import '../wm_helpers.dart';
 import 'watermark_layout_base.dart';
 
-/// Layout Polaroid — border putih lebar di bawah, teks hitam di atasnya
-///
-///   ┌──────────────────────────────────────┐
-///   │                                      │
-///   │         [FOTO UTUH]                  │
-///   │                                      │
-///   ├──────────────────────────────────────┤ border putih tebal
-///   │  Thu, 19 Jun 2025    10:07:07        │ teks hitam di bg putih
-///   │  Stall No 05, Galta Gate…            │
-///   │  26°54'N  75°48'E                    │
-///   └──────────────────────────────────────┘
 class LayoutPolaroid extends WatermarkLayoutBase {
   @override
   String get name => 'Polaroid';
-
-  static const int _sideW  = 18;   // border kiri/kanan/atas
-  static const int _botW   = 80;   // border bawah (lebih lebar, ciri khas polaroid)
-  static const int _padX   = 28;
-  static const int _padY   = 10;
-  static const int _lineH  = 26;
-  static const int _lineSm = 20;
-
-  // Warna teks di area putih
-  static final img.Color _cDark   = img.ColorRgb8(30, 30, 35);
-  static final img.Color _cBlue   = img.ColorRgb8(30, 100, 200);
-  static final img.Color _cMed    = img.ColorRgb8(90, 90, 100);
+  
+  static const int borderTop = 24;
+  static const int borderSide = 24;
+  static const int borderBottom = 70;
+  static const int maxAddrLen = 40;
 
   @override
   Uint8List apply({
@@ -47,84 +28,56 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     required bool showMiniMap,
     Uint8List? mapBytes,
   }) {
-    final bool showAddr = address.isNotEmpty &&
-        address != 'Tidak ada lokasi' &&
-        !address.startsWith('GPS:');
-    final int textW = src.width - _padX * 2 - _sideW * 2;
-    final int maxChar = (textW / 8).floor().clamp(10, 200);
-    final List<String> addrLines =
-        showAddr ? wmWrapText(address, maxChar) : const [];
+    final int newW = src.width + borderSide * 2;
+    final int newH = src.height + borderTop + borderBottom;
 
-    // Hitung total tinggi canvas baru
-    final int innerH = src.height; // foto asli
-    final int totalH = _sideW + innerH + _botW;
-    final int totalW = src.width + _sideW * 2;
+    // Buat canvas putih ivory
+    final canvas = img.Image(width: newW, height: newH);
+    img.fillRect(canvas, x1: 0, y1: 0, x2: newW - 1, y2: newH - 1,
+        color: img.ColorRgba8(248, 245, 235, 255));
 
-    // Buat canvas baru dengan bg putih
-    final canvas = img.Image(width: totalW, height: totalH);
-    img.fill(canvas, color: img.ColorRgb8(248, 246, 240)); // putih ivory
+    // Shadow di bawah foto (efek polaroid)
+    final int shadowOffset = 3;
+    img.fillRect(canvas,
+        x1: borderSide + shadowOffset, y1: borderTop + shadowOffset,
+        x2: borderSide + src.width + shadowOffset + 1, y2: borderTop + src.height + shadowOffset + 1,
+        color: img.ColorRgba8(0, 0, 0, 25));
 
-    // Paste foto ke dalam frame
-    img.compositeImage(canvas, src, dstX: _sideW, dstY: _sideW);
+    // Tempel foto asli
+    img.compositeImage(canvas, src, dstX: borderSide, dstY: borderTop, blend: img.BlendMode.alpha);
 
-    // Bayangan lembut di tepi foto (efek polaroid nyata)
-    _drawPhotoShadow(canvas, _sideW, _sideW, src.width, src.height);
+    // Border subtle di sekitar foto
+    img.drawRect(canvas,
+        x1: borderSide, y1: borderTop,
+        x2: borderSide + src.width - 1, y2: borderTop + src.height - 1,
+        color: img.ColorRgba8(200, 195, 185, 80), thickness: 1);
 
-    // ── Teks di area bawah ──────────────────────────────────────────────
-    final int botY0 = _sideW + innerH; // y awal area bawah
-    int cy = botY0 + _padY + 4;
+    // Teks di area bawah
+    final font = img.arial24;
+    final textColor = img.ColorRgba8(40, 40, 40, 255);
+    int cy = src.height + borderTop + 12;
 
-    // Tanggal kiri, jam kanan
-    final String dateStr =
-        DateFormat('EEE, dd MMM yyyy').format(timestamp).toUpperCase();
-    final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
-    _drawDark(canvas, dateStr, img.arial14, _padX + _sideW, cy, _cMed);
-    final int timeX = totalW - _sideW - _padX - timeStr.length * 9;
-    _drawDark(canvas, timeStr, img.arial14,
-        timeX.clamp(_padX + _sideW, totalW - _sideW - _padX), cy, _cBlue);
-    cy += _lineH;
-
-    // Alamat
-    for (final line in addrLines) {
-      _drawDark(canvas, line, img.arial14, _padX + _sideW, cy, _cDark);
-      cy += _lineSm;
-    }
+    // Tanggal — teks bold (simulasi dengan draw dua kali offset 0.5)
+    img.drawString(canvas, DateFormat('dd MMM yyyy').format(timestamp),
+        font: font, x: borderSide + 2, y: cy, color: textColor);
+    cy += 24;
 
     // Koordinat
-    if (hasPosition && lat != null && lon != null) {
-      final coord =
-          '${lat.abs().toStringAsFixed(5)}\u00b0${lat >= 0 ? 'N' : 'S'}  '
-          '${lon.abs().toStringAsFixed(5)}\u00b0${lon >= 0 ? 'E' : 'W'}'
-          '${showAccuracy && acc != null ? '  \u00b1${acc.toStringAsFixed(0)}m' : ''}';
-      _drawDark(canvas, coord, img.arial14, _padX + _sideW, cy, _cMed);
+    if (hasPosition) {
+      String coord = '${lat!.toStringAsFixed(4)}, ${lon!.toStringAsFixed(4)}';
+      if (showAccuracy) coord += '  ±${acc?.toStringAsFixed(0) ?? '?'}m';
+      img.drawString(canvas, coord, font: font, x: borderSide + 2, y: cy,
+          color: img.ColorRgba8(80, 80, 80, 255));
+      cy += 22;
+    }
+
+    // Alamat
+    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
+      String addr = address.length > maxAddrLen ? '${address.substring(0, maxAddrLen - 1)}…' : address;
+      img.drawString(canvas, addr, font: font, x: borderSide + 2, y: cy,
+          color: img.ColorRgba8(100, 100, 100, 255));
     }
 
     return WatermarkLayoutBase.encodeJpg(canvas);
-  }
-
-  void _drawPhotoShadow(
-      img.Image canvas, int fx, int fy, int fw, int fh) {
-    const int sh = 3;
-    for (int i = 1; i <= sh; i++) {
-      final alpha = (60 * i ~/ sh).clamp(0, 60);
-      // Bawah foto
-      for (int x = fx; x < fx + fw; x++) {
-        if (fy + fh + i < canvas.height) {
-          final px = canvas.getPixel(x, fy + fh + i - 1);
-          canvas.setPixel(x, fy + fh + i - 1, img.ColorRgba8(
-            (px.r.toInt() * (255 - alpha) ~/ 255),
-            (px.g.toInt() * (255 - alpha) ~/ 255),
-            (px.b.toInt() * (255 - alpha) ~/ 255),
-            255,
-          ));
-        }
-      }
-    }
-  }
-
-  // Teks hitam tanpa shadow (bg sudah putih)
-  void _drawDark(img.Image src, String text, img.BitmapFont font,
-      int x, int y, img.Color color) {
-    img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 }

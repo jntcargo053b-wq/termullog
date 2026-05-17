@@ -38,39 +38,69 @@ class WatermarkEngine {
 
     Uint8List? mapBytes;
     if (wmParams.mapTransferable != null) {
-      mapBytes = wmParams.mapTransferable!.materialize().asUint8List();
+      try {
+        mapBytes = wmParams.mapTransferable!.materialize().asUint8List();
+      } catch (e) {
+        debugPrint('WatermarkEngine: gagal materialize mapBytes — $e');
+        mapBytes = null;
+      }
     }
 
-    img.Image src = WatermarkLayoutBase.decodeOrThrow(bytes);
+    // Decode & resize source image (dengan null safety)
+    img.Image src;
+    try {
+      src = WatermarkLayoutBase.decodeOrThrow(bytes);
+    } catch (e) {
+      debugPrint('WatermarkEngine: gagal decode gambar — $e');
+      return bytes; // kembalikan gambar asli tanpa watermark
+    }
+
+    // Resize jika terlalu besar
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
-      src = img.copyResize(src,
-        width: src.width > src.height ? kMaxOutputWidth : null,
-        height: src.height > src.width ? kMaxOutputWidth : null,
-        interpolation: img.Interpolation.average);
+      try {
+        src = img.copyResize(src,
+          width: src.width > src.height ? kMaxOutputWidth : null,
+          height: src.height > src.width ? kMaxOutputWidth : null,
+          interpolation: img.Interpolation.average);
+      } catch (e) {
+        debugPrint('WatermarkEngine: gagal resize — $e');
+        // lanjutkan dengan ukuran asli
+      }
     }
 
     final layout = _layouts[wmParams.layoutIndex];
     if (layout == null) {
-      throw Exception('Layout tidak ditemukan: ${wmParams.layoutIndex}');
+      debugPrint('WatermarkEngine: layout index ${wmParams.layoutIndex} tidak ditemukan');
+      return WatermarkLayoutBase.encodeJpg(src);
     }
 
-    final result = layout.apply(
-      src: src,
-      timestamp: wmParams.timestamp,
-      hasPosition: wmParams.lat != null && wmParams.lon != null,
-      lat: wmParams.lat,
-      lon: wmParams.lon,
-      acc: wmParams.acc,
-      address: wmParams.address,
-      weather: wmParams.weather,
-      showWeather: wmParams.showWeather,
-      showAccuracy: wmParams.showAccuracy,
-      watermarkPosition: wmParams.watermarkPosition,
-      showMiniMap: wmParams.showMiniMap,
-      mapBytes: mapBytes,
-    );
+    debugPrint('WatermarkEngine: apply layout [${wmParams.layoutIndex}] ${layout.name}');
 
-    return result;
+    // Terapkan watermark dengan crash protection
+    try {
+      final result = layout.apply(
+        src: src,
+        timestamp: wmParams.timestamp,
+        hasPosition: wmParams.lat != null && wmParams.lon != null,
+        lat: wmParams.lat,
+        lon: wmParams.lon,
+        acc: wmParams.acc,
+        address: wmParams.address,
+        weather: wmParams.weather,
+        showWeather: wmParams.showWeather,
+        showAccuracy: wmParams.showAccuracy,
+        watermarkPosition: wmParams.watermarkPosition,
+        showMiniMap: wmParams.showMiniMap,
+        mapBytes: mapBytes,
+      );
+
+      return result;
+    } catch (e, stackTrace) {
+      debugPrint('WatermarkEngine: error saat apply layout — $e');
+      debugPrintStack(stackTrace: stackTrace);
+      // Fallback: kembalikan gambar asli tanpa watermark
+      return WatermarkLayoutBase.encodeJpg(src);
+    }
   }
 
   static WatermarkParams createParams({

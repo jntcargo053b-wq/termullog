@@ -1,40 +1,17 @@
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
-import '../wm_helpers.dart';
 import 'watermark_layout_base.dart';
 
-/// Layout GPS Card — mirip referensi foto GPS Timestamp
-///
-///   ┌──────────────────────────────────────┐
-///   │  MAP STRIP full-width (adaptive)     │
-///   ├──────────────────────────────────────┤
-///   │  🗓 Thu, 19 Jun 2025  🕐 10:07:07   │
-///   │  ─────────────────────────────────   │
-///   │  Alamat baris 1                      │
-///   │  Alamat baris 2                      │
-///   │  26°54'N  75°48'E  ±2.0m            │
-///   └──────────────────────────────────────┘
 class LayoutGpsCard extends WatermarkLayoutBase {
   @override
   String get name => 'GPS Card';
-
-  static const double _mapRatio = 0.18;
-  static const int    _mapMin   = 100;
-  static const int    _mapMax   = 180;
-  static const int    _padX     = 20;
-  static const int    _padY     = 14;
-  static const int    _lineH    = 32;
-  static const int    _lineSm   = 22;
-  static const int    _divGap   = 6;
-
-  // BG: #111318 @ 90%
-  static const int _bgR = 17, _bgG = 19, _bgB = 24, _bgA = 230;
-
-  static final img.Color _cWhite  = img.ColorRgb8(230, 228, 226);
-  static final img.Color _cBlue   = img.ColorRgb8(30, 144, 255);
-  static final img.Color _cGrey   = img.ColorRgb8(160, 160, 165);
-  static final img.Color _cGreen  = img.ColorRgb8(0, 200, 120);
+  
+  static const int panelH = 160;
+  static const int padX = 16;
+  static const int mapW = 160;
+  static const int mapH = 100;
+  static const int maxAddrLen = 45;
 
   @override
   Uint8List apply({
@@ -53,174 +30,97 @@ class LayoutGpsCard extends WatermarkLayoutBase {
     Uint8List? mapBytes,
   }) {
     final bool isTop = watermarkPosition == 'top';
-    final bool hasMap = showMiniMap && mapBytes != null && mapBytes.isNotEmpty;
+    final int y0 = isTop ? 0 : src.height - panelH;
+    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
-    final img.Image? mapImg = hasMap ? _decodeMap(mapBytes!) : null;
-    final int mapH = mapImg != null
-        ? (src.height * _mapRatio).round().clamp(_mapMin, _mapMax)
-        : 0;
-
-    final bool showAddr = address.isNotEmpty &&
-        address != 'Tidak ada lokasi' &&
-        !address.startsWith('GPS:');
-    final int maxChar = ((src.width - _padX * 2) / 8).floor().clamp(10, 200);
-    final List<String> addrLines =
-        showAddr ? wmWrapText(address, maxChar) : const [];
-
-    final int textH = _padY
-        + _lineH
-        + _divGap + 1 + _divGap
-        + addrLines.length * _lineSm
-        + (hasPosition ? _lineSm : 0)
-        + (showWeather && weather.isNotEmpty ? _lineSm : 0)
-        + _padY;
-
-    final int stripH = mapImg != null ? mapH + 1 : 0;
-    final int panelH = stripH + textH;
-    final int y0 = isTop ? 0 : (src.height - panelH).clamp(0, src.height);
-    final int y1 = (y0 + panelH).clamp(0, src.height);
-
-    // Panel BG
-    _fillPanel(src, y0, y1);
-    // Border
-    _hline(src, y0, 50);
-    _hline(src, y1 - 1, 50);
-
-    // Map
-    int textY = y0;
-    if (mapImg != null) {
-      _drawMap(src, mapImg, y0, y0 + mapH);
-      _hline(src, y0 + mapH, 50);
-      textY = y0 + mapH + 1;
+    // Background panel dengan gradient
+    for (int y = y0; y < y0 + panelH; y++) {
+      final t = (y - y0) / panelH;
+      final r = (15 + t * 5).toInt().clamp(0, 20);
+      final g = (15 + t * 5).toInt().clamp(0, 20);
+      final b = (25 + t * 10).toInt().clamp(0, 35);
+      final a = (200 + t * 40).toInt().clamp(200, 240);
+      img.fillRect(src, x1: 0, y1: y, x2: src.width - 1, y2: y + 1,
+          color: img.ColorRgba8(r, g, b, a));
     }
 
-    int cy = textY + _padY;
+    // Garis aksen dengan glow
+    img.fillRect(src, x1: 0, y1: y0 - 2, x2: src.width - 1, y2: y0 + 1,
+        color: img.ColorRgba8(0, 180, 255, 30));
+    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + 4,
+        color: img.ColorRgba8(0, 180, 255, 255));
 
-    // Tanggal + Jam satu baris
-    final String dateStr = DateFormat('EEE, dd MMM yyyy').format(timestamp);
-    final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
-    wmDrawTextShadow(src, dateStr, font: img.arial14,
-        x: _padX, y: cy + 9, color: _cGrey);
-    final int timeX = src.width - _padX - timeStr.length * 14;
-    wmDrawTextShadow(src, timeStr, font: img.arial24,
-        x: timeX.clamp(_padX + 80, src.width - _padX), y: cy, color: _cWhite);
-    cy += _lineH;
+    final font = img.arial24;
+    int cy = y0 + 10;
+    int textX = padX;
 
-    // Divider
-    cy += _divGap;
-    _hline(src, cy, 20);
-    cy += 1 + _divGap;
+    // Pin merah kecil
+    img.fillCircle(src, x: textX + 6, y: cy + 10, radius: 5,
+        color: img.ColorRgba8(255, 50, 50, 255));
+    img.fillCircle(src, x: textX + 6, y: cy + 10, radius: 2,
+        color: img.ColorRgba8(255, 255, 255, 200));
+
+    // Mini map
+    if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
+      try {
+        final mapImage = img.decodeImage(mapBytes);
+        if (mapImage != null) {
+          final resized = img.copyResize(mapImage, width: mapW, height: mapH);
+          final mapX = src.width - mapW - padX;
+          final mapY = y0 + 30;
+          // Border map
+          img.fillRect(src, x1: mapX - 2, y1: mapY - 2, x2: mapX + mapW + 2, y2: mapY + mapH + 2,
+              color: img.ColorRgba8(0, 180, 255, 80));
+          img.compositeImage(src, resized, dstX: mapX, dstY: mapY, blend: img.BlendMode.alpha);
+          // Border dalam
+          img.drawRect(src, x1: mapX, y1: mapY, x2: mapX + mapW - 1, y2: mapY + mapH - 1,
+              color: img.ColorRgba8(255, 255, 255, 30), thickness: 1);
+        }
+      } catch (_) {}
+    }
+
+    // Tanggal + Jam dengan shadow
+    _drawWithShadow(src, DateFormat('yyyy-MM-dd  HH:mm:ss').format(timestamp),
+        font: font, x: textX + 16, y: cy, color: WatermarkLayoutBase.white);
+    cy += 28;
+
+    // Koordinat
+    if (hasPosition) {
+      final latStr = _toDMS(lat!, true);
+      final lonStr = _toDMS(lon!, false);
+      String coordLine = '$latStr  $lonStr';
+      if (showAccuracy) coordLine += '  ±${acc?.toStringAsFixed(0) ?? '?'}m';
+      _drawWithShadow(src, coordLine, font: font, x: textX + 16, y: cy, color: WatermarkLayoutBase.blue);
+      cy += 28;
+    }
 
     // Alamat
-    for (final line in addrLines) {
-      wmDrawTextShadow(src, line, font: img.arial14,
-          x: _padX, y: cy, color: _cWhite);
-      cy += _lineSm;
+    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
+      String addr = address.length > maxAddrLen ? '${address.substring(0, maxAddrLen - 1)}…' : address;
+      img.drawString(src, addr, font: font, x: textX + 16, y: cy, color: WatermarkLayoutBase.grey);
+      cy += 28;
     }
 
-    // Koordinat + accuracy satu baris
-    if (hasPosition && lat != null && lon != null) {
-      final String coord = '${_dms(lat.abs(), lat >= 0 ? 'N' : 'S')}  '
-          '${_dms(lon.abs(), lon >= 0 ? 'E' : 'W')}'
-          '${showAccuracy && acc != null ? '  \u00b1${acc.toStringAsFixed(0)}m' : ''}';
-      wmDrawTextShadow(src, coord, font: img.arial14,
-          x: _padX, y: cy, color: _cGrey);
-      cy += _lineSm;
-    }
-
-    // Cuaca
+    // Cuaca dengan chip
     if (showWeather && weather.isNotEmpty) {
-      wmDrawTextShadow(src, weather, font: img.arial14,
-          x: _padX, y: cy, color: _cGreen);
+      img.fillRect(src, x1: textX + 12, y1: cy - 2, x2: textX + 200, y2: cy + 22,
+          color: img.ColorRgba8(0, 180, 255, 30));
+      img.drawString(src, weather, font: font, x: textX + 16, y: cy, color: WatermarkLayoutBase.blue);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
   }
 
-  void _fillPanel(img.Image src, int y0, int y1) {
-    final int bgR = _bgR * _bgA ~/ 255, inv = 255 - _bgA;
-    final int bgG = _bgG * _bgA ~/ 255;
-    final int bgB = _bgB * _bgA ~/ 255;
-    for (int y = y0.clamp(0, src.height); y < y1.clamp(0, src.height); y++) {
-      for (int x = 0; x < src.width; x++) {
-        final px = src.getPixel(x, y);
-        src.setPixel(x, y, img.ColorRgba8(
-          (px.r.toInt() * inv ~/ 255) + bgR,
-          (px.g.toInt() * inv ~/ 255) + bgG,
-          (px.b.toInt() * inv ~/ 255) + bgB,
-          255,
-        ));
-      }
-    }
+  void _drawWithShadow(img.Image src, String text, {required img.BitmapFont font, required int x, required int y, required img.Color color}) {
+    img.drawString(src, text, font: font, x: x + 1, y: y + 1, color: img.ColorRgba8(0, 0, 0, 80));
+    img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 
-  void _hline(img.Image src, int y, int alpha) {
-    if (y < 0 || y >= src.height) return;
-    for (int x = 0; x < src.width; x++) {
-      final px = src.getPixel(x, y);
-      src.setPixel(x, y, img.ColorRgba8(
-        (px.r.toInt() * (255 - alpha) ~/ 255) + alpha,
-        (px.g.toInt() * (255 - alpha) ~/ 255) + alpha,
-        (px.b.toInt() * (255 - alpha) ~/ 255) + alpha,
-        255,
-      ));
-    }
-  }
-
-  void _drawMap(img.Image src, img.Image mapImg, int y0, int y1) {
-    final int h = y1 - y0;
-    if (h <= 0) return;
-    final resized = img.copyResize(mapImg,
-        width: src.width, height: h,
-        interpolation: img.Interpolation.average);
-    img.compositeImage(src, resized, dstX: 0, dstY: y0);
-    // Grayscale + tint
-    final List<int> fade = List.generate(
-        src.width ~/ 5,
-        (i) => ((1.0 - i / (src.width ~/ 5)) * 90).round().clamp(0, 90));
-    for (int y = y0; y < y1 && y < src.height; y++) {
-      for (int x = 0; x < src.width; x++) {
-        final px = src.getPixel(x, y);
-        final int lum =
-            (px.r.toInt() * 299 + px.g.toInt() * 587 + px.b.toInt() * 114) ~/
-            1000;
-        int r = lum * 54 ~/ 100, g = lum * 54 ~/ 100, b = lum * 70 ~/ 100;
-        if (x < fade.length) {
-          final ov = fade[x];
-          r = r * (255 - ov) ~/ 255;
-          g = g * (255 - ov) ~/ 255;
-          b = b * (255 - ov) ~/ 255;
-        } else if (x >= src.width - fade.length) {
-          final ov = fade[src.width - 1 - x];
-          r = r * (255 - ov) ~/ 255;
-          g = g * (255 - ov) ~/ 255;
-          b = b * (255 - ov) ~/ 255;
-        }
-        src.setPixel(x, y, img.ColorRgba8(r, g, b, 255));
-      }
-    }
-    final int cx = src.width ~/ 2, cy = y0 + h ~/ 2;
-    img.drawCircle(src, x: cx, y: cy, radius: 12,
-        color: img.ColorRgba8(30, 144, 255, 120));
-    img.fillCircle(src, x: cx, y: cy, radius: 5,
-        color: img.ColorRgba8(30, 144, 255, 230));
-    img.fillCircle(src, x: cx, y: cy, radius: 2,
-        color: img.ColorRgb8(255, 255, 255));
-  }
-
-  img.Image? _decodeMap(Uint8List bytes) {
-    if (bytes.length < 128) return null;
-    try {
-      final d = img.decodeImage(bytes);
-      if (d == null || d.width < 8 || d.height < 8) return null;
-      return d;
-    } catch (_) { return null; }
-  }
-
-  String _dms(double deg, String dir) {
-    final int d = deg.floor();
-    final double mf = (deg - d) * 60;
-    final int m = mf.floor();
-    return "$d\u00b0${m.toString().padLeft(2, '0')}'$dir";
+  String _toDMS(double coord, bool isLat) {
+    final d = coord.abs().floor();
+    final m = ((coord.abs() - d) * 60).floor();
+    final s = ((coord.abs() - d - m / 60) * 3600).toStringAsFixed(1);
+    final dir = isLat ? (coord >= 0 ? 'N' : 'S') : (coord >= 0 ? 'E' : 'W');
+    return '${d}°${m}\'${s}"$dir';
   }
 }

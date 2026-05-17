@@ -16,7 +16,6 @@ import 'layouts/layout_polaroid.dart';
 import 'layouts/layout_side_panel.dart';
 import 'layouts/layout_cinematic_v2.dart';
 import 'layouts/layout_timemark_style.dart';
-import 'layouts/layout_kodak_date_stamp.dart';
 
 class WatermarkEngine {
   static final Map<int, WatermarkLayoutBase> _layouts = {
@@ -30,7 +29,6 @@ class WatermarkEngine {
     7: LayoutSidePanel(),
     8: LayoutCinematicV2(),
     9: LayoutTimeMarkStyle(),
-    10: LayoutKodakDateStamp(),
   };
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {

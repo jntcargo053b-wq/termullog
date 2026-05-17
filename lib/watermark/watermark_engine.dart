@@ -1,3 +1,4 @@
+// lib/watermark/watermark_engine.dart
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,9 @@ import 'layouts/layout_dslr_corner.dart';
 import 'layouts/layout_cinematic.dart';
 import 'layouts/layout_field_survey.dart';
 import 'layouts/layout_hud.dart';
+import 'layouts/layout_gps_card.dart';
+import 'layouts/layout_polaroid.dart';
+import 'layouts/layout_side_panel.dart';
 
 class WatermarkEngine {
   static final Map<int, WatermarkLayoutBase> _layouts = {
@@ -18,6 +22,9 @@ class WatermarkEngine {
     2: LayoutCinematic(),
     3: LayoutFieldSurvey(),
     4: LayoutHUD(),
+    5: LayoutGpsCard(),
+    6: LayoutPolaroid(),
+    7: LayoutSidePanel(),
   };
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {
@@ -43,7 +50,6 @@ class WatermarkEngine {
       throw Exception('Layout tidak ditemukan: ${wmParams.layoutIndex}');
     }
 
-    // Hanya kirim parameter yang ada di SEMUA layout
     final result = layout.apply(
       src: src,
       timestamp: wmParams.timestamp,

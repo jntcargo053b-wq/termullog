@@ -1,9 +1,6 @@
+// lib/services/settings_service.dart
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
-
-// ============================================================
-// SETTINGS SERVICE
-// ============================================================
 
 class SettingsService {
   // Shared Preferences Keys
@@ -27,20 +24,32 @@ class SettingsService {
   static const String _keyImageQuality = 'image_quality';
   static const String _keyUseHighAccuracy = 'use_high_accuracy';
 
+  // Singleton cache untuk SharedPreferences
+  static SharedPreferences? _prefs;
+
+  static Future<SharedPreferences> _instance() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
+
   // ============================================================
   // WATERMARK LAYOUT
   // ============================================================
 
-  /// Mendapatkan layout watermark yang dipilih
   static Future<WatermarkLayout> getWatermarkLayout() async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = prefs.getInt(_keyWatermarkLayout) ?? WatermarkLayout.modern.index;
-    return WatermarkLayout.values[index];
+    final prefs = await _instance();
+    final savedIndex = prefs.getInt(_keyWatermarkLayout) ?? WatermarkLayout.modern.index;
+
+    // Validasi batas agar tidak crash jika enum berubah
+    if (savedIndex < 0 || savedIndex >= WatermarkLayout.values.length) {
+      return WatermarkLayout.modern;
+    }
+
+    return WatermarkLayout.values[savedIndex];
   }
 
-  /// Menyimpan layout watermark yang dipilih
   static Future<void> setWatermarkLayout(WatermarkLayout layout) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setInt(_keyWatermarkLayout, layout.index);
   }
 
@@ -48,51 +57,43 @@ class SettingsService {
   // INFORMASI YANG DITAMPILKAN
   // ============================================================
 
-  /// Mendapatkan status tampilkan cuaca
   static Future<bool> getShowWeather() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyShowWeather) ?? true;
   }
 
-  /// Menyimpan status tampilkan cuaca
   static Future<void> setShowWeather(bool show) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyShowWeather, show);
   }
 
-  /// Mendapatkan status tampilkan akurasi GPS
   static Future<bool> getShowAccuracy() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyShowAccuracy) ?? true;
   }
 
-  /// Menyimpan status tampilkan akurasi GPS
   static Future<void> setShowAccuracy(bool show) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyShowAccuracy, show);
   }
 
-  /// Mendapatkan status tampilkan alamat
   static Future<bool> getShowAddress() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyShowAddress) ?? true;
   }
 
-  /// Menyimpan status tampilkan alamat
   static Future<void> setShowAddress(bool show) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyShowAddress, show);
   }
 
-  /// Mendapatkan status tampilkan koordinat
   static Future<bool> getShowCoordinates() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyShowCoordinates) ?? true;
   }
 
-  /// Menyimpan status tampilkan koordinat
   static Future<void> setShowCoordinates(bool show) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyShowCoordinates, show);
   }
 
@@ -100,15 +101,13 @@ class SettingsService {
   // POSISI WATERMARK
   // ============================================================
 
-  /// Mendapatkan posisi watermark (top/bottom)
   static Future<String> getWatermarkPosition() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getString(_keyWatermarkPosition) ?? 'bottom';
   }
 
-  /// Menyimpan posisi watermark (top/bottom)
   static Future<void> setWatermarkPosition(String position) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setString(_keyWatermarkPosition, position);
   }
 
@@ -116,27 +115,23 @@ class SettingsService {
   // FORMAT TANGGAL & WAKTU
   // ============================================================
 
-  /// Mendapatkan format tanggal
   static Future<String> getDateFormat() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getString(_keyDateFormat) ?? 'dd/MM/yyyy';
   }
 
-  /// Menyimpan format tanggal
   static Future<void> setDateFormat(String format) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setString(_keyDateFormat, format);
   }
 
-  /// Mendapatkan format waktu
   static Future<String> getTimeFormat() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getString(_keyTimeFormat) ?? 'HH:mm:ss';
   }
 
-  /// Menyimpan format waktu
   static Future<void> setTimeFormat(String format) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setString(_keyTimeFormat, format);
   }
 
@@ -144,27 +139,23 @@ class SettingsService {
   // TRANSPARANSI & TAMPILAN
   // ============================================================
 
-  /// Mendapatkan nilai opacity background
   static Future<double> getOpacity() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getDouble(_keyOpacity) ?? 0.85;
   }
 
-  /// Menyimpan nilai opacity background
   static Future<void> setOpacity(double opacity) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setDouble(_keyOpacity, opacity.clamp(0.0, 1.0));
   }
 
-  /// Mendapatkan status tampilkan border
   static Future<bool> getShowBorder() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyShowBorder) ?? true;
   }
 
-  /// Menyimpan status tampilkan border
   static Future<void> setShowBorder(bool show) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyShowBorder, show);
   }
 
@@ -172,39 +163,33 @@ class SettingsService {
   // MINI MAP
   // ============================================================
 
-  /// Mendapatkan status tampilkan mini map
   static Future<bool> getShowMiniMap() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyShowMiniMap) ?? true;
   }
 
-  /// Menyimpan status tampilkan mini map
   static Future<void> setShowMiniMap(bool show) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyShowMiniMap, show);
   }
 
-  /// Mendapatkan zoom level untuk mini map
   static Future<int> getMapZoomLevel() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getInt(_keyMapZoomLevel) ?? 16;
   }
 
-  /// Menyimpan zoom level untuk mini map
   static Future<void> setMapZoomLevel(int zoom) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setInt(_keyMapZoomLevel, zoom.clamp(10, 18));
   }
 
-  /// Mendapatkan ukuran mini map
   static Future<String> getMapSize() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getString(_keyMapSize) ?? 'medium';
   }
 
-  /// Menyimpan ukuran mini map (small/medium/large)
   static Future<void> setMapSize(String size) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setString(_keyMapSize, size);
   }
 
@@ -212,15 +197,13 @@ class SettingsService {
   // FONT & TEKS
   // ============================================================
 
-  /// Mendapatkan ukuran font
   static Future<String> getFontSize() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getString(_keyFontSize) ?? 'normal';
   }
 
-  /// Menyimpan ukuran font (small/normal/large)
   static Future<void> setFontSize(String size) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setString(_keyFontSize, size);
   }
 
@@ -228,51 +211,43 @@ class SettingsService {
   // KAMERA & KUALITAS
   // ============================================================
 
-  /// Mendapatkan kualitas gambar
   static Future<int> getImageQuality() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getInt(_keyImageQuality) ?? 90;
   }
 
-  /// Menyimpan kualitas gambar (50-100)
   static Future<void> setImageQuality(int quality) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setInt(_keyImageQuality, quality.clamp(50, 100));
   }
 
-  /// Mendapatkan status keep screen on
   static Future<bool> getKeepScreenOn() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyKeepScreenOn) ?? true;
   }
 
-  /// Menyimpan status keep screen on
   static Future<void> setKeepScreenOn(bool keep) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyKeepScreenOn, keep);
   }
 
-  /// Mendapatkan status auto save ke galeri
   static Future<bool> getAutoSave() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyAutoSave) ?? false;
   }
 
-  /// Menyimpan status auto save
   static Future<void> setAutoSave(bool auto) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyAutoSave, auto);
   }
 
-  /// Mendapatkan status penggunaan GPS high accuracy
   static Future<bool> getUseHighAccuracy() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getBool(_keyUseHighAccuracy) ?? true;
   }
 
-  /// Menyimpan status penggunaan GPS high accuracy
   static Future<void> setUseHighAccuracy(bool high) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setBool(_keyUseHighAccuracy, high);
   }
 
@@ -280,15 +255,13 @@ class SettingsService {
   // TEMA APLIKASI
   // ============================================================
 
-  /// Mendapatkan mode tema (light/dark/system)
   static Future<String> getThemeMode() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     return prefs.getString(_keyThemeMode) ?? 'dark';
   }
 
-  /// Menyimpan mode tema
   static Future<void> setThemeMode(String mode) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     await prefs.setString(_keyThemeMode, mode);
   }
 
@@ -296,11 +269,9 @@ class SettingsService {
   // RESET SETTINGS
   // ============================================================
 
-  /// Mereset semua pengaturan ke nilai default
   static Future<void> resetAllSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
     
-    // Reset semua keys
     await prefs.setInt(_keyWatermarkLayout, WatermarkLayout.modern.index);
     await prefs.setBool(_keyShowWeather, true);
     await prefs.setBool(_keyShowAccuracy, true);
@@ -326,7 +297,6 @@ class SettingsService {
   // HELPER METHODS
   // ============================================================
 
-  /// Mendapatkan ukuran map berdasarkan setting
   static Future<Map<String, int>> getMapDimensions() async {
     final size = await getMapSize();
     switch (size) {
@@ -340,7 +310,6 @@ class SettingsService {
     }
   }
 
-  /// Mendapatkan faktor skala font
   static Future<double> getFontScale() async {
     final size = await getFontSize();
     switch (size) {

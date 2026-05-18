@@ -38,7 +38,6 @@ class LayoutHUD extends WatermarkLayoutBase {
     final int y0 = isTop ? 0 : src.height - panelH;
     if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
-    // Gradient hijau
     for (int y = y0; y < y0 + panelH; y++) {
       final t = (y - y0) / panelH;
       final g = (40 + t * 30).toInt().clamp(0, 70);
@@ -47,18 +46,16 @@ class LayoutHUD extends WatermarkLayoutBase {
           color: img.ColorRgba8(0, g, 20, a));
     }
 
-    // Aksen kiri hijau
     img.fillRect(src, x1: 0, y1: y0, x2: 4, y2: y0 + panelH,
         color: img.ColorRgba8(0, 255, 100, 255));
 
-    int cy = y0 + 10;
     final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial14;
     final int actualLineH = fontSize == 'small' ? 18 : fontSize == 'large' ? 28 : lineH;
+    int cy = y0 + 10;
 
     img.drawString(src, DateFormat('HH:mm:ss').format(timestamp),
         font: font, x: padX + 8, y: cy, color: img.ColorRgba8(0, 255, 100, 255));
     cy += actualLineH;
-
     img.drawString(src, DateFormat('yyyy-MM-dd').format(timestamp),
         font: font, x: padX + 8, y: cy, color: WatermarkLayoutBase.white);
     cy += actualLineH;

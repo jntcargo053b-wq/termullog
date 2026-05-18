@@ -21,7 +21,7 @@ import 'layouts/layout_nama_baru.dart'; // Modern Clean Card
 class WatermarkEngine {
   static final Map<int, WatermarkLayoutBase> _layouts = {
     0: LayoutFilmStrip(),
-    1: LayoutDSLRCorner(),       // dslrCorner
+    1: LayoutDSLRCorner(),
     2: LayoutCinematic(),
     3: LayoutFieldSurvey(),
     4: LayoutHUD(),
@@ -30,7 +30,125 @@ class WatermarkEngine {
     7: LayoutSidePanel(),
     8: LayoutCinematicV2(),
     9: LayoutTimeMarkStyle(),
-    10: LayoutNamaBaru(),        // modern (Modern Clean Card)
+    10: LayoutNamaBaru(),
   };
 
-  // ... (applyFromMap, createParams tetap)
+  static Uint8List applyFromMap(Map<String, dynamic> params) {
+    final wmParams = WatermarkParams.fromMap(params);
+    final transferable = wmParams.transferable;
+    final bytes = transferable.materialize().asUint8List();
+
+    Uint8List? mapBytes;
+    if (wmParams.mapTransferable != null) {
+      try {
+        mapBytes = wmParams.mapTransferable!.materialize().asUint8List();
+      } catch (e) {
+        debugPrint('WatermarkEngine: gagal materialize mapBytes — $e');
+        mapBytes = null;
+      }
+    }
+
+    img.Image src;
+    try {
+      src = WatermarkLayoutBase.decodeOrThrow(bytes);
+    } catch (e) {
+      debugPrint('WatermarkEngine: gagal decode gambar — $e');
+      return bytes;
+    }
+
+    if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
+      try {
+        src = img.copyResize(src,
+          width: src.width > src.height ? kMaxOutputWidth : null,
+          height: src.height > src.width ? kMaxOutputWidth : null,
+          interpolation: img.Interpolation.average);
+      } catch (e) {
+        debugPrint('WatermarkEngine: gagal resize — $e');
+      }
+    }
+
+    final layout = _layouts[wmParams.layoutIndex];
+    if (layout == null) {
+      debugPrint('WatermarkEngine: layout index ${wmParams.layoutIndex} tidak ditemukan');
+      return WatermarkLayoutBase.encodeJpg(src);
+    }
+
+    debugPrint('WatermarkEngine: apply layout [${wmParams.layoutIndex}] ${layout.name}');
+
+    try {
+      final result = layout.apply(
+        src: src,
+        timestamp: wmParams.timestamp,
+        hasPosition: wmParams.lat != null && wmParams.lon != null,
+        lat: wmParams.lat,
+        lon: wmParams.lon,
+        acc: wmParams.acc,
+        address: wmParams.address,
+        weather: wmParams.weather,
+        showWeather: wmParams.showWeather,
+        showAccuracy: wmParams.showAccuracy,
+        watermarkPosition: wmParams.watermarkPosition,
+        showMiniMap: wmParams.showMiniMap,
+        mapBytes: mapBytes,
+        showAddress: wmParams.showAddress,
+        showCoordinates: wmParams.showCoordinates,
+        opacity: wmParams.opacity,
+        showBorder: wmParams.showBorder,
+        fontSize: wmParams.fontSize,
+      );
+      return result;
+    } catch (e, stackTrace) {
+      debugPrint('WatermarkEngine: error saat apply layout — $e');
+      debugPrintStack(stackTrace: stackTrace);
+      return WatermarkLayoutBase.encodeJpg(src);
+    }
+  }
+
+  static WatermarkParams createParams({
+    required Uint8List imageBytes,
+    required DateTime timestamp,
+    required int layoutIndex,
+    String address = '',
+    String weather = '',
+    bool showWeather = true,
+    bool showAccuracy = true,
+    bool showAddress = true,
+    bool showCoordinates = true,
+    double opacity = 0.85,
+    bool showBorder = true,
+    String fontSize = 'normal',
+    String watermarkPosition = 'bottom',
+    bool showMiniMap = false,
+    double? lat,
+    double? lon,
+    double? acc,
+    Uint8List? mapBytes,
+    String mapSize = 'medium',
+    int mapZoomLevel = 16,
+  }) {
+    return WatermarkParams(
+      transferable: TransferableTypedData.fromList([imageBytes]),
+      mapTransferable: mapBytes != null 
+          ? TransferableTypedData.fromList([mapBytes]) 
+          : null,
+      timestamp: timestamp,
+      address: address,
+      weather: weather,
+      layoutIndex: layoutIndex,
+      showWeather: showWeather,
+      showAccuracy: showAccuracy,
+      showAddress: showAddress,
+      showCoordinates: showCoordinates,
+      opacity: opacity,
+      showBorder: showBorder,
+      fontSize: fontSize,
+      watermarkPosition: watermarkPosition,
+      showMiniMap: showMiniMap,
+      lat: lat,
+      lon: lon,
+      acc: acc,
+      mapSize: mapSize,
+      mapZoomLevel: mapZoomLevel,
+    );
+  }
+}

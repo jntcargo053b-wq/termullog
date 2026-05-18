@@ -193,6 +193,13 @@ class _PreviewScreenState extends State<PreviewScreen>
       final showMiniMap = await SettingsCache.showMiniMap;
       final mapSize = await SettingsCache.mapSize;
       final mapZoomLevel = await SettingsCache.mapZoomLevel;
+      // --- 5 setting yang sebelumnya tidak dibaca ---
+      final showAddress = await SettingsCache.showAddress;
+      final showCoordinates = await SettingsCache.showCoordinates;
+      final opacity = await SettingsCache.opacity;
+      final showBorder = await SettingsCache.showBorder;
+      final fontSize = await SettingsCache.fontSize;
+      // ----------------------------------------------
 
       // ── 4. FETCH MINI MAP ─────────────────────────────────────────────────
       Uint8List? mapBytes;
@@ -249,6 +256,13 @@ class _PreviewScreenState extends State<PreviewScreen>
         mapBytes: mapBytes,
         mapSize: mapSize,
         mapZoomLevel: mapZoomLevel,
+        // --- 5 parameter yang sebelumnya tidak diteruskan ---
+        showAddress: showAddress,
+        showCoordinates: showCoordinates,
+        opacity: opacity,
+        showBorder: showBorder,
+        fontSize: fontSize,
+        // ----------------------------------------------------
       );
 
       // ── 6. PROCESS IN ISOLATE ─────────────────────────────────────────────

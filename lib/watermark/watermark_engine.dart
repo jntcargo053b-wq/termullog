@@ -16,7 +16,7 @@ import 'layouts/layout_polaroid.dart';
 import 'layouts/layout_side_panel.dart';
 import 'layouts/layout_cinematic_v2.dart';
 import 'layouts/layout_timemark_style.dart';
-import 'layouts/layout_nama_baru.dart'; // Modern Clean Card
+import 'layouts/layout_nama_baru.dart';
 
 class WatermarkEngine {
   static final Map<int, WatermarkLayoutBase> _layouts = {
@@ -90,6 +90,11 @@ class WatermarkEngine {
         watermarkPosition: wmParams.watermarkPosition,
         showMiniMap: wmParams.showMiniMap,
         mapBytes: mapBytes,
+        showAddress: wmParams.showAddress,
+        showCoordinates: wmParams.showCoordinates,
+        opacity: wmParams.opacity,
+        showBorder: wmParams.showBorder,
+        fontSize: wmParams.fontSize,
       );
       return result;
     } catch (e, stackTrace) {
@@ -107,6 +112,11 @@ class WatermarkEngine {
     String weather = '',
     bool showWeather = true,
     bool showAccuracy = true,
+    bool showAddress = true,
+    bool showCoordinates = true,
+    double opacity = 0.85,
+    bool showBorder = true,
+    String fontSize = 'normal',
     String watermarkPosition = 'bottom',
     bool showMiniMap = false,
     double? lat,
@@ -118,8 +128,8 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null
-          ? TransferableTypedData.fromList([mapBytes])
+      mapTransferable: mapBytes != null 
+          ? TransferableTypedData.fromList([mapBytes]) 
           : null,
       timestamp: timestamp,
       address: address,
@@ -127,6 +137,11 @@ class WatermarkEngine {
       layoutIndex: layoutIndex,
       showWeather: showWeather,
       showAccuracy: showAccuracy,
+      showAddress: showAddress,
+      showCoordinates: showCoordinates,
+      opacity: opacity,
+      showBorder: showBorder,
+      fontSize: fontSize,
       watermarkPosition: watermarkPosition,
       showMiniMap: showMiniMap,
       lat: lat,

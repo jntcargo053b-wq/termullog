@@ -23,7 +23,7 @@ enum WatermarkLayout {
   sidePanel,        // 7 - Side Panel
   cinematicV2,      // 8 - Cinematic V2
   timeMarkStyle,    // 9 - TimeMark Style
-  kodakDateStamp,   // 10 - Kodak Date Stamp
+  modernCleanCard,  // 10 - Modern Clean Card
 }
 
 extension WatermarkLayoutExtension on WatermarkLayout {
@@ -39,7 +39,7 @@ extension WatermarkLayoutExtension on WatermarkLayout {
       case WatermarkLayout.sidePanel: return 'Side Panel';
       case WatermarkLayout.cinematicV2: return 'Cinematic V2';
       case WatermarkLayout.timeMarkStyle: return 'TimeMark Style';
-      case WatermarkLayout.kodakDateStamp: return 'Kodak Date Stamp';
+      case WatermarkLayout.modernCleanCard: return 'Modern Clean Card';
     }
   }
 
@@ -65,8 +65,8 @@ extension WatermarkLayoutExtension on WatermarkLayout {
         return 'Gaya sinematik dengan font modern Roboto (Canvas)';
       case WatermarkLayout.timeMarkStyle:
         return 'Gaya GPS TimeMark Camera dengan font modern';
-      case WatermarkLayout.kodakDateStamp:
-        return 'Stempel tanggal ala kamera film klasik Kodak';
+      case WatermarkLayout.modernCleanCard:
+        return 'Desain bersih, navy gelap, aksen teal modern';
     }
   }
 }

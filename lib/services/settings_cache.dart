@@ -10,6 +10,13 @@ class SettingsCache {
   static bool? _showMiniMap;
   static String? _mapSize;
   static int? _mapZoomLevel;
+  // --- 5 setting yang sebelumnya tidak di-cache ---
+  static bool? _showAddress;
+  static bool? _showCoordinates;
+  static double? _opacity;
+  static bool? _showBorder;
+  static String? _fontSize;
+  // ------------------------------------------------
   static DateTime? _lastLoad;
   static Future<void>? _loadingFuture;
 
@@ -29,13 +36,18 @@ class SettingsCache {
   static Future<void> _performPreload() async {
     try {
       final results = await Future.wait([
-        SettingsService.getWatermarkLayout(),
-        SettingsService.getShowWeather(),
-        SettingsService.getShowAccuracy(),
-        SettingsService.getWatermarkPosition(),
-        SettingsService.getShowMiniMap(),
-        SettingsService.getMapSize(),
-        SettingsService.getMapZoomLevel(),
+        SettingsService.getWatermarkLayout(),   // 0
+        SettingsService.getShowWeather(),        // 1
+        SettingsService.getShowAccuracy(),       // 2
+        SettingsService.getWatermarkPosition(),  // 3
+        SettingsService.getShowMiniMap(),        // 4
+        SettingsService.getMapSize(),            // 5
+        SettingsService.getMapZoomLevel(),       // 6
+        SettingsService.getShowAddress(),        // 7
+        SettingsService.getShowCoordinates(),    // 8
+        SettingsService.getOpacity(),            // 9
+        SettingsService.getShowBorder(),         // 10
+        SettingsService.getFontSize(),           // 11
       ]);
 
       _layout = results[0] as WatermarkLayout;
@@ -45,6 +57,11 @@ class SettingsCache {
       _showMiniMap = results[4] as bool;
       _mapSize = results[5] as String;
       _mapZoomLevel = results[6] as int;
+      _showAddress = results[7] as bool;
+      _showCoordinates = results[8] as bool;
+      _opacity = results[9] as double;
+      _showBorder = results[10] as bool;
+      _fontSize = results[11] as String;
       _lastLoad = DateTime.now();
     } catch (e) {
       _lastLoad = null;
@@ -92,6 +109,36 @@ class SettingsCache {
     await preload();
     if (_mapZoomLevel == null) throw StateError('mapZoomLevel gagal dimuat');
     return _mapZoomLevel!;
+  }
+
+  static Future<bool> get showAddress async {
+    await preload();
+    if (_showAddress == null) throw StateError('showAddress gagal dimuat');
+    return _showAddress!;
+  }
+
+  static Future<bool> get showCoordinates async {
+    await preload();
+    if (_showCoordinates == null) throw StateError('showCoordinates gagal dimuat');
+    return _showCoordinates!;
+  }
+
+  static Future<double> get opacity async {
+    await preload();
+    if (_opacity == null) throw StateError('opacity gagal dimuat');
+    return _opacity!;
+  }
+
+  static Future<bool> get showBorder async {
+    await preload();
+    if (_showBorder == null) throw StateError('showBorder gagal dimuat');
+    return _showBorder!;
+  }
+
+  static Future<String> get fontSize async {
+    await preload();
+    if (_fontSize == null) throw StateError('fontSize gagal dimuat');
+    return _fontSize!;
   }
 
   static void invalidate() {

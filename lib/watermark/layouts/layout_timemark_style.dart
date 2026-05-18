@@ -29,6 +29,11 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     required String watermarkPosition,
     required bool showMiniMap,
     Uint8List? mapBytes,
+    bool showAddress = true,
+    bool showCoordinates = true,
+    double opacity = 0.85,
+    bool showBorder = true,
+    String fontSize = 'normal',
   }) {
     final bool isTop = watermarkPosition == 'top';
     final int panelH = _panelH.toInt();
@@ -37,74 +42,73 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
 
     const m = 10;
 
-    // Card background hitam
+    // Card background
     img.fillRect(src,
         x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
-        color: img.ColorRgba8(0, 0, 0, 200));
+        color: img.ColorRgba8(0, 0, 0, (opacity * 255).toInt()));
 
-    // Border putih tipis
-    img.drawRect(src,
-        x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
-        color: img.ColorRgba8(255, 255, 255, 40), thickness: 1);
+    // Border jika showBorder aktif
+    if (showBorder) {
+      img.drawRect(src,
+          x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
+          color: img.ColorRgba8(255, 255, 255, 40), thickness: 1);
+    }
 
-    final f14 = img.arial14;
-    final f24 = img.arial24;
+    final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial24;
+    final smallFont = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial14;
+
     int cx = (_padX + m).toInt();
     int cy = (y0 + _padY + m).toInt();
 
-    // Jam besar — PUTIH
+    // Jam besar
     img.drawString(src, DateFormat('HH:mm').format(timestamp),
-        font: f24, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
+        font: font, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
     img.drawString(src, DateFormat('HH:mm').format(timestamp),
-        font: f24, x: cx, y: cy, color: WatermarkLayoutBase.white);
+        font: font, x: cx, y: cy, color: WatermarkLayoutBase.white);
 
-    // Detik kecil — BIRU
+    // Detik kecil
     img.drawString(src, DateFormat('ss').format(timestamp),
-        font: f14, x: cx + 88, y: cy + 10, color: WatermarkLayoutBase.blue);
+        font: smallFont, x: cx + 88, y: cy + 10, color: WatermarkLayoutBase.blue);
 
     cy += 36;
 
-    // Tanggal panjang — PUTIH
+    // Tanggal panjang
     img.drawString(src,
         DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
-        font: f14, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
+        font: smallFont, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
     img.drawString(src,
         DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
-        font: f14, x: cx, y: cy, color: WatermarkLayoutBase.white);
+        font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.white);
 
     cy += 24;
 
-    // Koordinat DMS — BIRU
-    if (hasPosition) {
+    // Koordinat
+    if (showCoordinates && hasPosition) {
       final coord = '${_toDMS(lat!, true)}   ${_toDMS(lon!, false)}';
-      img.drawString(src, coord, font: f14, x: cx + 1, y: cy + 1,
+      img.drawString(src, coord, font: smallFont, x: cx + 1, y: cy + 1,
           color: img.ColorRgba8(0, 0, 0, 100));
-      img.drawString(src, coord, font: f14, x: cx, y: cy,
+      img.drawString(src, coord, font: smallFont, x: cx, y: cy,
           color: WatermarkLayoutBase.blue);
       cy += 22;
     }
 
-    // Akurasi — ABU-ABU
     if (showAccuracy && hasPosition) {
       img.drawString(src, '± ${acc?.toStringAsFixed(0) ?? '?'} m',
-          font: f14, x: cx, y: cy, color: WatermarkLayoutBase.grey);
+          font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.grey);
       cy += 20;
     }
 
-    // Alamat (2 baris) — PUTIH
-    if (address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
+    if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       for (final line in _splitAddress(address)) {
-        img.drawString(src, line, font: f14, x: cx, y: cy, color: WatermarkLayoutBase.white);
+        img.drawString(src, line, font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.white);
         cy += 20;
       }
     }
 
-    // Cuaca — BIRU
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: f14, x: cx, y: cy, color: WatermarkLayoutBase.blue);
+      img.drawString(src, weather, font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.blue);
     }
 
-    // Mini map di kanan bawah
     if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
       _drawMiniMapSync(src, mapBytes, y0: y0, panelH: panelH);
     }

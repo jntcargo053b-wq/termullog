@@ -19,7 +19,7 @@ import '../core/constants.dart';
 import '../watermark/watermark_params.dart';
 import '../watermark/watermark_engine.dart';
 
-/// Top-level wrapper untuk compute() isolate — harus top-level agar bisa di-spawn.
+/// Top-level wrapper untuk compute() isolate
 Uint8List _applyWatermarkWrapper(Map<String, dynamic> params) {
   return WatermarkEngine.applyFromMap(params);
 }
@@ -67,10 +67,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   final TransformationController _transformController =
       TransformationController();
   Offset? _lastDoubleTapPos;
-
-  // Cukup Random biasa untuk nama file — tidak perlu kriptografis
   final Random _rng = Random();
-
   CancelableOperation<Uint8List>? _cancelableCompute;
   final ValueNotifier<String> _processingStep =
       ValueNotifier<String>('Memuat gambar...');
@@ -130,7 +127,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     _processingStep.value = 'Memuat gambar...';
 
     try {
-      // ── 1. LOAD IMAGE BYTES ──────────────────────────────────────────────
+      // ── 1. LOAD IMAGE BYTES ───────────────────────────────────────
       final Uint8List bytes;
       if (widget.imageBytes != null) {
         bytes = widget.imageBytes!;
@@ -143,7 +140,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final timestamp = widget.timestamp ?? DateTime.now();
       final hasPosition = widget.latitude != null && widget.longitude != null;
 
-      // ── 2. GET ADDRESS & WEATHER ─────────────────────────────────────────
+      // ── 2. GET ADDRESS & WEATHER ──────────────────────────────────
       String address = widget.address ?? '';
       String weather = widget.weather ?? '';
 
@@ -171,7 +168,6 @@ class _PreviewScreenState extends State<PreviewScreen>
             weather = result.weather;
           }
         } catch (_) {
-          // Fallback ke koordinat mentah jika geocoding gagal
           if (address.isEmpty) {
             address =
                 'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
@@ -181,9 +177,9 @@ class _PreviewScreenState extends State<PreviewScreen>
         address = 'Tidak ada lokasi';
       }
 
-      // ── 3. LOAD SETTINGS ─────────────────────────────────────────────────
+      // ── 3. LOAD SETTINGS ──────────────────────────────────────────
       _processingStep.value = 'Memuat pengaturan...';
-      SettingsCache.invalidate();
+      SettingsCache.invalidate();          // ← hancurkan cache sebelum baca
       await SettingsCache.preload();
 
       final layout = await SettingsCache.layout;
@@ -193,15 +189,15 @@ class _PreviewScreenState extends State<PreviewScreen>
       final showMiniMap = await SettingsCache.showMiniMap;
       final mapSize = await SettingsCache.mapSize;
       final mapZoomLevel = await SettingsCache.mapZoomLevel;
-      // --- 5 setting yang sebelumnya tidak dibaca ---
       final showAddress = await SettingsCache.showAddress;
       final showCoordinates = await SettingsCache.showCoordinates;
       final opacity = await SettingsCache.opacity;
       final showBorder = await SettingsCache.showBorder;
       final fontSize = await SettingsCache.fontSize;
-      // ----------------------------------------------
 
-      // ── 4. FETCH MINI MAP ─────────────────────────────────────────────────
+      debugPrint('🔥 PREVIEW: layout = ${layout.displayName}, index = ${layout.index}');
+
+      // ── 4. FETCH MINI MAP ─────────────────────────────────────────
       Uint8List? mapBytes;
 
       if (showMiniMap && hasPosition) {
@@ -238,7 +234,7 @@ class _PreviewScreenState extends State<PreviewScreen>
         }
       }
 
-      // ── 5. CREATE WATERMARK PARAMS ────────────────────────────────────────
+      // ── 5. CREATE WATERMARK PARAMS ────────────────────────────────
       _processingStep.value = 'Membuat watermark...';
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
@@ -256,23 +252,21 @@ class _PreviewScreenState extends State<PreviewScreen>
         mapBytes: mapBytes,
         mapSize: mapSize,
         mapZoomLevel: mapZoomLevel,
-        // --- 5 parameter yang sebelumnya tidak diteruskan ---
         showAddress: showAddress,
         showCoordinates: showCoordinates,
         opacity: opacity,
         showBorder: showBorder,
         fontSize: fontSize,
-        // ----------------------------------------------------
       );
 
-      // ── 6. PROCESS IN ISOLATE ─────────────────────────────────────────────
+      // ── 6. PROCESS IN ISOLATE ─────────────────────────────────────
       _cancelableCompute = CancelableOperation.fromFuture(
         compute(_applyWatermarkWrapper, params.toMap()),
       );
       final processedBytes = await _cancelableCompute!.value;
       _cancelableCompute = null;
 
-      // ── 7. SAVE TO APP DIRECTORY ──────────────────────────────────────────
+      // ── 7. SAVE TO APP DIRECTORY ──────────────────────────────────
       _processingStep.value = 'Menyimpan file...';
       final historyDir = await _getHistoryDirectory();
       final permanentFile =
@@ -287,7 +281,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       }
     } catch (e, stackTrace) {
       final msg = e.toString();
-      // Abaikan error dari cancel — bukan kegagalan nyata
       if (msg.toLowerCase().contains('cancel')) {
         if (mounted) setState(() => _isProcessing = false);
         return;
@@ -302,7 +295,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     }
   }
 
-  // ── OSM TILE FALLBACK ──────────────────────────────────────────────────────
+  // ── OSM TILE FALLBACK ─────────────────────────────────────────────
   static Future<Uint8List?> _fetchOsmTileBytes(
     double lat,
     double lng, {
@@ -335,12 +328,11 @@ class _PreviewScreenState extends State<PreviewScreen>
     } catch (_) {
       return null;
     } finally {
-      // Selalu close client, bahkan jika getUrl() throw
       client.close(force: true);
     }
   }
 
-  // ── PERMISSION & SAVE ──────────────────────────────────────────────────────
+  // ── PERMISSION & SAVE ─────────────────────────────────────────────
   Future<bool> _requestStoragePermission() async {
     if (!Platform.isAndroid) return true;
     final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
@@ -440,7 +432,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     );
   }
 
-  // ── UI ─────────────────────────────────────────────────────────────────────
+  // ── UI ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -746,8 +738,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 }
 
-// ── Reusable widgets ──────────────────────────────────────────────────────────
-
+// ── Reusable widgets ──────────────────────────────────────────────────────
 class _ActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget icon;

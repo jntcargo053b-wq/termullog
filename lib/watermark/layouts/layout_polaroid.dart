@@ -1,4 +1,5 @@
 // lib/watermark/layouts/layout_polaroid.dart
+
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -8,9 +9,9 @@ class LayoutPolaroid extends WatermarkLayoutBase {
   @override
   String get name => 'Polaroid';
 
-  static const int borderTop = 26;
-  static const int borderSide = 26;
-  static const int borderBottom = 110;
+  static const int borderTop = 28;
+  static const int borderSide = 24;
+  static const int borderBottom = 140;
 
   @override
   Uint8List apply({
@@ -28,28 +29,41 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     required bool showMiniMap,
     Uint8List? mapBytes,
   }) {
-    final int newW = src.width + borderSide * 2;
-    final int newH = src.height + borderTop + borderBottom;
+    final int canvasW = src.width + borderSide * 2;
+    final int canvasH = src.height + borderTop + borderBottom;
 
-    final canvas = img.Image(width: newW, height: newH);
+    // =========================================================
+    // CANVAS
+    // =========================================================
 
-    // Background polaroid
+    final canvas = img.Image(
+      width: canvasW,
+      height: canvasH,
+    );
+
+    // Background putih ivory
     img.fill(
       canvas,
-      color: img.ColorRgba8(247, 244, 236, 255),
+      color: img.ColorRgba8(248, 245, 238, 255),
     );
 
-    // Soft shadow
+    // =========================================================
+    // SHADOW FOTO
+    // =========================================================
+
     img.fillRect(
       canvas,
-      x1: borderSide + 5,
-      y1: borderTop + 5,
-      x2: borderSide + src.width + 5,
-      y2: borderTop + src.height + 5,
-      color: img.ColorRgba8(0, 0, 0, 20),
+      x1: borderSide + 6,
+      y1: borderTop + 6,
+      x2: borderSide + src.width + 6,
+      y2: borderTop + src.height + 6,
+      color: img.ColorRgba8(0, 0, 0, 25),
     );
 
-    // Main image
+    // =========================================================
+    // FOTO
+    // =========================================================
+
     img.compositeImage(
       canvas,
       src,
@@ -58,153 +72,159 @@ class LayoutPolaroid extends WatermarkLayoutBase {
       blend: img.BlendMode.alpha,
     );
 
-    // Thin border
-    img.drawRect(
-      canvas,
-      x1: borderSide,
-      y1: borderTop,
-      x2: borderSide + src.width - 1,
-      y2: borderTop + src.height - 1,
-      color: img.ColorRgba8(210, 205, 195, 120),
-      thickness: 1,
-    );
-
-    // Separator line
-    final int separatorY = borderTop + src.height + 8;
-
-    img.drawLine(
-      canvas,
-      x1: borderSide + 8,
-      y1: separatorY,
-      x2: newW - borderSide - 8,
-      y2: separatorY,
-      color: img.ColorRgba8(190, 185, 175, 120),
-    );
+    // =========================================================
+    // FONT
+    // =========================================================
 
     final titleFont = img.arial24;
     final smallFont = img.arial14;
 
-    final primary = img.ColorRgba8(35, 35, 35, 255);
-    final secondary = img.ColorRgba8(90, 90, 90, 255);
+    final textColor = img.ColorRgba8(35, 35, 35, 255);
+    final subColor = img.ColorRgba8(90, 90, 90, 255);
 
-    int cy = separatorY + 12;
+    int textY = borderTop + src.height + 16;
 
-    // Date
-    final String date =
+    // =========================================================
+    // TANGGAL
+    // =========================================================
+
+    final dateText =
         DateFormat('dd MMM yyyy • HH:mm').format(timestamp);
 
     img.drawString(
       canvas,
-      date,
+      dateText,
       font: titleFont,
-      x: borderSide + 8,
-      y: cy,
-      color: primary,
+      x: borderSide,
+      y: textY,
+      color: textColor,
     );
 
-    cy += 28;
+    textY += 32;
 
-    // Coordinates
+    // =========================================================
+    // KOORDINAT (jika ada)
+    // =========================================================
+
     if (hasPosition && lat != null && lon != null) {
-      String coord =
-          '${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
-
-      if (showAccuracy && acc != null) {
-        coord += '   ±${acc.toStringAsFixed(0)}m';
-      }
-
+      final coordStr = '${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
       img.drawString(
         canvas,
-        coord,
+        coordStr,
         font: smallFont,
-        x: borderSide + 8,
-        y: cy,
-        color: secondary,
+        x: borderSide,
+        y: textY,
+        color: subColor,
       );
-
-      cy += 18;
+      textY += 18;
     }
 
-    // Address
+    // =========================================================
+    // ALAMAT
+    // =========================================================
+
     if (address.isNotEmpty &&
         address != 'Tidak ada lokasi' &&
         !address.startsWith('GPS:')) {
-      final lines = _wrapText(address, 42);
+      final addressLines = _wrapText(address, 42);
 
-      for (final line in lines.take(2)) {
+      for (final line in addressLines.take(2)) {
         img.drawString(
           canvas,
           line,
           font: smallFont,
-          x: borderSide + 8,
-          y: cy,
-          color: secondary,
+          x: borderSide,
+          y: textY,
+          color: subColor,
         );
 
-        cy += 16;
+        textY += 18;
       }
     }
 
-    // Weather
+    // =========================================================
+    // WEATHER + AKURASI
+    // =========================================================
+
+    final info = <String>[];
+
     if (showWeather && weather.isNotEmpty) {
+      info.add(weather);
+    }
+
+    if (showAccuracy && hasPosition && acc != null) {
+      info.add('GPS ±${acc.toStringAsFixed(0)}m');
+    }
+
+    if (info.isNotEmpty) {
       img.drawString(
         canvas,
-        weather,
+        info.join('   •   '),
         font: smallFont,
-        x: borderSide + 8,
-        y: cy,
-        color: img.ColorRgba8(70, 70, 70, 255),
+        x: borderSide,
+        y: canvasH - 28,
+        color: subColor,
       );
     }
 
-    // Mini map
-    if (showMiniMap && mapBytes != null) {
-      final map = img.decodeImage(mapBytes);
+    // =========================================================
+    // MINI MAP
+    // =========================================================
 
-      if (map != null) {
-        final resized = img.copyResize(
-          map,
-          width: 80,
-          height: 80,
-        );
+    if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
+      try {
+        final map = img.decodeImage(mapBytes);
 
-        final mapX = newW - borderSide - 88;
-        final mapY = newH - 88;
+        if (map != null) {
+          final resized = img.copyResize(
+            map,
+            width: 110,
+            height: 70,
+          );
 
-        // White frame
-        img.fillRect(
-          canvas,
-          x1: mapX - 3,
-          y1: mapY - 3,
-          x2: mapX + 83,
-          y2: mapY + 83,
-          color: img.ColorRgba8(255, 255, 255, 255),
-        );
+          final mapX = canvasW - 110 - borderSide;
+          final mapY = canvasH - 70 - 18;
 
-        img.compositeImage(
-          canvas,
-          resized,
-          dstX: mapX,
-          dstY: mapY,
-        );
+          // Shadow map
+          img.fillRect(
+            canvas,
+            x1: mapX + 3,
+            y1: mapY + 3,
+            x2: mapX + 113,
+            y2: mapY + 73,
+            color: img.ColorRgba8(0, 0, 0, 30),
+          );
 
-        img.drawRect(
-          canvas,
-          x1: mapX - 3,
-          y1: mapY - 3,
-          x2: mapX + 83,
-          y2: mapY + 83,
-          color: img.ColorRgba8(180, 180, 180, 255),
-        );
-      }
+          // White border
+          img.fillRect(
+            canvas,
+            x1: mapX - 2,
+            y1: mapY - 2,
+            x2: mapX + 112,
+            y2: mapY + 72,
+            color: img.ColorRgba8(255, 255, 255, 255),
+          );
+
+          img.compositeImage(
+            canvas,
+            resized,
+            dstX: mapX,
+            dstY: mapY,
+          );
+        }
+      } catch (_) {}
     }
 
     return WatermarkLayoutBase.encodeJpg(canvas);
   }
 
+  // =========================================================
+  // TEXT WRAP
+  // =========================================================
+
   List<String> _wrapText(String text, int maxChars) {
     final words = text.split(' ');
-    final List<String> lines = [];
+    final lines = <String>[];
 
     String current = '';
 
@@ -217,7 +237,7 @@ class LayoutPolaroid extends WatermarkLayoutBase {
       }
     }
 
-    if (current.isNotEmpty) {
+    if (current.trim().isNotEmpty) {
       lines.add(current.trim());
     }
 

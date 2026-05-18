@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
-import 'package:intl/intl.dart'; // ← untuk format tanggal di preview
+import 'package:intl/intl.dart';
 import '../core/constants.dart';
 import '../services/settings_service.dart';
 import '../services/settings_cache.dart';
@@ -348,16 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Text('Preview Watermark', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
         ]),
         const SizedBox(height: 16),
-        Container(
-          height: 200,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade800),
-          ),
-          child: Center(child: _buildPreview()),
-        ),
+        Container(height: 200, width: double.infinity, decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade800)), child: Center(child: _buildPreview())),
       ]),
     );
   }
@@ -433,9 +424,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // ★ PREVIEW UNIK PER LAYOUT (menerapkan opacity, border, font, dll.)
-  // ─────────────────────────────────────────────────────────────────
   Widget _buildPreview() {
     final now = DateTime.now();
     final String dateStr = _dateFormat == 'yyyy-MM-dd' ? DateFormat('yyyy-MM-dd').format(now)
@@ -446,7 +434,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : _timeFormat == 'hh:mm:ss a' ? DateFormat('hh:mm:ss a', 'id').format(now)
         : DateFormat('HH:mm:ss').format(now);
 
-    // Ukuran font dinamis
     final double fontSize = _fontSize == 'small' ? 10 : _fontSize == 'large' ? 16 : 13;
     final double titleFontSize = fontSize + 2;
     final Color accent = const Color(0xFF00B8D4);
@@ -463,21 +450,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           )
         : const SizedBox.shrink();
 
-    // Container dengan border jika _showBorder aktif
-    Widget wrapWithSetting(Widget child, {Color? borderColor}) {
-      return Container(
-        decoration: _showBorder
-            ? BoxDecoration(
-                border: Border.all(color: borderColor ?? accent.withOpacity(0.5), width: 1),
-                borderRadius: BorderRadius.circular(8),
-              )
-            : null,
-        child: child,
-      );
-    }
-
     switch (_selectedLayout) {
-      // ─── MINIMAL ──────────────────────────────────────────────
       case WatermarkLayout.minimal:
         return Container(
           padding: const EdgeInsets.all(10),
@@ -502,8 +475,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── MODERN ──────────────────────────────────────────────
       case WatermarkLayout.modern:
         return Container(
           padding: const EdgeInsets.all(12),
@@ -537,8 +508,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── ELEGANT ─────────────────────────────────────────────
       case WatermarkLayout.elegant:
         return Container(
           padding: const EdgeInsets.all(12),
@@ -558,8 +527,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── PROFESSIONAL ────────────────────────────────────────
       case WatermarkLayout.professional:
         return Container(
           padding: const EdgeInsets.all(10),
@@ -586,8 +553,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── SEMI TRANSPARENT ────────────────────────────────────
       case WatermarkLayout.semiTransparent:
         return Container(
           padding: const EdgeInsets.all(12),
@@ -605,8 +570,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── GPS CARD ────────────────────────────────────────────
       case WatermarkLayout.gpsCard:
         return Container(
           padding: const EdgeInsets.all(10),
@@ -635,8 +598,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── POLAROID ────────────────────────────────────────────
       case WatermarkLayout.polaroid:
         return Container(
           color: const Color(0xFFF8F5EB),
@@ -657,8 +618,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── SIDE PANEL ──────────────────────────────────────────
       case WatermarkLayout.sidePanel:
         return Row(
           children: [
@@ -689,8 +648,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         );
-
-      // ─── CINEMATIC V2 ─────────────────────────────────────────
       case WatermarkLayout.cinematicV2:
         return Stack(
           children: [
@@ -743,8 +700,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         );
-
-      // ─── TIMEMARK STYLE ─────────────────────────────────────
       case WatermarkLayout.timeMarkStyle:
         return Container(
           padding: const EdgeInsets.all(12),
@@ -778,25 +733,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-
-      // ─── KODAK DATE STAMP ───────────────────────────────────
-      case WatermarkLayout.kodakDateStamp:
+      case WatermarkLayout.modernCleanCard:
         return Container(
-          padding: const EdgeInsets.all(12),
-          color: Colors.black87,
-          child: Center(
-            child: Text(
-              '${DateFormat('yy MM dd').format(now)}  ${DateFormat('HH:mm').format(now)}',
-              style: const TextStyle(
-                color: Color(0xFFFF7828),
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'monospace',
-              ),
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.only(left: 16, top: 10, bottom: 10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [const Color(0xFF0D1117), const Color(0xFF141E2E)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
             ),
+            border: Border(left: BorderSide(color: const Color(0xFF00D4AA), width: 3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(timeStr, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 2),
+              Text(dateStr, style: const TextStyle(color: Color(0xFFA0AFC3), fontSize: 11)),
+              const SizedBox(height: 6),
+              if (_showCoordinates)
+                Text('📍 -6.123456°  106.123456°', style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 10)),
+              if (_showAccuracy)
+                Text('Akurasi ±5 m', style: const TextStyle(color: Color(0xFF8296AE), fontSize: 10)),
+              if (_showWeather)
+                Text('Cerah 32°C', style: const TextStyle(color: Color(0xFF00D4AA), fontSize: 10)),
+            ],
           ),
         );
-
       default:
         return const SizedBox.shrink();
     }
@@ -814,7 +779,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case WatermarkLayout.sidePanel: return Colors.white;
       case WatermarkLayout.cinematicV2: return Colors.white;
       case WatermarkLayout.timeMarkStyle: return const Color(0xFF00B8D4);
-      case WatermarkLayout.kodakDateStamp: return const Color(0xFFFF7828);
+      case WatermarkLayout.modernCleanCard: return const Color(0xFF00D4AA);
+      default: return const Color(0xFF00B8D4);
     }
   }
 

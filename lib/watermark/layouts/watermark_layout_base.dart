@@ -45,7 +45,7 @@ abstract class WatermarkLayoutBase {
     }
   }
 
-  // ─── SYNC: wajib diimplementasikan ───────────────────────────────
+  // ─── SYNC: wajib diimplementasikan dengan parameter opsional ─────
   Uint8List apply({
     required img.Image src,
     required DateTime timestamp,
@@ -60,6 +60,11 @@ abstract class WatermarkLayoutBase {
     required String watermarkPosition,
     required bool showMiniMap,
     Uint8List? mapBytes,
+    bool showAddress = true,
+    bool showCoordinates = true,
+    double opacity = 0.85,
+    bool showBorder = true,
+    String fontSize = 'normal',
   });
 
   // ─── ASYNC: opsional ─────────────────────────────────────────────
@@ -77,12 +82,22 @@ abstract class WatermarkLayoutBase {
     required String watermarkPosition,
     required bool showMiniMap,
     Uint8List? mapBytes,
+    bool showAddress = true,
+    bool showCoordinates = true,
+    double opacity = 0.85,
+    bool showBorder = true,
+    String fontSize = 'normal',
   }) async {
     return apply(
       src: src, timestamp: timestamp, hasPosition: hasPosition,
       lat: lat, lon: lon, acc: acc, address: address, weather: weather,
       showWeather: showWeather, showAccuracy: showAccuracy,
       watermarkPosition: watermarkPosition, showMiniMap: showMiniMap, mapBytes: mapBytes,
+      showAddress: showAddress,
+      showCoordinates: showCoordinates,
+      opacity: opacity,
+      showBorder: showBorder,
+      fontSize: fontSize,
     );
   }
 

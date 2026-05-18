@@ -19,18 +19,19 @@ import 'layouts/layout_timemark_style.dart';
 import 'layouts/layout_nama_baru.dart'; // Modern Clean Card
 
 class WatermarkEngine {
-  static final Map<int, WatermarkLayoutBase> _layouts = {
-    0: LayoutFilmStrip(),
-    1: LayoutDSLRCorner(),
-    2: LayoutCinematic(),
-    3: LayoutFieldSurvey(),
-    4: LayoutHUD(),
-    5: LayoutGpsCard(),
-    6: LayoutPolaroid(),
-    7: LayoutSidePanel(),
-    8: LayoutCinematicV2(),
-    9: LayoutTimeMarkStyle(),
-    10: LayoutNamaBaru(),
+  // ⚠️ Map dengan KEY enum — TIDAK lagi pakai index integer
+  static final Map<WatermarkLayout, WatermarkLayoutBase> _layouts = {
+    WatermarkLayout.minimal:        LayoutFilmStrip(),
+    WatermarkLayout.dslrCorner:     LayoutDSLRCorner(),
+    WatermarkLayout.cinematic:      LayoutCinematic(),
+    WatermarkLayout.fieldSurvey:    LayoutFieldSurvey(),
+    WatermarkLayout.hud:            LayoutHUD(),
+    WatermarkLayout.gpsCard:        LayoutGpsCard(),
+    WatermarkLayout.polaroid:       LayoutPolaroid(),
+    WatermarkLayout.sidePanel:      LayoutSidePanel(),
+    WatermarkLayout.cinematicV2:    LayoutCinematicV2(),
+    WatermarkLayout.timeMarkStyle:  LayoutTimeMarkStyle(),
+    WatermarkLayout.modern:         LayoutNamaBaru(), // Modern Clean Card
   };
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {
@@ -67,13 +68,16 @@ class WatermarkEngine {
       }
     }
 
-    final layout = _layouts[wmParams.layoutIndex];
+    // Cari layout berdasarkan index (dari enum)
+    final layoutEnum = WatermarkLayout.values[wmParams.layoutIndex];
+    final layout = _layouts[layoutEnum];
+    
     if (layout == null) {
-      debugPrint('WatermarkEngine: layout index ${wmParams.layoutIndex} tidak ditemukan');
+      debugPrint('WatermarkEngine: layout ${layoutEnum.name} tidak ditemukan');
       return WatermarkLayoutBase.encodeJpg(src);
     }
 
-    debugPrint('WatermarkEngine: apply layout [${wmParams.layoutIndex}] ${layout.name}');
+    debugPrint('WatermarkEngine: apply layout [${layoutEnum.name}] ${layout.name}');
 
     try {
       final result = layout.apply(

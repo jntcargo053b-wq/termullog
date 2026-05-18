@@ -23,6 +23,7 @@ class SettingsService {
   static const String _keyImageQuality = 'image_quality';
   static const String _keyUseHighAccuracy = 'use_high_accuracy';
 
+  // Singleton cache untuk SharedPreferences (hindari panggilan berulang)
   static SharedPreferences? _prefs;
 
   static Future<SharedPreferences> _instance() async {
@@ -31,20 +32,21 @@ class SettingsService {
   }
 
   // ============================================================
-  // WATERMARK LAYOUT (dengan validasi index aman)
+  // WATERMARK LAYOUT — simpan pakai .name (string), bukan .index
   // ============================================================
   static Future<WatermarkLayout> getWatermarkLayout() async {
     final prefs = await _instance();
-    final savedIndex = prefs.getInt(_keyWatermarkLayout) ?? WatermarkLayout.modern.index;
-    if (savedIndex < 0 || savedIndex >= WatermarkLayout.values.length) {
-      return WatermarkLayout.modern;
-    }
-    return WatermarkLayout.values[savedIndex];
+    final savedName = prefs.getString(_keyWatermarkLayout) ?? WatermarkLayout.modern.name;
+    // Cari enum dari string, fallback ke modern jika tidak ditemukan
+    return WatermarkLayout.values.cast<WatermarkLayout?>().firstWhere(
+      (e) => e?.name == savedName,
+      orElse: () => WatermarkLayout.modern,
+    )!;
   }
 
   static Future<void> setWatermarkLayout(WatermarkLayout layout) async {
     final prefs = await _instance();
-    await prefs.setInt(_keyWatermarkLayout, layout.index);
+    await prefs.setString(_keyWatermarkLayout, layout.name); // simpan string
   }
 
   // ============================================================
@@ -260,7 +262,7 @@ class SettingsService {
   static Future<void> resetAllSettings() async {
     final prefs = await _instance();
     await Future.wait([
-      prefs.setInt(_keyWatermarkLayout, WatermarkLayout.modern.index),
+      prefs.setString(_keyWatermarkLayout, WatermarkLayout.modern.name),
       prefs.setBool(_keyShowWeather, true),
       prefs.setBool(_keyShowAccuracy, true),
       prefs.setBool(_keyShowAddress, true),

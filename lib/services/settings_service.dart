@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 
 class SettingsService {
-  // Shared Preferences Keys
   static const String _keyWatermarkLayout = 'watermark_layout';
   static const String _keyShowWeather = 'show_weather';
   static const String _keyShowAccuracy = 'show_accuracy';
@@ -24,7 +23,6 @@ class SettingsService {
   static const String _keyImageQuality = 'image_quality';
   static const String _keyUseHighAccuracy = 'use_high_accuracy';
 
-  // Singleton cache untuk SharedPreferences
   static SharedPreferences? _prefs;
 
   static Future<SharedPreferences> _instance() async {
@@ -33,18 +31,14 @@ class SettingsService {
   }
 
   // ============================================================
-  // WATERMARK LAYOUT
+  // WATERMARK LAYOUT (dengan validasi index aman)
   // ============================================================
-
   static Future<WatermarkLayout> getWatermarkLayout() async {
     final prefs = await _instance();
     final savedIndex = prefs.getInt(_keyWatermarkLayout) ?? WatermarkLayout.modern.index;
-
-    // Validasi batas agar tidak crash jika enum berubah
     if (savedIndex < 0 || savedIndex >= WatermarkLayout.values.length) {
       return WatermarkLayout.modern;
     }
-
     return WatermarkLayout.values[savedIndex];
   }
 
@@ -56,12 +50,10 @@ class SettingsService {
   // ============================================================
   // INFORMASI YANG DITAMPILKAN
   // ============================================================
-
   static Future<bool> getShowWeather() async {
     final prefs = await _instance();
     return prefs.getBool(_keyShowWeather) ?? true;
   }
-
   static Future<void> setShowWeather(bool show) async {
     final prefs = await _instance();
     await prefs.setBool(_keyShowWeather, show);
@@ -71,7 +63,6 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getBool(_keyShowAccuracy) ?? true;
   }
-
   static Future<void> setShowAccuracy(bool show) async {
     final prefs = await _instance();
     await prefs.setBool(_keyShowAccuracy, show);
@@ -81,7 +72,6 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getBool(_keyShowAddress) ?? true;
   }
-
   static Future<void> setShowAddress(bool show) async {
     final prefs = await _instance();
     await prefs.setBool(_keyShowAddress, show);
@@ -91,15 +81,15 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getBool(_keyShowCoordinates) ?? true;
   }
-
   static Future<void> setShowCoordinates(bool show) async {
     final prefs = await _instance();
     await prefs.setBool(_keyShowCoordinates, show);
   }
 
   // ============================================================
-  // POSISI WATERMARK
+  // POSISI WATERMARK (dengan validasi)
   // ============================================================
+  static const _validPositions = {'top', 'bottom'};
 
   static Future<String> getWatermarkPosition() async {
     final prefs = await _instance();
@@ -108,18 +98,19 @@ class SettingsService {
 
   static Future<void> setWatermarkPosition(String position) async {
     final prefs = await _instance();
+    if (!_validPositions.contains(position)) {
+      position = 'bottom';
+    }
     await prefs.setString(_keyWatermarkPosition, position);
   }
 
   // ============================================================
   // FORMAT TANGGAL & WAKTU
   // ============================================================
-
   static Future<String> getDateFormat() async {
     final prefs = await _instance();
     return prefs.getString(_keyDateFormat) ?? 'dd/MM/yyyy';
   }
-
   static Future<void> setDateFormat(String format) async {
     final prefs = await _instance();
     await prefs.setString(_keyDateFormat, format);
@@ -129,7 +120,6 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getString(_keyTimeFormat) ?? 'HH:mm:ss';
   }
-
   static Future<void> setTimeFormat(String format) async {
     final prefs = await _instance();
     await prefs.setString(_keyTimeFormat, format);
@@ -138,12 +128,10 @@ class SettingsService {
   // ============================================================
   // TRANSPARANSI & TAMPILAN
   // ============================================================
-
   static Future<double> getOpacity() async {
     final prefs = await _instance();
     return prefs.getDouble(_keyOpacity) ?? 0.85;
   }
-
   static Future<void> setOpacity(double opacity) async {
     final prefs = await _instance();
     await prefs.setDouble(_keyOpacity, opacity.clamp(0.0, 1.0));
@@ -153,7 +141,6 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getBool(_keyShowBorder) ?? true;
   }
-
   static Future<void> setShowBorder(bool show) async {
     final prefs = await _instance();
     await prefs.setBool(_keyShowBorder, show);
@@ -162,12 +149,10 @@ class SettingsService {
   // ============================================================
   // MINI MAP
   // ============================================================
-
   static Future<bool> getShowMiniMap() async {
     final prefs = await _instance();
     return prefs.getBool(_keyShowMiniMap) ?? true;
   }
-
   static Future<void> setShowMiniMap(bool show) async {
     final prefs = await _instance();
     await prefs.setBool(_keyShowMiniMap, show);
@@ -177,45 +162,66 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getInt(_keyMapZoomLevel) ?? 16;
   }
-
   static Future<void> setMapZoomLevel(int zoom) async {
     final prefs = await _instance();
     await prefs.setInt(_keyMapZoomLevel, zoom.clamp(10, 18));
   }
 
+  static const _validMapSizes = {'small', 'medium', 'large'};
+
   static Future<String> getMapSize() async {
     final prefs = await _instance();
     return prefs.getString(_keyMapSize) ?? 'medium';
   }
-
   static Future<void> setMapSize(String size) async {
     final prefs = await _instance();
+    if (!_validMapSizes.contains(size)) {
+      size = 'medium';
+    }
     await prefs.setString(_keyMapSize, size);
   }
 
   // ============================================================
-  // FONT & TEKS
+  // FONT & TEKS (dengan validasi)
   // ============================================================
+  static const _validFontSizes = {'small', 'normal', 'large'};
 
   static Future<String> getFontSize() async {
     final prefs = await _instance();
     return prefs.getString(_keyFontSize) ?? 'normal';
   }
-
   static Future<void> setFontSize(String size) async {
     final prefs = await _instance();
+    if (!_validFontSizes.contains(size)) {
+      size = 'normal';
+    }
     await prefs.setString(_keyFontSize, size);
+  }
+
+  // ============================================================
+  // TEMA APLIKASI (dengan validasi)
+  // ============================================================
+  static const _validThemeModes = {'light', 'dark', 'system'};
+
+  static Future<String> getThemeMode() async {
+    final prefs = await _instance();
+    return prefs.getString(_keyThemeMode) ?? 'dark';
+  }
+  static Future<void> setThemeMode(String mode) async {
+    final prefs = await _instance();
+    if (!_validThemeModes.contains(mode)) {
+      mode = 'dark';
+    }
+    await prefs.setString(_keyThemeMode, mode);
   }
 
   // ============================================================
   // KAMERA & KUALITAS
   // ============================================================
-
   static Future<int> getImageQuality() async {
     final prefs = await _instance();
     return prefs.getInt(_keyImageQuality) ?? 90;
   }
-
   static Future<void> setImageQuality(int quality) async {
     final prefs = await _instance();
     await prefs.setInt(_keyImageQuality, quality.clamp(50, 100));
@@ -225,7 +231,6 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getBool(_keyKeepScreenOn) ?? true;
   }
-
   static Future<void> setKeepScreenOn(bool keep) async {
     final prefs = await _instance();
     await prefs.setBool(_keyKeepScreenOn, keep);
@@ -235,7 +240,6 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getBool(_keyAutoSave) ?? false;
   }
-
   static Future<void> setAutoSave(bool auto) async {
     final prefs = await _instance();
     await prefs.setBool(_keyAutoSave, auto);
@@ -245,58 +249,42 @@ class SettingsService {
     final prefs = await _instance();
     return prefs.getBool(_keyUseHighAccuracy) ?? true;
   }
-
   static Future<void> setUseHighAccuracy(bool high) async {
     final prefs = await _instance();
     await prefs.setBool(_keyUseHighAccuracy, high);
   }
 
   // ============================================================
-  // TEMA APLIKASI
+  // RESET SETTINGS (pakai Future.wait untuk performa)
   // ============================================================
-
-  static Future<String> getThemeMode() async {
-    final prefs = await _instance();
-    return prefs.getString(_keyThemeMode) ?? 'dark';
-  }
-
-  static Future<void> setThemeMode(String mode) async {
-    final prefs = await _instance();
-    await prefs.setString(_keyThemeMode, mode);
-  }
-
-  // ============================================================
-  // RESET SETTINGS
-  // ============================================================
-
   static Future<void> resetAllSettings() async {
     final prefs = await _instance();
-    
-    await prefs.setInt(_keyWatermarkLayout, WatermarkLayout.modern.index);
-    await prefs.setBool(_keyShowWeather, true);
-    await prefs.setBool(_keyShowAccuracy, true);
-    await prefs.setBool(_keyShowAddress, true);
-    await prefs.setBool(_keyShowCoordinates, true);
-    await prefs.setString(_keyWatermarkPosition, 'bottom');
-    await prefs.setString(_keyDateFormat, 'dd/MM/yyyy');
-    await prefs.setString(_keyTimeFormat, 'HH:mm:ss');
-    await prefs.setDouble(_keyOpacity, 0.85);
-    await prefs.setBool(_keyShowMiniMap, true);
-    await prefs.setInt(_keyMapZoomLevel, 16);
-    await prefs.setString(_keyMapSize, 'medium');
-    await prefs.setString(_keyFontSize, 'normal');
-    await prefs.setBool(_keyShowBorder, true);
-    await prefs.setString(_keyThemeMode, 'dark');
-    await prefs.setBool(_keyKeepScreenOn, true);
-    await prefs.setBool(_keyAutoSave, false);
-    await prefs.setInt(_keyImageQuality, 90);
-    await prefs.setBool(_keyUseHighAccuracy, true);
+    await Future.wait([
+      prefs.setInt(_keyWatermarkLayout, WatermarkLayout.modern.index),
+      prefs.setBool(_keyShowWeather, true),
+      prefs.setBool(_keyShowAccuracy, true),
+      prefs.setBool(_keyShowAddress, true),
+      prefs.setBool(_keyShowCoordinates, true),
+      prefs.setString(_keyWatermarkPosition, 'bottom'),
+      prefs.setString(_keyDateFormat, 'dd/MM/yyyy'),
+      prefs.setString(_keyTimeFormat, 'HH:mm:ss'),
+      prefs.setDouble(_keyOpacity, 0.85),
+      prefs.setBool(_keyShowMiniMap, true),
+      prefs.setInt(_keyMapZoomLevel, 16),
+      prefs.setString(_keyMapSize, 'medium'),
+      prefs.setString(_keyFontSize, 'normal'),
+      prefs.setBool(_keyShowBorder, true),
+      prefs.setString(_keyThemeMode, 'dark'),
+      prefs.setBool(_keyKeepScreenOn, true),
+      prefs.setBool(_keyAutoSave, false),
+      prefs.setInt(_keyImageQuality, 90),
+      prefs.setBool(_keyUseHighAccuracy, true),
+    ]);
   }
 
   // ============================================================
   // HELPER METHODS
   // ============================================================
-
   static Future<Map<String, int>> getMapDimensions() async {
     final size = await getMapSize();
     switch (size) {

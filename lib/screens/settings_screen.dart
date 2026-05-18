@@ -434,37 +434,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : _timeFormat == 'hh:mm:ss a' ? DateFormat('hh:mm:ss a', 'id').format(now)
         : DateFormat('HH:mm:ss').format(now);
 
-    final double fontSize = _fontSize == 'small' ? 10 : _fontSize == 'large' ? 16 : 13;
-    final double titleFontSize = fontSize + 2;
+    final double fontSize = _fontSize == 'small' ? 13 : _fontSize == 'large' ? 20 : 16;
+    final double titleFontSize = fontSize + 4;
     final Color accent = const Color(0xFF00B8D4);
     final Color bgColor = Colors.black.withOpacity(_opacity);
     final Widget miniMapPlaceholder = _showMiniMap
         ? Container(
-            width: _mapSize == 'small' ? 50 : _mapSize == 'large' ? 80 : 65,
-            height: _mapSize == 'small' ? 50 : _mapSize == 'large' ? 80 : 65,
+            width: _mapSize == 'small' ? 60 : _mapSize == 'large' ? 90 : 75,
+            height: _mapSize == 'small' ? 60 : _mapSize == 'large' ? 90 : 75,
             decoration: BoxDecoration(
               color: Colors.grey.shade800,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(6),
             ),
-            child: const Center(child: Icon(Icons.map, color: Colors.grey, size: 20)),
+            child: const Center(child: Icon(Icons.map, color: Colors.grey, size: 28)),
           )
         : const SizedBox.shrink();
 
     switch (_selectedLayout) {
+      // ─── MINIMAL ──────────────────────────────────────────────
       case WatermarkLayout.minimal:
         return Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(14),
           color: bgColor,
           child: Row(
             children: [
-              Container(width: 3, height: 30, color: accent),
-              const SizedBox(width: 8),
+              Container(width: 4, height: 40, color: accent),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$dateStr  $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize - 1)),
+                    Text('$dateStr  $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w500)),
                     if (_showCoordinates)
                       Text('-6.123456, 106.123456', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
                     if (_showAccuracy)
@@ -475,28 +476,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-      case WatermarkLayout.modern:
+
+      // ─── DSLR CORNER ──────────────────────────────────────────
+      case WatermarkLayout.dslrCorner:
         return Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: _showBorder ? BorderRadius.circular(12) : null,
+            borderRadius: _showBorder ? BorderRadius.circular(14) : null,
             border: _showBorder ? Border.all(color: accent.withOpacity(0.4)) : null,
           ),
           child: Row(
             children: [
-              const Icon(Icons.location_on, color: Colors.redAccent, size: 18),
-              const SizedBox(width: 8),
+              const Icon(Icons.location_on, color: Colors.redAccent, size: 22),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text('TERMULOG', style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: titleFontSize)),
-                    const SizedBox(height: 2),
-                    Text('$timeStr  •  $dateStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 1)),
+                    const SizedBox(height: 4),
+                    Text('$timeStr  •  $dateStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
                     if (_showCoordinates)
-                      Text('-6.123456°, 106.123456°', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
+                      Text('-6.123456°, 106.123456°', style: TextStyle(color: Colors.white70, fontSize: fontSize - 3)),
                     if (_showAccuracy)
                       Text('Akurasi: ±5 m', style: TextStyle(color: accent, fontSize: fontSize - 2)),
                     if (_showWeather)
@@ -508,18 +511,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-      case WatermarkLayout.elegant:
+
+      // ─── CINEMATIC ────────────────────────────────────────────
+      case WatermarkLayout.cinematic:
         return Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           color: bgColor,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text('TERMULOG', style: TextStyle(color: const Color(0xFFFFB432), fontWeight: FontWeight.bold, fontSize: titleFontSize)),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(dateStr, style: TextStyle(color: Colors.white70, fontSize: fontSize)),
-              Text(timeStr, style: TextStyle(color: accent, fontSize: fontSize + 2)),
+              Text(timeStr, style: TextStyle(color: accent, fontSize: fontSize + 4)),
               if (_showCoordinates)
                 Text('-6.123456° / 106.123456°', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
               if (_showAccuracy)
@@ -527,33 +532,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-      case WatermarkLayout.professional:
-        return Container(
-          padding: const EdgeInsets.all(10),
-          color: bgColor,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 6),
-                color: accent,
-                child: Text('TERMULOG DOCUMENT', style: TextStyle(color: Colors.black, fontSize: fontSize - 2, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(height: 6),
-              Text('DATE : $dateStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-              Text('TIME : $timeStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-              if (_showCoordinates)
-                Text('LAT : -6.123456  LON : 106.123456', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
-              if (_showAccuracy)
-                Text('ACC : ±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
-              if (_showAddress)
-                Text('ADDR : Jl. Contoh No. 123', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
-            ],
-          ),
-        );
-      case WatermarkLayout.semiTransparent:
+
+      // ─── FIELD SURVEY ─────────────────────────────────────────
+      case WatermarkLayout.fieldSurvey:
         return Container(
           padding: const EdgeInsets.all(12),
           color: bgColor,
@@ -561,18 +542,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('$dateStr   $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+                color: accent,
+                child: Text('TERMULOG DOCUMENT', style: TextStyle(color: Colors.black, fontSize: fontSize - 2, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 8),
+              Text('DATE : $dateStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
+              Text('TIME : $timeStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
               if (_showCoordinates)
-                Text('-6.123456, 106.123456', style: TextStyle(color: accent, fontSize: fontSize, fontWeight: FontWeight.w500)),
+                Text('LAT : -6.123456  LON : 106.123456', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
               if (_showAccuracy)
-                Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 1)),
+                Text('ACC : ±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+              if (_showAddress)
+                Text('ADDR : Jl. Contoh No. 123', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
             ],
           ),
         );
+
+      // ─── HUD MODERN ───────────────────────────────────────────
+      case WatermarkLayout.hud:
+        return Container(
+          padding: const EdgeInsets.all(14),
+          color: bgColor,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$dateStr   $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              if (_showCoordinates)
+                Text('-6.123456, 106.123456', style: TextStyle(color: accent, fontSize: fontSize, fontWeight: FontWeight.w600)),
+              if (_showAccuracy)
+                Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
+            ],
+          ),
+        );
+
+      // ─── GPS CARD ────────────────────────────────────────────
       case WatermarkLayout.gpsCard:
         return Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: bgColor,
             border: Border(bottom: BorderSide(color: accent, width: 3)),
@@ -584,13 +595,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$dateStr  $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize - 1)),
-                    const SizedBox(height: 4),
-                    Text('-6.123456°N  106.123456°E', style: TextStyle(color: accent, fontSize: fontSize - 1)),
+                    Text('$dateStr  $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize - 2)),
+                    const SizedBox(height: 6),
+                    Text('-6.123456°N  106.123456°E', style: TextStyle(color: accent, fontSize: fontSize - 2)),
                     if (_showAccuracy)
-                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
+                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
                     if (_showAddress)
-                      Text('Jl. Contoh No. 123, Kec. Contoh', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2), maxLines: 2),
+                      Text('Jl. Contoh No. 123, Kec. Contoh', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3), maxLines: 2),
                   ],
                 ),
               ),
@@ -598,56 +609,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
+
+      // ─── POLAROID ────────────────────────────────────────────
       case WatermarkLayout.polaroid:
         return Container(
           color: const Color(0xFFF8F5EB),
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                height: 80,
+                height: 90,
                 width: double.infinity,
                 color: Colors.grey.shade400,
-                child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 32)),
+                child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 36)),
               ),
-              const SizedBox(height: 8),
-              Text(dateStr, style: TextStyle(color: Colors.black87, fontSize: fontSize)),
+              const SizedBox(height: 10),
+              Text(dateStr, style: TextStyle(color: Colors.black87, fontSize: fontSize, fontWeight: FontWeight.w500)),
               if (_showCoordinates)
                 Text('-6.123, 106.123', style: TextStyle(color: Colors.black54, fontSize: fontSize - 2)),
             ],
           ),
         );
+
+      // ─── SIDE PANEL ──────────────────────────────────────────
       case WatermarkLayout.sidePanel:
         return Row(
           children: [
             Container(
-              width: 50,
-              height: 120,
+              width: 60,
+              height: 140,
               color: const Color(0xFF0A0F28),
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(DateFormat('HH').format(now), style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text(DateFormat('mm').format(now), style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text(DateFormat('ss').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text(DateFormat('dd').format(now), style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                  Text(DateFormat('MMM', 'id').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 12)),
+                  Text(DateFormat('HH').format(now), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text(DateFormat('mm').format(now), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text(DateFormat('ss').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 22, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Text(DateFormat('dd').format(now), style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text(DateFormat('MMM', 'id').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 14)),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
               child: Container(
-                height: 120,
+                height: 140,
                 color: Colors.grey.shade800,
-                child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 40)),
+                child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 48)),
               ),
             ),
           ],
         );
+
+      // ─── CINEMATIC V2 ─────────────────────────────────────────
       case WatermarkLayout.cinematicV2:
         return Stack(
           children: [
@@ -655,14 +672,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               height: 200,
               width: double.infinity,
               color: Colors.black,
-              child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 40)),
+              child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 48)),
             ),
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
@@ -674,11 +691,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('REC • $timeStr', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text('JAKARTA INDONESIA', style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                    const SizedBox(height: 2),
-                    Text('SONY FX3 • 24MM', style: const TextStyle(color: Colors.white54, fontSize: 9)),
+                    Text('REC • $timeStr', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text('JAKARTA INDONESIA', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    const SizedBox(height: 3),
+                    Text('SONY FX3 • 24MM', style: const TextStyle(color: Colors.white54, fontSize: 10)),
                   ],
                 ),
               ),
@@ -688,7 +705,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               left: 0,
               right: 0,
               child: Container(
-                height: 24,
+                height: 28,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -700,32 +717,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         );
+
+      // ─── TIMEMARK STYLE ─────────────────────────────────────
       case WatermarkLayout.timeMarkStyle:
         return Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             border: _showBorder ? Border.all(color: accent.withOpacity(0.4)) : null,
           ),
           child: Row(
             children: [
-              const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 24),
-              const SizedBox(width: 10),
+              const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 28),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$timeStr', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(dateStr, style: TextStyle(color: Colors.white70, fontSize: fontSize - 1)),
+                    Text('$timeStr', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(dateStr, style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
                     if (_showCoordinates)
-                      Text('-6.123456°, 106.123456°', style: TextStyle(color: accent, fontSize: fontSize - 2)),
+                      Text('-6.123456°, 106.123456°', style: TextStyle(color: accent, fontSize: fontSize - 3)),
                     if (_showAccuracy)
-                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
+                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
                     if (_showWeather)
-                      Text('Cerah 32°C', style: TextStyle(color: accent, fontSize: fontSize - 2)),
+                      Text('Cerah 32°C', style: TextStyle(color: accent, fontSize: fontSize - 3)),
                   ],
                 ),
               ),
@@ -733,35 +752,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
-      case WatermarkLayout.modernCleanCard:
+
+      // ─── MODERN CLEAN CARD ──────────────────────────────────
+      case WatermarkLayout.modern:
         return Container(
-          margin: const EdgeInsets.all(12),
-          padding: const EdgeInsets.only(left: 16, top: 10, bottom: 10),
+          margin: const EdgeInsets.all(14),
+          padding: const EdgeInsets.only(left: 20, top: 14, bottom: 14),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [const Color(0xFF0D1117), const Color(0xFF141E2E)],
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0D1117), Color(0xFF141E2E)],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
-            border: Border(left: BorderSide(color: const Color(0xFF00D4AA), width: 3)),
+            border: Border(left: BorderSide(color: const Color(0xFF00D4AA), width: 4)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(timeStr, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 2),
-              Text(dateStr, style: const TextStyle(color: Color(0xFFA0AFC3), fontSize: 11)),
-              const SizedBox(height: 6),
+              Text(timeStr, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(dateStr, style: const TextStyle(color: Color(0xFFA0AFC3), fontSize: 14)),
+              const SizedBox(height: 8),
               if (_showCoordinates)
-                Text('📍 -6.123456°  106.123456°', style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 10)),
+                Text('📍 -6.123456°  106.123456°', style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 13)),
               if (_showAccuracy)
-                Text('Akurasi ±5 m', style: const TextStyle(color: Color(0xFF8296AE), fontSize: 10)),
+                Text('Akurasi ±5 m', style: const TextStyle(color: Color(0xFF8296AE), fontSize: 13)),
               if (_showWeather)
-                Text('Cerah 32°C', style: const TextStyle(color: Color(0xFF00D4AA), fontSize: 10)),
+                Text('Cerah 32°C', style: const TextStyle(color: Color(0xFF00D4AA), fontSize: 13)),
             ],
           ),
         );
+
       default:
         return const SizedBox.shrink();
     }
@@ -770,16 +792,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Color _getPreviewTextColor() {
     switch (_selectedLayout) {
       case WatermarkLayout.minimal: return Colors.white;
-      case WatermarkLayout.modern: return const Color(0xFF00B8D4);
-      case WatermarkLayout.elegant: return const Color(0xFFFFB432);
-      case WatermarkLayout.professional: return Colors.white70;
-      case WatermarkLayout.semiTransparent: return const Color(0xFF00B8D4);
+      case WatermarkLayout.dslrCorner: return const Color(0xFF00B8D4);
+      case WatermarkLayout.cinematic: return const Color(0xFFFFB432);
+      case WatermarkLayout.fieldSurvey: return Colors.white70;
+      case WatermarkLayout.hud: return const Color(0xFF00B8D4);
       case WatermarkLayout.gpsCard: return const Color(0xFF00B8D4);
       case WatermarkLayout.polaroid: return Colors.black87;
       case WatermarkLayout.sidePanel: return Colors.white;
       case WatermarkLayout.cinematicV2: return Colors.white;
       case WatermarkLayout.timeMarkStyle: return const Color(0xFF00B8D4);
-      case WatermarkLayout.modernCleanCard: return const Color(0xFF00D4AA);
+      case WatermarkLayout.modern: return const Color(0xFF00D4AA);
       default: return const Color(0xFF00B8D4);
     }
   }

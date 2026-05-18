@@ -29,7 +29,7 @@ class LayoutGpsCard extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    // ... isi sama persis dengan yang sudah ada ...
+    // … isi method tetap sama seperti sebelumnya …
     return WatermarkLayoutBase.encodeJpg(src);
   }
 }

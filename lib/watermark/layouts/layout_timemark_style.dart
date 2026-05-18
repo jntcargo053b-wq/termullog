@@ -42,12 +42,12 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
 
     const m = 10;
 
-    // Card background
+    // Card background hitam (opacity dari pengaturan)
     img.fillRect(src,
         x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
-        color: img.ColorRgba8(0, 0, 0, (opacity * 255).toInt()));
+        color: img.ColorRgba8(0, 0, 0, (255 * opacity).toInt()));
 
-    // Border jika showBorder aktif
+    // Border putih tipis
     if (showBorder) {
       img.drawRect(src,
           x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
@@ -60,19 +60,19 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     int cx = (_padX + m).toInt();
     int cy = (y0 + _padY + m).toInt();
 
-    // Jam besar
+    // ── Jam besar ──
     img.drawString(src, DateFormat('HH:mm').format(timestamp),
         font: font, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
     img.drawString(src, DateFormat('HH:mm').format(timestamp),
         font: font, x: cx, y: cy, color: WatermarkLayoutBase.white);
 
-    // Detik kecil
+    // ── Detik kecil ──
     img.drawString(src, DateFormat('ss').format(timestamp),
         font: smallFont, x: cx + 88, y: cy + 10, color: WatermarkLayoutBase.blue);
 
     cy += 36;
 
-    // Tanggal panjang
+    // ── Tanggal panjang ──
     img.drawString(src,
         DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
         font: smallFont, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
@@ -82,7 +82,7 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
 
     cy += 24;
 
-    // Koordinat
+    // ── Koordinat DMS ──
     if (showCoordinates && hasPosition) {
       final coord = '${_toDMS(lat!, true)}   ${_toDMS(lon!, false)}';
       img.drawString(src, coord, font: smallFont, x: cx + 1, y: cy + 1,
@@ -92,12 +92,14 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
       cy += 22;
     }
 
+    // ── Akurasi ──
     if (showAccuracy && hasPosition) {
       img.drawString(src, '± ${acc?.toStringAsFixed(0) ?? '?'} m',
           font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.grey);
       cy += 20;
     }
 
+    // ── Alamat (2 baris) ──
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       for (final line in _splitAddress(address)) {
         img.drawString(src, line, font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.white);
@@ -105,10 +107,12 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
       }
     }
 
+    // ── Cuaca ──
     if (showWeather && weather.isNotEmpty) {
       img.drawString(src, weather, font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.blue);
     }
 
+    // ── Mini map di kanan bawah ──
     if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
       _drawMiniMapSync(src, mapBytes, y0: y0, panelH: panelH);
     }

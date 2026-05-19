@@ -12,11 +12,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:image/image.dart' as img;
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../core/constants.dart';
 import '../watermark/watermark_params.dart';
 import '../watermark/watermark_engine.dart';
+import '../watermark/watermark_utils.dart';
 
 enum SaveStatus { idle, saving, saved, error }
 
@@ -179,7 +181,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final showBorder = await SettingsCache.showBorder;
       final fontSize = await SettingsCache.fontSize;
 
-      debugPrint('🔥 PREVIEW: layout = ${layout.displayName}, typeString = ${layout.typeString}');  // ← GANTI
+      debugPrint('🔥 PREVIEW: layout = ${layout.displayName}, typeString = ${layout.typeString}, position = $watermarkPosition');
 
       // ── 4. FETCH MINI MAP ─────────────────────────────────────────
       Uint8List? mapBytes;
@@ -213,40 +215,53 @@ class _PreviewScreenState extends State<PreviewScreen>
         }
       }
 
-// Di dalam method _processImageAsync(), cari bagian CREATE WATERMARK PARAMS:
-
-// ── 5. CREATE WATERMARK PARAMS ────────────────────────────────
-_processingStep.value = 'Membuat watermark...';
-final params = WatermarkEngine.createParams(
-  imageBytes: bytes,
-  timestamp: timestamp,
-  layoutType: layout.typeString,  // ← PAKAI typeString, BUKAN index!
-  address: address,
-  weather: weather,
-  showWeather: showWeather,
-  showAccuracy: showAccuracy,
-  watermarkPosition: watermarkPosition,  // ← POSISI terpisah!
-  showMiniMap: showMiniMap,
-  lat: widget.latitude,
-  lon: widget.longitude,
-  acc: widget.accuracy,
-  mapBytes: mapBytes,
-  mapSize: mapSize,
-  mapZoomLevel: mapZoomLevel,
-  showAddress: showAddress,
-  showCoordinates: showCoordinates,
-  opacity: opacity,
-  showBorder: showBorder,
-  fontSize: fontSize,
-);
+      // ── 5. CREATE WATERMARK PARAMS ────────────────────────────────
+      _processingStep.value = 'Membuat watermark...';
+      final params = WatermarkEngine.createParams(
+        imageBytes: bytes,
+        timestamp: timestamp,
+        layoutType: layout.typeString,  // ← PAKAI typeString, BUKAN index!
+        address: address,
+        weather: weather,
+        showWeather: showWeather,
+        showAccuracy: showAccuracy,
+        watermarkPosition: watermarkPosition,
+        showMiniMap: showMiniMap,
+        lat: widget.latitude,
+        lon: widget.longitude,
+        acc: widget.accuracy,
+        mapBytes: mapBytes,
+        mapSize: mapSize,
+        mapZoomLevel: mapZoomLevel,
+        showAddress: showAddress,
+        showCoordinates: showCoordinates,
+        opacity: opacity,
+        showBorder: showBorder,
+        fontSize: fontSize,
+      );
 
       // ── 6. RESET CACHE PREVIEW ────────────────────────────────────
       setState(() {
         _displayImagePath = null;
       });
 
-      // ── 7. PROCESS WATERMARK (HYBRID: MAIN THREAD) ────────────────
-      final processedBytes = await WatermarkEngine.applyFromMapAsync(params.toMap());
+      // ── 7. PROCESS WATERMARK ──────────────────────────────────────
+      _processingStep.value = 'Memproses watermark...';
+      Uint8List processedBytes = await WatermarkEngine.applyFromMapAsync(params.toMap());
+
+      // ── 7.5 AUTO ENHANCE (meningkatkan kualitas gambar) ───────────
+      _processingStep.value = 'Meningkatkan kualitas gambar...';
+      try {
+        final img.Image? decoded = img.decodeImage(processedBytes);
+        if (decoded != null) {
+          final enhanced = WatermarkUtils.autoEnhance(decoded);
+          final enhancedBytes = img.encodeJpg(enhanced, quality: kJpegQuality);
+          processedBytes = Uint8List.fromList(enhancedBytes);
+          debugPrint('✅ Auto-enhance applied successfully');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Auto-enhance failed: $e');
+      }
 
       // ── 8. SAVE TO APP DIRECTORY ──────────────────────────────────
       _processingStep.value = 'Menyimpan file...';
@@ -259,6 +274,7 @@ final params = WatermarkEngine.createParams(
           _displayImagePath = permanentFile.path;
           _isProcessing = false;
         });
+        debugPrint('✅ Image saved to: ${permanentFile.path}');
       }
     } catch (e, stackTrace) {
       final msg = e.toString();
@@ -495,7 +511,10 @@ final params = WatermarkEngine.createParams(
             ),
             const SizedBox(width: 12),
             ElevatedButton.icon(
-              onPressed: () { setState(() => _errorMessage = null); _processImageAsync(); },
+              onPressed: () { 
+                setState(() => _errorMessage = null); 
+                _processImageAsync(); 
+              },
               icon: const Icon(Icons.refresh, size: 16),
               label: const Text('Coba Lagi'),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade600, foregroundColor: Colors.white),
@@ -611,9 +630,12 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: ElevatedButton.icon(
-        onPressed: onPressed, icon: icon, label: Text(label),
+        onPressed: onPressed, 
+        icon: icon, 
+        label: Text(label),
         style: ElevatedButton.styleFrom(
-          backgroundColor: color, foregroundColor: Colors.white,
+          backgroundColor: color, 
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           elevation: 0,
@@ -643,9 +665,12 @@ class _SaveButton extends StatelessWidget {
 
     return Expanded(
       child: ElevatedButton.icon(
-        onPressed: onPressed, icon: icon, label: Text(labelText),
+        onPressed: onPressed, 
+        icon: icon, 
+        label: Text(labelText),
         style: ElevatedButton.styleFrom(
-          backgroundColor: bgColor, foregroundColor: Colors.white,
+          backgroundColor: bgColor, 
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           elevation: 0,

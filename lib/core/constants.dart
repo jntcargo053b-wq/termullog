@@ -137,7 +137,7 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Get layout by index value (for serialization)
+  /// Get layout by index value (for serialization) - LEGACY, gunakan typeString
   static WatermarkLayout fromIndex(int index) {
     if (index >= 0 && index < all.length) {
       return all[index];
@@ -145,9 +145,44 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     return modern; // default fallback
   }
 
-  /// Get integer index (for serialization)
+  /// Get integer index (for serialization) - LEGACY, gunakan typeString
   int get index {
     return all.indexOf(this);
+  }
+
+  /// Get string identifier for safe storage (lebih aman dari index)
+  String get typeString {
+    switch (this) {
+      case WatermarkLayout.minimal:        return 'minimal';
+      case WatermarkLayout.dslrCorner:     return 'dslr_corner';
+      case WatermarkLayout.gpsTimestamp:   return 'gps_timestamp';
+      case WatermarkLayout.fieldSurvey:    return 'field_survey';
+      case WatermarkLayout.hud:            return 'hud';
+      case WatermarkLayout.gpsCard:        return 'gps_card';
+      case WatermarkLayout.polaroid:       return 'polaroid';
+      case WatermarkLayout.sidePanel:      return 'side_panel';
+      case WatermarkLayout.cinematic:      return 'cinematic';
+      case WatermarkLayout.timeMarkStyle:  return 'timemark_style';
+      case WatermarkLayout.modern:         return 'modern';
+    }
+  }
+
+  /// Get layout from string identifier (safe)
+  static WatermarkLayout fromTypeString(String type) {
+    switch (type) {
+      case 'minimal':        return WatermarkLayout.minimal;
+      case 'dslr_corner':    return WatermarkLayout.dslrCorner;
+      case 'gps_timestamp':  return WatermarkLayout.gpsTimestamp;
+      case 'field_survey':   return WatermarkLayout.fieldSurvey;
+      case 'hud':            return WatermarkLayout.hud;
+      case 'gps_card':       return WatermarkLayout.gpsCard;
+      case 'polaroid':       return WatermarkLayout.polaroid;
+      case 'side_panel':     return WatermarkLayout.sidePanel;
+      case 'cinematic':      return WatermarkLayout.cinematic;
+      case 'timemark_style': return WatermarkLayout.timeMarkStyle;
+      case 'modern':         return WatermarkLayout.modern;
+      default:               return WatermarkLayout.modern; // default fallback
+    }
   }
 
   /// Check if layout supports dark theme well

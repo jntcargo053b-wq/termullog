@@ -137,15 +137,15 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Get layout by index value (for serialization) - LEGACY, gunakan typeString
+  /// Get layout by index value (for serialization) - LEGACY
   static WatermarkLayout fromIndex(int index) {
     if (index >= 0 && index < all.length) {
       return all[index];
     }
-    return modern; // default fallback
+    return WatermarkLayout.modern; // ← PERBAIKAN: tambahkan WatermarkLayout.
   }
 
-  /// Get integer index (for serialization) - LEGACY, gunakan typeString
+  /// Get integer index (for serialization) - LEGACY
   int get index {
     return all.indexOf(this);
   }
@@ -181,7 +181,7 @@ extension WatermarkLayoutExtension on WatermarkLayout {
       case 'cinematic':      return WatermarkLayout.cinematic;
       case 'timemark_style': return WatermarkLayout.timeMarkStyle;
       case 'modern':         return WatermarkLayout.modern;
-      default:               return WatermarkLayout.modern; // default fallback
+      default:               return WatermarkLayout.modern;
     }
   }
 
@@ -330,17 +330,3 @@ img.Color getAccuracyColor(double accuracy) {
     return kColorGrey;
   }
 }
-
-// ============================================================
-// VALIDATION ASSERTIONS (debug mode only)
-// ============================================================
-assert(() {
-  // Validate quality ranges
-  assert(kJpegQuality >= 0 && kJpegQuality <= 100, 
-    'JPEG quality must be between 0 and 100');
-  assert(kMaxOutputWidth > 0, 
-    'Max output width must be positive');
-  assert(kGpsTimeoutSeconds > 0, 
-    'GPS timeout must be positive');
-  return true;
-}());

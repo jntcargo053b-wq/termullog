@@ -1,12 +1,10 @@
-// lib/watermark/layouts/layout_simple.dart
+// lib/watermark/layouts/layout_simple.dart (VERSI PALING SEDERHANA)
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 
 class LayoutSimple {
-  String get name => 'Simple';
-
   img.Image apply({
     required img.Image src,
     required DateTime timestamp,
@@ -31,29 +29,30 @@ class LayoutSimple {
     final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
     final int yPos = watermarkPosition == 'bottom' ? src.height - 50 : 20;
     
-    // Gunakan font default dari package image
-    final defaultFont = img.getDefaultFont();
+    // Teks timestamp
+    img.drawString(src, '$dateStr  $timeStr', x: 10, y: yPos, color: kColorWhite);
     
-    // Gambar teks timestamp
-    img.drawString(src, '$dateStr  $timeStr', x: 10, y: yPos, 
-        color: kColorWhite, font: defaultFont);
-    
-    // Gambar koordinat
+    // Koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
       img.drawString(src, '${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°', 
-          x: 10, y: yPos + 25, color: kColorCyan, font: defaultFont);
+          x: 10, y: yPos + 25, color: kColorCyan);
     }
     
-    // Gambar akurasi
+    // Akurasi
     if (showAccuracy && acc != null) {
       img.drawString(src, '±${acc.toStringAsFixed(1)}m', 
-          x: 10, y: yPos + 45, color: kColorGrey, font: defaultFont);
+          x: 10, y: yPos + 45, color: kColorGrey);
     }
     
-    // Gambar cuaca
+    // Cuaca
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, 
-          x: 10, y: yPos + 65, color: kColorGold, font: defaultFont);
+      img.drawString(src, weather, x: 10, y: yPos + 65, color: kColorGold);
+    }
+    
+    // Alamat (opsional)
+    if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi') {
+      String shortAddress = address.length > 35 ? '${address.substring(0, 32)}...' : address;
+      img.drawString(src, shortAddress, x: 10, y: yPos + 85, color: kColorWhite70);
     }
     
     return src;

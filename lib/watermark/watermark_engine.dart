@@ -18,13 +18,11 @@ import 'layouts/layout_timemark_style.dart';
 import 'layouts/layout_nama_baru.dart';
 
 class WatermarkEngine {
-  // ============================================================
-  // LAYOUT MAP - Menggunakan String key (typeString) untuk keamanan
-  // ============================================================
+  // Layout MAP berdasarkan typeString
   static final Map<String, WatermarkLayoutBase> _layouts = {
     'minimal':        LayoutFilmStrip(),
     'dslr_corner':    LayoutDSLRCorner(),
-    'gps_timestamp':  LayoutCinematic(),      // GPS Timestamp pakai LayoutCinematic
+    'gps_timestamp':  LayoutCinematic(),
     'field_survey':   LayoutFieldSurvey(),
     'hud':            LayoutHUD(),
     'gps_card':       LayoutGpsCard(),
@@ -35,9 +33,6 @@ class WatermarkEngine {
     'modern':         LayoutNamaBaru(),
   };
 
-  // ============================================================
-  // APPLY WATERMARK (SYNC)
-  // ============================================================
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);
     final bytes = _getImageBytes(wmParams);
@@ -46,17 +41,19 @@ class WatermarkEngine {
     
     if (src == null) return bytes ?? Uint8List(0);
     
+    // ✅ LAYOUT dipilih berdasarkan typeString, BUKAN position!
     final layout = _getLayout(wmParams.layoutType);
     if (layout == null) {
       return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
     }
 
     debugPrint('==========================');
-    debugPrint('🎨 LAYOUT DIPAKAI: ${layout.name}');
-    debugPrint('📝 LAYOUT TYPE: ${wmParams.layoutType}');
+    debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
+    debugPrint('📍 POSITION: ${wmParams.watermarkPosition}');
     debugPrint('==========================');
 
     try {
+      // ✅ POSISI hanya menentukan letak, BUKAN jenis layout!
       return layout.apply(
         src: _resizeIfNeeded(src),
         timestamp: wmParams.timestamp,
@@ -68,7 +65,7 @@ class WatermarkEngine {
         weather: wmParams.weather,
         showWeather: wmParams.showWeather,
         showAccuracy: wmParams.showAccuracy,
-        watermarkPosition: wmParams.watermarkPosition,
+        watermarkPosition: wmParams.watermarkPosition,  // ← POSISI terpisah!
         showMiniMap: wmParams.showMiniMap,
         mapBytes: mapBytes,
         showAddress: wmParams.showAddress,
@@ -83,9 +80,6 @@ class WatermarkEngine {
     }
   }
 
-  // ============================================================
-  // APPLY WATERMARK (ASYNC)
-  // ============================================================
   static Future<Uint8List> applyFromMapAsync(Map<String, dynamic> params) async {
     final wmParams = WatermarkParams.fromMap(params);
     final bytes = _getImageBytes(wmParams);
@@ -94,17 +88,19 @@ class WatermarkEngine {
     
     if (src == null) return bytes ?? Uint8List(0);
     
+    // ✅ LAYOUT dipilih berdasarkan typeString, BUKAN position!
     final layout = _getLayout(wmParams.layoutType);
     if (layout == null) {
       return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
     }
 
     debugPrint('==========================');
-    debugPrint('🎨 LAYOUT DIPAKAI: ${layout.name}');
-    debugPrint('📝 LAYOUT TYPE: ${wmParams.layoutType}');
+    debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
+    debugPrint('📍 POSITION: ${wmParams.watermarkPosition}');
     debugPrint('==========================');
 
     try {
+      // ✅ POSISI hanya menentukan letak, BUKAN jenis layout!
       return await layout.applyAsync(
         src: _resizeIfNeeded(src),
         timestamp: wmParams.timestamp,
@@ -116,7 +112,7 @@ class WatermarkEngine {
         weather: wmParams.weather,
         showWeather: wmParams.showWeather,
         showAccuracy: wmParams.showAccuracy,
-        watermarkPosition: wmParams.watermarkPosition,
+        watermarkPosition: wmParams.watermarkPosition,  // ← POSISI terpisah!
         showMiniMap: wmParams.showMiniMap,
         mapBytes: mapBytes,
         showAddress: wmParams.showAddress,
@@ -131,13 +127,10 @@ class WatermarkEngine {
     }
   }
 
-  // ============================================================
-  // CREATE PARAMS - Menerima layoutType String
-  // ============================================================
   static WatermarkParams createParams({
     required Uint8List imageBytes,
     required DateTime timestamp,
-    required String layoutType,  // ← String, BUKAN int!
+    required String layoutType,  // ← String layout, BUKAN position!
     String address = '',
     String weather = '',
     bool showWeather = true,
@@ -147,7 +140,7 @@ class WatermarkEngine {
     double opacity = 0.85,
     bool showBorder = true,
     String fontSize = 'normal',
-    String watermarkPosition = 'bottom',
+    String watermarkPosition = 'bottom',  // ← POSISI terpisah!
     bool showMiniMap = false,
     double? lat,
     double? lon,
@@ -164,7 +157,7 @@ class WatermarkEngine {
       timestamp: timestamp,
       address: address,
       weather: weather,
-      layoutType: layoutType,  // ← String
+      layoutType: layoutType,  // ← layout dipilih user
       showWeather: showWeather,
       showAccuracy: showAccuracy,
       showAddress: showAddress,
@@ -172,7 +165,7 @@ class WatermarkEngine {
       opacity: opacity,
       showBorder: showBorder,
       fontSize: fontSize,
-      watermarkPosition: watermarkPosition,
+      watermarkPosition: watermarkPosition,  // ← position terpisah!
       showMiniMap: showMiniMap,
       lat: lat,
       lon: lon,
@@ -182,9 +175,6 @@ class WatermarkEngine {
     );
   }
 
-  // ============================================================
-  // HELPER METHODS
-  // ============================================================
   static Uint8List? _getImageBytes(WatermarkParams p) {
     try {
       return p.transferable.materialize().asUint8List();
@@ -230,9 +220,6 @@ class WatermarkEngine {
     return src;
   }
   
-  // ============================================================
-  // GET LAYOUT - Berdasarkan String typeString
-  // ============================================================
   static WatermarkLayoutBase? _getLayout(String layoutType) {
     final layout = _layouts[layoutType];
     if (layout == null) {
@@ -242,22 +229,3 @@ class WatermarkEngine {
     return layout;
   }
 }
-
-// ============================================================
-// REFERENSI LAYOUT TYPE STRINGS
-// ============================================================
-/// Daftar lengkap layout type strings yang tersedia:
-/// 
-/// | typeString      | Layout Class        | Deskripsi
-/// |-----------------|---------------------|----------------------------------
-/// | 'minimal'       | LayoutFilmStrip()   | Film Strip dengan border biru
-/// | 'dslr_corner'   | LayoutDSLRCorner()  | DSLR Corner style
-/// | 'gps_timestamp' | LayoutCinematic()   | GPS Timestamp style
-/// | 'field_survey'  | LayoutFieldSurvey() | Field Survey form style
-/// | 'hud'           | LayoutHUD()         | HUD Modern style
-/// | 'gps_card'      | LayoutGpsCard()     | GPS Card with map
-/// | 'polaroid'      | LayoutPolaroid()    | Polaroid classic style
-/// | 'side_panel'    | LayoutSidePanel()   | Side panel vertical
-/// | 'cinematic'     | LayoutCinematic()   | Cinematic style
-/// | 'timemark_style'| LayoutTimeMarkStyle()| TimeMark Camera style
-/// | 'modern'        | LayoutNamaBaru()    | Modern Clean Card

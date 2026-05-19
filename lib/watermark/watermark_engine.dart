@@ -22,11 +22,14 @@ class WatermarkEngine {
     
     // Ambil bytes dari transferable
     Uint8List? bytes;
-    if (wmParams.transferable != null) {
-      if (wmParams.transferable is TransferableTypedData) {
-        bytes = (wmParams.transferable as TransferableTypedData).materialize().asUint8List();
-      } else if (wmParams.transferable is Uint8List) {
+    if (wmParams.transferable is Uint8List) {
+      bytes = wmParams.transferable as Uint8List;
+    } else if (wmParams.transferable != null) {
+      // Coba konversi jika perlu
+      try {
         bytes = wmParams.transferable as Uint8List;
+      } catch (e) {
+        debugPrint('❌ Failed to get bytes: $e');
       }
     }
     
@@ -88,7 +91,7 @@ class WatermarkEngine {
     int mapZoomLevel = 16,
   }) {
     return WatermarkParams(
-      transferable: imageBytes,  // Langsung kirim Uint8List
+      transferable: imageBytes,
       mapTransferable: null,
       timestamp: timestamp,
       address: address,

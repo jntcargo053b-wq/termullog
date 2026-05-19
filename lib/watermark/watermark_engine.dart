@@ -19,9 +19,20 @@ class WatermarkEngine {
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);
-    final bytes = wmParams.transferable.materialize().asUint8List();
-    final src = img.decodeImage(bytes);
     
+    // Ambil bytes dari transferable
+    Uint8List? bytes;
+    if (wmParams.transferable != null) {
+      if (wmParams.transferable is TransferableTypedData) {
+        bytes = (wmParams.transferable as TransferableTypedData).materialize().asUint8List();
+      } else if (wmParams.transferable is Uint8List) {
+        bytes = wmParams.transferable as Uint8List;
+      }
+    }
+    
+    if (bytes == null) return Uint8List(0);
+    
+    final src = img.decodeImage(bytes);
     if (src == null) return bytes;
     
     final layout = _layouts[wmParams.layoutType] ?? _layouts['modern']!;
@@ -77,7 +88,7 @@ class WatermarkEngine {
     int mapZoomLevel = 16,
   }) {
     return WatermarkParams(
-      transferable: TransferableTypedData.fromList([imageBytes]),
+      transferable: imageBytes,  // Langsung kirim Uint8List
       mapTransferable: null,
       timestamp: timestamp,
       address: address,

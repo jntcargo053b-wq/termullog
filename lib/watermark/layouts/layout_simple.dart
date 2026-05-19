@@ -2,14 +2,11 @@
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
-import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
-class LayoutSimple extends WatermarkLayoutBase {
-  @override
+class LayoutSimple {
   String get name => 'Simple';
 
-  @override
   img.Image apply({
     required img.Image src,
     required DateTime timestamp,
@@ -34,7 +31,7 @@ class LayoutSimple extends WatermarkLayoutBase {
     final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
     final int yPos = watermarkPosition == 'bottom' ? src.height - 50 : 20;
     
-    // Gunakan font default
+    // Gunakan font default dari package image
     final defaultFont = img.getDefaultFont();
     
     // Gambar teks timestamp
@@ -60,5 +57,9 @@ class LayoutSimple extends WatermarkLayoutBase {
     }
     
     return src;
+  }
+  
+  static Uint8List encodeJpg(img.Image image, {int quality = kJpegQuality}) {
+    return Uint8List.fromList(img.encodeJpg(image, quality: quality));
   }
 }

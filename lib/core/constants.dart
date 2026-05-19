@@ -15,47 +15,163 @@ const int kLogoMaxWidth = 90;
 enum WatermarkLayout {
   minimal,          // 0 - Film Strip
   dslrCorner,       // 1 - DSLR Corner
-  cinematic,        // 2 - Cinematic
+  gpsTimestamp,     // 2 - GPS Timestamp (formerly cinematic)
   fieldSurvey,      // 3 - Field Survey
   hud,              // 4 - HUD Modern
   gpsCard,          // 5 - GPS Card
   polaroid,         // 6 - Polaroid
   sidePanel,        // 7 - Side Panel
-  cinematicV2,      // 8 - Cinematic V2
+  cinematic,        // 8 - Cinematic
   timeMarkStyle,    // 9 - TimeMark Style
   modern,           // 10 - Modern Clean Card
 }
 
+// ============================================================
+// LAYOUT CATEGORY
+// ============================================================
+enum LayoutCategory {
+  classic,    // minimal, polaroid
+  modern,     // hud, gpsCard, modern
+  cinematic,  // cinematic, gpsTimestamp
+  data,       // fieldSurvey, timeMarkStyle
+  corner,     // dslrCorner, sidePanel
+}
+
 extension WatermarkLayoutExtension on WatermarkLayout {
+  /// List of all watermark layouts
+  static const List<WatermarkLayout> all = [
+    WatermarkLayout.minimal,
+    WatermarkLayout.dslrCorner,
+    WatermarkLayout.gpsTimestamp,
+    WatermarkLayout.fieldSurvey,
+    WatermarkLayout.hud,
+    WatermarkLayout.gpsCard,
+    WatermarkLayout.polaroid,
+    WatermarkLayout.sidePanel,
+    WatermarkLayout.cinematic,
+    WatermarkLayout.timeMarkStyle,
+    WatermarkLayout.modern,
+  ];
+
+  /// Get layout category
+  LayoutCategory get category {
+    switch (this) {
+      case WatermarkLayout.minimal:
+      case WatermarkLayout.polaroid:
+        return LayoutCategory.classic;
+      case WatermarkLayout.hud:
+      case WatermarkLayout.gpsCard:
+      case WatermarkLayout.modern:
+        return LayoutCategory.modern;
+      case WatermarkLayout.cinematic:
+      case WatermarkLayout.gpsTimestamp:
+        return LayoutCategory.cinematic;
+      case WatermarkLayout.fieldSurvey:
+      case WatermarkLayout.timeMarkStyle:
+        return LayoutCategory.data;
+      case WatermarkLayout.dslrCorner:
+      case WatermarkLayout.sidePanel:
+        return LayoutCategory.corner;
+    }
+  }
+
+  /// Display name for UI
   String get displayName {
     switch (this) {
       case WatermarkLayout.minimal:        return 'Film Strip';
       case WatermarkLayout.dslrCorner:     return 'DSLR Corner';
-      case WatermarkLayout.cinematic:      return 'Cinematic';
+      case WatermarkLayout.gpsTimestamp:   return 'GPS Timestamp';
       case WatermarkLayout.fieldSurvey:    return 'Field Survey';
       case WatermarkLayout.hud:            return 'HUD Modern';
       case WatermarkLayout.gpsCard:        return 'GPS Card';
       case WatermarkLayout.polaroid:       return 'Polaroid';
       case WatermarkLayout.sidePanel:      return 'Side Panel';
-      case WatermarkLayout.cinematicV2:    return 'Cinematic V2';
+      case WatermarkLayout.cinematic:      return 'Cinematic';
       case WatermarkLayout.timeMarkStyle:  return 'TimeMark Style';
       case WatermarkLayout.modern:         return 'Modern Clean Card';
     }
   }
 
+  /// Description for each layout
   String get description {
     switch (this) {
-      case WatermarkLayout.minimal:        return 'Gaya strip film dengan border biru profesional';
-      case WatermarkLayout.dslrCorner:     return 'Informasi seperti tampilan kamera DSLR di pojok';
-      case WatermarkLayout.cinematic:      return 'Gaya sinematik dengan gradasi halus dan elegan';
-      case WatermarkLayout.fieldSurvey:    return 'Gaya form survey dengan tabel data terstruktur';
-      case WatermarkLayout.hud:            return 'Heads-Up Display modern dengan efek transparan';
-      case WatermarkLayout.gpsCard:        return 'Panel GPS dengan map strip adaptif';
-      case WatermarkLayout.polaroid:       return 'Gaya polaroid klasik dengan bingkai ivory';
-      case WatermarkLayout.sidePanel:      return 'Panel samping vertikal dengan jam besar';
-      case WatermarkLayout.cinematicV2:    return 'Gaya sinematik dengan font modern Roboto (Canvas)';
-      case WatermarkLayout.timeMarkStyle:  return 'Gaya GPS TimeMark Camera dengan font modern';
-      case WatermarkLayout.modern:         return 'Desain bersih, navy gelap, aksen teal modern';
+      case WatermarkLayout.minimal:        
+        return 'Gaya strip film dengan border biru profesional';
+      case WatermarkLayout.dslrCorner:     
+        return 'Informasi seperti tampilan kamera DSLR di pojok';
+      case WatermarkLayout.gpsTimestamp:   
+        return 'Tampilan timestamp GPS yang bersih dan profesional';
+      case WatermarkLayout.fieldSurvey:    
+        return 'Gaya form survey dengan tabel data terstruktur';
+      case WatermarkLayout.hud:            
+        return 'Heads-Up Display modern dengan efek transparan';
+      case WatermarkLayout.gpsCard:        
+        return 'Panel GPS dengan map strip adaptif';
+      case WatermarkLayout.polaroid:       
+        return 'Gaya polaroid klasik dengan bingkai ivory';
+      case WatermarkLayout.sidePanel:      
+        return 'Panel samping vertikal dengan jam besar';
+      case WatermarkLayout.cinematic:      
+        return 'Gaya sinematik dengan gradasi halus dan elegan';
+      case WatermarkLayout.timeMarkStyle:  
+        return 'Gaya GPS TimeMark Camera dengan font modern';
+      case WatermarkLayout.modern:         
+        return 'Desain bersih, navy gelap, aksen teal modern';
+    }
+  }
+
+  /// Preview emoji/icon for UI
+  String get previewIcon {
+    switch (this) {
+      case WatermarkLayout.minimal:        return '🎞️';
+      case WatermarkLayout.dslrCorner:     return '📷';
+      case WatermarkLayout.gpsTimestamp:   return '📍';
+      case WatermarkLayout.fieldSurvey:    return '📋';
+      case WatermarkLayout.hud:            return '🎮';
+      case WatermarkLayout.gpsCard:        return '🛰️';
+      case WatermarkLayout.polaroid:       return '🖼️';
+      case WatermarkLayout.sidePanel:      return '📱';
+      case WatermarkLayout.cinematic:      return '🎬';
+      case WatermarkLayout.timeMarkStyle:  return '⏱️';
+      case WatermarkLayout.modern:         return '✨';
+    }
+  }
+
+  /// Get layout by index value (for serialization)
+  static WatermarkLayout fromIndex(int index) {
+    if (index >= 0 && index < all.length) {
+      return all[index];
+    }
+    return modern; // default fallback
+  }
+
+  /// Get integer index (for serialization)
+  int get index {
+    return all.indexOf(this);
+  }
+
+  /// Check if layout supports dark theme well
+  bool get supportsDarkTheme {
+    switch (this) {
+      case WatermarkLayout.hud:
+      case WatermarkLayout.gpsCard:
+      case WatermarkLayout.sidePanel:
+      case WatermarkLayout.modern:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /// Check if layout supports light theme well
+  bool get supportsLightTheme {
+    switch (this) {
+      case WatermarkLayout.polaroid:
+      case WatermarkLayout.minimal:
+      case WatermarkLayout.fieldSurvey:
+        return true;
+      default:
+        return false;
     }
   }
 }
@@ -69,6 +185,18 @@ enum WatermarkTheme {
   kodak,      // Tema retro Kodak
   cinematic,  // Tema sinematik
   survey,     // Tema survey profesional
+}
+
+extension WatermarkThemeExtension on WatermarkTheme {
+  String get displayName {
+    switch (this) {
+      case WatermarkTheme.dark:      return 'Dark Modern';
+      case WatermarkTheme.light:     return 'Light Clean';
+      case WatermarkTheme.kodak:     return 'Kodak Retro';
+      case WatermarkTheme.cinematic: return 'Cinematic';
+      case WatermarkTheme.survey:    return 'Survey Pro';
+    }
+  }
 }
 
 // ============================================================
@@ -167,3 +295,17 @@ img.Color getAccuracyColor(double accuracy) {
     return kColorGrey;
   }
 }
+
+// ============================================================
+// VALIDATION ASSERTIONS (debug mode only)
+// ============================================================
+assert(() {
+  // Validate quality ranges
+  assert(kJpegQuality >= 0 && kJpegQuality <= 100, 
+    'JPEG quality must be between 0 and 100');
+  assert(kMaxOutputWidth > 0, 
+    'Max output width must be positive');
+  assert(kGpsTimeoutSeconds > 0, 
+    'GPS timeout must be positive');
+  return true;
+}());

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/camera_screen.dart';
 import 'services/settings_service.dart';
-import 'watermark/watermark_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,9 +12,6 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
-  // Load fonts
-  await WatermarkFontManager.loadFonts();
   
   // Migrasi settings
   await SettingsService.migrateOldSettings();

@@ -12,17 +12,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:async/async.dart';
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../core/constants.dart';
 import '../watermark/watermark_params.dart';
 import '../watermark/watermark_engine.dart';
-
-/// Top-level wrapper untuk compute() isolate
-Uint8List _applyWatermarkWrapper(Map<String, dynamic> params) {
-  return WatermarkEngine.applyFromMap(params);
-}
 
 enum SaveStatus { idle, saving, saved, error }
 
@@ -68,7 +62,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       TransformationController();
   Offset? _lastDoubleTapPos;
   final Random _rng = Random();
-  CancelableOperation<Uint8List>? _cancelableCompute;
   final ValueNotifier<String> _processingStep =
       ValueNotifier<String>('Memuat gambar...');
 
@@ -96,7 +89,6 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   @override
   void dispose() {
-    _cancelableCompute?.cancel();
     _checkAnimController.dispose();
     _transformController.dispose();
     _processingStep.dispose();
@@ -179,7 +171,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
       // ── 3. LOAD SETTINGS ──────────────────────────────────────────
       _processingStep.value = 'Memuat pengaturan...';
-      SettingsCache.invalidate();          // ← hancurkan cache sebelum baca
+      SettingsCache.invalidate();
       await SettingsCache.preload();
 
       final layout = await SettingsCache.layout;
@@ -259,12 +251,8 @@ class _PreviewScreenState extends State<PreviewScreen>
         fontSize: fontSize,
       );
 
-      // ── 6. PROCESS IN ISOLATE ─────────────────────────────────────
-      _cancelableCompute = CancelableOperation.fromFuture(
-        compute(_applyWatermarkWrapper, params.toMap()),
-      );
-      final processedBytes = await _cancelableCompute!.value;
-      _cancelableCompute = null;
+      // ── 6. PROCESS WATERMARK (HYBRID: MAIN THREAD FLUTTER CANVAS) ─
+      final processedBytes = await WatermarkEngine.applyFromMapAsync(params.toMap());
 
       // ── 7. SAVE TO APP DIRECTORY ──────────────────────────────────
       _processingStep.value = 'Menyimpan file...';

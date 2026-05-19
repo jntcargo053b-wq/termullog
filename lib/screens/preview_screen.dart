@@ -213,30 +213,32 @@ class _PreviewScreenState extends State<PreviewScreen>
         }
       }
 
-      // ── 5. CREATE WATERMARK PARAMS ────────────────────────────────
-      _processingStep.value = 'Membuat watermark...';
-      final params = WatermarkEngine.createParams(
-        imageBytes: bytes,
-        timestamp: timestamp,
-        layoutType: layout.typeString,  // ← GANTI: dari layoutIndex: layout.index
-        address: address,
-        weather: weather,
-        showWeather: showWeather,
-        showAccuracy: showAccuracy,
-        watermarkPosition: watermarkPosition,
-        showMiniMap: showMiniMap,
-        lat: widget.latitude,
-        lon: widget.longitude,
-        acc: widget.accuracy,
-        mapBytes: mapBytes,
-        mapSize: mapSize,
-        mapZoomLevel: mapZoomLevel,
-        showAddress: showAddress,
-        showCoordinates: showCoordinates,
-        opacity: opacity,
-        showBorder: showBorder,
-        fontSize: fontSize,
-      );
+// Di dalam method _processImageAsync(), cari bagian CREATE WATERMARK PARAMS:
+
+// ── 5. CREATE WATERMARK PARAMS ────────────────────────────────
+_processingStep.value = 'Membuat watermark...';
+final params = WatermarkEngine.createParams(
+  imageBytes: bytes,
+  timestamp: timestamp,
+  layoutType: layout.typeString,  // ← PAKAI typeString, BUKAN index!
+  address: address,
+  weather: weather,
+  showWeather: showWeather,
+  showAccuracy: showAccuracy,
+  watermarkPosition: watermarkPosition,  // ← POSISI terpisah!
+  showMiniMap: showMiniMap,
+  lat: widget.latitude,
+  lon: widget.longitude,
+  acc: widget.accuracy,
+  mapBytes: mapBytes,
+  mapSize: mapSize,
+  mapZoomLevel: mapZoomLevel,
+  showAddress: showAddress,
+  showCoordinates: showCoordinates,
+  opacity: opacity,
+  showBorder: showBorder,
+  fontSize: fontSize,
+);
 
       // ── 6. RESET CACHE PREVIEW ────────────────────────────────────
       setState(() {

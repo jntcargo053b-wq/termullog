@@ -1,9 +1,8 @@
 // lib/watermark/watermark_params.dart
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 
 class WatermarkParams {
-  final dynamic transferable;  // Gunakan dynamic untuk menghindari error type
+  final dynamic transferable;
   final dynamic mapTransferable;
   final DateTime timestamp;
   final String address;

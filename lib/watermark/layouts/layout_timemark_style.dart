@@ -8,11 +8,6 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
   @override
   String get name => 'TimeMark Style';
 
-  static const double _padX = 20;
-  static const double _padY = 14;
-  static const double _mapSz = 130;
-  static const double _panelH = 210;
-
   @override
   Uint8List apply({
     required img.Image src,
@@ -34,44 +29,70 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
+    // ── Adaptive scaling ──────────────────────────────────────────
+    final double scale = (src.width / 1080).clamp(0.7, 2.0);
+    final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
+
+    final double padX = (20 * scale);
+    final double padY = (14 * scale);
+    final double mapSz = (130 * scale);
+    final double margin = (10 * scale);
+
+    // ── Hitung tinggi panel dinamis ──────────────────────────────
+    int rowCount = 0;
+    rowCount += 2; // jam + tanggal
+    if (showCoordinates && hasPosition) rowCount += 1;
+    if (showAccuracy && hasPosition) rowCount += 1;
+    if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
+      rowCount += _splitAddress(address).length;
+    }
+    if (showWeather && weather.isNotEmpty) rowCount += 1;
+
+    final double lineH = (24 * scale * fsMultiplier);
+    final double panelH = padY * 2 + rowCount * lineH + 40;
+
     final bool isTop = watermarkPosition == 'top';
-    final int panelH = _panelH.toInt();
-    final int y0 = isTop ? 0 : src.height - panelH;
-    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
+    final double y0 = isTop ? 0.0 : src.height - panelH;
+    if (y0 < 0 || y0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
 
-    const m = 10;
+    final int yi = y0.toInt();
+    final int mi = margin.toInt();
+    final int pi = panelH.toInt();
 
-    // Card background (opacity dari pengaturan)
+    // ── Card background ──────────────────────────────────────────
     img.fillRect(src,
-        x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
+        x1: mi, y1: yi + mi, x2: src.width - mi, y2: yi + pi - mi,
         color: img.ColorRgba8(0, 0, 0, (255 * opacity).toInt()));
 
-    // Border putih tipis
+    // ── Border ───────────────────────────────────────────────────
     if (showBorder) {
       img.drawRect(src,
-          x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
-          color: img.ColorRgba8(255, 255, 255, 40), thickness: 1);
+          x1: mi, y1: yi + mi, x2: src.width - mi, y2: yi + pi - mi,
+          color: img.ColorRgba8(255, 255, 255, 40), thickness: (1 * scale).round());
     }
 
+    // ── Pilih font ───────────────────────────────────────────────
     final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial24;
     final smallFont = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial14;
 
-    int cx = (_padX + m).toInt();
-    int cy = (y0 + _padY + m).toInt();
+    int cx = (padX + margin).toInt();
+    int cy = (yi + padY + margin).toInt();
 
-    // ── Jam besar ──
+    // ── Jam besar (shadow) ───────────────────────────────────────
     img.drawString(src, DateFormat('HH:mm').format(timestamp),
         font: font, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
     img.drawString(src, DateFormat('HH:mm').format(timestamp),
         font: font, x: cx, y: cy, color: WatermarkLayoutBase.white);
 
-    // ── Detik kecil ──
+    // ── Detik kecil ──────────────────────────────────────────────
+    final int secX = (cx + 88 * scale).toInt();
+    final int secY = (cy + 10 * scale).toInt();
     img.drawString(src, DateFormat('ss').format(timestamp),
-        font: smallFont, x: cx + 88, y: cy + 10, color: WatermarkLayoutBase.blue);
+        font: smallFont, x: secX, y: secY, color: WatermarkLayoutBase.blue);
 
-    cy += 36;
+    cy += (36 * scale).toInt();
 
-    // ── Tanggal panjang ──
+    // ── Tanggal panjang (shadow) ─────────────────────────────────
     img.drawString(src,
         DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
         font: smallFont, x: cx + 1, y: cy + 1, color: img.ColorRgba8(0, 0, 0, 100));
@@ -79,41 +100,46 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
         DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
         font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.white);
 
-    cy += 24;
+    cy += (24 * scale).toInt();
 
-    // ── Koordinat DMS ──
+    // ── Koordinat DMS ────────────────────────────────────────────
     if (showCoordinates && hasPosition) {
       final coord = '${_toDMS(lat!, true)}   ${_toDMS(lon!, false)}';
       img.drawString(src, coord, font: smallFont, x: cx + 1, y: cy + 1,
           color: img.ColorRgba8(0, 0, 0, 100));
       img.drawString(src, coord, font: smallFont, x: cx, y: cy,
           color: WatermarkLayoutBase.blue);
-      cy += 22;
+      cy += (22 * scale).toInt();
     }
 
-    // ── Akurasi ──
+    // ── Akurasi ──────────────────────────────────────────────────
     if (showAccuracy && hasPosition) {
       img.drawString(src, '± ${acc?.toStringAsFixed(0) ?? '?'} m',
           font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.grey);
-      cy += 20;
+      cy += (20 * scale).toInt();
     }
 
-    // ── Alamat ──
+    // ── Alamat ───────────────────────────────────────────────────
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       for (final line in _splitAddress(address)) {
         img.drawString(src, line, font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.white);
-        cy += 20;
+        cy += (20 * scale).toInt();
       }
     }
 
-    // ── Cuaca ──
+    // ── Cuaca ────────────────────────────────────────────────────
     if (showWeather && weather.isNotEmpty) {
+      // Chip background
+      img.fillRect(src,
+          x1: cx - 4, y1: cy - 2,
+          x2: cx + weather.length * 7 + 12, y2: cy + (18 * scale).toInt(),
+          color: img.ColorRgba8(30, 144, 255, 25));
       img.drawString(src, weather, font: smallFont, x: cx, y: cy, color: WatermarkLayoutBase.blue);
     }
 
-    // ── Mini map ──
+    // ── Mini map ─────────────────────────────────────────────────
     if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
-      _drawMiniMapSync(src, mapBytes, y0: y0, panelH: panelH);
+      _drawMiniMapSync(src, mapBytes, y0: yi, panelH: pi, mapSz: mapSz, padX: padX, padY: padY, margin: margin);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
@@ -136,18 +162,39 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     return [line1, line2];
   }
 
-  void _drawMiniMapSync(img.Image src, Uint8List mapBytes, {required int y0, required int panelH}) {
+  void _drawMiniMapSync(img.Image src, Uint8List mapBytes, {
+    required int y0,
+    required int panelH,
+    required double mapSz,
+    required double padX,
+    required double padY,
+    required double margin,
+  }) {
     try {
       final mapImage = img.decodeImage(mapBytes);
       if (mapImage == null) return;
-      final sz = _mapSz.toInt();
-      final mx = src.width - sz - _padX.toInt() - 10;
-      final my = y0 + panelH - sz - _padY.toInt() - 10;
+      final sz = mapSz.toInt();
+      final mx = src.width - sz - padX.toInt() - margin.toInt();
+      final my = y0 + panelH - sz - padY.toInt() - margin.toInt();
       if (mx < 0 || my < 0) return;
       final resized = img.copyResize(mapImage, width: sz, height: sz);
+      // Shadow
+      img.fillRect(src, x1: mx + 2, y1: my + 2, x2: mx + sz + 2, y2: my + sz + 2,
+          color: img.ColorRgba8(0, 0, 0, 60));
+      // Map
       img.compositeImage(src, resized, dstX: mx, dstY: my, blend: img.BlendMode.alpha);
+      // Border
       img.drawRect(src, x1: mx - 1, y1: my - 1, x2: mx + sz, y2: my + sz,
           color: WatermarkLayoutBase.blue, thickness: 2);
+      // Pin
+      final pinX = mx + sz ~/ 2;
+      final pinY = my + sz ~/ 2;
+      img.fillCircle(src, x: pinX + 1, y: pinY + 1, radius: 5,
+          color: img.ColorRgba8(0, 0, 0, 80));
+      img.fillCircle(src, x: pinX, y: pinY, radius: 5,
+          color: img.ColorRgba8(255, 50, 50, 255));
+      img.fillCircle(src, x: pinX, y: pinY, radius: 2,
+          color: WatermarkLayoutBase.white);
     } catch (_) {}
   }
 }

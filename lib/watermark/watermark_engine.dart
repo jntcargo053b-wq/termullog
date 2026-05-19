@@ -5,50 +5,29 @@ import 'package:image/image.dart' as img;
 import '../core/constants.dart';
 import 'watermark_params.dart';
 import 'layouts/watermark_layout_base.dart';
-import 'layouts/layout_film_strip.dart';
-import 'layouts/layout_dslr_corner.dart';
-import 'layouts/layout_cinematic.dart';
-import 'layouts/layout_field_survey.dart';
-import 'layouts/layout_hud.dart';
-import 'layouts/layout_gps_card.dart';
-import 'layouts/layout_polaroid.dart';
-import 'layouts/layout_side_panel.dart';
-import 'layouts/layout_timemark_style.dart';
-import 'layouts/layout_nama_baru.dart';
+import 'layouts/layout_simple.dart';
 
 class WatermarkEngine {
   static final Map<String, WatermarkLayoutBase> _layouts = {
-    'minimal':        LayoutFilmStrip(),
-    'dslr_corner':    LayoutDSLRCorner(),
-    'gps_timestamp':  LayoutCinematic(),
-    'field_survey':   LayoutFieldSurvey(),
-    'hud':            LayoutHUD(),
-    'gps_card':       LayoutGpsCard(),
-    'polaroid':       LayoutPolaroid(),
-    'side_panel':     LayoutSidePanel(),
-    'cinematic':      LayoutCinematic(),
-    'timemark_style': LayoutTimeMarkStyle(),
-    'modern':         LayoutNamaBaru(),
+    'minimal':     LayoutSimple(),
+    'dslr_corner': LayoutSimple(),
+    'cinematic':   LayoutSimple(),
+    'hud':         LayoutSimple(),
+    'polaroid':    LayoutSimple(),
+    'modern':      LayoutSimple(),
   };
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);
-    final bytes = _getImageBytes(wmParams);
-    final mapBytes = _getMapBytes(wmParams);
-    final src = _decodeImage(bytes);
+    final bytes = wmParams.transferable.materialize().asUint8List();
+    final src = img.decodeImage(bytes);
     
-    if (src == null) return bytes ?? Uint8List(0);
+    if (src == null) return bytes;
     
-    final layout = _getLayout(wmParams.layoutType);
-    if (layout == null) {
-      return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
-    }
-
-    debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
-    debugPrint('📍 POSITION: ${wmParams.watermarkPosition}');
-
+    final layout = _layouts[wmParams.layoutType] ?? _layouts['modern']!;
+    
     final result = layout.apply(
-      src: _resizeIfNeeded(src),
+      src: src,
       timestamp: wmParams.timestamp,
       hasPosition: wmParams.lat != null && wmParams.lon != null,
       lat: wmParams.lat,
@@ -60,7 +39,7 @@ class WatermarkEngine {
       showAccuracy: wmParams.showAccuracy,
       watermarkPosition: wmParams.watermarkPosition,
       showMiniMap: wmParams.showMiniMap,
-      mapBytes: mapBytes,
+      mapBytes: null,
       showAddress: wmParams.showAddress,
       showCoordinates: wmParams.showCoordinates,
       opacity: wmParams.opacity,
@@ -99,9 +78,7 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null 
-          ? TransferableTypedData.fromList([mapBytes]) 
-          : null,
+      mapTransferable: null,
       timestamp: timestamp,
       address: address,
       weather: weather,
@@ -121,56 +98,5 @@ class WatermarkEngine {
       mapSize: mapSize,
       mapZoomLevel: mapZoomLevel,
     );
-  }
-
-  static Uint8List? _getImageBytes(WatermarkParams p) {
-    try {
-      return p.transferable.materialize().asUint8List();
-    } catch (e) {
-      debugPrint('❌ Failed to get image bytes: $e');
-      return null;
-    }
-  }
-  
-  static Uint8List? _getMapBytes(WatermarkParams p) {
-    if (p.mapTransferable == null) return null;
-    try {
-      return p.mapTransferable!.materialize().asUint8List();
-    } catch (e) {
-      debugPrint('❌ Failed to get map bytes: $e');
-      return null;
-    }
-  }
-  
-  static img.Image? _decodeImage(Uint8List? bytes) {
-    if (bytes == null) return null;
-    try {
-      return WatermarkLayoutBase.decodeOrThrow(bytes);
-    } catch (e) {
-      debugPrint('❌ Failed to decode image: $e');
-      return null;
-    }
-  }
-  
-  static img.Image _resizeIfNeeded(img.Image src) {
-    if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
-      try {
-        return img.copyResize(src,
-            width: src.width > src.height ? kMaxOutputWidth : null,
-            height: src.height > src.width ? kMaxOutputWidth : null);
-      } catch (e) {
-        debugPrint('❌ Failed to resize image: $e');
-      }
-    }
-    return src;
-  }
-  
-  static WatermarkLayoutBase? _getLayout(String layoutType) {
-    final layout = _layouts[layoutType];
-    if (layout == null) {
-      debugPrint('⚠️ Layout type not found: "$layoutType", using "modern"');
-      return _layouts['modern'];
-    }
-    return layout;
   }
 }

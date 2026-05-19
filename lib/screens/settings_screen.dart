@@ -140,6 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _applyThemeMode() {}
+  
   void _applyKeepScreenOn() {
     if (_keepScreenOn) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -664,60 +665,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         );
 
-      // ─── CINEMATIC V2 ─────────────────────────────────────────
-      case WatermarkLayout.cinematicV2:
-        return Stack(
-          children: [
-            Container(
-              height: 200,
-              width: double.infinity,
-              color: Colors.black,
-              child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 48)),
-            ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black.withOpacity(0.9), Colors.transparent],
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('REC • $timeStr', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text('JAKARTA INDONESIA', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                    const SizedBox(height: 3),
-                    Text('SONY FX3 • 24MM', style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 28,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.black.withOpacity(0.9), Colors.transparent],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-
       // ─── TIMEMARK STYLE ─────────────────────────────────────
       case WatermarkLayout.timeMarkStyle:
         return Container(
@@ -799,7 +746,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case WatermarkLayout.gpsCard: return const Color(0xFF00B8D4);
       case WatermarkLayout.polaroid: return Colors.black87;
       case WatermarkLayout.sidePanel: return Colors.white;
-      case WatermarkLayout.cinematicV2: return Colors.white;
       case WatermarkLayout.timeMarkStyle: return const Color(0xFF00B8D4);
       case WatermarkLayout.modern: return const Color(0xFF00D4AA);
       default: return const Color(0xFF00B8D4);

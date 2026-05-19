@@ -1,6 +1,6 @@
 // lib/services/settings_service.dart
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show debugPrint; // ← Pindahkan ke atas
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../core/constants.dart';
 
 class SettingsService {
@@ -32,7 +32,7 @@ class SettingsService {
   }
 
   // ============================================================
-  // WATERMARK LAYOUT — simpan pakai typeString
+  // WATERMARK LAYOUT
   // ============================================================
   static Future<WatermarkLayout> getWatermarkLayout() async {
     final prefs = await _instance();
@@ -43,7 +43,7 @@ class SettingsService {
     if (savedType == null) {
       final oldIndex = prefs.getInt('watermark_layout');
       if (oldIndex != null) {
-        final oldLayout = WatermarkLayoutExtension.fromIndex(oldIndex); // ← perbaiki
+        final oldLayout = WatermarkLayoutExtension.fromIndex(oldIndex);
         savedType = oldLayout.typeString;
         await prefs.setString(_keyWatermarkLayout, savedType);
         await prefs.remove('watermark_layout');
@@ -51,24 +51,7 @@ class SettingsService {
       }
     }
     
-    // Migrasi dari .name
-    if (savedType == null) {
-      final oldName = prefs.getString('watermark_layout');
-      if (oldName != null) {
-        final found = WatermarkLayout.values.cast<WatermarkLayout?>().firstWhere(
-          (e) => e?.name == oldName,
-          orElse: () => null,
-        );
-        if (found != null) {
-          savedType = found.typeString;
-          await prefs.setString(_keyWatermarkLayout, savedType);
-          await prefs.remove('watermark_layout');
-          debugPrint('✅ Migrated from name $oldName to $savedType');
-        }
-      }
-    }
-    
-    return WatermarkLayoutExtension.fromTypeString(savedType ?? 'modern'); // ← perbaiki
+    return WatermarkLayoutExtension.fromTypeString(savedType ?? 'modern');
   }
 
   static Future<void> setWatermarkLayout(WatermarkLayout layout) async {
@@ -326,24 +309,6 @@ class SettingsService {
       prefs.setInt(_keyImageQuality, 90),
       prefs.setBool(_keyUseHighAccuracy, true),
     ]);
-  }
-
-  // ============================================================
-  // MIGRASI DATA LAMA
-  // ============================================================
-  static Future<void> migrateOldSettings() async {
-    final prefs = await _instance();
-    
-    // Migrasi dari index
-    if (prefs.containsKey('watermark_layout')) {
-      final oldIndex = prefs.getInt('watermark_layout');
-      if (oldIndex != null) {
-        final layout = WatermarkLayoutExtension.fromIndex(oldIndex);
-        await prefs.setString(_keyWatermarkLayout, layout.typeString);
-        await prefs.remove('watermark_layout');
-        debugPrint('✅ Migrated watermark_layout from index $oldIndex to ${layout.typeString}');
-      }
-    }
   }
 
   // ============================================================

@@ -18,7 +18,6 @@ import '../services/settings_cache.dart';
 import '../core/constants.dart';
 import '../watermark/watermark_params.dart';
 import '../watermark/watermark_engine.dart';
-import '../watermark/watermark_utils.dart';
 
 enum SaveStatus { idle, saving, saved, error }
 
@@ -220,7 +219,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
         timestamp: timestamp,
-        layoutType: layout.typeString,  // ← PAKAI typeString, BUKAN index!
+        layoutType: layout.typeString,
         address: address,
         weather: weather,
         showWeather: showWeather,
@@ -248,20 +247,6 @@ class _PreviewScreenState extends State<PreviewScreen>
       // ── 7. PROCESS WATERMARK ──────────────────────────────────────
       _processingStep.value = 'Memproses watermark...';
       Uint8List processedBytes = await WatermarkEngine.applyFromMapAsync(params.toMap());
-
-      // ── 7.5 AUTO ENHANCE (meningkatkan kualitas gambar) ───────────
-      _processingStep.value = 'Meningkatkan kualitas gambar...';
-      try {
-        final img.Image? decoded = img.decodeImage(processedBytes);
-        if (decoded != null) {
-          final enhanced = WatermarkUtils.autoEnhance(decoded);
-          final enhancedBytes = img.encodeJpg(enhanced, quality: kJpegQuality);
-          processedBytes = Uint8List.fromList(enhancedBytes);
-          debugPrint('✅ Auto-enhance applied successfully');
-        }
-      } catch (e) {
-        debugPrint('⚠️ Auto-enhance failed: $e');
-      }
 
       // ── 8. SAVE TO APP DIRECTORY ──────────────────────────────────
       _processingStep.value = 'Menyimpan file...';

@@ -34,20 +34,29 @@ class LayoutSimple extends WatermarkLayoutBase {
     final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
     final int yPos = watermarkPosition == 'bottom' ? src.height - 50 : 20;
     
-    // Gunakan font default (tanpa getFont)
+    // Gunakan font default
     final defaultFont = img.getDefaultFont();
     
+    // Gambar teks timestamp
     img.drawString(src, '$dateStr  $timeStr', x: 10, y: yPos, 
         color: kColorWhite, font: defaultFont);
     
+    // Gambar koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
       img.drawString(src, '${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°', 
           x: 10, y: yPos + 25, color: kColorCyan, font: defaultFont);
     }
     
+    // Gambar akurasi
     if (showAccuracy && acc != null) {
       img.drawString(src, '±${acc.toStringAsFixed(1)}m', 
           x: 10, y: yPos + 45, color: kColorGrey, font: defaultFont);
+    }
+    
+    // Gambar cuaca
+    if (showWeather && weather.isNotEmpty) {
+      img.drawString(src, weather, 
+          x: 10, y: yPos + 65, color: kColorGold, font: defaultFont);
     }
     
     return src;

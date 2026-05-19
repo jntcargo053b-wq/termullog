@@ -15,7 +15,7 @@ const int kLogoMaxWidth = 90;
 enum WatermarkLayout {
   minimal,          // 0 - Film Strip
   dslrCorner,       // 1 - DSLR Corner
-  gpsTimestamp,     // 2 - GPS Timestamp (formerly cinematic)
+  gpsTimestamp,     // 2 - GPS Timestamp
   fieldSurvey,      // 3 - Field Survey
   hud,              // 4 - HUD Modern
   gpsCard,          // 5 - GPS Card
@@ -38,7 +38,6 @@ enum LayoutCategory {
 }
 
 extension WatermarkLayoutExtension on WatermarkLayout {
-  /// List of all watermark layouts
   static const List<WatermarkLayout> all = [
     WatermarkLayout.minimal,
     WatermarkLayout.dslrCorner,
@@ -53,7 +52,6 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     WatermarkLayout.modern,
   ];
 
-  /// Get layout category
   LayoutCategory get category {
     switch (this) {
       case WatermarkLayout.minimal:
@@ -75,7 +73,6 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Display name for UI
   String get displayName {
     switch (this) {
       case WatermarkLayout.minimal:        return 'Film Strip';
@@ -92,7 +89,6 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Description for each layout
   String get description {
     switch (this) {
       case WatermarkLayout.minimal:        
@@ -120,7 +116,6 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Preview emoji/icon for UI
   String get previewIcon {
     switch (this) {
       case WatermarkLayout.minimal:        return '🎞️';
@@ -137,20 +132,20 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Get layout by index value (for serialization) - LEGACY
+  /// LEGACY - Gunakan typeString untuk penyimpanan baru
   static WatermarkLayout fromIndex(int index) {
     if (index >= 0 && index < all.length) {
       return all[index];
     }
-    return WatermarkLayout.modern; // ← PERBAIKAN: tambahkan WatermarkLayout.
+    return WatermarkLayout.modern;
   }
 
-  /// Get integer index (for serialization) - LEGACY
+  /// LEGACY - Gunakan typeString untuk penyimpanan baru
   int get index {
     return all.indexOf(this);
   }
 
-  /// Get string identifier for safe storage (lebih aman dari index)
+  /// Penyimpanan aman menggunakan String
   String get typeString {
     switch (this) {
       case WatermarkLayout.minimal:        return 'minimal';
@@ -167,7 +162,7 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Get layout from string identifier (safe)
+  /// Membaca dari String (aman)
   static WatermarkLayout fromTypeString(String type) {
     switch (type) {
       case 'minimal':        return WatermarkLayout.minimal;
@@ -185,7 +180,6 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Check if layout supports dark theme well
   bool get supportsDarkTheme {
     switch (this) {
       case WatermarkLayout.hud:
@@ -198,7 +192,6 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Check if layout supports light theme well
   bool get supportsLightTheme {
     switch (this) {
       case WatermarkLayout.polaroid:
@@ -212,14 +205,10 @@ extension WatermarkLayoutExtension on WatermarkLayout {
 }
 
 // ============================================================
-// WATERMARK THEME (GLOBAL STYLE)
+// WATERMARK THEME
 // ============================================================
 enum WatermarkTheme {
-  dark,       // Tema gelap modern
-  light,      // Tema terang bersih
-  kodak,      // Tema retro Kodak
-  cinematic,  // Tema sinematik
-  survey,     // Tema survey profesional
+  dark, light, kodak, cinematic, survey,
 }
 
 extension WatermarkThemeExtension on WatermarkTheme {
@@ -235,7 +224,7 @@ extension WatermarkThemeExtension on WatermarkTheme {
 }
 
 // ============================================================
-// WATERMARK LAYOUT GEOMETRY
+// GEOMETRY
 // ============================================================
 const int kPanelPaddingX = 25;
 const int kSidebarPadX = 18;
@@ -244,9 +233,17 @@ const int kCornerMargin = 20;
 const int kTextLineSmall = 18;
 const int kTextLineLarge = 28;
 const int kSectionGap = 12;
+const int kWatermarkPadX = 14;
+const int kWatermarkPadY = 12;
+const int kHeaderHeight = 22;
+const int kRowHeight = 20;
+const int kColumnValueWidth = 100;
+const int kMaxAddressLength = 45;
+const int kMaxAddressLengthShort = 38;
+const int kMaxAddressLengthFilmStrip = 42;
 
 // ============================================================
-// WATERMARK COLOURS (untuk package image)
+// COLORS (package image)
 // ============================================================
 final img.Color kColorWhite = img.ColorRgb8(255, 255, 255);
 final img.Color kColorCyan = img.ColorRgb8(0, 184, 148);
@@ -256,10 +253,6 @@ final img.Color kColorDarkBgMed = img.ColorRgba8(15, 23, 42, 210);
 final img.Color kColorBlackCard = img.ColorRgba8(0, 0, 0, 170);
 final img.Color kColorGlassBg = img.ColorRgba8(0, 0, 0, 120);
 final img.Color kColorShadow = img.ColorRgb8(0, 0, 0);
-
-// ============================================================
-// LAYOUT WATERMARK TAMBAHAN
-// ============================================================
 final img.Color kColorLightBlue = img.ColorRgb8(30, 144, 255);
 final img.Color kColorDimBlue = img.ColorRgb8(20, 80, 160);
 final img.Color kColorOffWhite = img.ColorRgb8(220, 225, 235);
@@ -269,10 +262,6 @@ final img.Color kColorBlackerBg = img.ColorRgba8(0, 0, 8, 235);
 final img.Color kColorDimBlue200 = img.ColorRgb8(20, 80, 160);
 final img.Color kColorLightGrey = img.ColorRgb8(200, 200, 205);
 final img.Color kColorGold = img.ColorRgb8(255, 180, 50);
-
-// ============================================================
-// WARNA TAMBAHAN UNTUK LAYOUT BARU
-// ============================================================
 final img.Color kColorIvory = img.ColorRgb8(248, 245, 235);
 final img.Color kColorDarkText = img.ColorRgb8(40, 40, 40);
 final img.Color kColorNavy = img.ColorRgba8(10, 15, 40, 240);
@@ -280,25 +269,13 @@ final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
 final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
 
 // ============================================================
-// UI COLOURS (Flutter Widget)
+// UI COLORS (Flutter)
 // ============================================================
 const int kColorNavyUi = 0xFF1B4F72;
 const int kColorNavyDarkUi = 0xFF0D2137;
 const int kColorBlueUi = 0xFF2980B9;
 const int kColorCyanLightUi = 0xFF00B8D4;
 const int kColorCyanDarkUi = 0xFF0077B6;
-
-// ============================================================
-// WATERMARK GEOMETRY TAMBAHAN
-// ============================================================
-const int kWatermarkPadX = 14;
-const int kWatermarkPadY = 12;
-const int kHeaderHeight = 22;
-const int kRowHeight = 20;
-const int kColumnValueWidth = 100;
-const int kMaxAddressLength = 45;
-const int kMaxAddressLengthShort = 38;
-const int kMaxAddressLengthFilmStrip = 42;
 
 // ============================================================
 // GPS & LOCATION

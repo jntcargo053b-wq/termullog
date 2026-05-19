@@ -7,14 +7,10 @@ import 'services/settings_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Set orientation portrait
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
-  // Migrasi settings
-  await SettingsService.migrateOldSettings();
   
   runApp(const TermulLogApp());
 }

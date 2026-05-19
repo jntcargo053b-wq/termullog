@@ -1,4 +1,4 @@
-// lib/watermark/watermark_engine.dart
+// lib/watermark/watermark_engine.dart (sesuaikan import)
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
@@ -19,7 +19,6 @@ class WatermarkEngine {
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);
     
-    // Ambil bytes dari transferable
     Uint8List? bytes;
     if (wmParams.transferable is Uint8List) {
       bytes = wmParams.transferable as Uint8List;

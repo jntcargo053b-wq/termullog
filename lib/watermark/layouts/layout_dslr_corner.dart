@@ -25,7 +25,6 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
   static final _cyan   = img.ColorRgba8( 80, 210, 240, 255);
   static final _dim    = img.ColorRgba8(140, 145, 155, 255);
   static final _white  = img.ColorRgba8(240, 242, 245, 255);
-  static final _black  = img.ColorRgba8(  0,   0,   0, 255);
 
   @override
   Uint8List apply({
@@ -48,14 +47,19 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     bool showBorder     = true,
     String fontSize     = 'normal',
   }) {
-    final fontL = img.arial24;  // font besar
-    final fontS = img.arial14;  // font kecil
+    // ── Adaptive scaling ──────────────────────────────────────────
+    final double scale = (src.width / 1080).clamp(0.7, 2.0);
+    final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
 
-    final int lH  = fontSize == 'large' ? 26 : 20; // line height kecil
-    final int lHL = fontSize == 'large' ? 36 : 28; // line height besar (jam)
+    // ── Pilih font berdasarkan setting fontSize + ukuran foto ─────
+    final bool isLarge = src.width > 2500 || fontSize == 'large';
+    final img.BitmapFont fontL = isLarge ? img.arial24 : img.arial24;  // font besar (jam)
+    final img.BitmapFont fontS = fontSize == 'small' ? img.arial14 : img.arial24;  // font kecil
+
+    final int lH  = (fontSize == 'large' ? 26 : fontSize == 'small' ? 16 : 20) * scale.round();
+    final int lHL = (fontSize == 'large' ? 36 : fontSize == 'small' ? 24 : 28) * scale.round();
 
     // ── Hitung baris yang akan ditampilkan ───────────────────────────
-    // Baris: [jam-besar] [tanggal] [sep] [lat] [lon] [acc] [sep] [addr] [cuaca]
     int rowCount = 0;
     rowCount += 2; // jam + tanggal (wajib)
     rowCount += 1; // separator
@@ -92,7 +96,7 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
 
     final int alpha = (opacity * 235).round().clamp(0, 255);
 
-    // ── 1. Gradient latar (hitam pekat → gelap navy) ─────────────────
+    // ── 1. Gradient latar ───────────────────────────────────────────
     for (int row = cy + _accentH; row < cy + cardH; row++) {
       final double t = (row - cy - _accentH) / (cardH - _accentH);
       final int r = _lerp( 8, 18, t);
@@ -103,28 +107,27 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
           color: img.ColorRgba8(r, g, b, a));
     }
 
-    // ── 2. Bar aksen merah di atas ───────────────────────────────────
+    // ── 2. Bar aksen merah ──────────────────────────────────────────
     img.fillRect(src,
         x1: cx, y1: cy,
         x2: cx + cardW - 1, y2: cy + _accentH - 1,
         color: _red);
-    // Kilap kecil di ujung kiri bar merah
     img.fillRect(src,
         x1: cx, y1: cy,
         x2: cx + 20, y2: cy + _accentH - 1,
         color: img.ColorRgba8(255, 100, 100, 255));
 
-    // ── 3. Border luar tipis ─────────────────────────────────────────
+    // ── 3. Border ───────────────────────────────────────────────────
     if (showBorder) {
       img.drawRect(src,
           x1: cx, y1: cy, x2: cx + cardW - 1, y2: cy + cardH - 1,
           color: img.ColorRgba8(255, 255, 255, 35), thickness: 1);
     }
 
-    // ── 4. Bracket sudut bergaya viewfinder ──────────────────────────
+    // ── 4. Bracket viewfinder ───────────────────────────────────────
     _drawBrackets(src, cx: cx, cy: cy, w: cardW, h: cardH);
 
-    // ── 5. Konten teks ───────────────────────────────────────────────
+    // ── 5. Teks ─────────────────────────────────────────────────────
     final int tx = cx + _padX;
     int ty = cy + _accentH + _padY;
 
@@ -132,40 +135,36 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
     _shadow(src, timeStr, font: fontL, x: tx, y: ty, color: _white);
 
-    // Label "REC" merah (gaya kamera sedang merekam) di kanan
+    // REC label
     final int recX = cx + cardW - 38;
     img.fillRect(src,
         x1: recX - 2, y1: ty + 2, x2: recX + 26, y2: ty + 16,
         color: img.ColorRgba8(180, 20, 20, 180));
     img.drawString(src, 'REC', font: fontS,
         x: recX, y: ty + 2, color: _white);
-    // Titik REC
     img.fillCircle(src, x: recX - 8, y: ty + 9, radius: 4,
         color: img.ColorRgba8(255, 50, 50, 255));
     ty += lHL;
 
-    // Tanggal format DSLR (YYYY:MM:DD)
+    // Tanggal
     final String dateStr = DateFormat('yyyy:MM:dd').format(timestamp);
     _shadow(src, dateStr, font: fontS, x: tx, y: ty, color: _amber);
-    // Hari singkat di kanan
     final String dayStr = DateFormat('EEE').format(timestamp).toUpperCase();
     _shadow(src, dayStr, font: fontS,
         x: cx + cardW - dayStr.length * 7 - _padX, y: ty,
         color: _dim);
     ty += lH;
 
-    // ── Separator 1 ─────────────────────────────────────────────────
+    // Separator 1
     _sep(src, x1: tx, x2: cx + cardW - _padX, y: ty);
     ty += _sepH + 5;
 
-    // ── Koordinat ───────────────────────────────────────────────────
+    // Koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      // Lat
       _label(src, 'LAT', x: tx, y: ty, fontS: fontS);
       _shadow(src, _fmtCoord(lat, isLat: true),
           font: fontS, x: tx + 30, y: ty, color: _cyan);
       ty += lH;
-      // Lon
       _label(src, 'LON', x: tx, y: ty, fontS: fontS);
       _shadow(src, _fmtCoord(lon, isLat: false),
           font: fontS, x: tx + 30, y: ty, color: _cyan);
@@ -176,7 +175,7 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
       ty += lH;
     }
 
-    // ── Akurasi ─────────────────────────────────────────────────────
+    // Akurasi
     if (showAccuracy && hasPosition && acc != null) {
       _label(src, 'ACC', x: tx, y: ty, fontS: fontS);
       _shadow(src, '±${acc.toStringAsFixed(0)} m',
@@ -184,14 +183,14 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
       ty += lH;
     }
 
-    // ── Separator 2 ─────────────────────────────────────────────────
+    // Separator 2
     if ((showCoordinates || showAccuracy) && hasPosition &&
         (showAddress || showWeather)) {
       _sep(src, x1: tx, x2: cx + cardW - _padX, y: ty);
       ty += _sepH + 5;
     }
 
-    // ── Alamat ──────────────────────────────────────────────────────
+    // Alamat
     if (showAddress && cleanAddr.isNotEmpty) {
       for (final line in _splitAddr(cleanAddr)) {
         if (ty > cy + cardH - lH - 4) break;
@@ -200,9 +199,8 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
       }
     }
 
-    // ── Cuaca ───────────────────────────────────────────────────────
+    // Cuaca
     if (showWeather && weather.isNotEmpty && ty < cy + cardH - 4) {
-      // Pill background cuaca
       img.fillRect(src,
           x1: tx - 2, y1: ty - 1,
           x2: tx + weather.length * 7 + 6, y2: ty + lH - 2,
@@ -214,7 +212,7 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     return WatermarkLayoutBase.encodeJpg(src);
   }
 
-  // ─── Helper: shadow text ──────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────
   void _shadow(img.Image src, String text, {
     required img.BitmapFont font,
     required int x, required int y,
@@ -225,7 +223,6 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 
-  // ─── Helper: label berwarna khusus (LAT / LON / ACC) ─────────────
   void _label(img.Image src, String text, {
     required int x, required int y,
     required img.BitmapFont fontS,
@@ -234,46 +231,37 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
         color: img.ColorRgba8(180, 50, 50, 255));
   }
 
-  // ─── Helper: garis separator ─────────────────────────────────────
   void _sep(img.Image src, {required int x1, required int x2, required int y}) {
     img.fillRect(src, x1: x1, y1: y, x2: x2, y2: y + _sepH - 1,
         color: img.ColorRgba8(255, 255, 255, 25));
   }
 
-  // ─── Helper: bracket sudut bergaya viewfinder ─────────────────────
   void _drawBrackets(img.Image src, {
     required int cx, required int cy, required int w, required int h,
   }) {
     final c = img.ColorRgba8(220, 45, 45, 200);
     final sz = _bracketSz;
     final th = _bracketTh;
-    // Pojok kiri atas
     img.fillRect(src, x1: cx,      y1: cy,      x2: cx + sz, y2: cy + th, color: c);
     img.fillRect(src, x1: cx,      y1: cy,      x2: cx + th, y2: cy + sz, color: c);
-    // Pojok kanan atas
     img.fillRect(src, x1: cx+w-sz, y1: cy,      x2: cx + w,  y2: cy + th, color: c);
     img.fillRect(src, x1: cx+w-th, y1: cy,      x2: cx + w,  y2: cy + sz, color: c);
-    // Pojok kiri bawah
     img.fillRect(src, x1: cx,      y1: cy+h-th, x2: cx + sz, y2: cy + h,  color: c);
     img.fillRect(src, x1: cx,      y1: cy+h-sz, x2: cx + th, y2: cy + h,  color: c);
-    // Pojok kanan bawah
     img.fillRect(src, x1: cx+w-sz, y1: cy+h-th, x2: cx + w,  y2: cy + h,  color: c);
     img.fillRect(src, x1: cx+w-th, y1: cy+h-sz, x2: cx + w,  y2: cy + h,  color: c);
   }
 
-  // ─── Format koordinat singkat ─────────────────────────────────────
   String _fmtCoord(double v, {required bool isLat}) {
     final dir = isLat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W');
     return '${v.abs().toStringAsFixed(5)}° $dir';
   }
 
-  // ─── Bersihkan alamat ─────────────────────────────────────────────
   String _cleanAddr(String raw) {
     if (raw.isEmpty || raw == 'Tidak ada lokasi' || raw.startsWith('GPS:')) return '';
     return raw;
   }
 
-  // ─── Potong alamat jadi maks 2 baris ─────────────────────────────
   List<String> _splitAddr(String addr) {
     const maxLen = 36;
     final parts = addr.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();

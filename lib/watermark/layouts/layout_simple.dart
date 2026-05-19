@@ -1,4 +1,4 @@
-// lib/watermark/layouts/layout_simple.dart
+// lib/watermark/layouts/layout_simple.dart (VERSI SIMPLE)
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -31,9 +31,9 @@ class LayoutSimple {
     final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
     final int yPos = watermarkPosition == 'bottom' ? src.height - 50 : 20;
     
-    // Buat font sederhana menggunakan arial (ukuran 16)
-    final font = img.ArialFontData.asFont(16);
-    final smallFont = img.ArialFontData.asFont(12);
+    // Gunakan font default dari package image
+    final font = img.getDefaultFont(16);
+    final smallFont = img.getDefaultFont(12);
     
     // Gambar teks timestamp
     img.drawString(src, '$dateStr  $timeStr', font: font, x: 10, y: yPos, color: kColorWhite);
@@ -54,13 +54,6 @@ class LayoutSimple {
     if (showWeather && weather.isNotEmpty) {
       img.drawString(src, weather, 
           font: smallFont, x: 10, y: yPos + 65, color: kColorGold);
-    }
-    
-    // Gambar alamat
-    if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi') {
-      String shortAddress = address.length > 35 ? '${address.substring(0, 32)}...' : address;
-      img.drawString(src, shortAddress, 
-          font: smallFont, x: 10, y: yPos + 85, color: kColorWhite70);
     }
     
     return src;

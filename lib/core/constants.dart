@@ -12,18 +12,73 @@ const int kLogoMaxWidth = 90;
 // ============================================================
 // WATERMARK LAYOUT STYLE
 // ============================================================
+// Tambahkan ke enum WatermarkLayout:
 enum WatermarkLayout {
-  minimal,          // 0 - Film Strip
-  dslrCorner,       // 1 - DSLR Corner
-  gpsTimestamp,     // 2 - GPS Timestamp
-  fieldSurvey,      // 3 - Field Survey
-  hud,              // 4 - HUD Modern
-  gpsCard,          // 5 - GPS Card
-  polaroid,         // 6 - Polaroid
-  sidePanel,        // 7 - Side Panel
-  cinematic,        // 8 - Cinematic
-  timeMarkStyle,    // 9 - TimeMark Style
-  modern,           // 10 - Modern Clean Card
+  minimal,
+  dslrCorner,
+  gpsTimestamp,
+  fieldSurvey,
+  hud,
+  gpsCard,
+  polaroid,
+  sidePanel,
+  cinematic,
+  timeMarkStyle,
+  modern,
+  modernCard,      // ← TAMBAHKAN
+  minimalist,      // ← TAMBAHKAN
+}
+
+// Tambahkan ke extension:
+extension WatermarkLayoutExtension on WatermarkLayout {
+  static const List<WatermarkLayout> all = [
+    WatermarkLayout.minimal,
+    WatermarkLayout.dslrCorner,
+    WatermarkLayout.gpsTimestamp,
+    WatermarkLayout.fieldSurvey,
+    WatermarkLayout.hud,
+    WatermarkLayout.gpsCard,
+    WatermarkLayout.polaroid,
+    WatermarkLayout.sidePanel,
+    WatermarkLayout.cinematic,
+    WatermarkLayout.timeMarkStyle,
+    WatermarkLayout.modern,
+    WatermarkLayout.modernCard,    // ← TAMBAHKAN
+    WatermarkLayout.minimalist,     // ← TAMBAHKAN
+  ];
+
+  String get typeString {
+    switch (this) {
+      // ... existing ...
+      case WatermarkLayout.modernCard:   return 'modern_card';
+      case WatermarkLayout.minimalist:   return 'minimalist';
+    }
+  }
+
+  static WatermarkLayout fromTypeString(String type) {
+    switch (type) {
+      // ... existing ...
+      case 'modern_card':   return WatermarkLayout.modernCard;
+      case 'minimalist':    return WatermarkLayout.minimalist;
+      default:              return WatermarkLayout.modern;
+    }
+  }
+
+  String get displayName {
+    switch (this) {
+      // ... existing ...
+      case WatermarkLayout.modernCard:   return 'Modern Card';
+      case WatermarkLayout.minimalist:   return 'Minimalist Clean';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      // ... existing ...
+      case WatermarkLayout.modernCard:   return 'Card modern dengan efek glassmorphism';
+      case WatermarkLayout.minimalist:   return 'Gaya minimalis bersih tanpa background';
+    }
+  }
 }
 
 // ============================================================

@@ -31,7 +31,10 @@ abstract class WatermarkLayoutBase {
     return Uint8List.fromList(img.encodeJpg(image, quality: quality));
   }
   
+  // HAPUS method getDefaultFont() karena img.Font tidak tersedia
+  // Ganti dengan method sederhana untuk mendapatkan font
   static img.Font getDefaultFont() {
+    // Gunakan font default dari package image
     return img.getDefaultFont();
   }
 }

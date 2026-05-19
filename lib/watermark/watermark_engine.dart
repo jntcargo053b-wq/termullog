@@ -33,167 +33,104 @@ class WatermarkEngine {
     WatermarkLayout.modern:         LayoutNamaBaru(),
   };
 
-  /// SYNC version — untuk isolate (fallback)
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);
     final bytes = _getImageBytes(wmParams);
     final mapBytes = _getMapBytes(wmParams);
     final src = _decodeImage(bytes);
     if (src == null) return bytes ?? Uint8List(0);
-
     final layout = _getLayout(wmParams.layoutIndex);
     if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
 
-    debugPrint('🔄 WatermarkEngine SYNC: apply layout [${layout.name}]');
+    debugPrint('==========================');
+    debugPrint('LAYOUT DIPAKAI: ${layout.name}');
+    debugPrint('INDEX: ${wmParams.layoutIndex}');
+    debugPrint('==========================');
 
     try {
-      final result = layout.apply(
-        src: _resizeIfNeeded(src),
-        timestamp: wmParams.timestamp,
+      return layout.apply(
+        src: _resizeIfNeeded(src), timestamp: wmParams.timestamp,
         hasPosition: wmParams.lat != null && wmParams.lon != null,
-        lat: wmParams.lat,
-        lon: wmParams.lon,
-        acc: wmParams.acc,
-        address: wmParams.address,
-        weather: wmParams.weather,
-        showWeather: wmParams.showWeather,
-        showAccuracy: wmParams.showAccuracy,
-        watermarkPosition: wmParams.watermarkPosition,
-        showMiniMap: wmParams.showMiniMap,
-        mapBytes: mapBytes,
-        showAddress: wmParams.showAddress,
-        showCoordinates: wmParams.showCoordinates,
-        opacity: wmParams.opacity,
-        showBorder: wmParams.showBorder,
-        fontSize: wmParams.fontSize,
+        lat: wmParams.lat, lon: wmParams.lon, acc: wmParams.acc,
+        address: wmParams.address, weather: wmParams.weather,
+        showWeather: wmParams.showWeather, showAccuracy: wmParams.showAccuracy,
+        watermarkPosition: wmParams.watermarkPosition, showMiniMap: wmParams.showMiniMap,
+        mapBytes: mapBytes, showAddress: wmParams.showAddress,
+        showCoordinates: wmParams.showCoordinates, opacity: wmParams.opacity,
+        showBorder: wmParams.showBorder, fontSize: wmParams.fontSize,
       );
-      return result;
-    } catch (e, stackTrace) {
-      debugPrint('❌ WatermarkEngine SYNC error: $e');
-      debugPrintStack(stackTrace: stackTrace);
+    } catch (e, st) {
+      debugPrint('❌ SYNC error: $e');
       return WatermarkLayoutBase.encodeJpg(src);
     }
   }
 
-  /// ASYNC version — untuk main thread (Flutter Canvas)
   static Future<Uint8List> applyFromMapAsync(Map<String, dynamic> params) async {
     final wmParams = WatermarkParams.fromMap(params);
     final bytes = _getImageBytes(wmParams);
     final mapBytes = _getMapBytes(wmParams);
     final src = _decodeImage(bytes);
     if (src == null) return bytes ?? Uint8List(0);
-
     final layout = _getLayout(wmParams.layoutIndex);
     if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
 
-    debugPrint('🎨 WatermarkEngine ASYNC: apply layout [${layout.name}]');
+    debugPrint('==========================');
+    debugPrint('LAYOUT DIPAKAI: ${layout.name}');
+    debugPrint('INDEX: ${wmParams.layoutIndex}');
+    debugPrint('==========================');
 
     try {
-      final result = await layout.applyAsync(
-        src: _resizeIfNeeded(src),
-        timestamp: wmParams.timestamp,
+      return await layout.applyAsync(
+        src: _resizeIfNeeded(src), timestamp: wmParams.timestamp,
         hasPosition: wmParams.lat != null && wmParams.lon != null,
-        lat: wmParams.lat,
-        lon: wmParams.lon,
-        acc: wmParams.acc,
-        address: wmParams.address,
-        weather: wmParams.weather,
-        showWeather: wmParams.showWeather,
-        showAccuracy: wmParams.showAccuracy,
-        watermarkPosition: wmParams.watermarkPosition,
-        showMiniMap: wmParams.showMiniMap,
-        mapBytes: mapBytes,
-        showAddress: wmParams.showAddress,
-        showCoordinates: wmParams.showCoordinates,
-        opacity: wmParams.opacity,
-        showBorder: wmParams.showBorder,
-        fontSize: wmParams.fontSize,
+        lat: wmParams.lat, lon: wmParams.lon, acc: wmParams.acc,
+        address: wmParams.address, weather: wmParams.weather,
+        showWeather: wmParams.showWeather, showAccuracy: wmParams.showAccuracy,
+        watermarkPosition: wmParams.watermarkPosition, showMiniMap: wmParams.showMiniMap,
+        mapBytes: mapBytes, showAddress: wmParams.showAddress,
+        showCoordinates: wmParams.showCoordinates, opacity: wmParams.opacity,
+        showBorder: wmParams.showBorder, fontSize: wmParams.fontSize,
       );
-      return result;
-    } catch (e, stackTrace) {
-      debugPrint('❌ WatermarkEngine ASYNC error: $e');
-      debugPrintStack(stackTrace: stackTrace);
+    } catch (e, st) {
+      debugPrint('❌ ASYNC error: $e');
       return applyFromMap(params);
     }
   }
 
   static WatermarkParams createParams({
-    required Uint8List imageBytes,
-    required DateTime timestamp,
-    required int layoutIndex,
-    String address = '',
-    String weather = '',
-    bool showWeather = true,
-    bool showAccuracy = true,
-    bool showAddress = true,
-    bool showCoordinates = true,
-    double opacity = 0.85,
-    bool showBorder = true,
-    String fontSize = 'normal',
-    String watermarkPosition = 'bottom',
-    bool showMiniMap = false,
-    double? lat,
-    double? lon,
-    double? acc,
-    Uint8List? mapBytes,
-    String mapSize = 'medium',
-    int mapZoomLevel = 16,
+    required Uint8List imageBytes, required DateTime timestamp, required int layoutIndex,
+    String address = '', String weather = '', bool showWeather = true, bool showAccuracy = true,
+    bool showAddress = true, bool showCoordinates = true, double opacity = 0.85,
+    bool showBorder = true, String fontSize = 'normal', String watermarkPosition = 'bottom',
+    bool showMiniMap = false, double? lat, double? lon, double? acc,
+    Uint8List? mapBytes, String mapSize = 'medium', int mapZoomLevel = 16,
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null
-          ? TransferableTypedData.fromList([mapBytes])
-          : null,
-      timestamp: timestamp,
-      address: address,
-      weather: weather,
-      layoutIndex: layoutIndex,
-      showWeather: showWeather,
-      showAccuracy: showAccuracy,
-      showAddress: showAddress,
-      showCoordinates: showCoordinates,
-      opacity: opacity,
-      showBorder: showBorder,
-      fontSize: fontSize,
-      watermarkPosition: watermarkPosition,
-      showMiniMap: showMiniMap,
-      lat: lat,
-      lon: lon,
-      acc: acc,
-      mapSize: mapSize,
-      mapZoomLevel: mapZoomLevel,
+      mapTransferable: mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null,
+      timestamp: timestamp, address: address, weather: weather,
+      layoutIndex: layoutIndex, showWeather: showWeather, showAccuracy: showAccuracy,
+      showAddress: showAddress, showCoordinates: showCoordinates,
+      opacity: opacity, showBorder: showBorder, fontSize: fontSize,
+      watermarkPosition: watermarkPosition, showMiniMap: showMiniMap,
+      lat: lat, lon: lon, acc: acc, mapSize: mapSize, mapZoomLevel: mapZoomLevel,
     );
   }
 
   static Uint8List? _getImageBytes(WatermarkParams p) {
-    try {
-      return p.transferable.materialize().asUint8List();
-    } catch (e) {
-      debugPrint('WatermarkEngine: gagal materialize image bytes — $e');
-      return null;
-    }
+    try { return p.transferable.materialize().asUint8List(); }
+    catch (e) { debugPrint('❌ image bytes: $e'); return null; }
   }
-
   static Uint8List? _getMapBytes(WatermarkParams p) {
     if (p.mapTransferable == null) return null;
-    try {
-      return p.mapTransferable!.materialize().asUint8List();
-    } catch (e) {
-      debugPrint('WatermarkEngine: gagal materialize map bytes — $e');
-      return null;
-    }
+    try { return p.mapTransferable!.materialize().asUint8List(); }
+    catch (e) { debugPrint('❌ map bytes: $e'); return null; }
   }
-
   static img.Image? _decodeImage(Uint8List? bytes) {
     if (bytes == null) return null;
-    try {
-      return WatermarkLayoutBase.decodeOrThrow(bytes);
-    } catch (e) {
-      debugPrint('WatermarkEngine: gagal decode gambar — $e');
-      return null;
-    }
+    try { return WatermarkLayoutBase.decodeOrThrow(bytes); }
+    catch (e) { debugPrint('❌ decode: $e'); return null; }
   }
-
   static img.Image _resizeIfNeeded(img.Image src) {
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
       try {
@@ -201,13 +138,10 @@ class WatermarkEngine {
             width: src.width > src.height ? kMaxOutputWidth : null,
             height: src.height > src.width ? kMaxOutputWidth : null,
             interpolation: img.Interpolation.average);
-      } catch (e) {
-        debugPrint('WatermarkEngine: gagal resize — $e');
-      }
+      } catch (e) { debugPrint('❌ resize: $e'); }
     }
     return src;
   }
-
   static WatermarkLayoutBase? _getLayout(int index) {
     if (index < 0 || index >= WatermarkLayout.values.length) return null;
     return _layouts[WatermarkLayout.values[index]];

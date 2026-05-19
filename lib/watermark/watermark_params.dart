@@ -9,7 +9,7 @@ class WatermarkParams {
   final DateTime timestamp;
   final String address;
   final String weather;
-  final String layoutType;  // ← String, BUKAN int!
+  final String layoutType;
   final bool showWeather;
   final bool showAccuracy;
   final bool showAddress;

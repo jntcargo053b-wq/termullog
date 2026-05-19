@@ -1,5 +1,4 @@
 // lib/watermark/watermark_engine.dart
-import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
@@ -16,10 +15,9 @@ import 'layouts/layout_polaroid.dart';
 import 'layouts/layout_side_panel.dart';
 import 'layouts/layout_cinematic_v2.dart';
 import 'layouts/layout_timemark_style.dart';
-import 'layouts/layout_nama_baru.dart'; // Modern Clean Card
+import 'layouts/layout_nama_baru.dart';
 
 class WatermarkEngine {
-  // ⚠️ Map dengan KEY enum — TIDAK lagi pakai index integer
   static final Map<WatermarkLayout, WatermarkLayoutBase> _layouts = {
     WatermarkLayout.minimal:        LayoutFilmStrip(),
     WatermarkLayout.dslrCorner:     LayoutDSLRCorner(),
@@ -31,57 +29,25 @@ class WatermarkEngine {
     WatermarkLayout.sidePanel:      LayoutSidePanel(),
     WatermarkLayout.cinematicV2:    LayoutCinematicV2(),
     WatermarkLayout.timeMarkStyle:  LayoutTimeMarkStyle(),
-    WatermarkLayout.modern:         LayoutNamaBaru(), // Modern Clean Card
+    WatermarkLayout.modern:         LayoutNamaBaru(),
   };
 
+  /// SYNC version — untuk isolate (fallback)
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);
-    final transferable = wmParams.transferable;
-    final bytes = transferable.materialize().asUint8List();
+    final bytes = _getImageBytes(wmParams);
+    final mapBytes = _getMapBytes(wmParams);
+    final src = _decodeImage(bytes);
+    if (src == null) return bytes ?? Uint8List(0);
 
-    Uint8List? mapBytes;
-    if (wmParams.mapTransferable != null) {
-      try {
-        mapBytes = wmParams.mapTransferable!.materialize().asUint8List();
-      } catch (e) {
-        debugPrint('WatermarkEngine: gagal materialize mapBytes — $e');
-        mapBytes = null;
-      }
-    }
+    final layout = _getLayout(wmParams.layoutIndex);
+    if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
 
-    img.Image src;
-    try {
-      src = WatermarkLayoutBase.decodeOrThrow(bytes);
-    } catch (e) {
-      debugPrint('WatermarkEngine: gagal decode gambar — $e');
-      return bytes;
-    }
-
-    if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
-      try {
-        src = img.copyResize(src,
-          width: src.width > src.height ? kMaxOutputWidth : null,
-          height: src.height > src.width ? kMaxOutputWidth : null,
-          interpolation: img.Interpolation.average);
-      } catch (e) {
-        debugPrint('WatermarkEngine: gagal resize — $e');
-      }
-    }
-
-    // Cari layout berdasarkan index (dari enum)
-    final layoutEnum = WatermarkLayout.values[wmParams.layoutIndex];
-    final layout = _layouts[layoutEnum];
-    
-    if (layout == null) {
-      debugPrint('WatermarkEngine: layout ${layoutEnum.name} tidak ditemukan');
-      return WatermarkLayoutBase.encodeJpg(src);
-    }
-
-    debugPrint('WatermarkEngine: apply layout [${layoutEnum.name}] ${layout.name}');
+    debugPrint('🔄 WatermarkEngine SYNC: apply layout [${layout.name}]');
 
     try {
       final result = layout.apply(
-        src: src,
+        src: _resizeIfNeeded(src),
         timestamp: wmParams.timestamp,
         hasPosition: wmParams.lat != null && wmParams.lon != null,
         lat: wmParams.lat,
@@ -102,9 +68,52 @@ class WatermarkEngine {
       );
       return result;
     } catch (e, stackTrace) {
-      debugPrint('WatermarkEngine: error saat apply layout — $e');
+      debugPrint('❌ WatermarkEngine SYNC error: $e');
       debugPrintStack(stackTrace: stackTrace);
       return WatermarkLayoutBase.encodeJpg(src);
+    }
+  }
+
+  /// ASYNC version — untuk main thread (Flutter Canvas)
+  static Future<Uint8List> applyFromMapAsync(Map<String, dynamic> params) async {
+    final wmParams = WatermarkParams.fromMap(params);
+    final bytes = _getImageBytes(wmParams);
+    final mapBytes = _getMapBytes(wmParams);
+    final src = _decodeImage(bytes);
+    if (src == null) return bytes ?? Uint8List(0);
+
+    final layout = _getLayout(wmParams.layoutIndex);
+    if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
+
+    debugPrint('🎨 WatermarkEngine ASYNC: apply layout [${layout.name}]');
+
+    try {
+      final result = await layout.applyAsync(
+        src: _resizeIfNeeded(src),
+        timestamp: wmParams.timestamp,
+        hasPosition: wmParams.lat != null && wmParams.lon != null,
+        lat: wmParams.lat,
+        lon: wmParams.lon,
+        acc: wmParams.acc,
+        address: wmParams.address,
+        weather: wmParams.weather,
+        showWeather: wmParams.showWeather,
+        showAccuracy: wmParams.showAccuracy,
+        watermarkPosition: wmParams.watermarkPosition,
+        showMiniMap: wmParams.showMiniMap,
+        mapBytes: mapBytes,
+        showAddress: wmParams.showAddress,
+        showCoordinates: wmParams.showCoordinates,
+        opacity: wmParams.opacity,
+        showBorder: wmParams.showBorder,
+        fontSize: wmParams.fontSize,
+      );
+      return result;
+    } catch (e, stackTrace) {
+      debugPrint('❌ WatermarkEngine ASYNC error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      // Fallback ke sync version
+      return applyFromMap(params);
     }
   }
 
@@ -132,8 +141,8 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null 
-          ? TransferableTypedData.fromList([mapBytes]) 
+      mapTransferable: mapBytes != null
+          ? TransferableTypedData.fromList([mapBytes])
           : null,
       timestamp: timestamp,
       address: address,
@@ -154,5 +163,54 @@ class WatermarkEngine {
       mapSize: mapSize,
       mapZoomLevel: mapZoomLevel,
     );
+  }
+
+  // ─── Private helpers ───────────────────────────────────────────
+  static Uint8List? _getImageBytes(WatermarkParams p) {
+    try {
+      return p.transferable.materialize().asUint8List();
+    } catch (e) {
+      debugPrint('WatermarkEngine: gagal materialize image bytes — $e');
+      return null;
+    }
+  }
+
+  static Uint8List? _getMapBytes(WatermarkParams p) {
+    if (p.mapTransferable == null) return null;
+    try {
+      return p.mapTransferable!.materialize().asUint8List();
+    } catch (e) {
+      debugPrint('WatermarkEngine: gagal materialize map bytes — $e');
+      return null;
+    }
+  }
+
+  static img.Image? _decodeImage(Uint8List? bytes) {
+    if (bytes == null) return null;
+    try {
+      return WatermarkLayoutBase.decodeOrThrow(bytes);
+    } catch (e) {
+      debugPrint('WatermarkEngine: gagal decode gambar — $e');
+      return null;
+    }
+  }
+
+  static img.Image _resizeIfNeeded(img.Image src) {
+    if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
+      try {
+        return img.copyResize(src,
+            width: src.width > src.height ? kMaxOutputWidth : null,
+            height: src.height > src.width ? kMaxOutputWidth : null,
+            interpolation: img.Interpolation.average);
+      } catch (e) {
+        debugPrint('WatermarkEngine: gagal resize — $e');
+      }
+    }
+    return src;
+  }
+
+  static WatermarkLayoutBase? _getLayout(int index) {
+    if (index < 0 || index >= WatermarkLayout.values.length) return null;
+    return _layouts[WatermarkLayout.values[index]];
   }
 }

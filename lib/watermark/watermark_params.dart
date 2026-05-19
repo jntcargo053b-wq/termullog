@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 class WatermarkParams {
-  final TransferableTypedData transferable;
-  final TransferableTypedData? mapTransferable;
+  final dynamic transferable;  // Gunakan dynamic untuk menghindari error type
+  final dynamic mapTransferable;
   final DateTime timestamp;
   final String address;
   final String weather;
@@ -74,8 +74,8 @@ class WatermarkParams {
 
   factory WatermarkParams.fromMap(Map<String, dynamic> map) {
     return WatermarkParams(
-      transferable: map['transferable'] as TransferableTypedData,
-      mapTransferable: map['mapTransferable'] as TransferableTypedData?,
+      transferable: map['transferable'],
+      mapTransferable: map['mapTransferable'],
       timestamp: map['timestamp'] as DateTime,
       address: map['address'] as String? ?? '',
       weather: map['weather'] as String? ?? '',

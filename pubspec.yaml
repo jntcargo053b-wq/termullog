@@ -1,14 +1,36 @@
+name: termullog
+description: Aplikasi dokumentasi dengan GPS watermark
+publish_to: 'none'
+
+version: 1.0.0+1
+
+# ============================================================
+# SDK CONSTRAINT (WAJIB)
+# ============================================================
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+# ============================================================
+# DEPENDENCIES
+# ============================================================
 dependencies:
   flutter:
     sdk: flutter
   
+  # UI & Core
+  cupertino_icons: ^1.0.6
+  intl: ^0.19.0
+  
   # Camera & Gallery
   camera: ^0.10.5
   gallery_saver_plus: ^3.2.9
+  share_plus: ^9.0.0
   
-  # Location (perbaiki versi)
+  # Location & Maps
   geolocator: ^11.1.0
-  geocoding: ^3.0.0  # ← TAMBAHKAN
+  geocoding: ^3.0.0
+  flutter_map: ^6.1.0
   
   # Permissions
   permission_handler: ^11.3.1
@@ -22,10 +44,26 @@ dependencies:
   # Image Processing
   image: ^4.1.7
   
-  # HTTP
+  # HTTP & Networking
   http: ^1.2.0
   
   # Other
-  intl: ^0.19.0
-  share_plus: ^9.0.0
   flutter_svg: ^2.0.9
+
+# ============================================================
+# DEV DEPENDENCIES
+# ============================================================
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+# ============================================================
+# FLUTTER CONFIG
+# ============================================================
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/
+    - assets/icons/

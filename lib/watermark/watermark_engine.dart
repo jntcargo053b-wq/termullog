@@ -16,22 +16,32 @@ import 'layouts/layout_polaroid.dart';
 import 'layouts/layout_side_panel.dart';
 import 'layouts/layout_timemark_style.dart';
 import 'layouts/layout_nama_baru.dart';
+import 'layouts/layout_modern_card.dart';
+import 'layouts/layout_minimalist_clean.dart';
 
 class WatermarkEngine {
   // Layout MAP berdasarkan typeString
-  static final Map<String, WatermarkLayoutBase> _layouts = {
-    'minimal':        LayoutFilmStrip(),
-    'dslr_corner':    LayoutDSLRCorner(),
-    'gps_timestamp':  LayoutCinematic(),
-    'field_survey':   LayoutFieldSurvey(),
-    'hud':            LayoutHUD(),
-    'gps_card':       LayoutGpsCard(),
-    'polaroid':       LayoutPolaroid(),
-    'side_panel':     LayoutSidePanel(),
-    'cinematic':      LayoutCinematic(),
-    'timemark_style': LayoutTimeMarkStyle(),
-    'modern':         LayoutNamaBaru(),
-  };
+  // Di bagian _layouts, tambahkan layout baru:
+
+static final Map<String, WatermarkLayoutBase> _layouts = {
+  'minimal':        LayoutFilmStrip(),
+  'dslr_corner':    LayoutDSLRCorner(),
+  'gps_timestamp':  LayoutCinematic(),
+  'field_survey':   LayoutFieldSurvey(),
+  'hud':            LayoutHUD(),
+  'gps_card':       LayoutGpsCard(),
+  'polaroid':       LayoutPolaroid(),
+  'side_panel':     LayoutSidePanel(),
+  'cinematic':      LayoutCinematic(),  // ← yang sudah diperbaiki
+  'timemark_style': LayoutTimeMarkStyle(),
+  'modern':         LayoutNamaBaru(),
+  'modern_card':    LayoutModernCard(),     // ← TAMBAHKAN
+  'minimalist':     LayoutMinimalistClean(), // ← TAMBAHKAN
+};
+
+// Jangan lupa import:
+// 
+// 
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {
     final wmParams = WatermarkParams.fromMap(params);

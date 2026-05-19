@@ -22,7 +22,7 @@ dependencies:
   
   # Location & Maps
   geolocator: ^11.1.0
-  geocoding: ^2.2.2
+  geocoding: ^3.0.0
   flutter_map: ^6.1.0
   
   # Permissions

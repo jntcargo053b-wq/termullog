@@ -14,25 +14,23 @@ import 'layouts/layout_hud.dart';
 import 'layouts/layout_gps_card.dart';
 import 'layouts/layout_polaroid.dart';
 import 'layouts/layout_side_panel.dart';
-// HAPUS import cinematic_v2 karena tidak digunakan
-// import 'layouts/layout_cinematic_v2.dart';
 import 'layouts/layout_timemark_style.dart';
 import 'layouts/layout_nama_baru.dart';
 
 class WatermarkEngine {
-  static final Map<WatermarkLayout, WatermarkLayoutBase> _layouts = {
-    WatermarkLayout.minimal:        LayoutFilmStrip(),
-    WatermarkLayout.dslrCorner:     LayoutDSLRCorner(),
-    WatermarkLayout.cinematic:      LayoutCinematic(),
-    WatermarkLayout.fieldSurvey:    LayoutFieldSurvey(),
-    WatermarkLayout.hud:            LayoutHUD(),
-    WatermarkLayout.gpsCard:        LayoutGpsCard(),
-    WatermarkLayout.polaroid:       LayoutPolaroid(),
-    WatermarkLayout.sidePanel:      LayoutSidePanel(),
-    // HAPUS baris cinematicV2 ini:
-    // WatermarkLayout.cinematicV2:    LayoutCinematicV2(),
-    WatermarkLayout.timeMarkStyle:  LayoutTimeMarkStyle(),
-    WatermarkLayout.modern:         LayoutNamaBaru(),
+  // Layout MAP sekarang menggunakan String key (typeString)
+  static final Map<String, WatermarkLayoutBase> _layouts = {
+    'minimal':        LayoutFilmStrip(),
+    'dslr_corner':    LayoutDSLRCorner(),
+    'gps_timestamp':  LayoutCinematic(),      // GPS Timestamp pakai LayoutCinematic
+    'field_survey':   LayoutFieldSurvey(),
+    'hud':            LayoutHUD(),
+    'gps_card':       LayoutGpsCard(),
+    'polaroid':       LayoutPolaroid(),
+    'side_panel':     LayoutSidePanel(),
+    'cinematic':      LayoutCinematic(),
+    'timemark_style': LayoutTimeMarkStyle(),
+    'modern':         LayoutNamaBaru(),
   };
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {
@@ -41,12 +39,14 @@ class WatermarkEngine {
     final mapBytes = _getMapBytes(wmParams);
     final src = _decodeImage(bytes);
     if (src == null) return bytes ?? Uint8List(0);
-    final layout = _getLayout(wmParams.layoutIndex);
+    
+    // ← GANTI: sekarang pakai layoutType (String)
+    final layout = _getLayout(wmParams.layoutType);
     if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
 
     debugPrint('==========================');
     debugPrint('LAYOUT DIPAKAI: ${layout.name}');
-    debugPrint('INDEX: ${wmParams.layoutIndex}');
+    debugPrint('LAYOUT TYPE: ${wmParams.layoutType}');  // ← GANTI dari layoutIndex
     debugPrint('==========================');
 
     try {
@@ -73,12 +73,14 @@ class WatermarkEngine {
     final mapBytes = _getMapBytes(wmParams);
     final src = _decodeImage(bytes);
     if (src == null) return bytes ?? Uint8List(0);
-    final layout = _getLayout(wmParams.layoutIndex);
+    
+    // ← GANTI: sekarang pakai layoutType (String)
+    final layout = _getLayout(wmParams.layoutType);
     if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
 
     debugPrint('==========================');
     debugPrint('LAYOUT DIPAKAI: ${layout.name}');
-    debugPrint('INDEX: ${wmParams.layoutIndex}');
+    debugPrint('LAYOUT TYPE: ${wmParams.layoutType}');  // ← GANTI dari layoutIndex
     debugPrint('==========================');
 
     try {
@@ -99,40 +101,75 @@ class WatermarkEngine {
     }
   }
 
+  // ============================================================
+  // CREATE PARAMS - GANTI layoutIndex MENJADI layoutType
+  // ============================================================
   static WatermarkParams createParams({
-    required Uint8List imageBytes, required DateTime timestamp, required int layoutIndex,
-    String address = '', String weather = '', bool showWeather = true, bool showAccuracy = true,
-    bool showAddress = true, bool showCoordinates = true, double opacity = 0.85,
-    bool showBorder = true, String fontSize = 'normal', String watermarkPosition = 'bottom',
-    bool showMiniMap = false, double? lat, double? lon, double? acc,
-    Uint8List? mapBytes, String mapSize = 'medium', int mapZoomLevel = 16,
+    required Uint8List imageBytes,
+    required DateTime timestamp,
+    required String layoutType,  // ← GANTI dari int layoutIndex
+    String address = '',
+    String weather = '',
+    bool showWeather = true,
+    bool showAccuracy = true,
+    bool showAddress = true,
+    bool showCoordinates = true,
+    double opacity = 0.85,
+    bool showBorder = true,
+    String fontSize = 'normal',
+    String watermarkPosition = 'bottom',
+    bool showMiniMap = false,
+    double? lat,
+    double? lon,
+    double? acc,
+    Uint8List? mapBytes,
+    String mapSize = 'medium',
+    int mapZoomLevel = 16,
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
       mapTransferable: mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null,
-      timestamp: timestamp, address: address, weather: weather,
-      layoutIndex: layoutIndex, showWeather: showWeather, showAccuracy: showAccuracy,
-      showAddress: showAddress, showCoordinates: showCoordinates,
-      opacity: opacity, showBorder: showBorder, fontSize: fontSize,
-      watermarkPosition: watermarkPosition, showMiniMap: showMiniMap,
-      lat: lat, lon: lon, acc: acc, mapSize: mapSize, mapZoomLevel: mapZoomLevel,
+      timestamp: timestamp,
+      address: address,
+      weather: weather,
+      layoutType: layoutType,  // ← GANTI dari layoutIndex
+      showWeather: showWeather,
+      showAccuracy: showAccuracy,
+      showAddress: showAddress,
+      showCoordinates: showCoordinates,
+      opacity: opacity,
+      showBorder: showBorder,
+      fontSize: fontSize,
+      watermarkPosition: watermarkPosition,
+      showMiniMap: showMiniMap,
+      lat: lat,
+      lon: lon,
+      acc: acc,
+      mapSize: mapSize,
+      mapZoomLevel: mapZoomLevel,
     );
   }
 
+  // ============================================================
+  // HELPER METHODS
+  // ============================================================
   static Uint8List? _getImageBytes(WatermarkParams p) {
     try { return p.transferable.materialize().asUint8List(); }
     catch (e) { debugPrint('❌ image bytes: $e'); return null; }
   }
+  
   static Uint8List? _getMapBytes(WatermarkParams p) {
     if (p.mapTransferable == null) return null;
     try { return p.mapTransferable!.materialize().asUint8List(); }
     catch (e) { debugPrint('❌ map bytes: $e'); return null; }
-  }
+    }
+  
   static img.Image? _decodeImage(Uint8List? bytes) {
     if (bytes == null) return null;
     try { return WatermarkLayoutBase.decodeOrThrow(bytes); }
     catch (e) { debugPrint('❌ decode: $e'); return null; }
   }
+  
   static img.Image _resizeIfNeeded(img.Image src) {
     if (src.width > kMaxOutputWidth || src.height > kMaxOutputWidth) {
       try {
@@ -144,8 +181,31 @@ class WatermarkEngine {
     }
     return src;
   }
-  static WatermarkLayoutBase? _getLayout(int index) {
-    if (index < 0 || index >= WatermarkLayout.values.length) return null;
-    return _layouts[WatermarkLayout.values[index]];
+  
+  // ============================================================
+  // GET LAYOUT - SEKARANG BERDASARKAN STRING (typeString)
+  // ============================================================
+  static WatermarkLayoutBase? _getLayout(String layoutType) {
+    final layout = _layouts[layoutType];
+    if (layout == null) {
+      debugPrint('⚠️ Layout type not found: $layoutType, using modern as fallback');
+      return _layouts['modern'];
+    }
+    return layout;
   }
 }
+
+// ============================================================
+// LAYOUT TYPE STRINGS (referensi)
+// ============================================================
+// 'minimal'        -> LayoutFilmStrip
+// 'dslr_corner'    -> LayoutDSLRCorner  
+// 'gps_timestamp'  -> LayoutCinematic
+// 'field_survey'   -> LayoutFieldSurvey
+// 'hud'            -> LayoutHUD
+// 'gps_card'       -> LayoutGpsCard
+// 'polaroid'       -> LayoutPolaroid
+// 'side_panel'     -> LayoutSidePanel
+// 'cinematic'      -> LayoutCinematic
+// 'timemark_style' -> LayoutTimeMarkStyle
+// 'modern'         -> LayoutNamaBaru

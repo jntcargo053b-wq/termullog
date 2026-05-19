@@ -24,8 +24,7 @@ enum WatermarkLayout {
   cinematic,
   timeMarkStyle,
   modern,
-  modernCard,
-  minimalist,
+  
 }
 
 // ============================================================

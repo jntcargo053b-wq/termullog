@@ -1,15 +1,15 @@
+// lib/watermark/watermark_params.dart
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
-/// Data class untuk parameter watermark yang diserialisasi ke isolate
 class WatermarkParams {
   final TransferableTypedData transferable;
   final TransferableTypedData? mapTransferable;
   final DateTime timestamp;
   final String address;
   final String weather;
-  final String layoutType;  // ← GANTI: dari int layoutIndex menjadi String layoutType
+  final String layoutType;  // ← String, BUKAN int!
   final bool showWeather;
   final bool showAccuracy;
   final bool showAddress;
@@ -31,7 +31,7 @@ class WatermarkParams {
     required this.timestamp,
     required this.address,
     required this.weather,
-    required this.layoutType,  // ← GANTI: dari layoutIndex
+    required this.layoutType,
     required this.showWeather,
     required this.showAccuracy,
     this.showAddress = true,
@@ -48,7 +48,6 @@ class WatermarkParams {
     this.mapZoomLevel = 16,
   });
 
-  /// Serialisasi ke Map untuk dikirim ke isolate
   Map<String, dynamic> toMap() {
     return {
       'transferable': transferable,
@@ -56,7 +55,7 @@ class WatermarkParams {
       'timestamp': timestamp,
       'address': address,
       'weather': weather,
-      'layoutType': layoutType,  // ← GANTI: dari layoutIndex
+      'layoutType': layoutType,
       'showWeather': showWeather,
       'showAccuracy': showAccuracy,
       'showAddress': showAddress,
@@ -74,7 +73,6 @@ class WatermarkParams {
     };
   }
 
-  /// Deserialisasi dari Map (dipakai di dalam isolate)
   factory WatermarkParams.fromMap(Map<String, dynamic> map) {
     return WatermarkParams(
       transferable: map['transferable'] as TransferableTypedData,
@@ -82,58 +80,7 @@ class WatermarkParams {
       timestamp: map['timestamp'] as DateTime,
       address: map['address'] as String? ?? '',
       weather: map['weather'] as String? ?? '',
-      layoutType: map['layoutType'] as String? ?? 'modern',  // ← GANTI: fallback ke 'modern'
-      showWeather: map['showWeather'] as bool? ?? true,
-      showAccuracy: map['showAccuracy'] as bool? ?? true,
-      showAddress: map['showAddress'] as bool? ?? true,
-      showCoordinates: map['showCoordinates'] as bool? ?? true,
-      opacity: (map['opacity'] as num?)?.toDouble() ?? 0.85,
-      showBorder: map['showBorder'] as bool? ?? true,
-      fontSize: map['fontSize'] as String? ?? 'normal',
-      watermarkPosition: map['watermarkPosition'] as String? ?? 'bottom',
-      showMiniMap: map['showMiniMap'] as bool? ?? false,
-      lat: map['lat'] as double?,
-      lon: map['lon'] as double?,
-      acc: map['acc'] as double?,
-      mapSize: map['mapSize'] as String? ?? 'medium',
-      mapZoomLevel: map['mapZoomLevel'] as int? ?? 16,
-    );
-  }
-
-  // ============================================================
-  // HELPER METHOD UNTUK MIGRASI (optional)
-  // ============================================================
-  /// Factory untuk migrasi dari format lama (layoutIndex) ke format baru
-  factory WatermarkParams.fromMapLegacy(Map<String, dynamic> map) {
-    // Jika masih ada layoutIndex, konversi ke layoutType
-    final layoutIndex = map['layoutIndex'] as int?;
-    String layoutType = 'modern';
-    
-    if (layoutIndex != null) {
-      // Konversi index ke typeString
-      switch (layoutIndex) {
-        case 0:  layoutType = 'minimal'; break;
-        case 1:  layoutType = 'dslr_corner'; break;
-        case 2:  layoutType = 'gps_timestamp'; break;
-        case 3:  layoutType = 'field_survey'; break;
-        case 4:  layoutType = 'hud'; break;
-        case 5:  layoutType = 'gps_card'; break;
-        case 6:  layoutType = 'polaroid'; break;
-        case 7:  layoutType = 'side_panel'; break;
-        case 8:  layoutType = 'cinematic'; break;
-        case 9:  layoutType = 'timemark_style'; break;
-        case 10: layoutType = 'modern'; break;
-        default: layoutType = 'modern';
-      }
-    }
-    
-    return WatermarkParams(
-      transferable: map['transferable'] as TransferableTypedData,
-      mapTransferable: map['mapTransferable'] as TransferableTypedData?,
-      timestamp: map['timestamp'] as DateTime,
-      address: map['address'] as String? ?? '',
-      weather: map['weather'] as String? ?? '',
-      layoutType: layoutType,  // ← hasil konversi dari index
+      layoutType: map['layoutType'] as String? ?? 'modern',
       showWeather: map['showWeather'] as bool? ?? true,
       showAccuracy: map['showAccuracy'] as bool? ?? true,
       showAddress: map['showAddress'] as bool? ?? true,

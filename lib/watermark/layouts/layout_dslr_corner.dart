@@ -4,13 +4,28 @@ import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
+/// Layout DSLR Corner — pojok bergaya metadata kamera DSLR profesional.
+/// Card panel dengan aksen merah, jam besar, tanggal, koordinat, alamat
+/// dan bracket sudut bergaya optical viewfinder.
 class LayoutDSLRCorner extends WatermarkLayoutBase {
   @override
   String get name => 'DSLR Corner';
 
-  static const int padX = 20;
-  static const int padY = 16;
-  static const int lineH = 22;
+  // ─── Dimensi konstanta ───────────────────────────────────────────
+  static const int _padX      = 14;
+  static const int _padY      = 10;
+  static const int _accentH   = 4;   // tinggi bar aksen merah atas
+  static const int _bracketSz = 10;  // panjang bracket sudut
+  static const int _bracketTh = 2;   // ketebalan bracket
+  static const int _sepH      = 1;   // tinggi garis pemisah
+
+  // ─── Warna tema DSLR ───────────────────────────────────────────────
+  static final _red    = img.ColorRgba8(220,  45,  45, 255);
+  static final _amber  = img.ColorRgba8(255, 180,  40, 255);
+  static final _cyan   = img.ColorRgba8( 80, 210, 240, 255);
+  static final _dim    = img.ColorRgba8(140, 145, 155, 255);
+  static final _white  = img.ColorRgba8(240, 242, 245, 255);
+  static final _black  = img.ColorRgba8(  0,   0,   0, 255);
 
   @override
   Uint8List apply({
@@ -27,40 +42,251 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     required String watermarkPosition,
     required bool showMiniMap,
     Uint8List? mapBytes,
-    bool showAddress = true,
+    bool showAddress    = true,
     bool showCoordinates = true,
-    double opacity = 0.85,
-    bool showBorder = true,
-    String fontSize = 'normal',
+    double opacity      = 0.85,
+    bool showBorder     = true,
+    String fontSize     = 'normal',
   }) {
-    final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial14;
-    final int textW = 220;
-    final int textH = (hasPosition ? 3 : 2) * lineH + padY * 2;
-    final int x0 = src.width - textW - padX;
-    final int y0 = src.height - textH - padY;
-    if (x0 < 0 || y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
+    final fontL = img.arial24;  // font besar
+    final fontS = img.arial14;  // font kecil
 
-    img.fillRect(src, x1: x0, y1: y0, x2: x0 + textW, y2: y0 + textH,
-        color: img.ColorRgba8(0, 0, 0, (200 * opacity).toInt()));
+    final int lH  = fontSize == 'large' ? 26 : 20; // line height kecil
+    final int lHL = fontSize == 'large' ? 36 : 28; // line height besar (jam)
 
-    if (showBorder) {
-      img.drawRect(src, x1: x0, y1: y0, x2: x0 + textW, y2: y0 + textH,
-          color: img.ColorRgba8(255, 255, 255, 40), thickness: 1);
+    // ── Hitung baris yang akan ditampilkan ───────────────────────────
+    // Baris: [jam-besar] [tanggal] [sep] [lat] [lon] [acc] [sep] [addr] [cuaca]
+    int rowCount = 0;
+    rowCount += 2; // jam + tanggal (wajib)
+    rowCount += 1; // separator
+    if (showCoordinates && hasPosition) rowCount += 2; // lat + lon
+    if (showAccuracy    && hasPosition) rowCount += 1;
+    if ((showCoordinates && hasPosition) || (showAccuracy && hasPosition)) rowCount += 1; // sep
+    final cleanAddr = _cleanAddr(address);
+    if (showAddress && cleanAddr.isNotEmpty) rowCount += _splitAddr(cleanAddr).length;
+    if (showWeather && weather.isNotEmpty)  rowCount += 1;
+
+    final int innerH = lHL          // baris jam
+                     + lH           // baris tanggal
+                     + _sepH + 4    // sep1
+                     + (showCoordinates && hasPosition ? lH * 2 : 0)
+                     + (showAccuracy    && hasPosition ? lH     : 0)
+                     + ((showCoordinates || showAccuracy) && hasPosition ? _sepH + 4 : 0)
+                     + (showAddress && cleanAddr.isNotEmpty
+                           ? _splitAddr(cleanAddr).length * lH : 0)
+                     + (showWeather && weather.isNotEmpty ? lH : 0);
+
+    final int cardH = _accentH + _padY * 2 + innerH + 6;
+    final int cardW = fontSize == 'large'
+        ? (src.width * 0.44).clamp(260, 380).toInt()
+        : (src.width * 0.38).clamp(220, 340).toInt();
+
+    // ── Posisi (pojok kanan atas / kanan bawah) ──────────────────────
+    final bool isTop = watermarkPosition == 'top';
+    final int margin = (src.width * 0.02).clamp(8, 20).toInt();
+    final int cx = src.width - cardW - margin;
+    final int cy = isTop ? margin : src.height - cardH - margin;
+    if (cx < 0 || cy < 0 || cy + cardH > src.height) {
+      return WatermarkLayoutBase.encodeJpg(src);
     }
 
-    int cy = y0 + padY;
-    img.drawString(src, DateFormat('HH:mm:ss').format(timestamp),
-        font: font, x: x0 + 8, y: cy, color: WatermarkLayoutBase.white);
-    cy += lineH;
-    img.drawString(src, DateFormat('yyyy-MM-dd').format(timestamp),
-        font: font, x: x0 + 8, y: cy, color: WatermarkLayoutBase.blue);
-    cy += lineH;
+    final int alpha = (opacity * 235).round().clamp(0, 255);
 
-    if (showCoordinates && hasPosition) {
-      img.drawString(src, '${lat!.toStringAsFixed(5)}  ${lon!.toStringAsFixed(5)}',
-          font: font, x: x0 + 8, y: cy, color: WatermarkLayoutBase.white);
+    // ── 1. Gradient latar (hitam pekat → gelap navy) ─────────────────
+    for (int row = cy + _accentH; row < cy + cardH; row++) {
+      final double t = (row - cy - _accentH) / (cardH - _accentH);
+      final int r = _lerp( 8, 18, t);
+      final int g = _lerp(10, 20, t);
+      final int b = _lerp(14, 30, t);
+      final int a = (alpha * (1.0 - t * 0.08)).round().clamp(0, 255);
+      img.fillRect(src, x1: cx, y1: row, x2: cx + cardW - 1, y2: row + 1,
+          color: img.ColorRgba8(r, g, b, a));
+    }
+
+    // ── 2. Bar aksen merah di atas ───────────────────────────────────
+    img.fillRect(src,
+        x1: cx, y1: cy,
+        x2: cx + cardW - 1, y2: cy + _accentH - 1,
+        color: _red);
+    // Kilap kecil di ujung kiri bar merah
+    img.fillRect(src,
+        x1: cx, y1: cy,
+        x2: cx + 20, y2: cy + _accentH - 1,
+        color: img.ColorRgba8(255, 100, 100, 255));
+
+    // ── 3. Border luar tipis ─────────────────────────────────────────
+    if (showBorder) {
+      img.drawRect(src,
+          x1: cx, y1: cy, x2: cx + cardW - 1, y2: cy + cardH - 1,
+          color: img.ColorRgba8(255, 255, 255, 35), thickness: 1);
+    }
+
+    // ── 4. Bracket sudut bergaya viewfinder ──────────────────────────
+    _drawBrackets(src, cx: cx, cy: cy, w: cardW, h: cardH);
+
+    // ── 5. Konten teks ───────────────────────────────────────────────
+    final int tx = cx + _padX;
+    int ty = cy + _accentH + _padY;
+
+    // Jam besar
+    final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    _shadow(src, timeStr, font: fontL, x: tx, y: ty, color: _white);
+
+    // Label "REC" merah (gaya kamera sedang merekam) di kanan
+    final int recX = cx + cardW - 38;
+    img.fillRect(src,
+        x1: recX - 2, y1: ty + 2, x2: recX + 26, y2: ty + 16,
+        color: img.ColorRgba8(180, 20, 20, 180));
+    img.drawString(src, 'REC', font: fontS,
+        x: recX, y: ty + 2, color: _white);
+    // Titik REC
+    img.fillCircle(src, x: recX - 8, y: ty + 9, radius: 4,
+        color: img.ColorRgba8(255, 50, 50, 255));
+    ty += lHL;
+
+    // Tanggal format DSLR (YYYY:MM:DD)
+    final String dateStr = DateFormat('yyyy:MM:dd').format(timestamp);
+    _shadow(src, dateStr, font: fontS, x: tx, y: ty, color: _amber);
+    // Hari singkat di kanan
+    final String dayStr = DateFormat('EEE').format(timestamp).toUpperCase();
+    _shadow(src, dayStr, font: fontS,
+        x: cx + cardW - dayStr.length * 7 - _padX, y: ty,
+        color: _dim);
+    ty += lH;
+
+    // ── Separator 1 ─────────────────────────────────────────────────
+    _sep(src, x1: tx, x2: cx + cardW - _padX, y: ty);
+    ty += _sepH + 5;
+
+    // ── Koordinat ───────────────────────────────────────────────────
+    if (showCoordinates && hasPosition && lat != null && lon != null) {
+      // Lat
+      _label(src, 'LAT', x: tx, y: ty, fontS: fontS);
+      _shadow(src, _fmtCoord(lat, isLat: true),
+          font: fontS, x: tx + 30, y: ty, color: _cyan);
+      ty += lH;
+      // Lon
+      _label(src, 'LON', x: tx, y: ty, fontS: fontS);
+      _shadow(src, _fmtCoord(lon, isLat: false),
+          font: fontS, x: tx + 30, y: ty, color: _cyan);
+      ty += lH;
+    } else if (!hasPosition) {
+      _shadow(src, 'GPS: acquiring…',
+          font: fontS, x: tx, y: ty, color: _dim);
+      ty += lH;
+    }
+
+    // ── Akurasi ─────────────────────────────────────────────────────
+    if (showAccuracy && hasPosition && acc != null) {
+      _label(src, 'ACC', x: tx, y: ty, fontS: fontS);
+      _shadow(src, '±${acc.toStringAsFixed(0)} m',
+          font: fontS, x: tx + 30, y: ty, color: _dim);
+      ty += lH;
+    }
+
+    // ── Separator 2 ─────────────────────────────────────────────────
+    if ((showCoordinates || showAccuracy) && hasPosition &&
+        (showAddress || showWeather)) {
+      _sep(src, x1: tx, x2: cx + cardW - _padX, y: ty);
+      ty += _sepH + 5;
+    }
+
+    // ── Alamat ──────────────────────────────────────────────────────
+    if (showAddress && cleanAddr.isNotEmpty) {
+      for (final line in _splitAddr(cleanAddr)) {
+        if (ty > cy + cardH - lH - 4) break;
+        _shadow(src, line, font: fontS, x: tx, y: ty, color: _dim);
+        ty += lH;
+      }
+    }
+
+    // ── Cuaca ───────────────────────────────────────────────────────
+    if (showWeather && weather.isNotEmpty && ty < cy + cardH - 4) {
+      // Pill background cuaca
+      img.fillRect(src,
+          x1: tx - 2, y1: ty - 1,
+          x2: tx + weather.length * 7 + 6, y2: ty + lH - 2,
+          color: img.ColorRgba8(0, 100, 200, 40));
+      _shadow(src, weather, font: fontS, x: tx, y: ty,
+          color: img.ColorRgba8(120, 200, 255, 255));
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
   }
+
+  // ─── Helper: shadow text ──────────────────────────────────────────
+  void _shadow(img.Image src, String text, {
+    required img.BitmapFont font,
+    required int x, required int y,
+    required img.Color color,
+  }) {
+    img.drawString(src, text, font: font, x: x + 1, y: y + 1,
+        color: img.ColorRgba8(0, 0, 0, 160));
+    img.drawString(src, text, font: font, x: x, y: y, color: color);
+  }
+
+  // ─── Helper: label berwarna khusus (LAT / LON / ACC) ─────────────
+  void _label(img.Image src, String text, {
+    required int x, required int y,
+    required img.BitmapFont fontS,
+  }) {
+    img.drawString(src, text, font: fontS, x: x, y: y,
+        color: img.ColorRgba8(180, 50, 50, 255));
+  }
+
+  // ─── Helper: garis separator ─────────────────────────────────────
+  void _sep(img.Image src, {required int x1, required int x2, required int y}) {
+    img.fillRect(src, x1: x1, y1: y, x2: x2, y2: y + _sepH - 1,
+        color: img.ColorRgba8(255, 255, 255, 25));
+  }
+
+  // ─── Helper: bracket sudut bergaya viewfinder ─────────────────────
+  void _drawBrackets(img.Image src, {
+    required int cx, required int cy, required int w, required int h,
+  }) {
+    final c = img.ColorRgba8(220, 45, 45, 200);
+    final sz = _bracketSz;
+    final th = _bracketTh;
+    // Pojok kiri atas
+    img.fillRect(src, x1: cx,      y1: cy,      x2: cx + sz, y2: cy + th, color: c);
+    img.fillRect(src, x1: cx,      y1: cy,      x2: cx + th, y2: cy + sz, color: c);
+    // Pojok kanan atas
+    img.fillRect(src, x1: cx+w-sz, y1: cy,      x2: cx + w,  y2: cy + th, color: c);
+    img.fillRect(src, x1: cx+w-th, y1: cy,      x2: cx + w,  y2: cy + sz, color: c);
+    // Pojok kiri bawah
+    img.fillRect(src, x1: cx,      y1: cy+h-th, x2: cx + sz, y2: cy + h,  color: c);
+    img.fillRect(src, x1: cx,      y1: cy+h-sz, x2: cx + th, y2: cy + h,  color: c);
+    // Pojok kanan bawah
+    img.fillRect(src, x1: cx+w-sz, y1: cy+h-th, x2: cx + w,  y2: cy + h,  color: c);
+    img.fillRect(src, x1: cx+w-th, y1: cy+h-sz, x2: cx + w,  y2: cy + h,  color: c);
+  }
+
+  // ─── Format koordinat singkat ─────────────────────────────────────
+  String _fmtCoord(double v, {required bool isLat}) {
+    final dir = isLat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W');
+    return '${v.abs().toStringAsFixed(5)}° $dir';
+  }
+
+  // ─── Bersihkan alamat ─────────────────────────────────────────────
+  String _cleanAddr(String raw) {
+    if (raw.isEmpty || raw == 'Tidak ada lokasi' || raw.startsWith('GPS:')) return '';
+    return raw;
+  }
+
+  // ─── Potong alamat jadi maks 2 baris ─────────────────────────────
+  List<String> _splitAddr(String addr) {
+    const maxLen = 36;
+    final parts = addr.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (parts.isEmpty) return [];
+    final l1 = parts.first;
+    final rest = parts.skip(1).join(', ');
+    return [
+      l1.length > maxLen ? '${l1.substring(0, maxLen - 1)}…' : l1,
+      if (rest.isNotEmpty)
+        rest.length > maxLen ? '${rest.substring(0, maxLen - 1)}…' : rest,
+    ];
+  }
+
+  int _lerp(int a, int b, double t) =>
+      (a + (b - a) * t).round().clamp(0, 255);
 }

@@ -30,4 +30,8 @@ abstract class WatermarkLayoutBase {
   static Uint8List encodeJpg(img.Image image, {int quality = kJpegQuality}) {
     return Uint8List.fromList(img.encodeJpg(image, quality: quality));
   }
+  
+  static img.Font getDefaultFont() {
+    return img.getDefaultFont();
+  }
 }

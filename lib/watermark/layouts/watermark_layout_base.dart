@@ -30,10 +30,4 @@ abstract class WatermarkLayoutBase {
   static Uint8List encodeJpg(img.Image image, {int quality = kJpegQuality}) {
     return Uint8List.fromList(img.encodeJpg(image, quality: quality));
   }
-
-  static img.Image decodeOrThrow(Uint8List bytes) {
-    final image = img.decodeImage(bytes);
-    if (image == null) throw Exception('Failed to decode image');
-    return image;
-  }
 }

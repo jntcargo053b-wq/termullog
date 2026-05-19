@@ -179,7 +179,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final showBorder = await SettingsCache.showBorder;
       final fontSize = await SettingsCache.fontSize;
 
-      debugPrint('🔥 PREVIEW: layout = ${layout.displayName}, index = ${layout.index}');
+      debugPrint('🔥 PREVIEW: layout = ${layout.displayName}, typeString = ${layout.typeString}');  // ← GANTI
 
       // ── 4. FETCH MINI MAP ─────────────────────────────────────────
       Uint8List? mapBytes;
@@ -218,7 +218,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       final params = WatermarkEngine.createParams(
         imageBytes: bytes,
         timestamp: timestamp,
-        layoutIndex: layout.index,
+        layoutType: layout.typeString,  // ← GANTI: dari layoutIndex: layout.index
         address: address,
         weather: weather,
         showWeather: showWeather,
@@ -275,14 +275,14 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   // ── OSM TILE FALLBACK ─────────────────────────────────────────────
-static Future<Uint8List?> _fetchOsmTileBytes(
-  double lat, double lng, {int zoom = 15}
-) async {
-  final n = pow(2, zoom).toInt();
-  final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
-  final latRad = lat * pi / 180;
-  final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
-      .toInt().clamp(0, n - 1);
+  static Future<Uint8List?> _fetchOsmTileBytes(
+    double lat, double lng, {int zoom = 15}
+  ) async {
+    final n = pow(2, zoom).toInt();
+    final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
+    final latRad = lat * pi / 180;
+    final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
+        .toInt().clamp(0, n - 1);
 
     const subdomains = ['a', 'b', 'c'];
     final sub = subdomains[tileX % 3];
@@ -539,7 +539,7 @@ static Future<Uint8List?> _fetchOsmTileBytes(
                 tag: 'preview_photo',
                 child: Image.file(
                   File(_displayImagePath!),
-                  key: ValueKey(_displayImagePath),  // ← FORCE REFRESH
+                  key: ValueKey(_displayImagePath),
                   fit: BoxFit.contain,
                   gaplessPlayback: false,
                   errorBuilder: (_, __, ___) => const Center(

@@ -1,4 +1,5 @@
 // lib/watermark/watermark_engine.dart
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
@@ -112,7 +113,6 @@ class WatermarkEngine {
     } catch (e, stackTrace) {
       debugPrint('❌ WatermarkEngine ASYNC error: $e');
       debugPrintStack(stackTrace: stackTrace);
-      // Fallback ke sync version
       return applyFromMap(params);
     }
   }
@@ -165,7 +165,6 @@ class WatermarkEngine {
     );
   }
 
-  // ─── Private helpers ───────────────────────────────────────────
   static Uint8List? _getImageBytes(WatermarkParams p) {
     try {
       return p.transferable.materialize().asUint8List();

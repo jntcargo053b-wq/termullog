@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';  // ← TAMBAHKAN import
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -50,12 +51,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _checkAndRequestPermissions() async {
-    // Request semua izin sekaligus
     final permissions = [
       Permission.camera,
       Permission.location,
       Permission.locationWhenInUse,
-      Permission.locationAlways,
     ];
     
     if (await Permission.location.isDenied) {
@@ -79,7 +78,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
 
     try {
-      // 1. Cek dan minta izin kamera
+      // 1. Cek izin kamera
       final cameraStatus = await Permission.camera.request();
       if (!cameraStatus.isGranted) {
         setState(() {
@@ -87,14 +86,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           _isRequestingPermission = false;
         });
         
-        // Tampilkan dialog jika izin ditolak permanen
         if (cameraStatus.isPermanentlyDenied) {
           _showPermissionDialog('Kamera');
         }
         return;
       }
 
-      // 2. Cek dan minta izin lokasi
+      // 2. Cek izin lokasi
       final locationStatus = await Permission.location.request();
       if (!locationStatus.isGranted) {
         setState(() {
@@ -118,7 +116,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Pilih kamera belakang (index 0)
       final camera = _cameras!.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => _cameras![0],
@@ -138,7 +135,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           _isRequestingPermission = false;
         });
         
-        // Ambil lokasi setelah kamera siap
         _getCurrentLocation();
       }
     } catch (e) {
@@ -156,7 +152,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
 
     try {
-      // Cek apakah layanan lokasi aktif
+      // Cek layanan lokasi
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         setState(() {
@@ -176,15 +172,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _currentPosition = position;
       });
 
-      // Ambil alamat
+      // Ambil alamat menggunakan geocoding (perbaikan)
       try {
-        final placemark = await Geolocator.placemarkFromCoordinates(
+        List<Placemark> placemarks = await placemarkFromCoordinates(
           position.latitude,
           position.longitude,
         );
-        if (placemark.isNotEmpty) {
+        
+        if (placemarks.isNotEmpty) {
+          final place = placemarks.first;
+          List<String> addressParts = [];
+          
+          if (place.street != null && place.street!.isNotEmpty) 
+            addressParts.add(place.street!);
+          if (place.locality != null && place.locality!.isNotEmpty) 
+            addressParts.add(place.locality!);
+          if (place.subAdministrativeArea != null && place.subAdministrativeArea!.isNotEmpty) 
+            addressParts.add(place.subAdministrativeArea!);
+          
           setState(() {
-            _address = '${placemark.first.street}, ${placemark.first.locality}';
+            _address = addressParts.isNotEmpty 
+                ? addressParts.join(', ') 
+                : '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+          });
+        } else {
+          setState(() {
+            _address = '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
           });
         }
       } catch (e) {
@@ -251,7 +264,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       
       if (!mounted) return;
 
-      // Navigasi ke preview screen dengan data yang sudah ada
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -283,13 +295,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Camera Preview
           if (_isReady && _cameraController != null)
             Positioned.fill(
               child: CameraPreview(_cameraController!),
             ),
           
-          // Error Message
           if (_errorMessage.isNotEmpty)
             Center(
               child: Container(
@@ -315,7 +325,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
           
-          // Loading
           if (_isRequestingPermission)
             const Center(
               child: Column(
@@ -328,7 +337,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
           
-          // Location & Weather Info (Overlay)
           if (_isReady && !_isRequestingPermission)
             Positioned(
               top: 40,
@@ -391,7 +399,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
           
-          // Shutter Button
           if (_isReady && !_isRequestingPermission)
             Positioned(
               bottom: 30,

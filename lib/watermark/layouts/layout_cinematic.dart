@@ -8,9 +8,8 @@ class LayoutCinematic extends WatermarkLayoutBase {
   @override
   String get name => 'GPS Timestamp';
 
-  static const int _padX = 20;
-  static const int _padY = 16;
-  static const int _mapH = 100;
+  static const int _padX = 24;
+  static const int _padY = 20;
 
   @override
   Uint8List apply({
@@ -33,116 +32,158 @@ class LayoutCinematic extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial24;
-    final smallFont = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial14;
+    // ── Adaptive scaling berdasarkan lebar foto ──────────────────
+    final double scale = (src.width / 1080).clamp(0.7, 2.0);
 
-    // Hitung tinggi panel
+    final int mapH      = (120 * scale).round();
+    final int lineH     = (32 * scale).round();
+    final int smallLine = (24 * scale).round();
+    final int padX      = (_padX * scale).round();
+    final int padY      = (_padY * scale).round();
+    final int margin    = (12 * scale).round();
+    final int pinRadius = (8 * scale).round();
+
+    // ── Pilih font berdasarkan ukuran foto & setting ─────────────
+    final double fs = fontSize == 'small' ? 0.8 : fontSize == 'large' ? 1.3 : 1.0;
+    final bool isLarge = src.width > 2500;
+    final img.BitmapFont fontMain = (isLarge || fontSize == 'large')
+        ? img.arial24
+        : (fontSize == 'small' ? img.arial14 : img.arial24);
+    final img.BitmapFont fontSmall = (isLarge || fontSize == 'large')
+        ? img.arial24
+        : img.arial14;
+
+    // ── Hitung tinggi panel ─────────────────────────────────────
     int rowCount = 0;
-    rowCount += 1; // mini map
+    if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) rowCount += 1;
     rowCount += 2; // jam + tanggal
     rowCount += 1; // divider
-    if (showCoordinates && hasPosition) rowCount += 2;
+    if (showCoordinates && hasPosition) rowCount += 1;
     if (showAddress && address.isNotEmpty) rowCount += 2;
     if (showWeather && weather.isNotEmpty) rowCount += 1;
 
-    final int panelH = _mapH + _padY * 2 + rowCount * 24 + 20;
+    final int panelH = (showMiniMap && mapBytes != null && mapBytes.isNotEmpty ? mapH + padY : 0)
+        + padY * 2 + rowCount * (smallLine + 4) + 20;
     final int y0 = src.height - panelH;
     if (y0 < 0 || y0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
 
-    const m = 12;
-    final int cardW = src.width - m * 2;
-    final int cardX = m;
+    final int cardW = src.width - margin * 2;
+    final int cardX = margin;
 
-    // Card background
+    // ── Card background ────────────────────────────────────────
     img.fillRect(src,
-        x1: cardX, y1: y0 + m,
-        x2: cardX + cardW, y2: y0 + panelH - m,
+        x1: cardX, y1: y0 + margin,
+        x2: cardX + cardW, y2: y0 + panelH - margin,
         color: img.ColorRgba8(19, 19, 19, (255 * opacity).toInt()));
 
-    // Border rounded
     if (showBorder) {
       img.drawRect(src,
-          x1: cardX, y1: y0 + m,
-          x2: cardX + cardW, y2: y0 + panelH - m,
+          x1: cardX, y1: y0 + margin,
+          x2: cardX + cardW, y2: y0 + panelH - margin,
           color: img.ColorRgba8(255, 255, 255, 20), thickness: 1);
     }
 
-    int cy = y0 + m + _padY;
+    int cy = y0 + margin + padY;
 
-    // Mini map di atas
+    // ── Mini map di atas ───────────────────────────────────────
     if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
       try {
         final map = img.decodeImage(mapBytes);
         if (map != null) {
-          final resized = img.copyResize(map, width: cardW, height: _mapH);
+          final resized = img.copyResize(map, width: cardW, height: mapH);
           final mapX = cardX;
           final mapY = cy;
           img.fillRect(src,
               x1: mapX, y1: mapY,
-              x2: mapX + cardW, y2: mapY + _mapH,
+              x2: mapX + cardW, y2: mapY + mapH,
               color: img.ColorRgba8(0, 0, 0, 60));
           img.compositeImage(src, resized,
               dstX: mapX, dstY: mapY, blend: img.BlendMode.alpha);
+          // Pin lokasi dengan shadow
           final pinX = mapX + cardW ~/ 2;
-          final pinY = mapY + _mapH ~/ 2;
-          img.fillCircle(src, x: pinX, y: pinY, radius: 8,
+          final pinY = mapY + mapH ~/ 2;
+          img.fillCircle(src, x: pinX + 1, y: pinY + 1, radius: pinRadius,
+              color: img.ColorRgba8(0, 0, 0, 100));
+          img.fillCircle(src, x: pinX, y: pinY, radius: pinRadius,
               color: img.ColorRgba8(255, 50, 50, 255));
-          img.fillCircle(src, x: pinX, y: pinY, radius: 3,
+          img.fillCircle(src, x: pinX, y: pinY, radius: (pinRadius * 0.4).round(),
               color: WatermarkLayoutBase.white);
         }
       } catch (_) {}
-      cy += _mapH + _padY;
+      cy += mapH + padY;
     }
 
-    // Tanggal
-    img.drawString(src,
+    // ── Tanggal ────────────────────────────────────────────────
+    _shadowText(src,
         DateFormat('EEE, dd MMM yyyy').format(timestamp),
-        font: font, x: cardX + _padX, y: cy,
+        font: fontMain, x: cardX + padX, y: cy,
         color: WatermarkLayoutBase.white);
-    cy += 24;
+    cy += lineH;
 
-    // Jam
-    img.drawString(src,
+    // ── Jam ────────────────────────────────────────────────────
+    _shadowText(src,
         DateFormat('HH:mm:ss').format(timestamp),
-        font: font, x: cardX + _padX, y: cy,
+        font: fontMain, x: cardX + padX, y: cy,
         color: WatermarkLayoutBase.white);
-    cy += 24;
+    cy += lineH;
 
-    // Divider
+    // ── Divider ────────────────────────────────────────────────
     img.fillRect(src,
-        x1: cardX + _padX, y1: cy,
-        x2: cardX + cardW - _padX, y2: cy + 1,
+        x1: cardX + padX, y1: cy,
+        x2: cardX + cardW - padX, y2: cy + (1.5 * scale).round(),
         color: img.ColorRgba8(255, 255, 255, 20));
-    cy += 12;
+    cy += (12 * scale).round();
 
-    // Alamat
+    // ── Alamat ─────────────────────────────────────────────────
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       final lines = _splitAddress(address);
       for (final line in lines.take(2)) {
-        img.drawString(src, line,
-            font: smallFont, x: cardX + _padX, y: cy,
+        _shadowText(src, line,
+            font: fontSmall, x: cardX + padX, y: cy,
             color: WatermarkLayoutBase.white);
-        cy += 20;
+        cy += smallLine;
       }
     }
 
-    // Koordinat
+    // ── Koordinat ──────────────────────────────────────────────
     if (showCoordinates && hasPosition) {
-      img.drawString(src,
+      _shadowText(src,
           '${lat!.toStringAsFixed(2)}°, ${lon!.toStringAsFixed(2)}°',
-          font: smallFont, x: cardX + _padX, y: cy,
+          font: fontSmall, x: cardX + padX, y: cy,
           color: WatermarkLayoutBase.blue);
-      cy += 20;
+      cy += smallLine;
     }
 
-    // Cuaca
+    // ── Akurasi ────────────────────────────────────────────────
+    if (showAccuracy && hasPosition && acc != null) {
+      _shadowText(src,
+          'Accuracy: ±${acc.toStringAsFixed(0)} m',
+          font: fontSmall, x: cardX + padX, y: cy,
+          color: WatermarkLayoutBase.grey);
+      cy += smallLine;
+    }
+
+    // ── Cuaca ──────────────────────────────────────────────────
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather,
-          font: smallFont, x: cardX + _padX, y: cy,
+      _shadowText(src, weather,
+          font: fontSmall, x: cardX + padX, y: cy,
           color: WatermarkLayoutBase.blue);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
+  }
+
+  // ── Helper: shadow text ────────────────────────────────────────
+  void _shadowText(img.Image src, String text, {
+    required img.BitmapFont font,
+    required int x, required int y,
+    required img.Color color,
+  }) {
+    // Shadow
+    img.drawString(src, text, font: font, x: x + 2, y: y + 2,
+        color: img.ColorRgba8(0, 0, 0, 120));
+    // Teks utama
+    img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 
   List<String> _splitAddress(String address) {

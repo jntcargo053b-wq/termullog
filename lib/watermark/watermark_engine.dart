@@ -4,11 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import '../core/constants.dart';
 import 'watermark_params.dart';
-import 'layouts/watermark_layout_base.dart';
 import 'layouts/layout_simple.dart';
 
 class WatermarkEngine {
-  static final Map<String, WatermarkLayoutBase> _layouts = {
+  static final Map<String, LayoutSimple> _layouts = {
     'minimal':     LayoutSimple(),
     'dslr_corner': LayoutSimple(),
     'cinematic':   LayoutSimple(),
@@ -25,7 +24,6 @@ class WatermarkEngine {
     if (wmParams.transferable is Uint8List) {
       bytes = wmParams.transferable as Uint8List;
     } else if (wmParams.transferable != null) {
-      // Coba konversi jika perlu
       try {
         bytes = wmParams.transferable as Uint8List;
       } catch (e) {
@@ -61,7 +59,7 @@ class WatermarkEngine {
       fontSize: wmParams.fontSize,
     );
     
-    return WatermarkLayoutBase.encodeJpg(result);
+    return LayoutSimple.encodeJpg(result);
   }
 
   static Future<Uint8List> applyFromMapAsync(Map<String, dynamic> params) async {

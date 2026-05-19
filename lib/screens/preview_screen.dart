@@ -275,14 +275,14 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   // ── OSM TILE FALLBACK ─────────────────────────────────────────────
-  static Future<Uint8List?> _fetchOsmTileBytes(
-    double lat, double lng, {int zoom = 15},
-  ) async {
-    final n = pow(2, zoom).toInt();
-    final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
-    final latRad = lat * pi / 180;
-    final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
-        .toInt().clamp(0, n - 1);
+static Future<Uint8List?> _fetchOsmTileBytes(
+  double lat, double lng, {int zoom = 15}
+) async {
+  final n = pow(2, zoom).toInt();
+  final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
+  final latRad = lat * pi / 180;
+  final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
+      .toInt().clamp(0, n - 1);
 
     const subdomains = ['a', 'b', 'c'];
     final sub = subdomains[tileX % 3];

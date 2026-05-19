@@ -14,7 +14,8 @@ import 'layouts/layout_hud.dart';
 import 'layouts/layout_gps_card.dart';
 import 'layouts/layout_polaroid.dart';
 import 'layouts/layout_side_panel.dart';
-import 'layouts/layout_cinematic_v2.dart';
+// HAPUS import cinematic_v2 karena tidak digunakan
+// import 'layouts/layout_cinematic_v2.dart';
 import 'layouts/layout_timemark_style.dart';
 import 'layouts/layout_nama_baru.dart';
 
@@ -28,7 +29,8 @@ class WatermarkEngine {
     WatermarkLayout.gpsCard:        LayoutGpsCard(),
     WatermarkLayout.polaroid:       LayoutPolaroid(),
     WatermarkLayout.sidePanel:      LayoutSidePanel(),
-    WatermarkLayout.cinematicV2:    LayoutCinematicV2(),
+    // HAPUS baris cinematicV2 ini:
+    // WatermarkLayout.cinematicV2:    LayoutCinematicV2(),
     WatermarkLayout.timeMarkStyle:  LayoutTimeMarkStyle(),
     WatermarkLayout.modern:         LayoutNamaBaru(),
   };

@@ -1,12 +1,11 @@
 // lib/watermark/layouts/watermark_layout_base.dart
+import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import '../../core/constants.dart';
-import '../watermark_utils.dart';
 
 abstract class WatermarkLayoutBase {
   String get name;
   
-  // Default values yang baik
   int get padding => 14;
   int get borderRadius => 12;
   img.Color get accentColor => kColorCyan;
@@ -36,19 +35,16 @@ abstract class WatermarkLayoutBase {
     required String fontSize,
   });
 
-  // Helper method untuk encode ke JPEG
   static Uint8List encodeJpg(img.Image image, {int quality = kJpegQuality}) {
-    return img.encodeJpg(image, quality: quality);
+    return Uint8List.fromList(img.encodeJpg(image, quality: quality));
   }
 
-  // Helper method untuk decode
   static img.Image decodeOrThrow(Uint8List bytes) {
     final image = img.decodeImage(bytes);
     if (image == null) throw Exception('Failed to decode image');
     return image;
   }
 
-  // Helper untuk mendapatkan font size
   double getFontSizeValue(String fontSize) {
     switch (fontSize) {
       case 'small': return 12;
@@ -57,14 +53,12 @@ abstract class WatermarkLayoutBase {
     }
   }
 
-  // Helper untuk menentukan posisi Y
   int getYPosition(int imageHeight, int watermarkHeight, String position, int margin) {
     return position == 'bottom'
         ? imageHeight - watermarkHeight - margin
         : margin;
   }
   
-  // Async version (override jika perlu)
   Future<img.Image> applyAsync({
     required img.Image src,
     required DateTime timestamp,

@@ -10,6 +10,39 @@ abstract class WatermarkLayoutBase {
   /// Nama layout untuk debugging
   String get name;
 
+  /// 🎨 PERSONALITY LAYOUT - setiap layout menentukan sendiri posisi defaultnya
+  /// 
+  /// Nilai yang mungkin:
+  /// - 'topLeft', 'top', 'topRight'
+  /// - 'left', 'center', 'right'
+  /// - 'bottomLeft', 'bottom', 'bottomRight'
+  /// - 'fullFrame' (khusus layout yang memenuhi seluruh frame)
+  String get defaultPosition => 'bottom';
+  
+  /// 🎨 PERSONALITY LAYOUT - opacity default untuk layout ini
+  double get defaultOpacity => 0.85;
+  
+  /// 🎨 PERSONALITY LAYOUT - apakah layout ini mendukung mini map?
+  bool get supportsMiniMap => true;
+  
+  /// 🎨 PERSONALITY LAYOUT - apakah layout ini mendukung border?
+  bool get supportsBorder => true;
+  
+  /// 🎨 PERSONALITY LAYOUT - ukuran font default ('small', 'normal', 'large')
+  String get defaultFontSize => 'normal';
+  
+  /// 🎨 PERSONALITY LAYOUT - apakah layout ini menampilkan weather secara default?
+  bool get defaultShowWeather => true;
+  
+  /// 🎨 PERSONALITY LAYOUT - apakah layout ini menampilkan akurasi GPS?
+  bool get defaultShowAccuracy => true;
+  
+  /// 🎨 PERSONALITY LAYOUT - apakah layout ini menampilkan address?
+  bool get defaultShowAddress => true;
+  
+  /// 🎨 PERSONALITY LAYOUT - apakah layout ini menampilkan koordinat?
+  bool get defaultShowCoordinates => true;
+
   /// Konstanta warna (img.ColorRgba8 tidak bisa const — pakai static final)
   static final img.Color white    = img.ColorRgba8(255, 255, 255, 255);
   static final img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
@@ -167,9 +200,43 @@ abstract class WatermarkLayoutBase {
     required int contentHeight,
     int margin = 0,
   }) {
-    return watermarkPosition == 'top'
-        ? margin
-        : imageHeight - contentHeight - margin;
+    switch (watermarkPosition) {
+      case 'top':
+      case 'topLeft':
+      case 'topRight':
+        return margin;
+      case 'center':
+        return (imageHeight - contentHeight) ~/ 2;
+      case 'fullFrame':
+        return 0;
+      default: // 'bottom', 'bottomLeft', 'bottomRight', 'left', 'right'
+        return imageHeight - contentHeight - margin;
+    }
+  }
+  
+  /// Hitung X posisi berdasarkan watermarkPosition
+  static int resolveXStart({
+    required String watermarkPosition,
+    required int imageWidth,
+    required int contentWidth,
+    int margin = 0,
+  }) {
+    switch (watermarkPosition) {
+      case 'topLeft':
+      case 'bottomLeft':
+      case 'left':
+        return margin;
+      case 'topRight':
+      case 'bottomRight':
+      case 'right':
+        return imageWidth - contentWidth - margin;
+      case 'center':
+        return (imageWidth - contentWidth) ~/ 2;
+      case 'fullFrame':
+        return 0;
+      default: // 'top', 'bottom'
+        return margin;
+    }
   }
 
   /// Apakah watermark berada di tepi atas gambar?
@@ -177,5 +244,36 @@ abstract class WatermarkLayoutBase {
   /// Ini adalah "position-aware rendering" — bukan perubahan jenis layout.
   static bool isAtTopEdge(int yStart, int imageHeight) {
     return yStart < imageHeight / 2;
+  }
+  
+  /// Apakah watermark berada di tepi kiri gambar?
+  static bool isAtLeftEdge(int xStart, int imageWidth) {
+    return xStart < imageWidth / 2;
+  }
+  
+  /// Dapatkan alignment berdasarkan watermarkPosition
+  static Alignment getAlignment(String watermarkPosition) {
+    switch (watermarkPosition) {
+      case 'topLeft':
+        return Alignment.topLeft;
+      case 'top':
+        return Alignment.topCenter;
+      case 'topRight':
+        return Alignment.topRight;
+      case 'left':
+        return Alignment.centerLeft;
+      case 'center':
+        return Alignment.center;
+      case 'right':
+        return Alignment.centerRight;
+      case 'bottomLeft':
+        return Alignment.bottomLeft;
+      case 'bottom':
+        return Alignment.bottomCenter;
+      case 'bottomRight':
+        return Alignment.bottomRight;
+      default:
+        return Alignment.bottomCenter;
+    }
   }
 }

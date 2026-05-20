@@ -6,31 +6,24 @@ import 'package:image/image.dart' as img;
 import '../core/constants.dart';
 import 'watermark_params.dart';
 import 'layouts/watermark_layout_base.dart';
-import 'layouts/layout_film_strip.dart';
-import 'layouts/layout_dslr_corner.dart';
+
+// IMPORT LAYOUT BARU (6 layout saja)
 import 'layouts/layout_cinematic.dart';
-import 'layouts/layout_field_survey.dart';
 import 'layouts/layout_hud.dart';
-import 'layouts/layout_gps_card.dart';
 import 'layouts/layout_polaroid.dart';
-import 'layouts/layout_side_panel.dart';
-import 'layouts/layout_timemark_style.dart';
-import 'layouts/layout_nama_baru.dart';
+import 'layouts/layout_documentary.dart';
+import 'layouts/layout_leica.dart';
+import 'layouts/layout_survey.dart';
 
 class WatermarkEngine {
-  // Layout MAP berdasarkan typeString
+  // Layout MAP berdasarkan typeString - HANYA 6 LAYOUT BARU
   static final Map<String, WatermarkLayoutBase> _layouts = {
-    'minimal':        LayoutFilmStrip(),
-    'dslr_corner':    LayoutDSLRCorner(),
-    'gps_timestamp':  LayoutCinematic(),
-    'field_survey':   LayoutFieldSurvey(),
-    'hud':            LayoutHUD(),
-    'gps_card':       LayoutGpsCard(),
-    'polaroid':       LayoutPolaroid(),
-    'side_panel':     LayoutSidePanel(),
-    'cinematic':      LayoutCinematic(),
-    'timemark_style': LayoutTimeMarkStyle(),
-    'modern':         LayoutNamaBaru(),
+    'cinematic':    LayoutCinematic(),
+    'hud':          LayoutHUD(),
+    'polaroid':     LayoutPolaroid(),
+    'documentary':  LayoutDocumentary(),
+    'leica':        LayoutLeica(),
+    'survey':       LayoutSurvey(),
   };
 
   static Uint8List applyFromMap(Map<String, dynamic> params) {
@@ -77,24 +70,24 @@ class WatermarkEngine {
       debugPrint('🎨 Using USER override opacity: $finalOpacity');
     }
 
-    // SHOW WEATHER: personality atau user?
-    finalShowWeather = wmParams.showWeather ?? layout.defaultShowWeather;
+    // SHOW WEATHER: default true jika tidak ditentukan
+    finalShowWeather = wmParams.showWeather ?? true;
     
-    // SHOW ACCURACY: personality atau user?
-    finalShowAccuracy = wmParams.showAccuracy ?? layout.defaultShowAccuracy;
+    // SHOW ACCURACY: default true jika tidak ditentukan
+    finalShowAccuracy = wmParams.showAccuracy ?? true;
     
-    // SHOW ADDRESS: personality atau user?
-    finalShowAddress = wmParams.showAddress ?? layout.defaultShowAddress;
+    // SHOW ADDRESS: default true jika tidak ditentukan
+    finalShowAddress = wmParams.showAddress ?? true;
     
-    // SHOW COORDINATES: personality atau user?
-    finalShowCoordinates = wmParams.showCoordinates ?? layout.defaultShowCoordinates;
+    // SHOW COORDINATES: default true jika tidak ditentukan
+    finalShowCoordinates = wmParams.showCoordinates ?? true;
     
     // SHOW BORDER: layout bisa tidak mendukung border
     finalShowBorder = layout.supportsBorder && (wmParams.showBorder ?? true);
     
-    // FONT SIZE: personality atau user?
+    // FONT SIZE: default 'normal'
     finalFontSize = wmParams.fontSize.isEmpty || wmParams.fontSize == 'default' 
-        ? layout.defaultFontSize 
+        ? 'normal' 
         : wmParams.fontSize;
     
     // SHOW MINI MAP: layout bisa tidak mendukung mini map
@@ -179,24 +172,24 @@ class WatermarkEngine {
       finalOpacity = wmParams.opacity;
     }
 
-    // SHOW WEATHER: personality atau user?
-    finalShowWeather = wmParams.showWeather ?? layout.defaultShowWeather;
+    // SHOW WEATHER: default true jika tidak ditentukan
+    finalShowWeather = wmParams.showWeather ?? true;
     
-    // SHOW ACCURACY: personality atau user?
-    finalShowAccuracy = wmParams.showAccuracy ?? layout.defaultShowAccuracy;
+    // SHOW ACCURACY: default true jika tidak ditentukan
+    finalShowAccuracy = wmParams.showAccuracy ?? true;
     
-    // SHOW ADDRESS: personality atau user?
-    finalShowAddress = wmParams.showAddress ?? layout.defaultShowAddress;
+    // SHOW ADDRESS: default true jika tidak ditentukan
+    finalShowAddress = wmParams.showAddress ?? true;
     
-    // SHOW COORDINATES: personality atau user?
-    finalShowCoordinates = wmParams.showCoordinates ?? layout.defaultShowCoordinates;
+    // SHOW COORDINATES: default true jika tidak ditentukan
+    finalShowCoordinates = wmParams.showCoordinates ?? true;
     
     // SHOW BORDER: layout bisa tidak mendukung border
     finalShowBorder = layout.supportsBorder && (wmParams.showBorder ?? true);
     
-    // FONT SIZE: personality atau user?
+    // FONT SIZE: default 'normal'
     finalFontSize = wmParams.fontSize.isEmpty || wmParams.fontSize == 'default' 
-        ? layout.defaultFontSize 
+        ? 'normal' 
         : wmParams.fontSize;
     
     // SHOW MINI MAP: layout bisa tidak mendukung mini map
@@ -241,14 +234,14 @@ class WatermarkEngine {
     required String layoutType,
     String address = '',
     String weather = '',
-    bool? showWeather,  // ← nullable, akan pakai personality jika null
-    bool? showAccuracy, // ← nullable
-    bool? showAddress,  // ← nullable
-    bool? showCoordinates, // ← nullable
-    double? opacity,    // ← nullable, -1 artinya pakai personality
+    bool? showWeather,
+    bool? showAccuracy,
+    bool? showAddress,
+    bool? showCoordinates,
+    double? opacity,
     bool? showBorder,
     String? fontSize,
-    String? watermarkPosition,  // ← nullable, 'default' artinya pakai personality
+    String? watermarkPosition,
     bool? showMiniMap,
     double? lat,
     double? lon,
@@ -270,10 +263,10 @@ class WatermarkEngine {
       showAccuracy: showAccuracy,
       showAddress: showAddress,
       showCoordinates: showCoordinates,
-      opacity: opacity ?? -1,  // -1 = use personality
+      opacity: opacity ?? -1,
       showBorder: showBorder,
-      fontSize: fontSize ?? 'default',  // 'default' = use personality
-      watermarkPosition: watermarkPosition ?? 'default',  // 'default' = use personality
+      fontSize: fontSize ?? 'default',
+      watermarkPosition: watermarkPosition ?? 'default',
       showMiniMap: showMiniMap ?? false,
       lat: lat,
       lon: lon,
@@ -329,10 +322,33 @@ class WatermarkEngine {
   }
   
   static WatermarkLayoutBase? _getLayout(String layoutType) {
-    final layout = _layouts[layoutType];
+    // Migrasi layout lama ke baru
+    String mappedType = layoutType;
+    switch (layoutType) {
+      case 'minimal':
+      case 'timeMarkStyle':
+        mappedType = 'documentary';
+        break;
+      case 'dslr_corner':
+        mappedType = 'leica';
+        break;
+      case 'gps_timestamp':
+      case 'side_panel':
+      case 'modern':
+      case 'gps_card':
+        mappedType = 'cinematic';
+        break;
+      case 'field_survey':
+        mappedType = 'survey';
+        break;
+      default:
+        mappedType = layoutType;
+    }
+    
+    final layout = _layouts[mappedType];
     if (layout == null) {
-      debugPrint('⚠️ Layout type not found: "$layoutType", using "modern" as fallback');
-      return _layouts['modern'];
+      debugPrint('⚠️ Layout type not found: "$layoutType" -> mapped to "$mappedType", using "cinematic" as fallback');
+      return _layouts['cinematic'];
     }
     return layout;
   }

@@ -54,7 +54,7 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     final bool isTopEdge = WatermarkLayoutBase.isAtTopEdge(gradY0, src.height);
 
     // ── Gradient background ───────────────────────────────────────
-    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTop: isTopEdge, opacity: opacity);
+    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTopEdge: isTopEdge, opacity: opacity);
 
     // ── Divider line ──────────────────────────────────────────────
     final int divY = isTopEdge ? gradH - (40 * scale).round() : gradY0 + (36 * scale).round();

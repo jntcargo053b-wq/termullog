@@ -39,19 +39,47 @@ class SettingsService {
     
     String? savedType = prefs.getString(_keyWatermarkLayout);
     
-    // Migrasi dari key lama (index)
+    // Migrasi dari key lama (index) jika ada
     if (savedType == null) {
       final oldIndex = prefs.getInt('watermark_layout');
       if (oldIndex != null) {
-        final oldLayout = WatermarkLayoutExtension.fromIndex(oldIndex);
-        savedType = oldLayout.typeString;
+        // Mapping manual dari index lama ke typeString baru
+        final migratedType = _migrateFromOldIndex(oldIndex);
+        savedType = migratedType;
         await prefs.setString(_keyWatermarkLayout, savedType);
         await prefs.remove('watermark_layout');
         debugPrint('✅ Migrated from index $oldIndex to $savedType');
       }
     }
     
-    return WatermarkLayoutExtension.fromTypeString(savedType ?? 'modern');
+    // Fallback ke cinematic jika tidak ada
+    return WatermarkLayoutExtension.fromTypeString(savedType ?? 'cinematic');
+  }
+
+  /// Migrasi dari index layout lama (0-10) ke typeString baru
+  static String _migrateFromOldIndex(int oldIndex) {
+    switch (oldIndex) {
+      case 0: // minimal
+      case 9: // timeMarkStyle
+        return 'documentary';
+      case 1: // dslrCorner
+        return 'leica';
+      case 2: // gpsTimestamp
+      case 7: // sidePanel
+      case 10: // modern
+      case 5: // gpsCard
+        return 'cinematic';
+      case 3: // fieldSurvey
+        return 'survey';
+      case 4: // hud
+        return 'hud';
+      case 6: // polaroid
+        return 'polaroid';
+      case 8: // cinematic (lama) – tetap cinematic
+        return 'cinematic';
+      default:
+        return 'cinematic';
+    }
   }
 
   static Future<void> setWatermarkLayout(WatermarkLayout layout) async {
@@ -105,7 +133,7 @@ class SettingsService {
   // ============================================================
   // POSISI WATERMARK
   // ============================================================
-  static const _validPositions = {'top', 'bottom'};
+  static const _validPositions = {'top', 'bottom', 'topLeft', 'bottomLeft', 'bottomRight', 'fullFrame'};
 
   static Future<String> getWatermarkPosition() async {
     final prefs = await _instance();
@@ -289,7 +317,7 @@ class SettingsService {
   static Future<void> resetAllSettings() async {
     final prefs = await _instance();
     await Future.wait([
-      prefs.setString(_keyWatermarkLayout, WatermarkLayout.modern.typeString),
+      prefs.setString(_keyWatermarkLayout, WatermarkLayout.cinematic.typeString),
       prefs.setBool(_keyShowWeather, true),
       prefs.setBool(_keyShowAccuracy, true),
       prefs.setBool(_keyShowAddress, true),

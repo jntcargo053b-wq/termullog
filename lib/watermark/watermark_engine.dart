@@ -41,19 +41,78 @@ class WatermarkEngine {
     
     if (src == null) return bytes ?? Uint8List(0);
     
-    // ✅ LAYOUT dipilih berdasarkan typeString, BUKAN position!
+    // ✅ LAYOUT dipilih berdasarkan typeString
     final layout = _getLayout(wmParams.layoutType);
     if (layout == null) {
       return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
     }
 
+    // 🎨 PERSONALITY LAYOUT - gunakan default dari layout jika user tidak menentukan
+    final String finalPosition;
+    final double finalOpacity;
+    final bool finalShowWeather;
+    final bool finalShowAccuracy;
+    final bool finalShowAddress;
+    final bool finalShowCoordinates;
+    final bool finalShowBorder;
+    final String finalFontSize;
+    final bool finalShowMiniMap;
+
+    // POSISI: gunakan personality layout jika user tidak menentukan atau 'default'
+    if (wmParams.watermarkPosition.isEmpty || 
+        wmParams.watermarkPosition == 'default') {
+      finalPosition = layout.defaultPosition;
+      debugPrint('🎨 Using LAYOUT personality position: $finalPosition');
+    } else {
+      finalPosition = wmParams.watermarkPosition;
+      debugPrint('🎨 Using USER override position: $finalPosition');
+    }
+
+    // OPACITY: gunakan personality layout jika user tidak override
+    if (wmParams.opacity < 0) {
+      finalOpacity = layout.defaultOpacity;
+      debugPrint('🎨 Using LAYOUT personality opacity: $finalOpacity');
+    } else {
+      finalOpacity = wmParams.opacity;
+      debugPrint('🎨 Using USER override opacity: $finalOpacity');
+    }
+
+    // SHOW WEATHER: personality atau user?
+    finalShowWeather = wmParams.showWeather ?? layout.defaultShowWeather;
+    
+    // SHOW ACCURACY: personality atau user?
+    finalShowAccuracy = wmParams.showAccuracy ?? layout.defaultShowAccuracy;
+    
+    // SHOW ADDRESS: personality atau user?
+    finalShowAddress = wmParams.showAddress ?? layout.defaultShowAddress;
+    
+    // SHOW COORDINATES: personality atau user?
+    finalShowCoordinates = wmParams.showCoordinates ?? layout.defaultShowCoordinates;
+    
+    // SHOW BORDER: layout bisa tidak mendukung border
+    finalShowBorder = layout.supportsBorder && (wmParams.showBorder ?? true);
+    
+    // FONT SIZE: personality atau user?
+    finalFontSize = wmParams.fontSize.isEmpty || wmParams.fontSize == 'default' 
+        ? layout.defaultFontSize 
+        : wmParams.fontSize;
+    
+    // SHOW MINI MAP: layout bisa tidak mendukung mini map
+    finalShowMiniMap = layout.supportsMiniMap && (wmParams.showMiniMap ?? false);
+
     debugPrint('==========================');
     debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
-    debugPrint('📍 POSITION: ${wmParams.watermarkPosition}');
+    debugPrint('📍 POSITION: $finalPosition (personality: ${layout.defaultPosition})');
+    debugPrint('🎨 OPACITY: $finalOpacity (personality: ${layout.defaultOpacity})');
+    debugPrint('🖼️  SHOW WEATHER: $finalShowWeather');
+    debugPrint('🎯 SHOW ACCURACY: $finalShowAccuracy');
+    debugPrint('📍 SHOW ADDRESS: $finalShowAddress');
+    debugPrint('🗺️  SHOW COORDINATES: $finalShowCoordinates');
+    debugPrint('📏 FONT SIZE: $finalFontSize');
+    debugPrint('🗺️  MINI MAP: $finalShowMiniMap');
     debugPrint('==========================');
 
     try {
-      // ✅ POSISI hanya menentukan letak, BUKAN jenis layout!
       return layout.apply(
         src: _resizeIfNeeded(src),
         timestamp: wmParams.timestamp,
@@ -63,16 +122,16 @@ class WatermarkEngine {
         acc: wmParams.acc,
         address: wmParams.address,
         weather: wmParams.weather,
-        showWeather: wmParams.showWeather,
-        showAccuracy: wmParams.showAccuracy,
-        watermarkPosition: wmParams.watermarkPosition,  // ← POSISI terpisah!
-        showMiniMap: wmParams.showMiniMap,
+        showWeather: finalShowWeather,
+        showAccuracy: finalShowAccuracy,
+        watermarkPosition: finalPosition,
+        showMiniMap: finalShowMiniMap,
         mapBytes: mapBytes,
-        showAddress: wmParams.showAddress,
-        showCoordinates: wmParams.showCoordinates,
-        opacity: wmParams.opacity,
-        showBorder: wmParams.showBorder,
-        fontSize: wmParams.fontSize,
+        showAddress: finalShowAddress,
+        showCoordinates: finalShowCoordinates,
+        opacity: finalOpacity,
+        showBorder: finalShowBorder,
+        fontSize: finalFontSize,
       );
     } catch (e, st) {
       debugPrint('❌ SYNC error: $e\n$st');
@@ -88,19 +147,68 @@ class WatermarkEngine {
     
     if (src == null) return bytes ?? Uint8List(0);
     
-    // ✅ LAYOUT dipilih berdasarkan typeString, BUKAN position!
+    // ✅ LAYOUT dipilih berdasarkan typeString
     final layout = _getLayout(wmParams.layoutType);
     if (layout == null) {
       return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
     }
 
+    // 🎨 PERSONALITY LAYOUT - gunakan default dari layout jika user tidak menentukan
+    final String finalPosition;
+    final double finalOpacity;
+    final bool finalShowWeather;
+    final bool finalShowAccuracy;
+    final bool finalShowAddress;
+    final bool finalShowCoordinates;
+    final bool finalShowBorder;
+    final String finalFontSize;
+    final bool finalShowMiniMap;
+
+    // POSISI: gunakan personality layout jika user tidak menentukan atau 'default'
+    if (wmParams.watermarkPosition.isEmpty || 
+        wmParams.watermarkPosition == 'default') {
+      finalPosition = layout.defaultPosition;
+    } else {
+      finalPosition = wmParams.watermarkPosition;
+    }
+
+    // OPACITY: gunakan personality layout jika user tidak override
+    if (wmParams.opacity < 0) {
+      finalOpacity = layout.defaultOpacity;
+    } else {
+      finalOpacity = wmParams.opacity;
+    }
+
+    // SHOW WEATHER: personality atau user?
+    finalShowWeather = wmParams.showWeather ?? layout.defaultShowWeather;
+    
+    // SHOW ACCURACY: personality atau user?
+    finalShowAccuracy = wmParams.showAccuracy ?? layout.defaultShowAccuracy;
+    
+    // SHOW ADDRESS: personality atau user?
+    finalShowAddress = wmParams.showAddress ?? layout.defaultShowAddress;
+    
+    // SHOW COORDINATES: personality atau user?
+    finalShowCoordinates = wmParams.showCoordinates ?? layout.defaultShowCoordinates;
+    
+    // SHOW BORDER: layout bisa tidak mendukung border
+    finalShowBorder = layout.supportsBorder && (wmParams.showBorder ?? true);
+    
+    // FONT SIZE: personality atau user?
+    finalFontSize = wmParams.fontSize.isEmpty || wmParams.fontSize == 'default' 
+        ? layout.defaultFontSize 
+        : wmParams.fontSize;
+    
+    // SHOW MINI MAP: layout bisa tidak mendukung mini map
+    finalShowMiniMap = layout.supportsMiniMap && (wmParams.showMiniMap ?? false);
+
     debugPrint('==========================');
     debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
-    debugPrint('📍 POSITION: ${wmParams.watermarkPosition}');
+    debugPrint('📍 POSITION: $finalPosition (personality: ${layout.defaultPosition})');
+    debugPrint('🎨 OPACITY: $finalOpacity (personality: ${layout.defaultOpacity})');
     debugPrint('==========================');
 
     try {
-      // ✅ POSISI hanya menentukan letak, BUKAN jenis layout!
       return await layout.applyAsync(
         src: _resizeIfNeeded(src),
         timestamp: wmParams.timestamp,
@@ -110,16 +218,16 @@ class WatermarkEngine {
         acc: wmParams.acc,
         address: wmParams.address,
         weather: wmParams.weather,
-        showWeather: wmParams.showWeather,
-        showAccuracy: wmParams.showAccuracy,
-        watermarkPosition: wmParams.watermarkPosition,  // ← POSISI terpisah!
-        showMiniMap: wmParams.showMiniMap,
+        showWeather: finalShowWeather,
+        showAccuracy: finalShowAccuracy,
+        watermarkPosition: finalPosition,
+        showMiniMap: finalShowMiniMap,
         mapBytes: mapBytes,
-        showAddress: wmParams.showAddress,
-        showCoordinates: wmParams.showCoordinates,
-        opacity: wmParams.opacity,
-        showBorder: wmParams.showBorder,
-        fontSize: wmParams.fontSize,
+        showAddress: finalShowAddress,
+        showCoordinates: finalShowCoordinates,
+        opacity: finalOpacity,
+        showBorder: finalShowBorder,
+        fontSize: finalFontSize,
       );
     } catch (e, st) {
       debugPrint('❌ ASYNC error: $e\n$st');
@@ -130,18 +238,18 @@ class WatermarkEngine {
   static WatermarkParams createParams({
     required Uint8List imageBytes,
     required DateTime timestamp,
-    required String layoutType,  // ← String layout, BUKAN position!
+    required String layoutType,
     String address = '',
     String weather = '',
-    bool showWeather = true,
-    bool showAccuracy = true,
-    bool showAddress = true,
-    bool showCoordinates = true,
-    double opacity = 0.85,
-    bool showBorder = true,
-    String fontSize = 'normal',
-    String watermarkPosition = 'bottom',  // ← POSISI terpisah!
-    bool showMiniMap = false,
+    bool? showWeather,  // ← nullable, akan pakai personality jika null
+    bool? showAccuracy, // ← nullable
+    bool? showAddress,  // ← nullable
+    bool? showCoordinates, // ← nullable
+    double? opacity,    // ← nullable, -1 artinya pakai personality
+    bool? showBorder,
+    String? fontSize,
+    String? watermarkPosition,  // ← nullable, 'default' artinya pakai personality
+    bool? showMiniMap,
     double? lat,
     double? lon,
     double? acc,
@@ -157,16 +265,16 @@ class WatermarkEngine {
       timestamp: timestamp,
       address: address,
       weather: weather,
-      layoutType: layoutType,  // ← layout dipilih user
+      layoutType: layoutType,
       showWeather: showWeather,
       showAccuracy: showAccuracy,
       showAddress: showAddress,
       showCoordinates: showCoordinates,
-      opacity: opacity,
+      opacity: opacity ?? -1,  // -1 = use personality
       showBorder: showBorder,
-      fontSize: fontSize,
-      watermarkPosition: watermarkPosition,  // ← position terpisah!
-      showMiniMap: showMiniMap,
+      fontSize: fontSize ?? 'default',  // 'default' = use personality
+      watermarkPosition: watermarkPosition ?? 'default',  // 'default' = use personality
+      showMiniMap: showMiniMap ?? false,
       lat: lat,
       lon: lon,
       acc: acc,

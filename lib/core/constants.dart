@@ -10,109 +10,129 @@ const int kSigMaxWidth = 260;
 const int kLogoMaxWidth = 90;
 
 // ============================================================
-// WATERMARK LAYOUT STYLE (VERSI SEDERHANA)
+// WATERMARK LAYOUT STYLE
 // ============================================================
 enum WatermarkLayout {
-  minimal,
-  dslrCorner,
-  cinematic,
-  hud,
-  polaroid,
-  modern,
+  minimal,          // 0 - Film Strip
+  dslrCorner,       // 1 - DSLR Corner
+  gpsTimestamp,     // 2 - GPS Timestamp
+  fieldSurvey,      // 3 - Field Survey
+  hud,              // 4 - HUD Modern
+  gpsCard,          // 5 - GPS Card
+  polaroid,         // 6 - Polaroid
+  sidePanel,        // 7 - Side Panel
+  cinematic,        // 8 - Cinematic
+  timeMarkStyle,    // 9 - TimeMark Style
+  modern,           // 10 - Modern Clean Card
 }
 
 // ============================================================
 // LAYOUT CATEGORY
 // ============================================================
 enum LayoutCategory {
-  classic,
-  modern,
-  cinematic,
-  data,
-  corner,
+  classic,    // minimal, polaroid
+  modern,     // hud, gpsCard, modern
+  cinematic,  // cinematic, gpsTimestamp
+  data,       // fieldSurvey, timeMarkStyle
+  corner,     // dslrCorner, sidePanel
 }
 
 extension WatermarkLayoutExtension on WatermarkLayout {
   static const List<WatermarkLayout> all = [
     WatermarkLayout.minimal,
     WatermarkLayout.dslrCorner,
-    WatermarkLayout.cinematic,
+    WatermarkLayout.gpsTimestamp,
+    WatermarkLayout.fieldSurvey,
     WatermarkLayout.hud,
+    WatermarkLayout.gpsCard,
     WatermarkLayout.polaroid,
+    WatermarkLayout.sidePanel,
+    WatermarkLayout.cinematic,
+    WatermarkLayout.timeMarkStyle,
     WatermarkLayout.modern,
   ];
 
-  /// Get layout category
   LayoutCategory get category {
     switch (this) {
       case WatermarkLayout.minimal:
       case WatermarkLayout.polaroid:
         return LayoutCategory.classic;
       case WatermarkLayout.hud:
+      case WatermarkLayout.gpsCard:
       case WatermarkLayout.modern:
         return LayoutCategory.modern;
       case WatermarkLayout.cinematic:
+      case WatermarkLayout.gpsTimestamp:
         return LayoutCategory.cinematic;
+      case WatermarkLayout.fieldSurvey:
+      case WatermarkLayout.timeMarkStyle:
+        return LayoutCategory.data;
       case WatermarkLayout.dslrCorner:
+      case WatermarkLayout.sidePanel:
         return LayoutCategory.corner;
     }
   }
 
-  /// Display name for UI
   String get displayName {
     switch (this) {
-      case WatermarkLayout.minimal:     return 'Minimal';
-      case WatermarkLayout.dslrCorner:  return 'DSLR Corner';
-      case WatermarkLayout.cinematic:   return 'Cinematic';
-      case WatermarkLayout.hud:         return 'HUD Modern';
-      case WatermarkLayout.polaroid:    return 'Polaroid';
-      case WatermarkLayout.modern:      return 'Modern Clean Card';
+      case WatermarkLayout.minimal:        return 'Film Strip';
+      case WatermarkLayout.dslrCorner:     return 'DSLR Corner';
+      case WatermarkLayout.gpsTimestamp:   return 'GPS Timestamp';
+      case WatermarkLayout.fieldSurvey:    return 'Field Survey';
+      case WatermarkLayout.hud:            return 'HUD Modern';
+      case WatermarkLayout.gpsCard:        return 'GPS Card';
+      case WatermarkLayout.polaroid:       return 'Polaroid';
+      case WatermarkLayout.sidePanel:      return 'Side Panel';
+      case WatermarkLayout.cinematic:      return 'Cinematic';
+      case WatermarkLayout.timeMarkStyle:  return 'TimeMark Style';
+      case WatermarkLayout.modern:         return 'Modern Clean Card';
     }
   }
 
-  /// Description for each layout
   String get description {
     switch (this) {
-      case WatermarkLayout.minimal:
-        return 'Gaya minimalis sederhana tanpa background';
-      case WatermarkLayout.dslrCorner:
-        return 'Gaya pojok kamera DSLR dengan informasi lengkap';
-      case WatermarkLayout.cinematic:
-        return 'Gaya sinematik dengan gradasi halus dan elegan';
-      case WatermarkLayout.hud:
+      case WatermarkLayout.minimal:        
+        return 'Gaya strip film dengan border biru profesional';
+      case WatermarkLayout.dslrCorner:     
+        return 'Informasi seperti tampilan kamera DSLR di pojok';
+      case WatermarkLayout.gpsTimestamp:   
+        return 'Tampilan timestamp GPS yang bersih dan profesional';
+      case WatermarkLayout.fieldSurvey:    
+        return 'Gaya form survey dengan tabel data terstruktur';
+      case WatermarkLayout.hud:            
         return 'Heads-Up Display modern dengan efek transparan';
-      case WatermarkLayout.polaroid:
+      case WatermarkLayout.gpsCard:        
+        return 'Panel GPS dengan map strip adaptif';
+      case WatermarkLayout.polaroid:       
         return 'Gaya polaroid klasik dengan bingkai ivory';
-      case WatermarkLayout.modern:
+      case WatermarkLayout.sidePanel:      
+        return 'Panel samping vertikal dengan jam besar';
+      case WatermarkLayout.cinematic:      
+        return 'Gaya sinematik dengan gradasi halus dan elegan';
+      case WatermarkLayout.timeMarkStyle:  
+        return 'Gaya GPS TimeMark Camera dengan font modern';
+      case WatermarkLayout.modern:         
         return 'Desain bersih, navy gelap, aksen teal modern';
     }
   }
 
-  /// Preview emoji/icon for UI
   String get previewIcon {
     switch (this) {
-      case WatermarkLayout.minimal:     return '✨';
-      case WatermarkLayout.dslrCorner:  return '📷';
-      case WatermarkLayout.cinematic:   return '🎬';
-      case WatermarkLayout.hud:         return '🎮';
-      case WatermarkLayout.polaroid:    return '🖼️';
-      case WatermarkLayout.modern:      return '💳';
+      case WatermarkLayout.minimal:        return '🎞️';
+      case WatermarkLayout.dslrCorner:     return '📷';
+      case WatermarkLayout.gpsTimestamp:   return '📍';
+      case WatermarkLayout.fieldSurvey:    return '📋';
+      case WatermarkLayout.hud:            return '🎮';
+      case WatermarkLayout.gpsCard:        return '🛰️';
+      case WatermarkLayout.polaroid:       return '🖼️';
+      case WatermarkLayout.sidePanel:      return '📱';
+      case WatermarkLayout.cinematic:      return '🎬';
+      case WatermarkLayout.timeMarkStyle:  return '⏱️';
+      case WatermarkLayout.modern:         return '✨';
     }
   }
 
-  /// Get string identifier for safe storage
-  String get typeString {
-    switch (this) {
-      case WatermarkLayout.minimal:     return 'minimal';
-      case WatermarkLayout.dslrCorner:  return 'dslr_corner';
-      case WatermarkLayout.cinematic:   return 'cinematic';
-      case WatermarkLayout.hud:         return 'hud';
-      case WatermarkLayout.polaroid:    return 'polaroid';
-      case WatermarkLayout.modern:      return 'modern';
-    }
-  }
-
-  /// Get layout by index value (for serialization) - LEGACY
+  /// LEGACY - Gunakan typeString untuk penyimpanan baru
   static WatermarkLayout fromIndex(int index) {
     if (index >= 0 && index < all.length) {
       return all[index];
@@ -120,35 +140,51 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     return WatermarkLayout.modern;
   }
 
-  /// Get integer index (for serialization) - LEGACY
+  /// LEGACY - Gunakan typeString untuk penyimpanan baru
   int get index {
     return all.indexOf(this);
   }
 
-  /// Get layout from string identifier (safe)
-  static WatermarkLayout fromTypeString(String type) {
-    switch (type) {
-      case 'minimal':
-        return WatermarkLayout.minimal;
-      case 'dslr_corner':
-        return WatermarkLayout.dslrCorner;
-      case 'cinematic':
-        return WatermarkLayout.cinematic;
-      case 'hud':
-        return WatermarkLayout.hud;
-      case 'polaroid':
-        return WatermarkLayout.polaroid;
-      case 'modern':
-        return WatermarkLayout.modern;
-      default:
-        return WatermarkLayout.modern;
+  /// Penyimpanan aman menggunakan String
+  String get typeString {
+    switch (this) {
+      case WatermarkLayout.minimal:        return 'minimal';
+      case WatermarkLayout.dslrCorner:     return 'dslr_corner';
+      case WatermarkLayout.gpsTimestamp:   return 'gps_timestamp';
+      case WatermarkLayout.fieldSurvey:    return 'field_survey';
+      case WatermarkLayout.hud:            return 'hud';
+      case WatermarkLayout.gpsCard:        return 'gps_card';
+      case WatermarkLayout.polaroid:       return 'polaroid';
+      case WatermarkLayout.sidePanel:      return 'side_panel';
+      case WatermarkLayout.cinematic:      return 'cinematic';
+      case WatermarkLayout.timeMarkStyle:  return 'timemark_style';
+      case WatermarkLayout.modern:         return 'modern';
     }
   }
 
-  /// Check if layout supports dark theme well
+  /// Membaca dari String (aman)
+  static WatermarkLayout fromTypeString(String type) {
+    switch (type) {
+      case 'minimal':        return WatermarkLayout.minimal;
+      case 'dslr_corner':    return WatermarkLayout.dslrCorner;
+      case 'gps_timestamp':  return WatermarkLayout.gpsTimestamp;
+      case 'field_survey':   return WatermarkLayout.fieldSurvey;
+      case 'hud':            return WatermarkLayout.hud;
+      case 'gps_card':       return WatermarkLayout.gpsCard;
+      case 'polaroid':       return WatermarkLayout.polaroid;
+      case 'side_panel':     return WatermarkLayout.sidePanel;
+      case 'cinematic':      return WatermarkLayout.cinematic;
+      case 'timemark_style': return WatermarkLayout.timeMarkStyle;
+      case 'modern':         return WatermarkLayout.modern;
+      default:               return WatermarkLayout.modern;
+    }
+  }
+
   bool get supportsDarkTheme {
     switch (this) {
       case WatermarkLayout.hud:
+      case WatermarkLayout.gpsCard:
+      case WatermarkLayout.sidePanel:
       case WatermarkLayout.modern:
         return true;
       default:
@@ -156,11 +192,11 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  /// Check if layout supports light theme well
   bool get supportsLightTheme {
     switch (this) {
       case WatermarkLayout.polaroid:
       case WatermarkLayout.minimal:
+      case WatermarkLayout.fieldSurvey:
         return true;
       default:
         return false;
@@ -169,14 +205,10 @@ extension WatermarkLayoutExtension on WatermarkLayout {
 }
 
 // ============================================================
-// WATERMARK THEME (GLOBAL STYLE)
+// WATERMARK THEME
 // ============================================================
 enum WatermarkTheme {
-  dark,       // Tema gelap modern
-  light,      // Tema terang bersih
-  kodak,      // Tema retro Kodak
-  cinematic,  // Tema sinematik
-  survey,     // Tema survey profesional
+  dark, light, kodak, cinematic, survey,
 }
 
 extension WatermarkThemeExtension on WatermarkTheme {
@@ -192,7 +224,7 @@ extension WatermarkThemeExtension on WatermarkTheme {
 }
 
 // ============================================================
-// WATERMARK LAYOUT GEOMETRY
+// GEOMETRY
 // ============================================================
 const int kPanelPaddingX = 25;
 const int kSidebarPadX = 18;
@@ -211,10 +243,9 @@ const int kMaxAddressLengthShort = 38;
 const int kMaxAddressLengthFilmStrip = 42;
 
 // ============================================================
-// WATERMARK COLOURS (untuk package image)
+// COLORS (package image)
 // ============================================================
 final img.Color kColorWhite = img.ColorRgb8(255, 255, 255);
-final img.Color kColorWhite70 = img.ColorRgba8(255, 255, 255, 180);
 final img.Color kColorCyan = img.ColorRgb8(0, 184, 148);
 final img.Color kColorGrey = img.ColorRgb8(210, 210, 210);
 final img.Color kColorDarkBg = img.ColorRgba8(15, 23, 42, 230);
@@ -236,13 +267,9 @@ final img.Color kColorDarkText = img.ColorRgb8(40, 40, 40);
 final img.Color kColorNavy = img.ColorRgba8(10, 15, 40, 240);
 final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
 final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
-final img.Color kColorBlue = img.ColorRgb8(0, 120, 255);
-final img.Color kColorGreen = img.ColorRgb8(0, 200, 100);
-final img.Color kColorRed = img.ColorRgb8(255, 60, 60);
-final img.Color kColorOrange = img.ColorRgb8(255, 140, 0);
 
 // ============================================================
-// UI COLOURS (Flutter Widget)
+// UI COLORS (Flutter)
 // ============================================================
 const int kColorNavyUi = 0xFF1B4F72;
 const int kColorNavyDarkUi = 0xFF0D2137;
@@ -279,17 +306,4 @@ img.Color getAccuracyColor(double accuracy) {
   } else {
     return kColorGrey;
   }
-}
-
-// ============================================================
-// VALIDATION (SEDERHANA)
-// ============================================================
-bool validateSettings() {
-  assert(kJpegQuality >= 0 && kJpegQuality <= 100, 
-    'JPEG quality must be between 0 and 100');
-  assert(kMaxOutputWidth > 0, 
-    'Max output width must be positive');
-  assert(kGpsTimeoutSeconds > 0, 
-    'GPS timeout must be positive');
-  return true;
 }

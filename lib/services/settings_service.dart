@@ -2,11 +2,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../core/constants.dart';
-// lib/services/settings_service.dart (awal file)
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart';
-import '../core/constants.dart';
-// HAPUS baris yang menggunakan debugPrint jika tidak perlu
 
 class SettingsService {
   static const String _keyWatermarkLayout = 'watermark_layout_type';

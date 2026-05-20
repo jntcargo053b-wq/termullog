@@ -1,13 +1,15 @@
 // lib/watermark/watermark_params.dart
+import 'dart:isolate';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 class WatermarkParams {
-  final dynamic transferable;
-  final dynamic mapTransferable;
+  final TransferableTypedData transferable;
+  final TransferableTypedData? mapTransferable;
   final DateTime timestamp;
   final String address;
   final String weather;
-  final String layoutType;
+  final String layoutType;  // ← String, BUKAN int!
   final bool showWeather;
   final bool showAccuracy;
   final bool showAddress;
@@ -73,8 +75,8 @@ class WatermarkParams {
 
   factory WatermarkParams.fromMap(Map<String, dynamic> map) {
     return WatermarkParams(
-      transferable: map['transferable'],
-      mapTransferable: map['mapTransferable'],
+      transferable: map['transferable'] as TransferableTypedData,
+      mapTransferable: map['mapTransferable'] as TransferableTypedData?,
       timestamp: map['timestamp'] as DateTime,
       address: map['address'] as String? ?? '',
       weather: map['weather'] as String? ?? '',

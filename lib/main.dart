@@ -1,38 +1,37 @@
-// lib/main.dart
+// ════════════════════════════════════════════════════════════════════════════
+//  TermulLog — main.dart
+//  Entry point aplikasi
+// ════════════════════════════════════════════════════════════════════════════
+
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/camera_screen.dart';
-import 'services/settings_service.dart';
+import 'package:intl/date_symbol_data_local.dart';
+
+import 'core/camera_registry.dart';
+import 'ui/app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Inisialisasi locale untuk intl (wajib untuk DateFormat dengan locale 'id_ID')
+  await initializeDateFormatting('id', null);
+
+  // Set preferred orientations (portrait only)
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
-  runApp(const TermulLogApp());
-}
 
-class TermulLogApp extends StatelessWidget {
-  const TermulLogApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'TermulLog',
-      theme: ThemeData.dark().copyWith(
-        primaryColor: const Color(0xFF00B8D4),
-        scaffoldBackgroundColor: const Color(0xFF0A0E1A),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1A1F2E),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-      ),
-      home: const CameraScreen(),
-      debugShowCheckedModeBanner: false,
-    );
+  // Init kamera global
+  try {
+    CameraRegistry.cameras = await availableCameras();
+    debugPrint('Camera initialized: ${CameraRegistry.cameras.length} cameras found');
+  } catch (e) {
+    debugPrint('Camera initialization failed: $e');
+    // Inisialisasi dengan list kosong agar tidak crash
+    CameraRegistry.cameras = [];
   }
+
+  runApp(const App());
 }

@@ -18,7 +18,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // ── Watermark ─────────────────────────────────────────────────────────────
   WatermarkLayout _selectedLayout = WatermarkLayout.modern;
   bool _showWeather = true;
   bool _showAccuracy = true;
@@ -27,36 +26,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _watermarkPosition = 'bottom';
   double _opacity = 0.85;
   bool _showBorder = true;
-
-  // ── Format ────────────────────────────────────────────────────────────────
   String _dateFormat = 'dd/MM/yyyy';
   String _timeFormat = 'HH:mm:ss';
-
-  // ── Mini Map ──────────────────────────────────────────────────────────────
   bool _showMiniMap = true;
   int _mapZoomLevel = 16;
   String _mapSize = 'medium';
-
-  // ── Display ───────────────────────────────────────────────────────────────
   String _fontSize = 'normal';
   String _themeMode = 'dark';
-
-  // ── Camera ────────────────────────────────────────────────────────────────
   int _imageQuality = 90;
   bool _keepScreenOn = true;
   bool _useHighAccuracy = true;
   bool _autoSave = false;
-
-  // ── Cache ─────────────────────────────────────────────────────────────────
   int _tempFileCount = 0;
   String _tempFileSize = '0 KB';
-
   bool _isLoading = true;
-
-  // Warna tema
-  static const Color _kAccent = Color(0xFF00B8D4);
-  static const Color _kSurface = Color(0xFF1A1F2E);
-  static const Color _kBackground = Color(0xFF0A0E1A);
 
   @override
   void initState() {
@@ -134,6 +117,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await SettingsService.setAutoSave(_autoSave);
 
     SettingsCache.invalidate();
+
+    _applyThemeMode();
     _applyKeepScreenOn();
 
     if (mounted) {
@@ -146,7 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text('Pengaturan berhasil disimpan'),
             ],
           ),
-          backgroundColor: _kSurface,
+          backgroundColor: Color(0xFF1A1F2E),
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: 2),
         ),
@@ -154,6 +139,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _applyThemeMode() {}
+  
   void _applyKeepScreenOn() {
     if (_keepScreenOn) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -175,7 +162,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text('Pengaturan berhasil direset ke default'),
             ],
           ),
-          backgroundColor: _kSurface,
+          backgroundColor: Color(0xFF1A1F2E),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -251,10 +238,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final dividerColor = Colors.grey.shade800;
     return Scaffold(
-      backgroundColor: _kBackground,
+      backgroundColor: const Color(0xFF0A0E1A),
       appBar: AppBar(
         title: const Text('Pengaturan', style: TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: _kSurface,
+        backgroundColor: const Color(0xFF1A1F2E),
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -264,14 +251,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.save, color: _kAccent),
+            icon: const Icon(Icons.save, color: Color(0xFF00B8D4)),
             onPressed: _saveSettings,
             tooltip: 'Simpan Pengaturan',
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _kAccent))
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF00B8D4)))
           : ListView(
               children: [
                 _buildPreviewCard(),
@@ -279,208 +266,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildSectionHeader('GAYA TAMPILAN', Icons.style),
                 ...WatermarkLayout.values.map((layout) => _buildLayoutOption(layout)),
                 _buildSliderTile(
-                  title: 'Transparansi Background',
-                  subtitle: 'Atur kegelapan background watermark',
-                  value: _opacity,
-                  min: 0.3,
-                  max: 1.0,
-                  divisions: 14,
-                  onChanged: (v) => setState(() => _opacity = v),
-                  icon: Icons.opacity,
+                  title: 'Transparansi Background', subtitle: 'Atur kegelapan background watermark',
+                  value: _opacity, min: 0.3, max: 1.0, divisions: 14,
+                  onChanged: (value) => setState(() => _opacity = value), icon: Icons.opacity,
                 ),
                 _buildSwitchTile(
-                  title: 'Tampilkan Border',
-                  subtitle: 'Menampilkan border di sekitar watermark',
-                  value: _showBorder,
-                  onChanged: (v) => setState(() => _showBorder = v),
-                  icon: Icons.border_style,
+                  title: 'Tampilkan Border', subtitle: 'Menampilkan border di sekitar watermark',
+                  value: _showBorder, onChanged: (value) => setState(() => _showBorder = value), icon: Icons.border_style,
                 ),
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('INFORMASI YANG DITAMPILKAN', Icons.info_outline),
-                _buildSwitchTile(
-                  title: 'Tampilkan Cuaca',
-                  subtitle: 'Menampilkan informasi cuaca di watermark',
-                  value: _showWeather,
-                  onChanged: (v) => setState(() => _showWeather = v),
-                  icon: Icons.wb_sunny,
-                ),
-                _buildSwitchTile(
-                  title: 'Tampilkan Akurasi GPS',
-                  subtitle: 'Menampilkan tingkat akurasi GPS dalam meter',
-                  value: _showAccuracy,
-                  onChanged: (v) => setState(() => _showAccuracy = v),
-                  icon: Icons.gps_fixed,
-                ),
-                _buildSwitchTile(
-                  title: 'Tampilkan Alamat',
-                  subtitle: 'Menampilkan alamat lengkap lokasi',
-                  value: _showAddress,
-                  onChanged: (v) => setState(() => _showAddress = v),
-                  icon: Icons.location_on,
-                ),
-                _buildSwitchTile(
-                  title: 'Tampilkan Koordinat',
-                  subtitle: 'Menampilkan koordinat GPS',
-                  value: _showCoordinates,
-                  onChanged: (v) => setState(() => _showCoordinates = v),
-                  icon: Icons.map,
-                ),
+                _buildSwitchTile(title: 'Tampilkan Cuaca', subtitle: 'Menampilkan informasi cuaca di watermark', value: _showWeather, onChanged: (value) => setState(() => _showWeather = value), icon: Icons.wb_sunny),
+                _buildSwitchTile(title: 'Tampilkan Akurasi GPS', subtitle: 'Menampilkan tingkat akurasi GPS dalam meter', value: _showAccuracy, onChanged: (value) => setState(() => _showAccuracy = value), icon: Icons.gps_fixed),
+                _buildSwitchTile(title: 'Tampilkan Alamat', subtitle: 'Menampilkan alamat lengkap lokasi', value: _showAddress, onChanged: (value) => setState(() => _showAddress = value), icon: Icons.location_on),
+                _buildSwitchTile(title: 'Tampilkan Koordinat', subtitle: 'Menampilkan koordinat GPS', value: _showCoordinates, onChanged: (value) => setState(() => _showCoordinates = value), icon: Icons.map),
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('FORMAT TANGGAL & WAKTU', Icons.calendar_today),
-                _buildDropdownTile(
-                  title: 'Format Tanggal',
-                  subtitle: 'Pilih format tampilan tanggal',
-                  value: _dateFormat,
-                  items: const ['dd/MM/yyyy', 'yyyy-MM-dd', 'dd MMM yyyy', 'MMMM dd, yyyy', 'dd MMMM yyyy'],
-                  onChanged: (v) => setState(() => _dateFormat = v!),
-                  icon: Icons.calendar_today,
-                ),
-                _buildDropdownTile(
-                  title: 'Format Waktu',
-                  subtitle: 'Pilih format tampilan waktu',
-                  value: _timeFormat,
-                  items: const ['HH:mm:ss', 'HH:mm', 'hh:mm:ss a', 'hh:mm a'],
-                  onChanged: (v) => setState(() => _timeFormat = v!),
-                  icon: Icons.access_time,
-                ),
+                _buildDropdownTile(title: 'Format Tanggal', subtitle: 'Pilih format tampilan tanggal', value: _dateFormat, items: const ['dd/MM/yyyy', 'yyyy-MM-dd', 'dd MMM yyyy', 'MMMM dd, yyyy', 'dd MMMM yyyy'], onChanged: (value) => setState(() => _dateFormat = value!), icon: Icons.calendar_today),
+                _buildDropdownTile(title: 'Format Waktu', subtitle: 'Pilih format tampilan waktu', value: _timeFormat, items: const ['HH:mm:ss', 'HH:mm', 'hh:mm:ss a', 'hh:mm a'], onChanged: (value) => setState(() => _timeFormat = value!), icon: Icons.access_time),
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('POSISI WATERMARK', Icons.vertical_align_center),
-                _buildRadioTile(
-                  title: 'Bawah',
-                  subtitle: 'Watermark di bagian bawah foto',
-                  value: 'bottom',
-                  groupValue: _watermarkPosition,
-                  onChanged: (v) => setState(() => _watermarkPosition = v!),
-                  icon: Icons.vertical_align_bottom,
-                ),
-                _buildRadioTile(
-                  title: 'Atas',
-                  subtitle: 'Watermark di bagian atas foto',
-                  value: 'top',
-                  groupValue: _watermarkPosition,
-                  onChanged: (v) => setState(() => _watermarkPosition = v!),
-                  icon: Icons.vertical_align_top,
-                ),
+                _buildRadioTile(title: 'Bawah', subtitle: 'Watermark di bagian bawah foto', value: 'bottom', groupValue: _watermarkPosition, onChanged: (value) => setState(() => _watermarkPosition = value!), icon: Icons.vertical_align_bottom),
+                _buildRadioTile(title: 'Atas', subtitle: 'Watermark di bagian atas foto', value: 'top', groupValue: _watermarkPosition, onChanged: (value) => setState(() => _watermarkPosition = value!), icon: Icons.vertical_align_top),
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('MINI MAP', Icons.map),
-                _buildSwitchTile(
-                  title: 'Tampilkan Mini Map',
-                  subtitle: 'Menampilkan peta lokasi pada watermark',
-                  value: _showMiniMap,
-                  onChanged: (v) => setState(() => _showMiniMap = v),
-                  icon: Icons.map,
-                ),
+                _buildSwitchTile(title: 'Tampilkan Mini Map', subtitle: 'Menampilkan peta lokasi pada watermark', value: _showMiniMap, onChanged: (value) => setState(() => _showMiniMap = value), icon: Icons.map),
                 if (_showMiniMap) ...[
-                  _buildSliderTile(
-                    title: 'Zoom Level Mini Map',
-                    subtitle: 'Atur tingkat zoom peta ($_mapZoomLevel)',
-                    value: _mapZoomLevel.toDouble(),
-                    min: 10,
-                    max: 18,
-                    divisions: 8,
-                    onChanged: (v) => setState(() => _mapZoomLevel = v.toInt()),
-                    icon: Icons.zoom_in,
-                  ),
-                  _buildRadioTile(
-                    title: 'Ukuran Kecil',
-                    subtitle: '250 x 150 pixel',
-                    value: 'small',
-                    groupValue: _mapSize,
-                    onChanged: (v) => setState(() => _mapSize = v!),
-                    icon: Icons.crop_square,
-                  ),
-                  _buildRadioTile(
-                    title: 'Ukuran Sedang',
-                    subtitle: '350 x 180 pixel',
-                    value: 'medium',
-                    groupValue: _mapSize,
-                    onChanged: (v) => setState(() => _mapSize = v!),
-                    icon: Icons.crop_square,
-                  ),
-                  _buildRadioTile(
-                    title: 'Ukuran Besar',
-                    subtitle: '450 x 200 pixel',
-                    value: 'large',
-                    groupValue: _mapSize,
-                    onChanged: (v) => setState(() => _mapSize = v!),
-                    icon: Icons.crop_square,
-                  ),
+                  _buildSliderTile(title: 'Zoom Level Mini Map', subtitle: 'Atur tingkat zoom peta (${_mapZoomLevel})', value: _mapZoomLevel.toDouble(), min: 10, max: 18, divisions: 8, onChanged: (value) => setState(() => _mapZoomLevel = value.toInt()), icon: Icons.zoom_in),
+                  _buildRadioTile(title: 'Ukuran Kecil', subtitle: '250 x 150 pixel', value: 'small', groupValue: _mapSize, onChanged: (value) => setState(() => _mapSize = value!), icon: Icons.crop_square),
+                  _buildRadioTile(title: 'Ukuran Sedang', subtitle: '350 x 180 pixel', value: 'medium', groupValue: _mapSize, onChanged: (value) => setState(() => _mapSize = value!), icon: Icons.crop_square),
+                  _buildRadioTile(title: 'Ukuran Besar', subtitle: '450 x 200 pixel', value: 'large', groupValue: _mapSize, onChanged: (value) => setState(() => _mapSize = value!), icon: Icons.crop_square),
                 ],
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('TAMPILAN', Icons.display_settings),
-                _buildDropdownTile(
-                  title: 'Ukuran Font',
-                  subtitle: 'Pilih ukuran teks watermark',
-                  value: _fontSize,
-                  items: const ['small', 'normal', 'large'],
-                  onChanged: (v) => setState(() => _fontSize = v!),
-                  icon: Icons.text_fields,
-                ),
-                _buildDropdownTile(
-                  title: 'Mode Tema',
-                  subtitle: 'Pilih tema aplikasi',
-                  value: _themeMode,
-                  items: const ['light', 'dark', 'system'],
-                  onChanged: (v) => setState(() => _themeMode = v!),
-                  icon: Icons.brightness_4,
-                ),
+                _buildDropdownTile(title: 'Ukuran Font', subtitle: 'Pilih ukuran teks watermark', value: _fontSize, items: const ['small', 'normal', 'large'], onChanged: (value) => setState(() => _fontSize = value!), icon: Icons.text_fields),
+                _buildDropdownTile(title: 'Mode Tema', subtitle: 'Pilih tema aplikasi', value: _themeMode, items: const ['light', 'dark', 'system'], onChanged: (value) => setState(() => _themeMode = value!), icon: Icons.brightness_4),
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('KAMERA', Icons.camera_alt),
-                _buildSliderTile(
-                  title: 'Kualitas Gambar',
-                  subtitle: 'Atur kualitas JPEG ($_imageQuality%)',
-                  value: _imageQuality.toDouble(),
-                  min: 50,
-                  max: 100,
-                  divisions: 10,
-                  onChanged: (v) => setState(() => _imageQuality = v.toInt()),
-                  icon: Icons.image,
-                ),
-                _buildSwitchTile(
-                  title: 'Jaga Layar Tetap Nyala',
-                  subtitle: 'Mencegah layar mati saat menggunakan kamera',
-                  value: _keepScreenOn,
-                  onChanged: (v) => setState(() => _keepScreenOn = v),
-                  icon: Icons.screen_lock_portrait,
-                ),
-                _buildSwitchTile(
-                  title: 'GPS Akurasi Tinggi',
-                  subtitle: 'Menggunakan GPS dengan akurasi maksimal',
-                  value: _useHighAccuracy,
-                  onChanged: (v) => setState(() => _useHighAccuracy = v),
-                  icon: Icons.gps_fixed,
-                ),
-                _buildSwitchTile(
-                  title: 'Auto Save ke Galeri',
-                  subtitle: 'Menyimpan foto otomatis ke galeri setelah preview',
-                  value: _autoSave,
-                  onChanged: (v) => setState(() => _autoSave = v),
-                  icon: Icons.save_alt,
-                ),
+                _buildSliderTile(title: 'Kualitas Gambar', subtitle: 'Atur kualitas JPEG (${_imageQuality}%)', value: _imageQuality.toDouble(), min: 50, max: 100, divisions: 10, onChanged: (value) => setState(() => _imageQuality = value.toInt()), icon: Icons.image),
+                _buildSwitchTile(title: 'Jaga Layar Tetap Nyala', subtitle: 'Mencegah layar mati saat menggunakan kamera', value: _keepScreenOn, onChanged: (value) => setState(() => _keepScreenOn = value), icon: Icons.screen_lock_portrait),
+                _buildSwitchTile(title: 'GPS Akurasi Tinggi', subtitle: 'Menggunakan GPS dengan akurasi maksimal', value: _useHighAccuracy, onChanged: (value) => setState(() => _useHighAccuracy = value), icon: Icons.gps_fixed),
+                _buildSwitchTile(title: 'Auto Save ke Galeri', subtitle: 'Menyimpan foto otomatis ke galeri setelah preview', value: _autoSave, onChanged: (value) => setState(() => _autoSave = value), icon: Icons.save_alt),
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('PENYIMPANAN', Icons.storage),
                 ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _kAccent.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.cleaning_services, color: Colors.orange, size: 20),
-                  ),
+                  leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.cleaning_services, color: Colors.orange, size: 20)),
                   title: const Text('Bersihkan File Temporary', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-                  subtitle: Text('$_tempFileCount file ($_tempFileSize)', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-                  trailing: ElevatedButton(
-                    onPressed: _showClearCacheDialog,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade800,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Hapus'),
-                  ),
-                  onTap: _showClearCacheDialog,
+                  subtitle: Text('$_tempFileCount file (${_tempFileSize})', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                  trailing: ElevatedButton(onPressed: () => _showClearCacheDialog(), style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: const Text('Hapus')),
+                  onTap: () => _showClearCacheDialog(),
                 ),
                 Divider(color: dividerColor, height: 24, thickness: 1),
                 _buildSectionHeader('TENTANG APLIKASI', Icons.info_outline),
@@ -492,15 +326,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: OutlinedButton.icon(
-                    onPressed: _showResetDialog,
+                    onPressed: () => _showResetDialog(),
                     icon: const Icon(Icons.restore, size: 18),
                     label: const Text('Reset ke Pengaturan Default'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey.shade400,
-                      side: BorderSide(color: Colors.grey.shade700),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.grey.shade400, side: BorderSide(color: Colors.grey.shade700), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                   ),
                 ),
                 const SizedBox(height: 30),
@@ -509,56 +338,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ── WIDGET BUILDERS ─────────────────────────────────────────────────────────
-
   Widget _buildPreviewCard() {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _kSurface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _kAccent.withOpacity(0.3), width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _kAccent.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.style, color: _kAccent, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Text('Preview Watermark', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          ]),
-          const SizedBox(height: 16),
-          Container(
-            height: 200,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade800),
-            ),
-            child: Center(child: _buildPreview()),
-          ),
-        ],
-      ),
+      margin: const EdgeInsets.all(16), padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: const Color(0xFF1A1F2E), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFF00B8D4).withOpacity(0.3), width: 1)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.style, color: Color(0xFF00B8D4), size: 20)),
+          const SizedBox(width: 12),
+          const Text('Preview Watermark', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        ]),
+        const SizedBox(height: 16),
+        Container(height: 200, width: double.infinity, decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade800)), child: Center(child: _buildPreview())),
+      ]),
     );
   }
 
   Widget _buildSectionHeader(String title, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(children: [
-        Icon(icon, color: _kAccent, size: 18),
-        const SizedBox(width: 8),
-        Text(title, style: const TextStyle(color: _kAccent, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
-      ]),
+      child: Row(children: [Icon(icon, color: const Color(0xFF00B8D4), size: 18), const SizedBox(width: 8), Text(title, style: const TextStyle(color: Color(0xFF00B8D4), fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1))]),
     );
   }
 
@@ -566,196 +365,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isSelected = _selectedLayout == layout;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: isSelected ? _kAccent.withOpacity(0.15) : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        border: isSelected ? Border.all(color: _kAccent.withOpacity(0.5), width: 1) : null,
-      ),
+      decoration: BoxDecoration(color: isSelected ? const Color(0xFF00B8D4).withOpacity(0.15) : Colors.transparent, borderRadius: BorderRadius.circular(12), border: isSelected ? Border.all(color: const Color(0xFF00B8D4).withOpacity(0.5), width: 1) : null),
       child: RadioListTile<WatermarkLayout>(
         title: Text(layout.displayName, style: TextStyle(color: Colors.white, fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
         subtitle: Text(layout.description, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-        value: layout,
-        groupValue: _selectedLayout,
-        onChanged: (v) {
-          if (v != null) setState(() => _selectedLayout = v);
-        },
-        activeColor: _kAccent,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        value: layout, groupValue: _selectedLayout, onChanged: (value) { if (value != null) setState(() => _selectedLayout = value); },
+        activeColor: const Color(0xFF00B8D4), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       ),
     );
   }
 
-  Widget _buildSwitchTile({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    required IconData icon,
-  }) {
+  Widget _buildSwitchTile({required String title, required String subtitle, required bool value, required Function(bool) onChanged, required IconData icon}) {
     return SwitchListTile(
       title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-      value: value,
-      onChanged: onChanged,
-      activeColor: _kAccent,
-      secondary: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: _kAccent.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: _kAccent, size: 20),
-      ),
+      value: value, onChanged: onChanged, activeColor: const Color(0xFF00B8D4),
+      secondary: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
     );
   }
 
-  Widget _buildSliderTile({
-    required String title,
-    required String subtitle,
-    required double value,
-    required double min,
-    required double max,
-    required int divisions,
-    required ValueChanged<double> onChanged,
-    required IconData icon,
-  }) {
+  Widget _buildSliderTile({required String title, required String subtitle, required double value, required double min, required double max, required int divisions, required Function(double) onChanged, required IconData icon}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _kAccent.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: _kAccent, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-                  Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-                ],
-              ),
-            ),
-          ]),
-          const SizedBox(height: 8),
-          Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: divisions,
-            activeColor: _kAccent,
-            inactiveColor: Colors.grey.shade700,
-            label: value.toInt().toString(),
-            onChanged: onChanged,
-          ),
-        ],
-      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)), Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12))])),
+        ]),
+        const SizedBox(height: 8),
+        Slider(value: value, min: min, max: max, divisions: divisions, activeColor: const Color(0xFF00B8D4), inactiveColor: Colors.grey.shade700, label: value.toInt().toString(), onChanged: onChanged),
+      ]),
     );
   }
 
-  Widget _buildDropdownTile({
-    required String title,
-    required String subtitle,
-    required String value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-    required IconData icon,
-  }) {
-    final Map<String, String> labels = {
-      'small': 'Kecil', 'normal': 'Normal', 'large': 'Besar',
-      'light': 'Terang', 'dark': 'Gelap', 'system': 'Sistem',
-      'dd/MM/yyyy': 'DD/MM/YYYY', 'yyyy-MM-dd': 'YYYY-MM-DD',
-      'dd MMM yyyy': 'DD MMM YYYY', 'MMMM dd, yyyy': 'MMMM DD, YYYY',
-      'dd MMMM yyyy': 'DD MMMM YYYY', 'HH:mm:ss': '24:00:00',
-      'HH:mm': '24:00', 'hh:mm:ss a': '12:00:00 AM', 'hh:mm a': '12:00 AM',
-    };
-    
+  Widget _buildDropdownTile({required String title, required String subtitle, required String value, required List<String> items, required Function(String?) onChanged, required IconData icon}) {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: _kAccent.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: _kAccent, size: 20),
-      ),
+      leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
       title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-      trailing: DropdownButton<String>(
-        value: value,
-        dropdownColor: _kSurface,
-        style: const TextStyle(color: _kAccent),
-        underline: const SizedBox.shrink(),
-        items: items.map((item) => DropdownMenuItem(value: item, child: Text(labels[item] ?? item))).toList(),
-        onChanged: onChanged,
-      ),
+      trailing: DropdownButton<String>(value: value, dropdownColor: const Color(0xFF1A1F2E), style: const TextStyle(color: Color(0xFF00B8D4)), underline: Container(height: 0), items: items.map((item) => DropdownMenuItem(value: item, child: Text(item == 'small' ? 'Kecil' : item == 'normal' ? 'Normal' : item == 'large' ? 'Besar' : item == 'light' ? 'Terang' : item == 'dark' ? 'Gelap' : item == 'system' ? 'Sistem' : item))).toList(), onChanged: onChanged),
     );
   }
 
-  Widget _buildRadioTile({
-    required String title,
-    required String subtitle,
-    required String value,
-    required String groupValue,
-    required ValueChanged<String?> onChanged,
-    required IconData icon,
-  }) {
+  Widget _buildRadioTile({required String title, required String subtitle, required String value, required String groupValue, required Function(String?) onChanged, required IconData icon}) {
     return RadioListTile<String>(
       title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-      value: value,
-      groupValue: groupValue,
-      onChanged: onChanged,
-      activeColor: _kAccent,
-      secondary: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: _kAccent.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: _kAccent, size: 20),
-      ),
+      value: value, groupValue: groupValue, onChanged: onChanged, activeColor: const Color(0xFF00B8D4),
+      secondary: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
     );
   }
 
-  Widget _buildInfoTile({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-  }) {
+  Widget _buildInfoTile({required String title, required String subtitle, required IconData icon}) {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: _kAccent.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: _kAccent, size: 20),
-      ),
+      leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
       title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
     );
   }
 
-  // ── PREVIEW WATERMARK ────────────────────────────────────────────────────────
-
   Widget _buildPreview() {
     final now = DateTime.now();
-    final String dateStr = _formatDate(now);
-    final String timeStr = _formatTime(now);
-    
+    final String dateStr = _dateFormat == 'yyyy-MM-dd' ? DateFormat('yyyy-MM-dd').format(now)
+        : _dateFormat == 'dd MMM yyyy' ? DateFormat('dd MMM yyyy', 'id').format(now)
+        : _dateFormat == 'MMMM dd, yyyy' ? DateFormat('MMMM dd, yyyy', 'id').format(now)
+        : DateFormat('dd/MM/yyyy').format(now);
+    final String timeStr = _timeFormat == 'HH:mm' ? DateFormat('HH:mm').format(now)
+        : _timeFormat == 'hh:mm:ss a' ? DateFormat('hh:mm:ss a', 'id').format(now)
+        : DateFormat('HH:mm:ss').format(now);
+
     final double fontSize = _fontSize == 'small' ? 13 : _fontSize == 'large' ? 20 : 16;
     final double titleFontSize = fontSize + 4;
-    final Color accent = _kAccent;
+    final Color accent = const Color(0xFF00B8D4);
     final Color bgColor = Colors.black.withOpacity(_opacity);
-    
     final Widget miniMapPlaceholder = _showMiniMap
         ? Container(
             width: _mapSize == 'small' ? 60 : _mapSize == 'large' ? 90 : 75,
@@ -769,6 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : const SizedBox.shrink();
 
     switch (_selectedLayout) {
+      // ─── MINIMAL ──────────────────────────────────────────────
       case WatermarkLayout.minimal:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -794,6 +478,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
+      // ─── DSLR CORNER ──────────────────────────────────────────
       case WatermarkLayout.dslrCorner:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -828,6 +513,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
+      // ─── CINEMATIC ────────────────────────────────────────────
       case WatermarkLayout.cinematic:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -848,6 +534,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
+      // ─── FIELD SURVEY ─────────────────────────────────────────
+      case WatermarkLayout.fieldSurvey:
+        return Container(
+          padding: const EdgeInsets.all(12),
+          color: bgColor,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+                color: accent,
+                child: Text('TERMULOG DOCUMENT', style: TextStyle(color: Colors.black, fontSize: fontSize - 2, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 8),
+              Text('DATE : $dateStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
+              Text('TIME : $timeStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
+              if (_showCoordinates)
+                Text('LAT : -6.123456  LON : 106.123456', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+              if (_showAccuracy)
+                Text('ACC : ±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+              if (_showAddress)
+                Text('ADDR : Jl. Contoh No. 123', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+            ],
+          ),
+        );
+
+      // ─── HUD MODERN ───────────────────────────────────────────
       case WatermarkLayout.hud:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -866,6 +581,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
+      // ─── GPS CARD ────────────────────────────────────────────
+      case WatermarkLayout.gpsCard:
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: bgColor,
+            border: Border(bottom: BorderSide(color: accent, width: 3)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('$dateStr  $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize - 2)),
+                    const SizedBox(height: 6),
+                    Text('-6.123456°N  106.123456°E', style: TextStyle(color: accent, fontSize: fontSize - 2)),
+                    if (_showAccuracy)
+                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+                    if (_showAddress)
+                      Text('Jl. Contoh No. 123, Kec. Contoh', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3), maxLines: 2),
+                  ],
+                ),
+              ),
+              if (_showMiniMap) miniMapPlaceholder,
+            ],
+          ),
+        );
+
+      // ─── POLAROID ────────────────────────────────────────────
       case WatermarkLayout.polaroid:
         return Container(
           color: const Color(0xFFF8F5EB),
@@ -880,13 +626,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 36)),
               ),
               const SizedBox(height: 10),
-              Text(dateStr, style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w500)),
+              Text(dateStr, style: TextStyle(color: Colors.black87, fontSize: fontSize, fontWeight: FontWeight.w500)),
               if (_showCoordinates)
-                const Text('-6.123, 106.123', style: TextStyle(color: Colors.black54, fontSize: 12)),
+                Text('-6.123, 106.123', style: TextStyle(color: Colors.black54, fontSize: fontSize - 2)),
             ],
           ),
         );
 
+      // ─── SIDE PANEL ──────────────────────────────────────────
+      case WatermarkLayout.sidePanel:
+        return Row(
+          children: [
+            Container(
+              width: 60,
+              height: 140,
+              color: const Color(0xFF0A0F28),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(DateFormat('HH').format(now), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text(DateFormat('mm').format(now), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text(DateFormat('ss').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 22, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Text(DateFormat('dd').format(now), style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text(DateFormat('MMM', 'id').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 14)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                height: 140,
+                color: Colors.grey.shade800,
+                child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 48)),
+              ),
+            ),
+          ],
+        );
+
+      // ─── TIMEMARK STYLE ─────────────────────────────────────
+      case WatermarkLayout.timeMarkStyle:
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(14),
+            border: _showBorder ? Border.all(color: accent.withOpacity(0.4)) : null,
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('$timeStr', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(dateStr, style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
+                    if (_showCoordinates)
+                      Text('-6.123456°, 106.123456°', style: TextStyle(color: accent, fontSize: fontSize - 3)),
+                    if (_showAccuracy)
+                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+                    if (_showWeather)
+                      Text('Cerah 32°C', style: TextStyle(color: accent, fontSize: fontSize - 3)),
+                  ],
+                ),
+              ),
+              if (_showMiniMap) miniMapPlaceholder,
+            ],
+          ),
+        );
+
+      // ─── MODERN CLEAN CARD ──────────────────────────────────
       case WatermarkLayout.modern:
         return Container(
           margin: const EdgeInsets.all(14),
@@ -916,87 +730,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         );
+
+      default:
+        return const SizedBox.shrink();
     }
   }
 
-  String _formatDate(DateTime date) {
-    switch (_dateFormat) {
-      case 'yyyy-MM-dd': return DateFormat('yyyy-MM-dd').format(date);
-      case 'dd MMM yyyy': return DateFormat('dd MMM yyyy', 'id').format(date);
-      case 'MMMM dd, yyyy': return DateFormat('MMMM dd, yyyy', 'id').format(date);
-      case 'dd MMMM yyyy': return DateFormat('dd MMMM yyyy', 'id').format(date);
-      default: return DateFormat('dd/MM/yyyy').format(date);
+  Color _getPreviewTextColor() {
+    switch (_selectedLayout) {
+      case WatermarkLayout.minimal: return Colors.white;
+      case WatermarkLayout.dslrCorner: return const Color(0xFF00B8D4);
+      case WatermarkLayout.cinematic: return const Color(0xFFFFB432);
+      case WatermarkLayout.fieldSurvey: return Colors.white70;
+      case WatermarkLayout.hud: return const Color(0xFF00B8D4);
+      case WatermarkLayout.gpsCard: return const Color(0xFF00B8D4);
+      case WatermarkLayout.polaroid: return Colors.black87;
+      case WatermarkLayout.sidePanel: return Colors.white;
+      case WatermarkLayout.timeMarkStyle: return const Color(0xFF00B8D4);
+      case WatermarkLayout.modern: return const Color(0xFF00D4AA);
+      default: return const Color(0xFF00B8D4);
     }
   }
-
-  String _formatTime(DateTime time) {
-    switch (_timeFormat) {
-      case 'HH:mm': return DateFormat('HH:mm').format(time);
-      case 'hh:mm:ss a': return DateFormat('hh:mm:ss a', 'id').format(time);
-      case 'hh:mm a': return DateFormat('hh:mm a', 'id').format(time);
-      default: return DateFormat('HH:mm:ss').format(time);
-    }
-  }
-
-  // ── DIALOGS ────────────────────────────────────────────────────────────────
 
   void _showResetDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _kSurface,
-        title: const Text('Reset Pengaturan', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'Apakah Anda yakin ingin mereset semua pengaturan watermark ke nilai default?',
-          style: TextStyle(color: Colors.grey),
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _resetToDefault();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: _kAccent, foregroundColor: Colors.black),
-            child: const Text('Reset'),
-          ),
-        ],
-      ),
-    );
+    showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1F2E), title: const Text('Reset Pengaturan', style: TextStyle(color: Colors.white)), content: const Text('Apakah Anda yakin ingin mereset semua pengaturan watermark ke nilai default?', style: TextStyle(color: Colors.grey)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () { Navigator.pop(context); _resetToDefault(); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00B8D4), foregroundColor: Colors.black), child: const Text('Reset'))]));
   }
 
   void _showClearCacheDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _kSurface,
-        title: const Text('Bersihkan Cache', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Hapus $_tempFileCount file temporary ($_tempFileSize)?\n\n'
-          'File ini adalah foto sementara yang belum disimpan ke galeri. '
-          'Foto yang sudah disimpan tidak akan terhapus.',
-          style: TextStyle(color: Colors.grey.shade400),
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _clearTempFiles();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
-            child: const Text('Hapus Sekarang'),
-          ),
-        ],
-      ),
-    );
+    showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1F2E), title: const Text('Bersihkan Cache', style: TextStyle(color: Colors.white)), content: Text('Hapus $_tempFileCount file temporary (${_tempFileSize})?\n\nFile ini adalah foto sementara yang belum disimpan ke galeri. Foto yang sudah disimpan tidak akan terhapus.', style: TextStyle(color: Colors.grey.shade400)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () { Navigator.pop(context); _clearTempFiles(); }, style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white), child: const Text('Hapus Sekarang'))]));
   }
 }

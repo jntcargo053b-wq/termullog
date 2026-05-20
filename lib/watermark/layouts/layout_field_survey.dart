@@ -1,13 +1,16 @@
-// lib/watermark/layouts/layout_field_survey.dart
+// lib/watermark/layouts/layout_survey.dart
 import 'dart:typed_data';
-import 'package:image/image.dart' as img;
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image/image.dart' as img;
 import 'watermark_layout_base.dart';
+import '../../core/constants.dart';
 
-class LayoutFieldSurvey extends WatermarkLayoutBase {
+class LayoutSurvey extends WatermarkLayoutBase {
   @override
-  String get name => 'Field Survey';
-
+  String get name => 'Survey';
+  
   @override
   Uint8List apply({
     required img.Image src,
@@ -29,98 +32,66 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    // ── Adaptive scaling ──────────────────────────────────────────
-    final double scale = (src.width / 1080).clamp(0.7, 2.0);
-    final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
-
-    final int headerH = (28 * scale).round();
-    final int rowH = (24 * scale * fsMultiplier).round();
-    final int padX = (12 * scale).round();
-    final int colW = (60 * scale).round();
-
-    // ── Pilih font ────────────────────────────────────────────────
-    final font = fontSize == 'small' ? img.arial14 : img.arial24;
-
-    // ── Hitung jumlah baris ──────────────────────────────────────
-    final List<Map<String, String>> rows = [
-      {'label': 'DATE', 'value': DateFormat('yyyy-MM-dd').format(timestamp)},
-      {'label': 'TIME', 'value': DateFormat('HH:mm:ss').format(timestamp)},
-    ];
-    if (showCoordinates && hasPosition) {
-      rows.add({'label': 'LAT', 'value': lat!.toStringAsFixed(6)});
-      rows.add({'label': 'LON', 'value': lon!.toStringAsFixed(6)});
-      if (showAccuracy) {
-        rows.add({'label': 'ACC', 'value': '±${acc?.toStringAsFixed(0) ?? '?'} m'});
+    // Semi-transparent panel bottom left
+    final int panelW = 320;
+    final int panelH = 220;
+    final int panelX = 16;
+    final int panelY = src.height - panelH - 16;
+    
+    // Draw panel background
+    for (int i = 0; i < panelH; i++) {
+      for (int j = 0; j < panelW; j++) {
+        final int alpha = (0.9 * 255).toInt();
+        img.drawPixel(src, panelX + j, panelY + i, img.ColorRgba8(15, 23, 42, alpha));
       }
     }
-    if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      final maxChars = (src.width / 6).toInt().clamp(30, 50);
-      final shortAddr = address.length > maxChars
-          ? '${address.substring(0, maxChars - 1)}…' : address;
-      rows.add({'label': 'ADDR', 'value': shortAddr});
+    
+    // Border
+    img.drawRect(src,
+        x1: panelX, y1: panelY,
+        x2: panelX + panelW, y2: panelY + panelH,
+        color: kColorTeal, thickness: 2);
+    
+    int x = panelX + 16;
+    int y = panelY + 16;
+    
+    // Header
+    img.drawString(src, 'FIELD SURVEY DATA', font: img.arial14, x: x, y: y, color: kColorTeal);
+    y += 28;
+    
+    // Data rows
+    _drawRow(src, 'DATE', DateFormat('dd MMM yyyy').format(timestamp), x, y);
+    y += 24;
+    _drawRow(src, 'TIME', DateFormat('HH:mm:ss').format(timestamp), x, y);
+    y += 24;
+    
+    if (hasPosition && lat != null && lon != null) {
+      _drawRow(src, 'LAT', lat.toStringAsFixed(6), x, y);
+      y += 24;
+      _drawRow(src, 'LON', lon.toStringAsFixed(6), x, y);
+      y += 24;
+      
+      if (showAccuracy && acc != null) {
+        _drawRow(src, 'ACC', '±${acc.toStringAsFixed(1)}m', x, y);
+        y += 24;
+      }
     }
+    
     if (showWeather && weather.isNotEmpty) {
-      rows.add({'label': 'WX', 'value': weather});
+      _drawRow(src, 'WEATHER', weather, x, y);
+      y += 24;
     }
-
-    final int totalH = headerH + rows.length * rowH + 8;
-
-    // ✅ Y posisi dihitung via resolveYStart — TIDAK ada logika layout di sini
-    final int y0 = WatermarkLayoutBase.resolveYStart(
-      watermarkPosition: watermarkPosition,
-      imageHeight: src.height,
-      contentHeight: totalH,
-    );
-    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
-
-    // ── Background table ──────────────────────────────────────────
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + totalH,
-        color: img.ColorRgba8(0, 0, 0, (200 * opacity).toInt()));
-
-    // ── Header dengan shadow ─────────────────────────────────────
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + headerH,
-        color: WatermarkLayoutBase.blue);
-    img.drawString(src, 'FIELD SURVEY',
-        font: font, x: padX + 1, y: y0 + 6 + 1,
-        color: img.ColorRgba8(0, 0, 0, 80));
-    img.drawString(src, 'FIELD SURVEY',
-        font: font, x: padX, y: y0 + 6,
-        color: WatermarkLayoutBase.white);
-
-    // ── Rows ─────────────────────────────────────────────────────
-    int cy = y0 + headerH;
-    for (int i = 0; i < rows.length; i++) {
-      // Zebra stripe
-      final bgColor = i.isEven
-          ? img.ColorRgba8(255, 255, 255, 12)
-          : img.ColorRgba8(0, 0, 0, 0);
-      img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + rowH, color: bgColor);
-
-      // Label (abu-abu)
-      img.drawString(src, rows[i]['label']!,
-          font: font, x: padX, y: cy + (rowH / 2 - 10).round(),
-          color: WatermarkLayoutBase.grey);
-
-      // Value (putih)
-      img.drawString(src, rows[i]['value']!,
-          font: font, x: padX + colW, y: cy + (rowH / 2 - 10).round(),
-          color: WatermarkLayoutBase.white);
-
-      // Separator tipis antar baris
-      if (i < rows.length - 1) {
-        img.fillRect(src, x1: padX, y1: cy + rowH - 1,
-            x2: src.width - padX, y2: cy + rowH,
-            color: img.ColorRgba8(255, 255, 255, 8));
-      }
-      cy += rowH;
-    }
-
-    // ── Border jika aktif ────────────────────────────────────────
-    if (showBorder) {
-      img.drawRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + totalH - 1,
-          color: img.ColorRgba8(30, 144, 255, 60), thickness: 1);
-    }
-
+    
     return WatermarkLayoutBase.encodeJpg(src);
+  }
+  
+  void _drawRow(img.Image src, String label, String value, int x, int y) {
+    img.drawString(src, label, font: img.arial12, x: x, y: y, color: kColorLightGrey);
+    img.drawString(src, value, font: img.arial12, x: x + 100, y: y, color: kColorWhite);
+  }
+  
+  @override
+  Future<Uint8List> applyAsync({...}) async {
+    return apply(...);
   }
 }

@@ -36,15 +36,16 @@ enum LayoutCategory {
 // LAYOUT THEME - Default style per layout
 // ============================================================
 class LayoutTheme {
-  final Color primaryColor;      // Warna utama (Flutter Color)
-  final img.Color primaryImgColor; // Warna utama (package:image)
-  final String fontFamily;       // Font yang digunakan
-  final double defaultOpacity;   // Opacity default
-  final String defaultPosition;  // Posisi default
-  final bool supportsBorder;     // Apakah mendukung border
-  final bool supportsMiniMap;    // Apakah mendukung mini map
+  final Color primaryColor;         // Warna utama (Flutter Color)
+  final img.Color primaryImgColor;  // Warna utama (package:image)
+  final String fontFamily;          // Font yang digunakan
+  final double defaultOpacity;      // Opacity default
+  final String defaultPosition;     // Posisi default
+  final bool supportsBorder;        // Apakah mendukung border
+  final bool supportsMiniMap;       // Apakah mendukung mini map
 
-  const LayoutTheme({
+  // HAPUS 'const' dari constructor
+  LayoutTheme({
     required this.primaryColor,
     required this.primaryImgColor,
     required this.fontFamily,
@@ -54,68 +55,68 @@ class LayoutTheme {
     this.supportsMiniMap = true,
   });
 
-  // Theme untuk setiap layout
-  static const Map<WatermarkLayout, LayoutTheme> themes = {
-    // CINEMATIC - Letterbox, elegan, biru tua
+  // HAPUS 'const' dari themes (static final, BUKAN const)
+  static final Map<WatermarkLayout, LayoutTheme> themes = {
+    // CINEMATIC - Letterbox, elegan, PlayfairDisplay
     WatermarkLayout.cinematic: LayoutTheme(
-      primaryColor: Color(0xFF1B2A4A),
+      primaryColor: const Color(0xFF1B2A4A),
       primaryImgColor: img.ColorRgb8(27, 42, 74),
-      fontFamily: 'Roboto',
+      fontFamily: 'PlayfairDisplay',
       defaultOpacity: 1.0,
       defaultPosition: 'bottom',
       supportsBorder: false,
       supportsMiniMap: true,
     ),
 
-    // HUD - Transparan, cyan, pojok kiri atas
+    // HUD - Transparan, cyan, JetBrainsMono
     WatermarkLayout.hud: LayoutTheme(
-      primaryColor: Color(0xFF00B8D4),
+      primaryColor: const Color(0xFF00B8D4),
       primaryImgColor: img.ColorRgb8(0, 184, 212),
-      fontFamily: 'Roboto',
+      fontFamily: 'JetBrainsMono',
       defaultOpacity: 0.75,
       defaultPosition: 'topLeft',
       supportsBorder: false,
       supportsMiniMap: false,
     ),
 
-    // POLAROID - Ivory, border putih, full frame
+    // POLAROID - Ivory, Caveat handwriting
     WatermarkLayout.polaroid: LayoutTheme(
-      primaryColor: Color(0xFFF8F5EB),
+      primaryColor: const Color(0xFFF8F5EB),
       primaryImgColor: img.ColorRgb8(248, 245, 235),
-      fontFamily: 'Roboto',
+      fontFamily: 'Caveat',
       defaultOpacity: 1.0,
       defaultPosition: 'fullFrame',
       supportsBorder: true,
       supportsMiniMap: false,
     ),
 
-    // DOCUMENTARY - Minimalis, abu-abu gelap, bawah
+    // DOCUMENTARY - Minimalis, BebasNeue
     WatermarkLayout.documentary: LayoutTheme(
-      primaryColor: Color(0xFF2C3E50),
+      primaryColor: const Color(0xFF2C3E50),
       primaryImgColor: img.ColorRgb8(44, 62, 80),
-      fontFamily: 'Roboto',
+      fontFamily: 'BebasNeue',
       defaultOpacity: 0.9,
       defaultPosition: 'bottom',
       supportsBorder: true,
       supportsMiniMap: true,
     ),
 
-    // LEICA - Klasik, hitam/merah, pojok kanan bawah
+    // LEICA - Klasik, Inter (pengganti Helvetica)
     WatermarkLayout.leica: LayoutTheme(
-      primaryColor: Color(0xFFCC0000),
+      primaryColor: const Color(0xFFCC0000),
       primaryImgColor: img.ColorRgb8(204, 0, 0),
-      fontFamily: 'Roboto',
+      fontFamily: 'Inter',
       defaultOpacity: 0.85,
       defaultPosition: 'bottomRight',
       supportsBorder: false,
       supportsMiniMap: false,
     ),
 
-    // SURVEY - Data lengkap, hijau/teal, kiri bawah
+    // SURVEY - Data lengkap, RobotoMono
     WatermarkLayout.survey: LayoutTheme(
-      primaryColor: Color(0xFF00A86B),
+      primaryColor: const Color(0xFF00A86B),
       primaryImgColor: img.ColorRgb8(0, 168, 107),
-      fontFamily: 'Roboto',
+      fontFamily: 'RobotoMono',
       defaultOpacity: 0.95,
       defaultPosition: 'bottomLeft',
       supportsBorder: true,
@@ -205,35 +206,122 @@ extension WatermarkLayoutExtension on WatermarkLayout {
     }
   }
 
-  // Membaca dari String (aman)
+  // Font family untuk setiap layout
+  String get fontFamily {
+    switch (this) {
+      case WatermarkLayout.cinematic:    return 'PlayfairDisplay';
+      case WatermarkLayout.hud:          return 'JetBrainsMono';
+      case WatermarkLayout.polaroid:     return 'Caveat';
+      case WatermarkLayout.documentary:  return 'BebasNeue';
+      case WatermarkLayout.leica:        return 'Inter';
+      case WatermarkLayout.survey:       return 'RobotoMono';
+    }
+  }
+
+  // Warna utama (Flutter)
+  Color get primaryColor {
+    switch (this) {
+      case WatermarkLayout.cinematic:    return const Color(0xFF1B2A4A);
+      case WatermarkLayout.hud:          return const Color(0xFF00B8D4);
+      case WatermarkLayout.polaroid:     return const Color(0xFFF8F5EB);
+      case WatermarkLayout.documentary:  return const Color(0xFF2C3E50);
+      case WatermarkLayout.leica:        return const Color(0xFFCC0000);
+      case WatermarkLayout.survey:       return const Color(0xFF00A86B);
+    }
+  }
+
+  // Warna utama (package image)
+  img.Color get primaryImgColor {
+    switch (this) {
+      case WatermarkLayout.cinematic:    return img.ColorRgb8(27, 42, 74);
+      case WatermarkLayout.hud:          return img.ColorRgb8(0, 184, 212);
+      case WatermarkLayout.polaroid:     return img.ColorRgb8(248, 245, 235);
+      case WatermarkLayout.documentary:  return img.ColorRgb8(44, 62, 80);
+      case WatermarkLayout.leica:        return img.ColorRgb8(204, 0, 0);
+      case WatermarkLayout.survey:       return img.ColorRgb8(0, 168, 107);
+    }
+  }
+
+  // Opacity default
+  double get defaultOpacity {
+    switch (this) {
+      case WatermarkLayout.cinematic:    return 1.0;
+      case WatermarkLayout.hud:          return 0.75;
+      case WatermarkLayout.polaroid:     return 1.0;
+      case WatermarkLayout.documentary:  return 0.9;
+      case WatermarkLayout.leica:        return 0.85;
+      case WatermarkLayout.survey:       return 0.95;
+    }
+  }
+
+  // Posisi default
+  String get defaultPosition {
+    switch (this) {
+      case WatermarkLayout.cinematic:    return 'bottom';
+      case WatermarkLayout.hud:          return 'topLeft';
+      case WatermarkLayout.polaroid:     return 'fullFrame';
+      case WatermarkLayout.documentary:  return 'bottom';
+      case WatermarkLayout.leica:        return 'bottomRight';
+      case WatermarkLayout.survey:       return 'bottomLeft';
+    }
+  }
+
+  // Apakah mendukung border
+  bool get supportsBorder {
+    switch (this) {
+      case WatermarkLayout.cinematic:    return false;
+      case WatermarkLayout.hud:          return false;
+      case WatermarkLayout.polaroid:     return true;
+      case WatermarkLayout.documentary:  return true;
+      case WatermarkLayout.leica:        return false;
+      case WatermarkLayout.survey:       return true;
+    }
+  }
+
+  // Apakah mendukung mini map
+  bool get supportsMiniMap {
+    switch (this) {
+      case WatermarkLayout.cinematic:    return true;
+      case WatermarkLayout.hud:          return false;
+      case WatermarkLayout.polaroid:     return false;
+      case WatermarkLayout.documentary:  return true;
+      case WatermarkLayout.leica:        return false;
+      case WatermarkLayout.survey:       return true;
+    }
+  }
+
+  // Theme accessor
+  LayoutTheme get theme => LayoutTheme.of(this);
+
+  // Membaca dari String (aman) dengan migrasi layout lama
   static WatermarkLayout fromTypeString(String type) {
+    // Migrasi layout lama ke baru
     switch (type) {
+      // Layout baru
       case 'cinematic':    return WatermarkLayout.cinematic;
       case 'hud':          return WatermarkLayout.hud;
       case 'polaroid':     return WatermarkLayout.polaroid;
       case 'documentary':  return WatermarkLayout.documentary;
       case 'leica':        return WatermarkLayout.leica;
       case 'survey':       return WatermarkLayout.survey;
-      default:             return WatermarkLayout.cinematic;
+      
+      // Migrasi layout lama
+      case 'minimal':
+      case 'timeMarkStyle':
+        return WatermarkLayout.documentary;
+      case 'dslr_corner':
+        return WatermarkLayout.leica;
+      case 'gps_timestamp':
+      case 'side_panel':
+      case 'modern':
+      case 'gps_card':
+        return WatermarkLayout.cinematic;
+      case 'field_survey':
+        return WatermarkLayout.survey;
+        
+      default: return WatermarkLayout.cinematic;
     }
   }
-
-  // Theme accessor
-  LayoutTheme get theme => LayoutTheme.of(this);
-  
-  Color get primaryColor => theme.primaryColor;
-  
-  img.Color get primaryImgColor => theme.primaryImgColor;
-  
-  String get fontFamily => theme.fontFamily;
-  
-  double get defaultOpacity => theme.defaultOpacity;
-  
-  String get defaultPosition => theme.defaultPosition;
-  
-  bool get supportsBorder => theme.supportsBorder;
-  
-  bool get supportsMiniMap => theme.supportsMiniMap;
 }
 
 // ============================================================
@@ -301,6 +389,9 @@ final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
 final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
 final img.Color kColorTeal = img.ColorRgb8(0, 168, 107);
 final img.Color kColorRed = img.ColorRgb8(204, 0, 0);
+final img.Color kColorBrightCyan = img.ColorRgb8(0, 184, 212);
+final img.Color kColorDarkBlue = img.ColorRgb8(27, 42, 74);
+final img.Color kColorDarkSlate = img.ColorRgb8(44, 62, 80);
 
 // ============================================================
 // UI COLORS (Flutter)
@@ -312,6 +403,8 @@ const int kColorCyanLightUi = 0xFF00B8D4;
 const int kColorCyanDarkUi = 0xFF0077B6;
 const int kColorTealUi = 0xFF00A86B;
 const int kColorRedUi = 0xFFCC0000;
+const int kColorDarkBlueUi = 0xFF1B2A4A;
+const int kColorDarkSlateUi = 0xFF2C3E50;
 
 // ============================================================
 // GPS & LOCATION

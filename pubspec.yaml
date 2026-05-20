@@ -67,3 +67,48 @@ flutter:
   assets:
     - assets/
     - assets/icons/
+  
+  # ==========================================================
+  # FONTS (TAMBAHKAN INI)
+  # ==========================================================
+  fonts:
+    # Cinematic Layout
+    - family: PlayfairDisplay
+      fonts:
+        - asset: assets/fonts/PlayfairDisplay-Regular.ttf
+    
+    # HUD Layout
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+    
+    # Polaroid Layout
+    - family: Caveat
+      fonts:
+        - asset: assets/fonts/Caveat-Regular.ttf
+    
+    # Documentary Layout
+    - family: BebasNeue
+      fonts:
+        - asset: assets/fonts/BebasNeue-Regular.ttf
+    
+    # Leica Layout (pake Inter)
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    
+    # Survey Layout
+    - family: RobotoMono
+      fonts:
+        - asset: assets/fonts/RobotoMono-Regular.ttf
+        - asset: assets/fonts/RobotoMono-Bold.ttf
+          weight: 700
+    
+    # Fallback
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf

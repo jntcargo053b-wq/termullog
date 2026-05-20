@@ -1,5 +1,6 @@
 // lib/core/constants.dart
 import 'package:image/image.dart' as img;
+import 'package:flutter/material.dart';
 
 // ============================================================
 // OUTPUT & KUALITAS
@@ -10,215 +11,246 @@ const int kSigMaxWidth = 260;
 const int kLogoMaxWidth = 90;
 
 // ============================================================
-// WATERMARK LAYOUT STYLE
+// WATERMARK LAYOUT STYLE (SEDERHANA)
 // ============================================================
 enum WatermarkLayout {
-  minimal,          // 0 - Film Strip
-  dslrCorner,       // 1 - DSLR Corner
-  gpsTimestamp,     // 2 - GPS Timestamp
-  fieldSurvey,      // 3 - Field Survey
-  hud,              // 4 - HUD Modern
-  gpsCard,          // 5 - GPS Card
-  polaroid,         // 6 - Polaroid
-  sidePanel,        // 7 - Side Panel
-  cinematic,        // 8 - Cinematic
-  timeMarkStyle,    // 9 - TimeMark Style
-  modern,           // 10 - Modern Clean Card
+  cinematic,    // Tampilan sinematik letterbox
+  hud,          // Heads-up display modern
+  polaroid,     // Gaya polaroid klasik
+  documentary,  // Gaya dokumenter/minimalis
+  leica,        // Gaya Leica dengan font khas
+  survey,       // Gaya survey dengan data lengkap
 }
 
 // ============================================================
 // LAYOUT CATEGORY
 // ============================================================
 enum LayoutCategory {
-  classic,    // minimal, polaroid
-  modern,     // hud, gpsCard, modern
-  cinematic,  // cinematic, gpsTimestamp
-  data,       // fieldSurvey, timeMarkStyle
-  corner,     // dslrCorner, sidePanel
+  cinematic,  // cinematic
+  modern,     // hud, documentary
+  classic,    // polaroid, leica
+  data,       // survey
+}
+
+// ============================================================
+// LAYOUT THEME - Default style per layout
+// ============================================================
+class LayoutTheme {
+  final Color primaryColor;      // Warna utama (Flutter Color)
+  final img.Color primaryImgColor; // Warna utama (package:image)
+  final String fontFamily;       // Font yang digunakan
+  final double defaultOpacity;   // Opacity default
+  final String defaultPosition;  // Posisi default
+  final bool supportsBorder;     // Apakah mendukung border
+  final bool supportsMiniMap;    // Apakah mendukung mini map
+
+  const LayoutTheme({
+    required this.primaryColor,
+    required this.primaryImgColor,
+    required this.fontFamily,
+    required this.defaultOpacity,
+    required this.defaultPosition,
+    this.supportsBorder = true,
+    this.supportsMiniMap = true,
+  });
+
+  // Theme untuk setiap layout
+  static const Map<WatermarkLayout, LayoutTheme> themes = {
+    // CINEMATIC - Letterbox, elegan, biru tua
+    WatermarkLayout.cinematic: LayoutTheme(
+      primaryColor: Color(0xFF1B2A4A),
+      primaryImgColor: img.ColorRgb8(27, 42, 74),
+      fontFamily: 'Roboto',
+      defaultOpacity: 1.0,
+      defaultPosition: 'bottom',
+      supportsBorder: false,
+      supportsMiniMap: true,
+    ),
+
+    // HUD - Transparan, cyan, pojok kiri atas
+    WatermarkLayout.hud: LayoutTheme(
+      primaryColor: Color(0xFF00B8D4),
+      primaryImgColor: img.ColorRgb8(0, 184, 212),
+      fontFamily: 'Roboto',
+      defaultOpacity: 0.75,
+      defaultPosition: 'topLeft',
+      supportsBorder: false,
+      supportsMiniMap: false,
+    ),
+
+    // POLAROID - Ivory, border putih, full frame
+    WatermarkLayout.polaroid: LayoutTheme(
+      primaryColor: Color(0xFFF8F5EB),
+      primaryImgColor: img.ColorRgb8(248, 245, 235),
+      fontFamily: 'Roboto',
+      defaultOpacity: 1.0,
+      defaultPosition: 'fullFrame',
+      supportsBorder: true,
+      supportsMiniMap: false,
+    ),
+
+    // DOCUMENTARY - Minimalis, abu-abu gelap, bawah
+    WatermarkLayout.documentary: LayoutTheme(
+      primaryColor: Color(0xFF2C3E50),
+      primaryImgColor: img.ColorRgb8(44, 62, 80),
+      fontFamily: 'Roboto',
+      defaultOpacity: 0.9,
+      defaultPosition: 'bottom',
+      supportsBorder: true,
+      supportsMiniMap: true,
+    ),
+
+    // LEICA - Klasik, hitam/merah, pojok kanan bawah
+    WatermarkLayout.leica: LayoutTheme(
+      primaryColor: Color(0xFFCC0000),
+      primaryImgColor: img.ColorRgb8(204, 0, 0),
+      fontFamily: 'Roboto',
+      defaultOpacity: 0.85,
+      defaultPosition: 'bottomRight',
+      supportsBorder: false,
+      supportsMiniMap: false,
+    ),
+
+    // SURVEY - Data lengkap, hijau/teal, kiri bawah
+    WatermarkLayout.survey: LayoutTheme(
+      primaryColor: Color(0xFF00A86B),
+      primaryImgColor: img.ColorRgb8(0, 168, 107),
+      fontFamily: 'Roboto',
+      defaultOpacity: 0.95,
+      defaultPosition: 'bottomLeft',
+      supportsBorder: true,
+      supportsMiniMap: true,
+    ),
+  };
+
+  /// Mendapatkan theme untuk layout tertentu
+  static LayoutTheme of(WatermarkLayout layout) {
+    return themes[layout] ?? themes[WatermarkLayout.cinematic]!;
+  }
 }
 
 extension WatermarkLayoutExtension on WatermarkLayout {
   static const List<WatermarkLayout> all = [
-    WatermarkLayout.minimal,
-    WatermarkLayout.dslrCorner,
-    WatermarkLayout.gpsTimestamp,
-    WatermarkLayout.fieldSurvey,
-    WatermarkLayout.hud,
-    WatermarkLayout.gpsCard,
-    WatermarkLayout.polaroid,
-    WatermarkLayout.sidePanel,
     WatermarkLayout.cinematic,
-    WatermarkLayout.timeMarkStyle,
-    WatermarkLayout.modern,
+    WatermarkLayout.hud,
+    WatermarkLayout.polaroid,
+    WatermarkLayout.documentary,
+    WatermarkLayout.leica,
+    WatermarkLayout.survey,
   ];
 
   LayoutCategory get category {
     switch (this) {
-      case WatermarkLayout.minimal:
-      case WatermarkLayout.polaroid:
-        return LayoutCategory.classic;
-      case WatermarkLayout.hud:
-      case WatermarkLayout.gpsCard:
-      case WatermarkLayout.modern:
-        return LayoutCategory.modern;
       case WatermarkLayout.cinematic:
-      case WatermarkLayout.gpsTimestamp:
         return LayoutCategory.cinematic;
-      case WatermarkLayout.fieldSurvey:
-      case WatermarkLayout.timeMarkStyle:
+      case WatermarkLayout.hud:
+      case WatermarkLayout.documentary:
+        return LayoutCategory.modern;
+      case WatermarkLayout.polaroid:
+      case WatermarkLayout.leica:
+        return LayoutCategory.classic;
+      case WatermarkLayout.survey:
         return LayoutCategory.data;
-      case WatermarkLayout.dslrCorner:
-      case WatermarkLayout.sidePanel:
-        return LayoutCategory.corner;
     }
   }
 
   String get displayName {
     switch (this) {
-      case WatermarkLayout.minimal:        return 'Film Strip';
-      case WatermarkLayout.dslrCorner:     return 'DSLR Corner';
-      case WatermarkLayout.gpsTimestamp:   return 'GPS Timestamp';
-      case WatermarkLayout.fieldSurvey:    return 'Field Survey';
-      case WatermarkLayout.hud:            return 'HUD Modern';
-      case WatermarkLayout.gpsCard:        return 'GPS Card';
-      case WatermarkLayout.polaroid:       return 'Polaroid';
-      case WatermarkLayout.sidePanel:      return 'Side Panel';
-      case WatermarkLayout.cinematic:      return 'Cinematic';
-      case WatermarkLayout.timeMarkStyle:  return 'TimeMark Style';
-      case WatermarkLayout.modern:         return 'Modern Clean Card';
+      case WatermarkLayout.cinematic:    return 'Cinematic';
+      case WatermarkLayout.hud:          return 'HUD';
+      case WatermarkLayout.polaroid:     return 'Polaroid';
+      case WatermarkLayout.documentary:  return 'Documentary';
+      case WatermarkLayout.leica:        return 'Leica Style';
+      case WatermarkLayout.survey:       return 'Survey Pro';
     }
   }
 
   String get description {
     switch (this) {
-      case WatermarkLayout.minimal:        
-        return 'Gaya strip film dengan border biru profesional';
-      case WatermarkLayout.dslrCorner:     
-        return 'Informasi seperti tampilan kamera DSLR di pojok';
-      case WatermarkLayout.gpsTimestamp:   
-        return 'Tampilan timestamp GPS yang bersih dan profesional';
-      case WatermarkLayout.fieldSurvey:    
-        return 'Gaya form survey dengan tabel data terstruktur';
-      case WatermarkLayout.hud:            
-        return 'Heads-Up Display modern dengan efek transparan';
-      case WatermarkLayout.gpsCard:        
-        return 'Panel GPS dengan map strip adaptif';
-      case WatermarkLayout.polaroid:       
+      case WatermarkLayout.cinematic:    
+        return 'Tampilan letterbox sinematik dengan gradasi elegan';
+      case WatermarkLayout.hud:          
+        return 'Heads-up display modern transparan di pojok layar';
+      case WatermarkLayout.polaroid:     
         return 'Gaya polaroid klasik dengan bingkai ivory';
-      case WatermarkLayout.sidePanel:      
-        return 'Panel samping vertikal dengan jam besar';
-      case WatermarkLayout.cinematic:      
-        return 'Gaya sinematik dengan gradasi halus dan elegan';
-      case WatermarkLayout.timeMarkStyle:  
-        return 'Gaya GPS TimeMark Camera dengan font modern';
-      case WatermarkLayout.modern:         
-        return 'Desain bersih, navy gelap, aksen teal modern';
+      case WatermarkLayout.documentary:  
+        return 'Gaya dokumenter minimalis yang bersih';
+      case WatermarkLayout.leica:        
+        return 'Gaya khas Leica dengan aksen merah khas';
+      case WatermarkLayout.survey:       
+        return 'Gaya survey dengan data lengkap dan terstruktur';
     }
   }
 
   String get previewIcon {
     switch (this) {
-      case WatermarkLayout.minimal:        return '🎞️';
-      case WatermarkLayout.dslrCorner:     return '📷';
-      case WatermarkLayout.gpsTimestamp:   return '📍';
-      case WatermarkLayout.fieldSurvey:    return '📋';
-      case WatermarkLayout.hud:            return '🎮';
-      case WatermarkLayout.gpsCard:        return '🛰️';
-      case WatermarkLayout.polaroid:       return '🖼️';
-      case WatermarkLayout.sidePanel:      return '📱';
-      case WatermarkLayout.cinematic:      return '🎬';
-      case WatermarkLayout.timeMarkStyle:  return '⏱️';
-      case WatermarkLayout.modern:         return '✨';
+      case WatermarkLayout.cinematic:    return '🎬';
+      case WatermarkLayout.hud:          return '🎮';
+      case WatermarkLayout.polaroid:     return '🖼️';
+      case WatermarkLayout.documentary:  return '📹';
+      case WatermarkLayout.leica:        return '📷';
+      case WatermarkLayout.survey:       return '📋';
     }
   }
 
-  /// LEGACY - Gunakan typeString untuk penyimpanan baru
-  static WatermarkLayout fromIndex(int index) {
-    if (index >= 0 && index < all.length) {
-      return all[index];
-    }
-    return WatermarkLayout.modern;
-  }
-
-  /// LEGACY - Gunakan typeString untuk penyimpanan baru
-  int get index {
-    return all.indexOf(this);
-  }
-
-  /// Penyimpanan aman menggunakan String
+  // Konversi ke typeString untuk penyimpanan
   String get typeString {
     switch (this) {
-      case WatermarkLayout.minimal:        return 'minimal';
-      case WatermarkLayout.dslrCorner:     return 'dslr_corner';
-      case WatermarkLayout.gpsTimestamp:   return 'gps_timestamp';
-      case WatermarkLayout.fieldSurvey:    return 'field_survey';
-      case WatermarkLayout.hud:            return 'hud';
-      case WatermarkLayout.gpsCard:        return 'gps_card';
-      case WatermarkLayout.polaroid:       return 'polaroid';
-      case WatermarkLayout.sidePanel:      return 'side_panel';
-      case WatermarkLayout.cinematic:      return 'cinematic';
-      case WatermarkLayout.timeMarkStyle:  return 'timemark_style';
-      case WatermarkLayout.modern:         return 'modern';
+      case WatermarkLayout.cinematic:    return 'cinematic';
+      case WatermarkLayout.hud:          return 'hud';
+      case WatermarkLayout.polaroid:     return 'polaroid';
+      case WatermarkLayout.documentary:  return 'documentary';
+      case WatermarkLayout.leica:        return 'leica';
+      case WatermarkLayout.survey:       return 'survey';
     }
   }
 
-  /// Membaca dari String (aman)
+  // Membaca dari String (aman)
   static WatermarkLayout fromTypeString(String type) {
     switch (type) {
-      case 'minimal':        return WatermarkLayout.minimal;
-      case 'dslr_corner':    return WatermarkLayout.dslrCorner;
-      case 'gps_timestamp':  return WatermarkLayout.gpsTimestamp;
-      case 'field_survey':   return WatermarkLayout.fieldSurvey;
-      case 'hud':            return WatermarkLayout.hud;
-      case 'gps_card':       return WatermarkLayout.gpsCard;
-      case 'polaroid':       return WatermarkLayout.polaroid;
-      case 'side_panel':     return WatermarkLayout.sidePanel;
-      case 'cinematic':      return WatermarkLayout.cinematic;
-      case 'timemark_style': return WatermarkLayout.timeMarkStyle;
-      case 'modern':         return WatermarkLayout.modern;
-      default:               return WatermarkLayout.modern;
+      case 'cinematic':    return WatermarkLayout.cinematic;
+      case 'hud':          return WatermarkLayout.hud;
+      case 'polaroid':     return WatermarkLayout.polaroid;
+      case 'documentary':  return WatermarkLayout.documentary;
+      case 'leica':        return WatermarkLayout.leica;
+      case 'survey':       return WatermarkLayout.survey;
+      default:             return WatermarkLayout.cinematic;
     }
   }
 
-  bool get supportsDarkTheme {
-    switch (this) {
-      case WatermarkLayout.hud:
-      case WatermarkLayout.gpsCard:
-      case WatermarkLayout.sidePanel:
-      case WatermarkLayout.modern:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  bool get supportsLightTheme {
-    switch (this) {
-      case WatermarkLayout.polaroid:
-      case WatermarkLayout.minimal:
-      case WatermarkLayout.fieldSurvey:
-        return true;
-      default:
-        return false;
-    }
-  }
+  // Theme accessor
+  LayoutTheme get theme => LayoutTheme.of(this);
+  
+  Color get primaryColor => theme.primaryColor;
+  
+  img.Color get primaryImgColor => theme.primaryImgColor;
+  
+  String get fontFamily => theme.fontFamily;
+  
+  double get defaultOpacity => theme.defaultOpacity;
+  
+  String get defaultPosition => theme.defaultPosition;
+  
+  bool get supportsBorder => theme.supportsBorder;
+  
+  bool get supportsMiniMap => theme.supportsMiniMap;
 }
 
 // ============================================================
-// WATERMARK THEME
+// WATERMARK THEME (untuk dark/light mode tambahan)
 // ============================================================
-enum WatermarkTheme {
-  dark, light, kodak, cinematic, survey,
+enum WatermarkColorTheme {
+  dark, 
+  light, 
+  auto,
 }
 
-extension WatermarkThemeExtension on WatermarkTheme {
+extension WatermarkColorThemeExtension on WatermarkColorTheme {
   String get displayName {
     switch (this) {
-      case WatermarkTheme.dark:      return 'Dark Modern';
-      case WatermarkTheme.light:     return 'Light Clean';
-      case WatermarkTheme.kodak:     return 'Kodak Retro';
-      case WatermarkTheme.cinematic: return 'Cinematic';
-      case WatermarkTheme.survey:    return 'Survey Pro';
+      case WatermarkColorTheme.dark:   return 'Dark';
+      case WatermarkColorTheme.light:  return 'Light';
+      case WatermarkColorTheme.auto:   return 'Auto (Based on image)';
     }
   }
 }
@@ -267,6 +299,8 @@ final img.Color kColorDarkText = img.ColorRgb8(40, 40, 40);
 final img.Color kColorNavy = img.ColorRgba8(10, 15, 40, 240);
 final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
 final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
+final img.Color kColorTeal = img.ColorRgb8(0, 168, 107);
+final img.Color kColorRed = img.ColorRgb8(204, 0, 0);
 
 // ============================================================
 // UI COLORS (Flutter)
@@ -276,6 +310,8 @@ const int kColorNavyDarkUi = 0xFF0D2137;
 const int kColorBlueUi = 0xFF2980B9;
 const int kColorCyanLightUi = 0xFF00B8D4;
 const int kColorCyanDarkUi = 0xFF0077B6;
+const int kColorTealUi = 0xFF00A86B;
+const int kColorRedUi = 0xFFCC0000;
 
 // ============================================================
 // GPS & LOCATION

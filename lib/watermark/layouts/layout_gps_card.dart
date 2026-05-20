@@ -36,8 +36,12 @@ class LayoutGpsCard extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    final bool isTop = watermarkPosition == 'top';
-    final int y0 = isTop ? 0 : src.height - panelH;
+    // ✅ Y posisi dihitung via resolveYStart — TIDAK ada logika layout di sini
+    final int y0 = WatermarkLayoutBase.resolveYStart(
+      watermarkPosition: watermarkPosition,
+      imageHeight: src.height,
+      contentHeight: panelH,
+    );
     if (y0 < 0 || y0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
 
     final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial24;

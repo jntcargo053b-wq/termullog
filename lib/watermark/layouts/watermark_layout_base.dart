@@ -148,4 +148,34 @@ abstract class WatermarkLayoutBase {
   static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
     return Uint8List.fromList(img.encodeJpg(src, quality: quality));
   }
+
+  // ─── POSISI HELPERS ──────────────────────────────────────────────
+  /// Hitung Y posisi awal watermark bar.
+  ///
+  /// ✅ BENAR: logika posisi (TOP/BOTTOM) HANYA di sini.
+  /// Layout TIDAK boleh melakukan `watermarkPosition == 'top'`
+  /// langsung di dalam renderer mereka — panggil method ini saja.
+  ///
+  ///   final int y0 = WatermarkLayoutBase.resolveYStart(
+  ///     watermarkPosition: watermarkPosition,
+  ///     imageHeight: src.height,
+  ///     contentHeight: barH,
+  ///   );
+  static int resolveYStart({
+    required String watermarkPosition,
+    required int imageHeight,
+    required int contentHeight,
+    int margin = 0,
+  }) {
+    return watermarkPosition == 'top'
+        ? margin
+        : imageHeight - contentHeight - margin;
+  }
+
+  /// Apakah watermark berada di tepi atas gambar?
+  /// Digunakan renderer untuk arah gradient (fade dari tepi image ke tengah).
+  /// Ini adalah "position-aware rendering" — bukan perubahan jenis layout.
+  static bool isAtTopEdge(int yStart, int imageHeight) {
+    return yStart < imageHeight / 2;
+  }
 }

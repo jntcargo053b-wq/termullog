@@ -38,16 +38,23 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    final bool isTop = watermarkPosition == 'top';
+    // ✅ STEP 1: Hitung Y posisi via resolveYStart — logika posisi TERPUSAT
     final int panelH = (address.length > 70) ? 165 : 140;
-    final int y0 = isTop ? 0 : src.height - panelH;
+    final int y0 = WatermarkLayoutBase.resolveYStart(
+      watermarkPosition: watermarkPosition,
+      imageHeight: src.height,
+      contentHeight: panelH,
+    );
     if (y0 < 0 || y0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
+
+    // ✅ STEP 2: Gradient direction diturunkan dari Y posisi, BUKAN dari string 'top'/'bottom'
+    final bool isTopEdge = WatermarkLayoutBase.isAtTopEdge(y0, src.height);
 
     final int w = src.width;
     final double scale = (src.width / 1080).clamp(0.85, 1.3);
     final int mapSz = (_mapSz(showMiniMap, mapBytes) * scale).round();
 
-    _gradientBg(src, y0: y0, w: w, panelH: panelH, isTop: isTop, opacity: opacity);
+    _gradientBg(src, y0: y0, w: w, panelH: panelH, isTopEdge: isTopEdge, opacity: opacity);
 
     if (showBorder) {
       final int barY1 = y0 + 24;
@@ -127,10 +134,11 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
   }
 
   // Helper methods (tidak berubah dari sebelumnya)
-  void _gradientBg(img.Image src, {required int y0, required int w, required int panelH, required bool isTop, required double opacity}) {
+  void _gradientBg(img.Image src, {required int y0, required int w, required int panelH, required bool isTopEdge, required double opacity}) {
     for (int row = y0; row < y0 + panelH; row++) {
       if (row < 0 || row >= src.height) continue;
-      final double t = isTop ? (row - y0) / panelH : 1.0 - (row - y0) / panelH;
+      // ✅ Gradient direction dari isTopEdge (diturunkan dari Y posisi, bukan string perbandingan)
+      final double t = isTopEdge ? (row - y0) / panelH : 1.0 - (row - y0) / panelH;
       final int r = _lerp(8, 20, t);
       final int g = _lerp(12, 30, t);
       final int b = _lerp(20, 46, t);

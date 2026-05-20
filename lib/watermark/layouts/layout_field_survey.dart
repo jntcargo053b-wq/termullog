@@ -64,8 +64,13 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     }
 
     final int totalH = headerH + rows.length * rowH + 8;
-    final bool isTop = watermarkPosition == 'top';
-    final int y0 = isTop ? 0 : src.height - totalH;
+
+    // ✅ Y posisi dihitung via resolveYStart — TIDAK ada logika layout di sini
+    final int y0 = WatermarkLayoutBase.resolveYStart(
+      watermarkPosition: watermarkPosition,
+      imageHeight: src.height,
+      contentHeight: totalH,
+    );
     if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
     // ── Background table ──────────────────────────────────────────

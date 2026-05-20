@@ -40,15 +40,24 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     final int lineH = (28 * scale * fsMultiplier).round();
     final int lineHSmall = (22 * scale * fsMultiplier).round();
 
-    final bool isTop = watermarkPosition == 'top';
-    final int gradY0 = isTop ? 0 : src.height - gradH;
+    // ✅ STEP 1: Hitung Y posisi via resolveYStart — logika posisi TERPUSAT
+    final int gradY0 = WatermarkLayoutBase.resolveYStart(
+      watermarkPosition: watermarkPosition,
+      imageHeight: src.height,
+      contentHeight: gradH,
+    );
     if (gradY0 < 0 || gradY0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
 
+    // ✅ STEP 2: Gradient direction diturunkan dari Y posisi, BUKAN dari string 'top'/'bottom'
+    // Ini adalah "position-aware rendering": gradient SELALU fade dari tepi gambar ke tengah.
+    // isTopEdge dihitung dari posisi Y, bukan membandingkan string watermarkPosition.
+    final bool isTopEdge = WatermarkLayoutBase.isAtTopEdge(gradY0, src.height);
+
     // ── Gradient background ───────────────────────────────────────
-    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTop: isTop, opacity: opacity);
+    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTop: isTopEdge, opacity: opacity);
 
     // ── Divider line ──────────────────────────────────────────────
-    final int divY = isTop ? gradH - (40 * scale).round() : gradY0 + (36 * scale).round();
+    final int divY = isTopEdge ? gradH - (40 * scale).round() : gradY0 + (36 * scale).round();
     if (showBorder) {
       // Glow
       img.fillRect(src, x1: padX - 2, y1: divY - 1, x2: src.width - padX + 2, y2: divY + 3,
@@ -62,7 +71,7 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     final font = fontSize == 'small' ? img.arial14 : img.arial24;
     final fontSmall = fontSize == 'small' ? img.arial14 : img.arial24;
 
-    int cy = isTop ? (16 * scale).round() : gradY0 + (12 * scale).round();
+    int cy = isTopEdge ? (16 * scale).round() : gradY0 + (12 * scale).round();
 
     // ── Jam (dengan shadow) ───────────────────────────────────────
     _shadowText(src, DateFormat('HH : mm : ss').format(timestamp),
@@ -164,12 +173,15 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
   void _applyGradient(img.Image src, {
     required int gradY0,
     required int gradH,
-    required bool isTop,
+    // ✅ isTopEdge diturunkan dari Y posisi (bukan perbandingan string langsung).
+    // Gradient SELALU fade dari tepi gambar ke tengah — ini position-aware rendering,
+    // BUKAN pemilihan jenis layout berdasarkan posisi.
+    required bool isTopEdge,
     required double opacity,
   }) {
     for (int y = gradY0; y < gradY0 + gradH; y++) {
       if (y < 0 || y >= src.height) continue;
-      final t = isTop ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
+      final t = isTopEdge ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
       final alpha = (t * 220 * opacity).toInt().clamp(0, 220);
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);

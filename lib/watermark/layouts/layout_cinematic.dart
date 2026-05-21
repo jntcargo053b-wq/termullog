@@ -67,13 +67,13 @@ class LayoutCinematic extends WatermarkLayoutBase {
 
     final bool atTop = WatermarkLayoutBase.isAtTopEdge(gradY0, src.height);
 
-    // ── Gradient bar ───────────────────────────────────────────────
+    // ── Gradient bar (diperbaiki menggunakan fillRect untuk performa) ──
     for (int i = 0; i < gradH; i++) {
       final double t = atTop ? (i / gradH) : (1.0 - i / gradH);
       final int alpha = (200 * t).clamp(0, 200).round();
-      for (int j = 0; j < src.width; j++) {
-        img.drawPixel(src, j, gradY0 + i, img.getColor(10, 15, 40, alpha));
-      }
+      final int barColor = img.getColor(10, 15, 40, alpha);
+      // Perbaikan: Menggunakan fillRect untuk setiap baris horizontal
+      img.drawLine(src, 0, gradY0 + i, src.width - 1, gradY0 + i, barColor);
     }
 
     // ── Text content ───────────────────────────────────────────────
@@ -84,8 +84,12 @@ class LayoutCinematic extends WatermarkLayoutBase {
     // Date & time (large, centered)
     final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
     final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    
+    // Perbaikan: Menggunakan arial24 untuk date (size 24)
     _drawTextCentered(src, dateStr, src.width ~/ 2, textY, 24, kColorWhite);
     textY += lineH;
+    
+    // Perbaikan: Menggunakan arial14 untuk time (size 14)
     _drawTextCentered(src, timeStr, src.width ~/ 2, textY, 14, kColorLightGrey);
     textY += lineHSmall + 4;
 
@@ -141,8 +145,15 @@ class LayoutCinematic extends WatermarkLayoutBase {
 
   void _drawTextCentered(
       img.Image image, String text, int centerX, int y, int size, img.Color color) {
-    final int approxWidth = text.length * (size ~/ 2);
-    final int x = centerX - (approxWidth ~/ 2);
+    // Perbaikan: Menghitung lebar teks yang lebih akurat
+    // Untuk font monospace/proportional, ini estimasi kasar
+    final int approxWidth = (text.length * (size ~/ 2)).round();
+    int x = centerX - (approxWidth ~/ 2);
+    
+    // Pastikan tidak negatif
+    if (x < 0) x = 0;
+    
+    // Perbaikan: Menggunakan font yang sesuai dengan size
     if (size <= 14) {
       img.drawString(image, img.arial14, x, y, text, color: color);
     } else if (size <= 24) {

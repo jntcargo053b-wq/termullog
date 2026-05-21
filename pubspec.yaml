@@ -45,12 +45,12 @@ dependencies:
   # IMAGE PROCESSING - VERSI KOMPATIBEL
   # ==========================================================
   # Menggunakan image 3.2.2 karena:
-  # ✅ Masih memiliki embedded fonts (arial_12, arial_14, dll)
+  # ✅ Masih memiliki embedded fonts (arial_12, arial_14, arial_24, arial_36)
   # ✅ Kompatibel dengan xml ^6.0.1 (sama dengan flutter_svg)
   # ✅ API drawString masih menggunakan img.Color (bukan int)
   # ✅ TIDAK perlu rewrite watermark engine
   # ✅ fillCircle, drawRect masih menggunakan named parameters
-  image: ^3.2.2
+  image: 3.2.2
   
   # HTTP & Networking
   http: ^1.2.0
@@ -67,6 +67,15 @@ dev_dependencies:
   flutter_lints: ^4.0.0
 
 # ============================================================
+# DEPENDENCY OVERRIDES (MEMASTIKAN VERSI YANG BENAR)
+# ============================================================
+dependency_overrides:
+  # Memastikan image menggunakan versi 3.2.2 (bukan 3.3.0)
+  image: 3.2.2
+  # Memastikan xml kompatibel dengan kedua dependency
+  xml: ^6.0.1
+
+# ============================================================
 # FLUTTER CONFIG
 # ============================================================
 flutter:
@@ -79,7 +88,7 @@ flutter:
   # ==========================================================
   # CATATAN PENTING:
   # ==========================================================
-  # Dengan image: ^3.2.2, Anda TIDAK PERLU menambahkan font apapun
+  # Dengan image: 3.2.2, Anda TIDAK PERLU menambahkan font apapun
   # karena font Arial sudah built-in di package image.
   #
   # Font berikut tersedia secara otomatis:

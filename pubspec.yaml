@@ -42,7 +42,7 @@ dependencies:
   path: ^1.9.0
   
   # Image Processing
-  image: ^4.1.7
+  image: ^3.2.2
   
   # HTTP & Networking
   http: ^1.2.0

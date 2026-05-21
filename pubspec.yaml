@@ -41,14 +41,15 @@ dependencies:
   path_provider: ^2.1.2
   path: ^1.9.0
   
-  # Image Processing - Versi 3.0.5 dengan embedded fonts (arial_14, arial_24, dll)
-  image: 3.0.5
+  # Image Processing - Versi 3.3.0 (tanpa embedded fonts)
+  # PERHATIAN: Versi ini memerlukan loading font eksternal
+  image: 3.3.0
   
   # HTTP & Networking
   http: ^1.2.0
   
-  # Other
-  flutter_svg: ^2.0.9
+  # Other - Menggunakan versi stabil untuk kompatibilitas
+  flutter_svg: ^1.0.3
 
 # ============================================================
 # DEV DEPENDENCIES
@@ -67,35 +68,18 @@ flutter:
   assets:
     - assets/
     - assets/icons/
+    - assets/fonts/  # Tambahkan folder fonts untuk file .ttf
   
-  # CATATAN: File font tidak disertakan dalam repositori.
-  # Tambahkan font ke folder assets/fonts/ secara manual jika diperlukan:
-  #
-  # fonts:
-  #   - family: PlayfairDisplay
-  #     fonts:
-  #       - asset: assets/fonts/PlayfairDisplay-Regular.ttf
-  #   - family: JetBrainsMono
-  #     fonts:
-  #       - asset: assets/fonts/JetBrainsMono-Regular.ttf
-  #       - asset: assets/fonts/JetBrainsMono-Bold.ttf
-  #         weight: 700
-  #   - family: Caveat
-  #     fonts:
-  #       - asset: assets/fonts/Caveat-Regular.ttf
-  #   - family: BebasNeue
-  #     fonts:
-  #       - asset: assets/fonts/BebasNeue-Regular.ttf
-  #   - family: Inter
-  #     fonts:
-  #       - asset: assets/fonts/Inter-Regular.ttf
-  #       - asset: assets/fonts/Inter-Bold.ttf
-  #         weight: 700
-  #   - family: RobotoMono
-  #     fonts:
-  #       - asset: assets/fonts/RobotoMono-Regular.ttf
-  #       - asset: assets/fonts/RobotoMono-Bold.ttf
-  #         weight: 700
-  #   - family: Roboto
-  #     fonts:
-  #       - asset: assets/fonts/Roboto-Regular.ttf
+  # FONT: Untuk image 3.3.0, Anda perlu menambahkan file font eksternal
+  # Download Arial.ttf dan tempatkan di assets/fonts/
+  fonts:
+    - family: Arial
+      fonts:
+        - asset: assets/fonts/Arial.ttf
+        - asset: assets/fonts/Arial-Bold.ttf
+          weight: 700
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700

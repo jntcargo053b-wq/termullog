@@ -30,7 +30,6 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    // Bottom bar
     final int barHeight = 70;
     final int yBar = src.height - barHeight;
     
@@ -54,24 +53,12 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     if (hasPosition && showCoordinates && lat != null && lon != null) {
       final String coordStr = '📍 ${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°';
       _drawText(src, coordStr, margin, y, 12, kColorLightGrey);
-      y += 24;
-    }
-    
-    // Weather
-    if (showWeather && weather.isNotEmpty) {
-      _drawText(src, '☁️ $weather', margin, y, 12, kColorLightGrey);
     }
     
     return WatermarkLayoutBase.encodeJpg(src);
   }
   
-  void _drawText(img.Image img, String text, int x, int y, int size, img.Color color) {
-    if (size <= 12) {
-      img.drawString(img, text, font: img.arial12, x: x, y: y, color: color);
-    } else if (size <= 14) {
-      img.drawString(img, text, font: img.arial14, x: x, y: y, color: color);
-    } else {
-      img.drawString(img, text, font: img.arial24, x: x, y: y, color: color);
-    }
+  void _drawText(img.Image image, String text, int x, int y, int size, img.Color color) {
+    img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
   }
 }

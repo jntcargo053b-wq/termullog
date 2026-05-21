@@ -37,8 +37,15 @@ class LayoutLeica extends WatermarkLayoutBase {
     final int x = src.width - margin - 180;
     int y = src.height - margin - 80;
     
-    // Leica red dot
-    img.fillCircle(src, x: src.width - margin - 12, y: y + 12, radius: 6, color: kColorRed);
+    // Perbaikan: fillCircle menggunakan positional parameters (versi 3.0.5)
+    // Parameter: fillCircle(image, x0, y0, radius, color)
+    img.fillCircle(
+      src,                          // image
+      src.width - margin - 12,      // x0
+      y + 12,                       // y0
+      6,                            // radius
+      kColorRed                     // color
+    );
     
     // Text
     final String dateStr = DateFormat('yyyy-MM-dd').format(timestamp);
@@ -65,6 +72,7 @@ class LayoutLeica extends WatermarkLayoutBase {
   }
   
   void _drawText(img.Image image, String text, int x, int y, int size, img.Color color) {
+    // Perbaikan: Menggunakan font yang sesuai dengan size
     if (size <= 12) {
       img.drawString(image, img.arial12, x, y, text, color: color);
     } else if (size <= 14) {

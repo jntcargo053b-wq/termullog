@@ -31,7 +31,7 @@ class LayoutSurvey extends WatermarkLayoutBase {
     String fontSize = 'normal',
   }) {
     final int panelW = 280;
-    final int panelH = 220;
+    final int panelH = 200;
     final int panelX = 16;
     final int panelY = src.height - panelH - 16;
     
@@ -50,7 +50,7 @@ class LayoutSurvey extends WatermarkLayoutBase {
     int y = panelY + 16;
     
     // Header
-    _drawText(src, 'SURVEY DATA', x, y, 14, kColorTeal, bold: true);
+    _drawText(src, 'SURVEY DATA', x, y, 14, kColorTeal);
     y += 28;
     
     // Rows
@@ -67,29 +67,18 @@ class LayoutSurvey extends WatermarkLayoutBase {
       
       if (showAccuracy && acc != null) {
         _drawRow(src, 'ACCURACY', '±${acc.toStringAsFixed(1)}m', x, y);
-        y += 24;
       }
-    }
-    
-    if (showWeather && weather.isNotEmpty) {
-      _drawRow(src, 'WEATHER', weather, x, y);
     }
     
     return WatermarkLayoutBase.encodeJpg(src);
   }
   
-  void _drawRow(img.Image src, String label, String value, int x, int y) {
-    _drawText(src, label, x, y, 11, kColorLightGrey);
-    _drawText(src, value, x + 100, y, 11, kColorWhite);
+  void _drawRow(img.Image image, String label, String value, int x, int y) {
+    _drawText(image, label, x, y, 11, kColorLightGrey);
+    _drawText(image, value, x + 100, y, 11, kColorWhite);
   }
   
-  void _drawText(img.Image img, String text, int x, int y, int size, img.Color color, {bool bold = false}) {
-    if (size <= 12) {
-      img.drawString(img, text, font: bold ? img.arial14 : img.arial12, x: x, y: y, color: color);
-    } else if (size <= 14) {
-      img.drawString(img, text, font: img.arial14, x: x, y: y, color: color);
-    } else {
-      img.drawString(img, text, font: img.arial24, x: x, y: y, color: color);
-    }
+  void _drawText(img.Image image, String text, int x, int y, int size, img.Color color) {
+    img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
   }
 }

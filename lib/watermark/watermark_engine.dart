@@ -281,7 +281,7 @@ class WatermarkEngine {
         mappedType = 'survey';
         break;
       default:
-        mappedType = layoutType; // cinematic, hud, polaroid, documentary, leica, survey
+        mappedType = layoutType;
     }
     
     final layout = _layouts[mappedType];

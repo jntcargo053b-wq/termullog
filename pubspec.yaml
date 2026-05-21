@@ -41,8 +41,8 @@ dependencies:
   path_provider: ^2.1.2
   path: ^1.9.0
   
-  # Image Processing
-  image: 3.3.0
+  # Image Processing - Versi 3.0.5 dengan embedded fonts (arial_14, arial_24, dll)
+  image: 3.0.5
   
   # HTTP & Networking
   http: ^1.2.0

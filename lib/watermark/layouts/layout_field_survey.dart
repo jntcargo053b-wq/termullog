@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_12.dart';
+import 'package:image/src/font/arial_14.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -42,7 +44,7 @@ class LayoutSurvey extends WatermarkLayoutBase {
     for (int i = 0; i < panelH; i++) {
       for (int j = 0; j < panelW; j++) {
         final int alpha = (0.9 * 255).toInt();
-        img.drawPixel(src, panelX + j, panelY + i, img.ColorRgba8(15, 23, 42, alpha));
+        img.drawPixel(src, panelX + j, panelY + i, img.getColor(15, 23, 42, alpha));
       }
     }
     
@@ -56,7 +58,7 @@ class LayoutSurvey extends WatermarkLayoutBase {
     int y = panelY + 16;
     
     // Header
-    img.drawString(src, 'FIELD SURVEY DATA', font: img.arial14, x: x, y: y, color: kColorTeal);
+    img.drawString(src, img.arial14, x, y, 'FIELD SURVEY DATA', color: kColorTeal);
     y += 28;
     
     // Data rows
@@ -86,8 +88,8 @@ class LayoutSurvey extends WatermarkLayoutBase {
   }
   
   void _drawRow(img.Image src, String label, String value, int x, int y) {
-    img.drawString(src, label, font: img.arial12, x: x, y: y, color: kColorLightGrey);
-    img.drawString(src, value, font: img.arial12, x: x + 100, y: y, color: kColorWhite);
+    img.drawString(src, img.arial12, x, y, label, color: kColorLightGrey);
+    img.drawString(src, img.arial12, x + 100, y, value, color: kColorWhite);
   }
   
   @override

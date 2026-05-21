@@ -49,8 +49,8 @@ void wmDrawTextShadow(
   required int y,
   required img.Color color,
 }) {
-  img.drawString(image, text, font: font, x: x + 2, y: y + 2, color: kColorShadow);
-  img.drawString(image, text, font: font, x: x,     y: y,     color: color);
+  img.drawString(image, font, x + 2, y + 2, text, color: kColorShadow);
+  img.drawString(image, font, x, y, text, color: color);
 }
 
 img.Image? wmResizeSignature(img.Image? sig, int maxWidth, int maxHeight) {

@@ -1,6 +1,8 @@
 // lib/watermark/layouts/layout_simple.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 
@@ -46,59 +48,31 @@ class LayoutSimple {
       y1: isBottom ? src.height - 110 : 0,
       x2: 340,
       y2: isBottom ? src.height : 110,
-      color: img.ColorRgba8(0, 0, 0, (180 * opacity).toInt()),
+      color: img.getColor(0, 0, 0, (180 * opacity).toInt()),
     );
 
     // Timestamp
-    img.drawString(
-      src,
-      '$dateStr  $timeStr',
-      font: font,
-      x: 12,
-      y: yPos,
-      color: img.ColorRgb8(255, 255, 255),
-    );
+    img.drawString(src, font, 12, yPos, '$dateStr  $timeStr', color: img.getColor(255, 255, 255));
 
     yPos += 30;
 
     // Coordinates
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      img.drawString(
-        src,
-        '${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}',
-        font: smallFont,
-        x: 12,
-        y: yPos,
-        color: img.ColorRgb8(0, 255, 255),
-      );
+      img.drawString(src, smallFont, 12, yPos, '${lat.toStringAsFixed(5)}, color: img.getColor(0, 255, 255));
 
       yPos += 20;
     }
 
     // Accuracy
     if (showAccuracy && acc != null) {
-      img.drawString(
-        src,
-        'Accuracy ±${acc.toStringAsFixed(1)}m',
-        font: smallFont,
-        x: 12,
-        y: yPos,
-        color: img.ColorRgb8(200, 200, 200),
-      );
+      img.drawString(src, smallFont, 12, yPos, 'Accuracy ±${acc.toStringAsFixed(1)}m', color: img.getColor(200, 200, 200));
 
       yPos += 20;
     }
 
     // Weather
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(
-        src,
-        weather,
-        font: smallFont,
-        x: 12,
-        y: yPos,
-        color: img.ColorRgb8(255, 215, 0),
-      );
+      img.drawString(src, smallFont, 12, yPos, weather, color: img.getColor(255, 215, 0));
     }
 
     return src;

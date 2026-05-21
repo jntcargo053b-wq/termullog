@@ -1,6 +1,8 @@
 // lib/watermark/layouts/layout_timemark_style.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
@@ -30,36 +32,32 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     const m = 12;
     // Card HITAM
     img.fillRect(src, x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
-        color: img.ColorRgba8(0, 0, 0, (200 * opacity).toInt()));
+        color: img.getColor(0, 0, 0, (200 * opacity).toInt()));
 
     // Border PUTIH tipis
     img.drawRect(src, x1: m, y1: y0 + m, x2: src.width - m, y2: y0 + panelH - m,
-        color: img.ColorRgba8(255, 255, 255, 40), thickness: 1);
+        color: img.getColor(255, 255, 255, 40), thickness: 1);
 
     final font = fontSize == 'small' ? img.arial14 : img.arial24;
     int cy = y0 + 24;
 
     // Jam BESAR — PUTIH
-    img.drawString(src, DateFormat('HH:mm').format(timestamp),
-        font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
+    img.drawString(src, font, padX, cy, DateFormat('HH:mm').format(timestamp), color: WatermarkLayoutBase.white);
     cy += (40 * scale).round();
 
     // Tanggal — PUTIH
-    img.drawString(src, DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp),
-        font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
+    img.drawString(src, font, padX, cy, DateFormat('EEEE, dd MMMM yyyy', 'id').format(timestamp), color: WatermarkLayoutBase.white);
     cy += (28 * scale).round();
 
     // Koordinat — BIRU
     if (showCoordinates && hasPosition) {
-      img.drawString(src, '${lat!.toStringAsFixed(5)}°  ${lon!.toStringAsFixed(5)}°',
-          font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
+      img.drawString(src, font, padX, cy, '${lat!.toStringAsFixed(5)}°  ${lon!.toStringAsFixed(5)}°', color: WatermarkLayoutBase.blue);
       cy += (26 * scale).round();
     }
 
     // Akurasi — ABU-ABU
     if (showAccuracy && hasPosition) {
-      img.drawString(src, '± ${acc?.toStringAsFixed(0) ?? '?'} m',
-          font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
+      img.drawString(src, font, padX, cy, '± ${acc?.toStringAsFixed(0) ?? '?'} m', color: WatermarkLayoutBase.grey);
       cy += (24 * scale).round();
     }
 
@@ -67,14 +65,14 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       final lines = _split(address);
       for (final line in lines.take(2)) {
-        img.drawString(src, line, font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
+        img.drawString(src, font, padX, cy, line, color: WatermarkLayoutBase.white);
         cy += (22 * scale).round();
       }
     }
 
     // Cuaca — BIRU
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather, font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
+      img.drawString(src, font, padX, cy, weather, color: WatermarkLayoutBase.blue);
     }
 
     // Mini map

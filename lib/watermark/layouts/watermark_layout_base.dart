@@ -44,10 +44,10 @@ abstract class WatermarkLayoutBase {
   bool get defaultShowCoordinates => true;
 
   /// Konstanta warna (img.ColorRgba8 tidak bisa const — pakai static final)
-  static final img.Color white    = img.ColorRgba8(255, 255, 255, 255);
-  static final img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
-  static final img.Color blue     = img.ColorRgba8(30, 144, 255, 255);
-  static final img.Color grey     = img.ColorRgba8(150, 150, 150, 255);
+  static final img.Color white    = img.getColor(255, 255, 255, 255);
+  static final img.Color offWhite = img.getColor(230, 230, 230, 255);
+  static final img.Color blue     = img.getColor(30, 144, 255, 255);
+  static final img.Color grey     = img.getColor(150, 150, 150, 255);
 
   /// Alias untuk layout baru
   static final img.Color imgWhite    = white;

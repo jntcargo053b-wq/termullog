@@ -1,6 +1,8 @@
 // lib/watermark/layouts/layout_dslr_corner.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
@@ -16,11 +18,11 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
   static const int _bracketTh = 2;
   static const int _sepH      = 1;
 
-  static final _red    = img.ColorRgba8(220,  45,  45, 255);
-  static final _amber  = img.ColorRgba8(255, 180,  40, 255);
-  static final _cyan   = img.ColorRgba8( 80, 210, 240, 255);
-  static final _dim    = img.ColorRgba8(140, 145, 155, 255);
-  static final _white  = img.ColorRgba8(240, 242, 245, 255);
+  static final _red    = img.getColor(220,  45,  45, 255);
+  static final _amber  = img.getColor(255, 180,  40, 255);
+  static final _cyan   = img.getColor( 80, 210, 240, 255);
+  static final _dim    = img.getColor(140, 145, 155, 255);
+  static final _white  = img.getColor(240, 242, 245, 255);
 
   @override
   Uint8List apply({
@@ -123,18 +125,18 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
       final int b = _lerp(14, 30, t);
       final int a = (alpha * (1.0 - t * 0.08)).round().clamp(0, 255);
       img.fillRect(src, x1: cx, y1: row, x2: cx + cardW - 1, y2: row + 1,
-          color: img.ColorRgba8(r, g, b, a));
+          color: img.getColor(r, g, b, a));
     }
 
     // ── Aksen merah ──────────────────────────────────────────────
     img.fillRect(src, x1: cx, y1: cy, x2: cx + cardW - 1, y2: cy + _accentH - 1, color: _red);
     img.fillRect(src, x1: cx, y1: cy, x2: cx + 20, y2: cy + _accentH - 1,
-        color: img.ColorRgba8(255, 100, 100, 255));
+        color: img.getColor(255, 100, 100, 255));
 
     // ── Border ───────────────────────────────────────────────────
     if (showBorder) {
       img.drawRect(src, x1: cx, y1: cy, x2: cx + cardW - 1, y2: cy + cardH - 1,
-          color: img.ColorRgba8(255, 255, 255, 35), thickness: 1);
+          color: img.getColor(255, 255, 255, 35), thickness: 1);
     }
 
     // ── Bracket ──────────────────────────────────────────────────
@@ -151,10 +153,10 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     // REC
     final int recX = cx + cardW - (isSmallFont ? 28 : 38);
     img.fillRect(src, x1: recX - 2, y1: ty + 2, x2: recX + 26, y2: ty + 16,
-        color: img.ColorRgba8(180, 20, 20, 180));
-    img.drawString(src, 'REC', font: fontS, x: recX, y: ty + 2, color: _white);
+        color: img.getColor(180, 20, 20, 180));
+    img.drawString(src, fontS, recX, ty + 2, 'REC', color: _white);
     img.fillCircle(src, x: recX - 8, y: ty + 9, radius: 4,
-        color: img.ColorRgba8(255, 50, 50, 255));
+        color: img.getColor(255, 50, 50, 255));
     ty += lHL;
 
     // Tanggal
@@ -209,9 +211,9 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     if (showWeather && weather.isNotEmpty && ty < cy + cardH - 4) {
       img.fillRect(src, x1: tx - 2, y1: ty - 1,
           x2: tx + weather.length * 7 + 6, y2: ty + lH - 2,
-          color: img.ColorRgba8(0, 100, 200, 40));
+          color: img.getColor(0, 100, 200, 40));
       _shadow(src, weather, font: fontS, x: tx, y: ty,
-          color: img.ColorRgba8(120, 200, 255, 255));
+          color: img.getColor(120, 200, 255, 255));
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
@@ -221,20 +223,20 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
   void _shadow(img.Image src, String text, {
     required img.BitmapFont font, required int x, required int y, required img.Color color,
   }) {
-    img.drawString(src, text, font: font, x: x + 1, y: y + 1, color: img.ColorRgba8(0, 0, 0, 160));
-    img.drawString(src, text, font: font, x: x, y: y, color: color);
+    img.drawString(src, font, x + 1, y + 1, text, color: img.getColor(0, 0, 0, 160));
+    img.drawString(src, font, x, y, text, color: color);
   }
 
   void _label(img.Image src, String text, {required int x, required int y, required img.BitmapFont fontS}) {
-    img.drawString(src, text, font: fontS, x: x, y: y, color: img.ColorRgba8(180, 50, 50, 255));
+    img.drawString(src, fontS, x, y, text, color: img.getColor(180, 50, 50, 255));
   }
 
   void _sep(img.Image src, {required int x1, required int x2, required int y}) {
-    img.fillRect(src, x1: x1, y1: y, x2: x2, y2: y + _sepH - 1, color: img.ColorRgba8(255, 255, 255, 25));
+    img.fillRect(src, x1: x1, y1: y, x2: x2, y2: y + _sepH - 1, color: img.getColor(255, 255, 255, 25));
   }
 
   void _drawBrackets(img.Image src, {required int cx, required int cy, required int w, required int h}) {
-    final c = img.ColorRgba8(220, 45, 45, 200);
+    final c = img.getColor(220, 45, 45, 200);
     final sz = _bracketSz, th = _bracketTh;
     img.fillRect(src, x1: cx,      y1: cy,      x2: cx + sz, y2: cy + th, color: c);
     img.fillRect(src, x1: cx,      y1: cy,      x2: cx + th, y2: cy + sz, color: c);

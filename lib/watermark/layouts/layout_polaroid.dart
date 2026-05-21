@@ -2,6 +2,7 @@
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_24.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -48,7 +49,7 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     final String caption = DateFormat('dd MMM yyyy').format(timestamp);
     final int captionX = border + (src.width ~/ 2) - (caption.length * 6);
     final int captionY = border + src.height + (bottomBorder ~/ 2);
-    img.drawString(result, caption, font: img.arial24, x: captionX, y: captionY, color: kColorDarkText);
+    img.drawString(result, img.arial24, captionX, captionY, caption, color: kColorDarkText);
     
     return WatermarkLayoutBase.encodeJpg(result);
   }

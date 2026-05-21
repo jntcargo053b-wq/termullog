@@ -2,6 +2,8 @@
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
@@ -79,28 +81,28 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
     final String dateStr = DateFormat('EEE, dd MMM yyyy').format(timestamp);
 
     _txt(src, dateStr, font: smallFont, x: textX, y: cy + 5,
-        color: img.ColorRgba8(160, 175, 195, 255));
+        color: img.getColor(160, 175, 195, 255));
     final int timeX = (textEndX - timeStr.length * 8).clamp(textX + 100, textEndX - 10);
     _txt(src, timeStr, font: font, x: timeX, y: cy,
-        color: img.ColorRgba8(245, 248, 255, 255), shadow: true);
+        color: img.getColor(245, 248, 255, 255), shadow: true);
     cy += lineH;
 
     img.fillRect(src, x1: textX, y1: cy, x2: textEndX - 8, y2: cy + 1,
-        color: img.ColorRgba8(255, 255, 255, 20));
+        color: img.getColor(255, 255, 255, 20));
     cy += 7;
 
     if (showCoordinates && hasPosition && lat != null && lon != null) {
       img.fillCircle(src, x: textX - 7, y: cy + 6, radius: 3,
-          color: img.ColorRgba8(0, 212, 170, 255));
+          color: img.getColor(0, 212, 170, 255));
       final String coord = '${_fmtLat(lat)}   ${_fmtLon(lon)}';
       _txt(src, '📍 $coord', font: smallFont, x: textX, y: cy,
-          color: img.ColorRgba8(0, 184, 212, 255), shadow: true);
+          color: img.getColor(0, 184, 212, 255), shadow: true);
       cy += lineS;
 
       if (showAccuracy && acc != null) {
         _txt(src, 'Akurasi  ±${acc.toStringAsFixed(0)} m',
             font: smallFont, x: textX, y: cy,
-            color: img.ColorRgba8(130, 150, 170, 255));
+            color: img.getColor(130, 150, 170, 255));
         cy += lineS;
       }
     }
@@ -111,7 +113,7 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
         for (final line in _wrapAddr(cleanAddr, _maxAddr).take(2)) {
           if (cy > y0 + panelH - 14) break;
           _txt(src, line, font: smallFont, x: textX, y: cy,
-              color: img.ColorRgba8(160, 175, 195, 255));
+              color: img.getColor(160, 175, 195, 255));
           cy += 18;
         }
       }
@@ -121,9 +123,9 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
       img.fillRect(src,
           x1: textX - 3, y1: cy - 2,
           x2: textX + weather.length * 7 + 6, y2: cy + 16,
-          color: img.ColorRgba8(0, 184, 212, 22));
+          color: img.getColor(0, 184, 212, 22));
       _txt(src, weather, font: smallFont, x: textX, y: cy,
-          color: img.ColorRgba8(0, 184, 212, 255));
+          color: img.getColor(0, 184, 212, 255));
     }
 
     if (hasMap) {
@@ -143,34 +145,34 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
       final int g = _lerp(12, 30, t);
       final int b = _lerp(20, 46, t);
       final int a = (_lerp(235, 185, t) * opacity).toInt().clamp(0, 255);
-      img.fillRect(src, x1: 0, y1: row, x2: w - 1, y2: row + 1, color: img.ColorRgba8(r, g, b, a));
+      img.fillRect(src, x1: 0, y1: row, x2: w - 1, y2: row + 1, color: img.getColor(r, g, b, a));
     }
   }
 
   void _drawAccent(img.Image src, {required int x, required int y1, required int y2}) {
-    img.fillRect(src, x1: x - 1, y1: y1 + 4, x2: x + _accentW + 2, y2: y2 - 4, color: img.ColorRgba8(0, 212, 170, 40));
-    img.fillRect(src, x1: x, y1: y1, x2: x + _accentW - 1, y2: y2, color: img.ColorRgba8(0, 212, 170, 255));
+    img.fillRect(src, x1: x - 1, y1: y1 + 4, x2: x + _accentW + 2, y2: y2 - 4, color: img.getColor(0, 212, 170, 40));
+    img.fillRect(src, x1: x, y1: y1, x2: x + _accentW - 1, y2: y2, color: img.getColor(0, 212, 170, 255));
   }
 
   void _txt(img.Image src, String text, {required img.BitmapFont font, required int x, required int y, required img.Color color, bool shadow = false}) {
     if (shadow) {
-      img.drawString(src, text, font: font, x: x + 1, y: y + 1, color: img.ColorRgba8(0, 0, 0, 100));
+      img.drawString(src, font, x + 1, y + 1, text, color: img.getColor(0, 0, 0, 100));
     }
-    img.drawString(src, text, font: font, x: x, y: y, color: color);
+    img.drawString(src, font, x, y, text, color: color);
   }
 
   void _glassMiniMap(img.Image src, {required Uint8List mapBytes, required int y0, required int panelH, required int w, required int mapSz}) {
     try {
       final m = img.decodeImage(mapBytes);
       if (m == null) return;
-      img.fillRect(m, x1: 0, y1: 0, x2: m.width - 1, y2: m.height - 1, color: img.ColorRgba8(0, 0, 0, 35));
+      img.fillRect(m, x1: 0, y1: 0, x2: m.width - 1, y2: m.height - 1, color: img.getColor(0, 0, 0, 35));
       final resized = img.copyResize(m, width: mapSz, height: mapSz);
       final int mx = w - mapSz - _padX;
       final int my = y0 + (panelH - mapSz) ~/ 2;
       if (mx < 0 || my < 0) return;
-      img.fillRect(src, x1: mx - 4, y1: my - 4, x2: mx + mapSz + 3, y2: my + mapSz + 3, color: img.ColorRgba8(255, 255, 255, 35));
+      img.fillRect(src, x1: mx - 4, y1: my - 4, x2: mx + mapSz + 3, y2: my + mapSz + 3, color: img.getColor(255, 255, 255, 35));
       img.compositeImage(src, resized, dstX: mx, dstY: my, blend: img.BlendMode.alpha);
-      img.drawRect(src, x1: mx, y1: my, x2: mx + mapSz - 1, y2: my + mapSz - 1, color: img.ColorRgba8(255, 255, 255, 18), thickness: 1);
+      img.drawRect(src, x1: mx, y1: my, x2: mx + mapSz - 1, y2: my + mapSz - 1, color: img.getColor(255, 255, 255, 18), thickness: 1);
     } catch (_) {}
   }
 

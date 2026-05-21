@@ -2,6 +2,9 @@
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_12.dart';
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -38,7 +41,7 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     for (int i = 0; i < barHeight; i++) {
       final int alpha = (200 - (i * 2)).clamp(0, 255);
       for (int j = 0; j < src.width; j++) {
-        img.drawPixel(src, j, yBar + i, img.ColorRgba8(0, 0, 0, alpha));
+        img.drawPixel(src, j, yBar + i, img.getColor(0, 0, 0, alpha));
       }
     }
     
@@ -67,11 +70,11 @@ class LayoutDocumentary extends WatermarkLayoutBase {
   
   void _drawText(img.Image image, String text, int x, int y, int size, img.Color color) {
     if (size <= 12) {
-      img.drawString(image, text, font: img.arial12, x: x, y: y, color: color);
+      img.drawString(image, img.arial12, x, y, text, color: color);
     } else if (size <= 14) {
-      img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
+      img.drawString(image, img.arial14, x, y, text, color: color);
     } else {
-      img.drawString(image, text, font: img.arial24, x: x, y: y, color: color);
+      img.drawString(image, img.arial24, x, y, text, color: color);
     }
   }
 }

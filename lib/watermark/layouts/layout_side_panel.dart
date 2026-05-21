@@ -1,6 +1,8 @@
 // lib/watermark/layouts/layout_side_panel.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
@@ -42,12 +44,12 @@ class LayoutSidePanel extends WatermarkLayoutBase {
       final g = 15 + (t * 5).toInt();
       final b = 40 + (t * 10).toInt();
       img.fillRect(src, x1: x, y1: 0, x2: x, y2: src.height - 1,
-          color: img.ColorRgba8(r, g, b, 240));
+          color: img.getColor(r, g, b, 240));
     }
 
     // Garis pemisah
     img.fillRect(src, x1: panelW, y1: 0, x2: panelW + 3, y2: src.height - 1,
-        color: img.ColorRgba8(0, 180, 255, 200));
+        color: img.getColor(0, 180, 255, 200));
 
     int cy = 24;
 
@@ -75,9 +77,9 @@ class LayoutSidePanel extends WatermarkLayoutBase {
     if (showCoordinates && hasPosition) {
       final latStr = '${lat!.toStringAsFixed(4)}°';
       final lonStr = '${lon!.toStringAsFixed(4)}°';
-      img.drawString(src, latStr, font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
+      img.drawString(src, font, padX, cy, latStr, color: WatermarkLayoutBase.grey);
       cy += 20;
-      img.drawString(src, lonStr, font: font, x: padX, y: cy, color: WatermarkLayoutBase.grey);
+      img.drawString(src, font, padX, cy, lonStr, color: WatermarkLayoutBase.grey);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
@@ -87,7 +89,7 @@ class LayoutSidePanel extends WatermarkLayoutBase {
     final textW = text.length * 12;
     final x = (panelW - textW) ~/ 2;
     if (x > 0) {
-      img.drawString(src, text, font: font, x: x, y: y, color: color);
+      img.drawString(src, font, x, y, text, color: color);
     }
   }
 }

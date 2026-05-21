@@ -2,6 +2,9 @@
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
+import 'package:image/src/font/arial_36.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -69,7 +72,7 @@ class LayoutCinematic extends WatermarkLayoutBase {
       final double t = atTop ? (i / gradH) : (1.0 - i / gradH);
       final int alpha = (200 * t).clamp(0, 200).round();
       for (int j = 0; j < src.width; j++) {
-        img.drawPixel(src, j, gradY0 + i, img.ColorRgba8(10, 15, 40, alpha));
+        img.drawPixel(src, j, gradY0 + i, img.getColor(10, 15, 40, alpha));
       }
     }
 
@@ -141,11 +144,11 @@ class LayoutCinematic extends WatermarkLayoutBase {
     final int approxWidth = text.length * (size ~/ 2);
     final int x = centerX - (approxWidth ~/ 2);
     if (size <= 14) {
-      img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
+      img.drawString(image, img.arial14, x, y, text, color: color);
     } else if (size <= 24) {
-      img.drawString(image, text, font: img.arial24, x: x, y: y, color: color);
+      img.drawString(image, img.arial24, x, y, text, color: color);
     } else {
-      img.drawString(image, text, font: img.arial36, x: x, y: y, color: color);
+      img.drawString(image, img.arial36, x, y, text, color: color);
     }
   }
 }

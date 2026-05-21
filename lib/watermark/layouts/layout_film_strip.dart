@@ -1,6 +1,8 @@
 // lib/watermark/layouts/layout_film_strip.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
@@ -10,16 +12,16 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
   String get name => 'Film Strip';
 
   // ── Colour palette ───────────────────────────────────────────────
-  static final _filmBlack   = img.ColorRgba8( 10,  10,  10, 255);
-  static final _railEdge    = img.ColorRgba8( 22,  20,  18, 255);
-  static final _sprocket    = img.ColorRgba8(242, 236, 218, 255);
-  static final _dateOrange  = img.ColorRgba8(255, 125,  18, 255);
-  static final _addrCream   = img.ColorRgba8(195, 183, 162, 255);
-  static final _coordAmber  = img.ColorRgba8(255, 158,  45, 255);
-  static final _frameNum    = img.ColorRgba8( 90,  82,  68, 255);
-  static final _footerMuted = img.ColorRgba8(130, 118,  98, 255);
-  static final _mapBorder   = img.ColorRgba8( 40,  38,  34, 255);
-  static final _mapShadow   = img.ColorRgba8(  0,   0,   0,  80);
+  static final _filmBlack   = img.getColor( 10,  10,  10, 255);
+  static final _railEdge    = img.getColor( 22,  20,  18, 255);
+  static final _sprocket    = img.getColor(242, 236, 218, 255);
+  static final _dateOrange  = img.getColor(255, 125,  18, 255);
+  static final _addrCream   = img.getColor(195, 183, 162, 255);
+  static final _coordAmber  = img.getColor(255, 158,  45, 255);
+  static final _frameNum    = img.getColor( 90,  82,  68, 255);
+  static final _footerMuted = img.getColor(130, 118,  98, 255);
+  static final _mapBorder   = img.getColor( 40,  38,  34, 255);
+  static final _mapShadow   = img.getColor(  0,   0,   0,  80);
 
   @override
   Uint8List apply({
@@ -87,14 +89,11 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
     // ── Date · Time ──────────────────────────────────────────────
     final dateStr = DateFormat('dd MMM yyyy').format(timestamp).toUpperCase();
     final timeStr = DateFormat('HH:mm').format(timestamp);
-    img.drawString(canvas, '$dateStr  ·  $timeStr',
-        font: font, x: capPad, y: y, color: _dateOrange);
+    img.drawString(canvas, font, capPad, y, '$dateStr  ·  $timeStr', color: _dateOrange);
 
     final frameLabel = '◄ 24A ►';
     final frameX = canvasW - capPad - frameLabel.length * 8;
-    img.drawString(canvas, frameLabel, font: fontSmall,
-        x: frameX.clamp(0, canvasW - 60),
-        y: y + (lineH - lineHSmall) ~/ 2 + 2, color: _frameNum);
+    img.drawString(canvas, fontSmall, frameX.clamp(0, canvasW - 60), y + (lineH - lineHSmall) ~/ 2 + 2, frameLabel, color: _frameNum);
 
     y += lineH + 4;
 
@@ -102,16 +101,14 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
     if (showAddress && _validAddress(address)) {
       final wrapCols = ((canvasW - capPad * 2 - 120 * scale - 16) ~/ 8).clamp(24, 52).toInt();
       for (final line in _wrap(address, wrapCols).take(2)) {
-        img.drawString(canvas, line, font: fontSmall, x: capPad, y: y, color: _addrCream);
+        img.drawString(canvas, fontSmall, capPad, y, line, color: _addrCream);
         y += lineHSmall;
       }
     }
 
     // ── Coordinates ──────────────────────────────────────────────
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      img.drawString(canvas,
-          '${lat.toStringAsFixed(5)},  ${lon.toStringAsFixed(5)}',
-          font: fontSmall, x: capPad, y: y, color: _coordAmber);
+      img.drawString(canvas, fontSmall, capPad, y, '${lat.toStringAsFixed(5)},  ${lon.toStringAsFixed(5)}', color: _coordAmber);
       y += lineHSmall;
     }
 
@@ -121,9 +118,7 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
       if (showAccuracy && hasPosition && acc != null) 'GPS ± ${acc.toStringAsFixed(0)} m',
     ];
     if (parts.isNotEmpty) {
-      img.drawString(canvas, parts.join('   ·   '),
-          font: fontSmall, x: capPad,
-          y: captionY + captionH - lineHSmall - 12, color: _footerMuted);
+      img.drawString(canvas, fontSmall, capPad, captionY + captionH - lineHSmall - 12, parts.join('   ·   '), color: _footerMuted);
     }
 
     // ── Mini map ─────────────────────────────────────────────────
@@ -151,7 +146,7 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
       final holeX = (spEdge + i * (spW + gap)).round();
       img.fillRect(canvas, x1: holeX, y1: holeY, x2: holeX + spW, y2: holeY + spH, color: _sprocket);
       img.drawRect(canvas, x1: holeX, y1: holeY, x2: holeX + spW, y2: holeY + spH,
-          color: img.ColorRgba8(0, 0, 0, 80), thickness: 1);
+          color: img.getColor(0, 0, 0, 80), thickness: 1);
     }
   }
 
@@ -167,7 +162,7 @@ class LayoutFilmStrip extends WatermarkLayoutBase {
       final sh = 1.0 - t;
       final dx = (maxX * sh).round();
       final dy = (maxY * sh).round();
-      final c = img.ColorRgba8(0, 0, 0, a);
+      final c = img.getColor(0, 0, 0, a);
 
       img.fillRect(canvas, x1: 0, y1: photoY + dy, x2: dx, y2: photoY + src.height - dy, color: c);
       img.fillRect(canvas, x1: src.width - dx, y1: photoY + dy, x2: src.width, y2: photoY + src.height - dy, color: c);

@@ -2,6 +2,9 @@
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_12.dart';
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -38,7 +41,7 @@ class LayoutSurvey extends WatermarkLayoutBase {
     // Panel background
     for (int i = 0; i < panelH; i++) {
       for (int j = 0; j < panelW; j++) {
-        img.drawPixel(src, panelX + j, panelY + i, img.ColorRgba8(0, 0, 20, 220));
+        img.drawPixel(src, panelX + j, panelY + i, img.getColor(0, 0, 20, 220));
       }
     }
     
@@ -85,11 +88,11 @@ class LayoutSurvey extends WatermarkLayoutBase {
   
   void _drawText(img.Image image, String text, int x, int y, int size, img.Color color, {bool bold = false}) {
     if (size <= 12) {
-      img.drawString(image, text, font: bold ? img.arial14 : img.arial12, x: x, y: y, color: color);
+      img.drawString(image, bold ? img.arial14 : img.arial12, x, y, text, color: color);
     } else if (size <= 14) {
-      img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
+      img.drawString(image, img.arial14, x, y, text, color: color);
     } else {
-      img.drawString(image, text, font: img.arial24, x: x, y: y, color: color);
+      img.drawString(image, img.arial24, x, y, text, color: color);
     }
   }
 }

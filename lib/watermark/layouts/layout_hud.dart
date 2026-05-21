@@ -2,6 +2,9 @@
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_12.dart';
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -37,7 +40,7 @@ class LayoutHUD extends WatermarkLayoutBase {
     // Semi-transparent background
     for (int i = 0; i < 120; i++) {
       for (int j = 0; j < 200; j++) {
-        img.drawPixel(src, x + j, y + i, img.ColorRgba8(0, 0, 0, 180));
+        img.drawPixel(src, x + j, y + i, img.getColor(0, 0, 0, 180));
       }
     }
     
@@ -49,23 +52,23 @@ class LayoutHUD extends WatermarkLayoutBase {
     
     // Time (large cyan)
     final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
-    img.drawString(src, timeStr, font: img.arial24, x: x, y: y, color: kColorCyan);
+    img.drawString(src, img.arial24, x, y, timeStr, color: kColorCyan);
     y += 32;
     
     // Date
     final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
-    img.drawString(src, dateStr, font: img.arial14, x: x, y: y, color: kColorCyan);
+    img.drawString(src, img.arial14, x, y, dateStr, color: kColorCyan);
     y += 24;
     
     // Coordinates
     if (hasPosition && showCoordinates && lat != null && lon != null) {
       final String coordStr = '${lat.toStringAsFixed(5)}° ${lon.toStringAsFixed(5)}°';
-      img.drawString(src, coordStr, font: img.arial12, x: x, y: y, color: kColorWhite);
+      img.drawString(src, img.arial12, x, y, coordStr, color: kColorWhite);
       y += 20;
       
       if (showAccuracy && acc != null) {
         final String accStr = '±${acc.toStringAsFixed(1)}m';
-        img.drawString(src, accStr, font: img.arial12, x: x, y: y, color: getAccuracyColor(acc));
+        img.drawString(src, img.arial12, x, y, accStr, color: getAccuracyColor(acc));
       }
     }
     

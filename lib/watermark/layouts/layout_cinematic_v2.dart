@@ -1,6 +1,8 @@
 // lib/watermark/layouts/layout_cinematic_v2.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_14.dart';
+import 'package:image/src/font/arial_24.dart';
 import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
@@ -61,10 +63,10 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     if (showBorder) {
       // Glow
       img.fillRect(src, x1: padX - 2, y1: divY - 1, x2: src.width - padX + 2, y2: divY + 3,
-          color: img.ColorRgba8(30, 144, 255, 40));
+          color: img.getColor(30, 144, 255, 40));
       // Main line
       img.fillRect(src, x1: padX, y1: divY, x2: src.width - padX, y2: divY + 2,
-          color: img.ColorRgba8(30, 144, 255, 200));
+          color: img.getColor(30, 144, 255, 200));
     }
 
     // ── Pilih font ────────────────────────────────────────────────
@@ -85,16 +87,12 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
 
     // ── Koordinat ─────────────────────────────────────────────────
     if (showCoordinates && hasPosition) {
-      img.drawString(src,
-          '${lat!.toStringAsFixed(5)}°N   ${lon!.toStringAsFixed(5)}°E',
-          font: fontSmall, x: padX, y: cy, color: WatermarkLayoutBase.offWhite);
+      img.drawString(src, fontSmall, padX, cy, '${lat!.toStringAsFixed(5)}°N   ${lon!.toStringAsFixed(5)}°E', color: WatermarkLayoutBase.offWhite);
       cy += lineHSmall;
 
       // ── Akurasi ─────────────────────────────────────────────────
       if (showAccuracy) {
-        img.drawString(src,
-            'ACCURACY  ±${acc?.toStringAsFixed(0) ?? '?'} M',
-            font: fontSmall, x: padX, y: cy, color: WatermarkLayoutBase.grey);
+        img.drawString(src, fontSmall, padX, cy, 'ACCURACY  ±${acc?.toStringAsFixed(0) ?? '?'} M', color: WatermarkLayoutBase.grey);
         cy += lineHSmall;
       }
     }
@@ -104,8 +102,7 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
       final maxChars = (src.width / 7).toInt().clamp(30, 55);
       final shortAddr = address.length > maxChars
           ? '${address.substring(0, maxChars - 1)}…' : address;
-      img.drawString(src, shortAddr,
-          font: fontSmall, x: padX, y: cy, color: WatermarkLayoutBase.grey);
+      img.drawString(src, fontSmall, padX, cy, shortAddr, color: WatermarkLayoutBase.grey);
       cy += lineHSmall;
     }
 
@@ -115,9 +112,8 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
       img.fillRect(src,
           x1: padX - 4, y1: cy - 2,
           x2: padX + weather.length * 7 + 12, y2: cy + lineHSmall - 4,
-          color: img.ColorRgba8(30, 144, 255, 30));
-      img.drawString(src, weather,
-          font: fontSmall, x: padX + 4, y: cy + 2, color: WatermarkLayoutBase.blue);
+          color: img.getColor(30, 144, 255, 30));
+      img.drawString(src, fontSmall, padX + 4, cy + 2, weather, color: WatermarkLayoutBase.blue);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
@@ -165,9 +161,8 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     required int x, required int y,
     required img.Color color,
   }) {
-    img.drawString(src, text, font: font, x: x + 1, y: y + 1,
-        color: img.ColorRgba8(0, 0, 0, 120));
-    img.drawString(src, text, font: font, x: x, y: y, color: color);
+    img.drawString(src, font, x + 1, y + 1, text, color: img.getColor(0, 0, 0, 120));
+    img.drawString(src, font, x, y, text, color: color);
   }
 
   void _applyGradient(img.Image src, {
@@ -185,7 +180,7 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
       final alpha = (t * 220 * opacity).toInt().clamp(0, 220);
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);
-        src.setPixel(x, y, img.ColorRgba8(
+        src.setPixel(x, y, img.getColor(
           ((px.r * (255 - alpha)) ~/ 255),
           ((px.g * (255 - alpha)) ~/ 255),
           ((px.b * (255 - alpha)) ~/ 255), 255));

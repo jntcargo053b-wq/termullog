@@ -60,7 +60,7 @@ class LayoutTheme {
     // CINEMATIC - Letterbox, elegan, PlayfairDisplay
     WatermarkLayout.cinematic: LayoutTheme(
       primaryColor: const Color(0xFF1B2A4A),
-      primaryImgColor: img.ColorRgb8(27, 42, 74),
+      primaryImgColor: img.getColor(27, 42, 74),
       fontFamily: 'PlayfairDisplay',
       defaultOpacity: 1.0,
       defaultPosition: 'bottom',
@@ -71,7 +71,7 @@ class LayoutTheme {
     // HUD - Transparan, cyan, JetBrainsMono
     WatermarkLayout.hud: LayoutTheme(
       primaryColor: const Color(0xFF00B8D4),
-      primaryImgColor: img.ColorRgb8(0, 184, 212),
+      primaryImgColor: img.getColor(0, 184, 212),
       fontFamily: 'JetBrainsMono',
       defaultOpacity: 0.75,
       defaultPosition: 'topLeft',
@@ -82,7 +82,7 @@ class LayoutTheme {
     // POLAROID - Ivory, Caveat handwriting
     WatermarkLayout.polaroid: LayoutTheme(
       primaryColor: const Color(0xFFF8F5EB),
-      primaryImgColor: img.ColorRgb8(248, 245, 235),
+      primaryImgColor: img.getColor(248, 245, 235),
       fontFamily: 'Caveat',
       defaultOpacity: 1.0,
       defaultPosition: 'fullFrame',
@@ -93,7 +93,7 @@ class LayoutTheme {
     // DOCUMENTARY - Minimalis, BebasNeue
     WatermarkLayout.documentary: LayoutTheme(
       primaryColor: const Color(0xFF2C3E50),
-      primaryImgColor: img.ColorRgb8(44, 62, 80),
+      primaryImgColor: img.getColor(44, 62, 80),
       fontFamily: 'BebasNeue',
       defaultOpacity: 0.9,
       defaultPosition: 'bottom',
@@ -104,7 +104,7 @@ class LayoutTheme {
     // LEICA - Klasik, Inter (pengganti Helvetica)
     WatermarkLayout.leica: LayoutTheme(
       primaryColor: const Color(0xFFCC0000),
-      primaryImgColor: img.ColorRgb8(204, 0, 0),
+      primaryImgColor: img.getColor(204, 0, 0),
       fontFamily: 'Inter',
       defaultOpacity: 0.85,
       defaultPosition: 'bottomRight',
@@ -115,7 +115,7 @@ class LayoutTheme {
     // SURVEY - Data lengkap, RobotoMono
     WatermarkLayout.survey: LayoutTheme(
       primaryColor: const Color(0xFF00A86B),
-      primaryImgColor: img.ColorRgb8(0, 168, 107),
+      primaryImgColor: img.getColor(0, 168, 107),
       fontFamily: 'RobotoMono',
       defaultOpacity: 0.95,
       defaultPosition: 'bottomLeft',
@@ -233,12 +233,12 @@ extension WatermarkLayoutExtension on WatermarkLayout {
   // Warna utama (package image)
   img.Color get primaryImgColor {
     switch (this) {
-      case WatermarkLayout.cinematic:    return img.ColorRgb8(27, 42, 74);
-      case WatermarkLayout.hud:          return img.ColorRgb8(0, 184, 212);
-      case WatermarkLayout.polaroid:     return img.ColorRgb8(248, 245, 235);
-      case WatermarkLayout.documentary:  return img.ColorRgb8(44, 62, 80);
-      case WatermarkLayout.leica:        return img.ColorRgb8(204, 0, 0);
-      case WatermarkLayout.survey:       return img.ColorRgb8(0, 168, 107);
+      case WatermarkLayout.cinematic:    return img.getColor(27, 42, 74);
+      case WatermarkLayout.hud:          return img.getColor(0, 184, 212);
+      case WatermarkLayout.polaroid:     return img.getColor(248, 245, 235);
+      case WatermarkLayout.documentary:  return img.getColor(44, 62, 80);
+      case WatermarkLayout.leica:        return img.getColor(204, 0, 0);
+      case WatermarkLayout.survey:       return img.getColor(0, 168, 107);
     }
   }
 
@@ -365,33 +365,33 @@ const int kMaxAddressLengthFilmStrip = 42;
 // ============================================================
 // COLORS (package image)
 // ============================================================
-final img.Color kColorWhite = img.ColorRgb8(255, 255, 255);
-final img.Color kColorCyan = img.ColorRgb8(0, 184, 148);
-final img.Color kColorGrey = img.ColorRgb8(210, 210, 210);
-final img.Color kColorDarkBg = img.ColorRgba8(15, 23, 42, 230);
-final img.Color kColorDarkBgMed = img.ColorRgba8(15, 23, 42, 210);
-final img.Color kColorBlackCard = img.ColorRgba8(0, 0, 0, 170);
-final img.Color kColorGlassBg = img.ColorRgba8(0, 0, 0, 120);
-final img.Color kColorShadow = img.ColorRgb8(0, 0, 0);
-final img.Color kColorLightBlue = img.ColorRgb8(30, 144, 255);
-final img.Color kColorDimBlue = img.ColorRgb8(20, 80, 160);
-final img.Color kColorOffWhite = img.ColorRgb8(220, 225, 235);
-final img.Color kColorDarkGrey = img.ColorRgb8(140, 150, 165);
-final img.Color kColorVeryDarkBg = img.ColorRgba8(0, 0, 10, 210);
-final img.Color kColorBlackerBg = img.ColorRgba8(0, 0, 8, 235);
-final img.Color kColorDimBlue200 = img.ColorRgb8(20, 80, 160);
-final img.Color kColorLightGrey = img.ColorRgb8(200, 200, 205);
-final img.Color kColorGold = img.ColorRgb8(255, 180, 50);
-final img.Color kColorIvory = img.ColorRgb8(248, 245, 235);
-final img.Color kColorDarkText = img.ColorRgb8(40, 40, 40);
-final img.Color kColorNavy = img.ColorRgba8(10, 15, 40, 240);
-final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
-final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
-final img.Color kColorTeal = img.ColorRgb8(0, 168, 107);
-final img.Color kColorRed = img.ColorRgb8(204, 0, 0);
-final img.Color kColorBrightCyan = img.ColorRgb8(0, 184, 212);
-final img.Color kColorDarkBlue = img.ColorRgb8(27, 42, 74);
-final img.Color kColorDarkSlate = img.ColorRgb8(44, 62, 80);
+final img.Color kColorWhite = img.getColor(255, 255, 255);
+final img.Color kColorCyan = img.getColor(0, 184, 148);
+final img.Color kColorGrey = img.getColor(210, 210, 210);
+final img.Color kColorDarkBg = img.getColor(15, 23, 42, 230);
+final img.Color kColorDarkBgMed = img.getColor(15, 23, 42, 210);
+final img.Color kColorBlackCard = img.getColor(0, 0, 0, 170);
+final img.Color kColorGlassBg = img.getColor(0, 0, 0, 120);
+final img.Color kColorShadow = img.getColor(0, 0, 0);
+final img.Color kColorLightBlue = img.getColor(30, 144, 255);
+final img.Color kColorDimBlue = img.getColor(20, 80, 160);
+final img.Color kColorOffWhite = img.getColor(220, 225, 235);
+final img.Color kColorDarkGrey = img.getColor(140, 150, 165);
+final img.Color kColorVeryDarkBg = img.getColor(0, 0, 10, 210);
+final img.Color kColorBlackerBg = img.getColor(0, 0, 8, 235);
+final img.Color kColorDimBlue200 = img.getColor(20, 80, 160);
+final img.Color kColorLightGrey = img.getColor(200, 200, 205);
+final img.Color kColorGold = img.getColor(255, 180, 50);
+final img.Color kColorIvory = img.getColor(248, 245, 235);
+final img.Color kColorDarkText = img.getColor(40, 40, 40);
+final img.Color kColorNavy = img.getColor(10, 15, 40, 240);
+final img.Color kColorGpsPanel = img.getColor(0, 0, 8, 235);
+final img.Color kColorGpsAccent = img.getColor(0, 180, 255);
+final img.Color kColorTeal = img.getColor(0, 168, 107);
+final img.Color kColorRed = img.getColor(204, 0, 0);
+final img.Color kColorBrightCyan = img.getColor(0, 184, 212);
+final img.Color kColorDarkBlue = img.getColor(27, 42, 74);
+final img.Color kColorDarkSlate = img.getColor(44, 62, 80);
 
 // ============================================================
 // UI COLORS (Flutter)

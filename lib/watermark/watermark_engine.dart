@@ -41,17 +41,14 @@ class WatermarkEngine {
     }
 
     // --- Personality layout dengan override user ---
-    // POSISI
     final String finalPosition = (wmParams.watermarkPosition.isEmpty || wmParams.watermarkPosition == 'default')
         ? layout.defaultPosition
         : wmParams.watermarkPosition;
     
-    // OPACITY
     final double finalOpacity = (wmParams.opacity < 0)
         ? layout.defaultOpacity
         : wmParams.opacity;
     
-    // BOOLEAN: fallback ke true jika null
     final bool finalShowWeather = wmParams.showWeather ?? true;
     final bool finalShowAccuracy = wmParams.showAccuracy ?? true;
     final bool finalShowAddress = wmParams.showAddress ?? true;
@@ -67,12 +64,6 @@ class WatermarkEngine {
     debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
     debugPrint('📍 POSITION: $finalPosition (personality: ${layout.defaultPosition})');
     debugPrint('🎨 OPACITY: $finalOpacity (personality: ${layout.defaultOpacity})');
-    debugPrint('🖼️  SHOW WEATHER: $finalShowWeather');
-    debugPrint('🎯 SHOW ACCURACY: $finalShowAccuracy');
-    debugPrint('📍 SHOW ADDRESS: $finalShowAddress');
-    debugPrint('🗺️  SHOW COORDINATES: $finalShowCoordinates');
-    debugPrint('📏 FONT SIZE: $finalFontSize');
-    debugPrint('🗺️  MINI MAP: $finalShowMiniMap');
     debugPrint('==========================');
 
     try {
@@ -259,9 +250,7 @@ class WatermarkEngine {
     return src;
   }
   
-  /// Memilih layout dengan migrasi dari typeString lama
   static WatermarkLayoutBase? _getLayout(String layoutType) {
-    // Mapping typeString lama ke baru
     String mappedType;
     switch (layoutType) {
       case 'minimal':

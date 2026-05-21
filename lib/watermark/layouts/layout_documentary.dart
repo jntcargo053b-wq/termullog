@@ -33,7 +33,6 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     final int barHeight = 70;
     final int yBar = src.height - barHeight;
     
-    // Dark gradient bar
     for (int i = 0; i < barHeight; i++) {
       final int alpha = (200 - (i * 2)).clamp(0, 255);
       for (int j = 0; j < src.width; j++) {
@@ -44,21 +43,15 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     final int margin = 20;
     int y = yBar + 25;
     
-    // Date and time
     final String dateTimeStr = DateFormat('dd MMM yyyy  •  HH:mm').format(timestamp);
-    _drawText(src, dateTimeStr, margin, y, 14, kColorWhite);
+    img.drawString(src, dateTimeStr, font: img.arial14, x: margin, y: y, color: kColorWhite);
     y += 28;
     
-    // Coordinates
     if (hasPosition && showCoordinates && lat != null && lon != null) {
       final String coordStr = '📍 ${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°';
-      _drawText(src, coordStr, margin, y, 12, kColorLightGrey);
+      img.drawString(src, coordStr, font: img.arial14, x: margin, y: y, color: kColorLightGrey);
     }
     
     return WatermarkLayoutBase.encodeJpg(src);
-  }
-  
-  void _drawText(img.Image image, String text, int x, int y, int size, img.Color color) {
-    img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
   }
 }

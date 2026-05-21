@@ -10,6 +10,18 @@ class LayoutCinematic extends WatermarkLayoutBase {
   String get name => 'Cinematic';
 
   @override
+  String get defaultPosition => 'bottom';
+
+  @override
+  double get defaultOpacity => 1.0;
+
+  @override
+  bool get supportsMiniMap => true;
+
+  @override
+  bool get supportsBorder => false;
+
+  @override
   Uint8List apply({
     required img.Image src,
     required DateTime timestamp,
@@ -26,49 +38,114 @@ class LayoutCinematic extends WatermarkLayoutBase {
     Uint8List? mapBytes,
     bool showAddress = true,
     bool showCoordinates = true,
-    double opacity = 0.85,
-    bool showBorder = true,
+    double opacity = 1.0,
+    bool showBorder = false,
     String fontSize = 'normal',
   }) {
-    img.Image canvas = img.copyResize(src, width: src.width, height: src.height);
-    
-    final int barHeight = (src.height * 0.15).toInt();
-    
-    img.fillRect(canvas, x1: 0, y1: 0, x2: src.width, y2: barHeight, color: img.ColorRgb8(0, 0, 0));
-    img.fillRect(canvas, x1: 0, y1: src.height - barHeight, x2: src.width, y2: src.height, color: img.ColorRgb8(0, 0, 0));
-    
-    final int yLine = src.height - barHeight - 20;
-    for (int i = -40; i <= 40; i++) {
-      final int xPos = (src.width ~/ 2) + i;
-      if (xPos >= 0 && xPos < src.width && yLine >= 0 && yLine < src.height) {
-        img.drawPixel(canvas, xPos, yLine, kColorGold);
+    // ── Adaptive scaling ───────────────────────────────────────────
+    final double scale = (src.width / 1080).clamp(0.7, 2.0);
+    final double fsMultiplier =
+        fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
+
+    final int gradH = (180 * scale).round();
+    final int padX = (36 * scale).round();
+    final int lineH = (28 * scale * fsMultiplier).round();
+    final int lineHSmall = (22 * scale * fsMultiplier).round();
+
+    // ── Y posisi via resolveYStart ─────────────────────────────────
+    final int gradY0 = WatermarkLayoutBase.resolveYStart(
+      watermarkPosition: watermarkPosition,
+      imageHeight: src.height,
+      contentHeight: gradH,
+    );
+    if (gradY0 < 0 || gradY0 >= src.height) {
+      return WatermarkLayoutBase.encodeJpg(src);
+    }
+
+    final bool atTop = WatermarkLayoutBase.isAtTopEdge(gradY0, src.height);
+
+    // ── Gradient bar ───────────────────────────────────────────────
+    for (int i = 0; i < gradH; i++) {
+      final double t = atTop ? (i / gradH) : (1.0 - i / gradH);
+      final int alpha = (200 * t).clamp(0, 200).round();
+      for (int j = 0; j < src.width; j++) {
+        img.drawPixel(src, j, gradY0 + i, img.ColorRgba8(10, 15, 40, alpha));
       }
     }
-    
-    final int centerX = src.width ~/ 2;
-    final int textYBase = src.height - barHeight + 20;
-    
-    final String dateStr = DateFormat('dd MMMM yyyy').format(timestamp).toUpperCase();
-    _drawTextCentered(canvas, dateStr, centerX, textYBase, 14, kColorGold);
-    
-    final String timeStr = DateFormat('HH : mm : ss').format(timestamp);
-    _drawTextCentered(canvas, timeStr, centerX, textYBase + 30, 28, kColorWhite);
-    
+
+    // ── Text content ───────────────────────────────────────────────
+    int textY = atTop
+        ? gradY0 + (gradH * 0.15).round()
+        : gradY0 + (gradH * 0.10).round();
+
+    // Date & time (large, centered)
+    final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
+    final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    _drawTextCentered(src, dateStr, src.width ~/ 2, textY, 24, kColorWhite);
+    textY += lineH;
+    _drawTextCentered(src, timeStr, src.width ~/ 2, textY, 14, kColorLightGrey);
+    textY += lineHSmall + 4;
+
+    // Coordinates
     if (hasPosition && showCoordinates && lat != null && lon != null) {
-      final String coordStr = '${lat.toStringAsFixed(4)}°  ${lon.toStringAsFixed(4)}°';
-      _drawTextCentered(canvas, coordStr, centerX, textYBase + 65, 12, kColorGold);
+      final String coordStr =
+          '${lat.toStringAsFixed(5)}°, ${lon.toStringAsFixed(5)}°';
+      _drawTextCentered(src, coordStr, src.width ~/ 2, textY, 12, kColorLightGrey);
+      textY += lineHSmall;
     }
-    
-    return WatermarkLayoutBase.encodeJpg(canvas);
+
+    // Accuracy
+    if (hasPosition && showAccuracy && acc != null) {
+      final String accStr = '±${acc.toStringAsFixed(1)} m';
+      _drawTextCentered(
+          src, accStr, src.width ~/ 2, textY, 12, getAccuracyColor(acc));
+      textY += lineHSmall;
+    }
+
+    // Address
+    if (showAddress && address.isNotEmpty) {
+      final truncated = address.length > 55
+          ? '${address.substring(0, 52)}...'
+          : address;
+      _drawTextCentered(src, truncated, src.width ~/ 2, textY, 12, kColorLightGrey);
+      textY += lineHSmall;
+    }
+
+    // Weather
+    if (showWeather && weather.isNotEmpty) {
+      _drawTextCentered(src, weather, src.width ~/ 2, textY, 12, kColorLightGrey);
+    }
+
+    // Mini map (composite on the side if available)
+    if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
+      try {
+        final mapImg = img.decodeImage(mapBytes);
+        if (mapImg != null) {
+          final mapSize = (gradH * 0.80).round();
+          final mapResized = img.copyResize(mapImg,
+              width: mapSize,
+              height: mapSize,
+              interpolation: img.Interpolation.linear);
+          final mapX = src.width - mapSize - padX;
+          final mapY = gradY0 + ((gradH - mapSize) ~/ 2);
+          img.compositeImage(src, mapResized, dstX: mapX, dstY: mapY);
+        }
+      } catch (_) {}
+    }
+
+    return WatermarkLayoutBase.encodeJpg(src);
   }
-  
-  void _drawTextCentered(img.Image image, String text, int centerX, int y, int size, img.Color color) {
-    int approxWidth = text.length * (size ~/ 2);
-    int x = centerX - (approxWidth ~/ 2);
+
+  void _drawTextCentered(
+      img.Image image, String text, int centerX, int y, int size, img.Color color) {
+    final int approxWidth = text.length * (size ~/ 2);
+    final int x = centerX - (approxWidth ~/ 2);
     if (size <= 14) {
       img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
-    } else {
+    } else if (size <= 24) {
       img.drawString(image, text, font: img.arial24, x: x, y: y, color: color);
+    } else {
+      img.drawString(image, text, font: img.arial36, x: x, y: y, color: color);
     }
   }
 }

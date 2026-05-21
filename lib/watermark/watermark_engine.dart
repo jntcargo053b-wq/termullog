@@ -6,8 +6,6 @@ import 'package:image/image.dart' as img;
 import '../core/constants.dart';
 import 'watermark_params.dart';
 import 'layouts/watermark_layout_base.dart';
-
-// 6 layout baru
 import 'layouts/layout_cinematic.dart';
 import 'layouts/layout_hud.dart';
 import 'layouts/layout_polaroid.dart';
@@ -16,7 +14,6 @@ import 'layouts/layout_leica.dart';
 import 'layouts/layout_survey.dart';
 
 class WatermarkEngine {
-  // Layout MAP berdasarkan typeString - HANYA 6 LAYOUT BARU
   static final Map<String, WatermarkLayoutBase> _layouts = {
     'cinematic': LayoutCinematic(),
     'hud': LayoutHUD(),
@@ -34,13 +31,11 @@ class WatermarkEngine {
     
     if (src == null) return bytes ?? Uint8List(0);
     
-    // Layout dipilih berdasarkan typeString (dengan migrasi)
     final layout = _getLayout(wmParams.layoutType);
     if (layout == null) {
       return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
     }
 
-    // --- Personality layout dengan override user ---
     final String finalPosition = (wmParams.watermarkPosition.isEmpty || wmParams.watermarkPosition == 'default')
         ? layout.defaultPosition
         : wmParams.watermarkPosition;
@@ -49,22 +44,18 @@ class WatermarkEngine {
         ? layout.defaultOpacity
         : wmParams.opacity;
     
-    final bool finalShowWeather = wmParams.showWeather ?? true;
-    final bool finalShowAccuracy = wmParams.showAccuracy ?? true;
-    final bool finalShowAddress = wmParams.showAddress ?? true;
-    final bool finalShowCoordinates = wmParams.showCoordinates ?? true;
-    final bool finalShowBorder = layout.supportsBorder && (wmParams.showBorder ?? true);
-    final bool finalShowMiniMap = layout.supportsMiniMap && (wmParams.showMiniMap ?? false);
-    
+    // FIX: wmParams fields are non-nullable bool — remove redundant ?? operators
+    final bool finalShowWeather = wmParams.showWeather;
+    final bool finalShowAccuracy = wmParams.showAccuracy;
+    final bool finalShowAddress = wmParams.showAddress;
+    final bool finalShowCoordinates = wmParams.showCoordinates;
+    final bool finalShowBorder = layout.supportsBorder && wmParams.showBorder;
+    final bool finalShowMiniMap = layout.supportsMiniMap && wmParams.showMiniMap;
     final String finalFontSize = (wmParams.fontSize.isEmpty || wmParams.fontSize == 'default')
         ? 'normal'
         : wmParams.fontSize;
 
-    debugPrint('==========================');
-    debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
-    debugPrint('📍 POSITION: $finalPosition (personality: ${layout.defaultPosition})');
-    debugPrint('🎨 OPACITY: $finalOpacity (personality: ${layout.defaultOpacity})');
-    debugPrint('==========================');
+    debugPrint('🎨 LAYOUT: ${wmParams.layoutType} -> POS: $finalPosition, OPACITY: $finalOpacity');
 
     try {
       return layout.apply(
@@ -114,21 +105,18 @@ class WatermarkEngine {
         ? layout.defaultOpacity
         : wmParams.opacity;
     
-    final bool finalShowWeather = wmParams.showWeather ?? true;
-    final bool finalShowAccuracy = wmParams.showAccuracy ?? true;
-    final bool finalShowAddress = wmParams.showAddress ?? true;
-    final bool finalShowCoordinates = wmParams.showCoordinates ?? true;
-    final bool finalShowBorder = layout.supportsBorder && (wmParams.showBorder ?? true);
-    final bool finalShowMiniMap = layout.supportsMiniMap && (wmParams.showMiniMap ?? false);
+    // FIX: wmParams fields are non-nullable bool — remove redundant ?? operators
+    final bool finalShowWeather = wmParams.showWeather;
+    final bool finalShowAccuracy = wmParams.showAccuracy;
+    final bool finalShowAddress = wmParams.showAddress;
+    final bool finalShowCoordinates = wmParams.showCoordinates;
+    final bool finalShowBorder = layout.supportsBorder && wmParams.showBorder;
+    final bool finalShowMiniMap = layout.supportsMiniMap && wmParams.showMiniMap;
     final String finalFontSize = (wmParams.fontSize.isEmpty || wmParams.fontSize == 'default')
         ? 'normal'
         : wmParams.fontSize;
 
-    debugPrint('==========================');
-    debugPrint('🎨 LAYOUT: ${wmParams.layoutType}');
-    debugPrint('📍 POSITION: $finalPosition (personality: ${layout.defaultPosition})');
-    debugPrint('🎨 OPACITY: $finalOpacity (personality: ${layout.defaultOpacity})');
-    debugPrint('==========================');
+    debugPrint('🎨 LAYOUT: ${wmParams.layoutType} -> POS: $finalPosition, OPACITY: $finalOpacity');
 
     try {
       return await layout.applyAsync(
@@ -181,19 +169,18 @@ class WatermarkEngine {
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
-      mapTransferable: mapBytes != null 
-          ? TransferableTypedData.fromList([mapBytes]) 
-          : null,
+      mapTransferable: mapBytes != null ? TransferableTypedData.fromList([mapBytes]) : null,
       timestamp: timestamp,
       address: address,
       weather: weather,
       layoutType: layoutType,
-      showWeather: showWeather,
-      showAccuracy: showAccuracy,
-      showAddress: showAddress,
-      showCoordinates: showCoordinates,
+      // FIX: bool? params cannot be passed to required bool — apply defaults here
+      showWeather: showWeather ?? true,
+      showAccuracy: showAccuracy ?? true,
+      showAddress: showAddress ?? true,
+      showCoordinates: showCoordinates ?? true,
       opacity: opacity ?? -1,
-      showBorder: showBorder,
+      showBorder: showBorder ?? true,
       fontSize: fontSize ?? 'default',
       watermarkPosition: watermarkPosition ?? 'default',
       showMiniMap: showMiniMap ?? false,
@@ -209,7 +196,6 @@ class WatermarkEngine {
     try {
       return p.transferable.materialize().asUint8List();
     } catch (e) {
-      debugPrint('❌ Failed to get image bytes: $e');
       return null;
     }
   }
@@ -219,7 +205,6 @@ class WatermarkEngine {
     try {
       return p.mapTransferable!.materialize().asUint8List();
     } catch (e) {
-      debugPrint('❌ Failed to get map bytes: $e');
       return null;
     }
   }
@@ -229,7 +214,6 @@ class WatermarkEngine {
     try {
       return WatermarkLayoutBase.decodeOrThrow(bytes);
     } catch (e) {
-      debugPrint('❌ Failed to decode image: $e');
       return null;
     }
   }
@@ -244,7 +228,7 @@ class WatermarkEngine {
           interpolation: img.Interpolation.average,
         );
       } catch (e) {
-        debugPrint('❌ Failed to resize image: $e');
+        // fallback ke original jika resize gagal
       }
     }
     return src;
@@ -275,7 +259,6 @@ class WatermarkEngine {
     
     final layout = _layouts[mappedType];
     if (layout == null) {
-      debugPrint('⚠️ Layout type not found: "$layoutType" -> mapped to "$mappedType", using "cinematic" fallback');
       return _layouts['cinematic'];
     }
     return layout;

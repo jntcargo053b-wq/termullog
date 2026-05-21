@@ -41,15 +41,21 @@ dependencies:
   path_provider: ^2.1.2
   path: ^1.9.0
   
-  # Image Processing - VERSI STABLE DENGAN EMBEDDED FONTS
-  # Menggunakan 3.0.5 karena memiliki arial_12, arial_14, arial_24, arial_36
-  # TIDAK perlu download font eksternal atau refactor kode
-  image: 3.0.5
+  # ==========================================================
+  # IMAGE PROCESSING - VERSI KOMPATIBEL
+  # ==========================================================
+  # Menggunakan image 3.2.2 karena:
+  # ✅ Masih memiliki embedded fonts (arial_12, arial_14, dll)
+  # ✅ Kompatibel dengan xml ^6.0.1 (sama dengan flutter_svg)
+  # ✅ API drawString masih menggunakan img.Color (bukan int)
+  # ✅ TIDAK perlu rewrite watermark engine
+  # ✅ fillCircle, drawRect masih menggunakan named parameters
+  image: ^3.2.2
   
   # HTTP & Networking
   http: ^1.2.0
   
-  # Other - Versi stabil untuk kompatibilitas maksimal
+  # SVG Support - Versi kompatibel dengan image 3.2.2
   flutter_svg: ^1.1.6
 
 # ============================================================
@@ -73,7 +79,7 @@ flutter:
   # ==========================================================
   # CATATAN PENTING:
   # ==========================================================
-  # Dengan image: 3.0.5, Anda TIDAK PERLU menambahkan font apapun
+  # Dengan image: ^3.2.2, Anda TIDAK PERLU menambahkan font apapun
   # karena font Arial sudah built-in di package image.
   #
   # Font berikut tersedia secara otomatis:
@@ -84,7 +90,7 @@ flutter:
   #
   # Kode Anda yang mengimport:
   # import 'package:image/src/font/arial_12.dart';
-  # akan berfungsi tanpa error.
+  # akan tetap berfungsi tanpa error.
   # ==========================================================
   
   # Jika suatu saat ingin menambahkan font kustom, gunakan konfigurasi di bawah:

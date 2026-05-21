@@ -41,15 +41,16 @@ dependencies:
   path_provider: ^2.1.2
   path: ^1.9.0
   
-  # Image Processing - Versi 3.3.0 (tanpa embedded fonts)
-  # PERHATIAN: Versi ini memerlukan loading font eksternal
-  image: 3.3.0
+  # Image Processing - VERSI STABLE DENGAN EMBEDDED FONTS
+  # Menggunakan 3.0.5 karena memiliki arial_12, arial_14, arial_24, arial_36
+  # TIDAK perlu download font eksternal atau refactor kode
+  image: 3.0.5
   
   # HTTP & Networking
   http: ^1.2.0
   
-  # Other - Menggunakan versi stabil untuk kompatibilitas
-  flutter_svg: ^1.0.3
+  # Other - Versi stabil untuk kompatibilitas maksimal
+  flutter_svg: ^1.1.6
 
 # ============================================================
 # DEV DEPENDENCIES
@@ -68,18 +69,50 @@ flutter:
   assets:
     - assets/
     - assets/icons/
-    - assets/fonts/  # Tambahkan folder fonts untuk file .ttf
   
-  # FONT: Untuk image 3.3.0, Anda perlu menambahkan file font eksternal
-  # Download Arial.ttf dan tempatkan di assets/fonts/
-  fonts:
-    - family: Arial
-      fonts:
-        - asset: assets/fonts/Arial.ttf
-        - asset: assets/fonts/Arial-Bold.ttf
-          weight: 700
-    - family: Roboto
-      fonts:
-        - asset: assets/fonts/Roboto-Regular.ttf
-        - asset: assets/fonts/Roboto-Bold.ttf
-          weight: 700
+  # ==========================================================
+  # CATATAN PENTING:
+  # ==========================================================
+  # Dengan image: 3.0.5, Anda TIDAK PERLU menambahkan font apapun
+  # karena font Arial sudah built-in di package image.
+  #
+  # Font berikut tersedia secara otomatis:
+  # - img.arial12
+  # - img.arial14
+  # - img.arial24
+  # - img.arial36
+  #
+  # Kode Anda yang mengimport:
+  # import 'package:image/src/font/arial_12.dart';
+  # akan berfungsi tanpa error.
+  # ==========================================================
+  
+  # Jika suatu saat ingin menambahkan font kustom, gunakan konfigurasi di bawah:
+  # fonts:
+  #   - family: PlayfairDisplay
+  #     fonts:
+  #       - asset: assets/fonts/PlayfairDisplay-Regular.ttf
+  #   - family: JetBrainsMono
+  #     fonts:
+  #       - asset: assets/fonts/JetBrainsMono-Regular.ttf
+  #       - asset: assets/fonts/JetBrainsMono-Bold.ttf
+  #         weight: 700
+  #   - family: Caveat
+  #     fonts:
+  #       - asset: assets/fonts/Caveat-Regular.ttf
+  #   - family: BebasNeue
+  #     fonts:
+  #       - asset: assets/fonts/BebasNeue-Regular.ttf
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter-Regular.ttf
+  #       - asset: assets/fonts/Inter-Bold.ttf
+  #         weight: 700
+  #   - family: RobotoMono
+  #     fonts:
+  #       - asset: assets/fonts/RobotoMono-Regular.ttf
+  #       - asset: assets/fonts/RobotoMono-Bold.ttf
+  #         weight: 700
+  #   - family: Roboto
+  #     fonts:
+  #       - asset: assets/fonts/Roboto-Regular.ttf

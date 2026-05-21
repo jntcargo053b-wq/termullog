@@ -33,23 +33,38 @@ class LayoutPolaroid extends WatermarkLayoutBase {
   }) {
     // Add polaroid border
     final int border = 20;
-    final int bottomBorder = 50;
+    final int bottomBorder = 60; // Sedikit lebih besar untuk kenyamanan
     final img.Image result = img.Image(
       width: src.width + border * 2,
       height: src.height + border + bottomBorder,
     );
     
-    // Ivory background
-    img.fill(result, color: kColorIvory);
+    // Ivory background - perbaikan fill
+    img.fill(result, kColorIvory);
     
     // Add photo
     img.compositeImage(result, src, dstX: border, dstY: border);
     
-    // Caption
+    // Caption dengan perhitungan posisi yang lebih akurat
     final String caption = DateFormat('dd MMM yyyy').format(timestamp);
-    final int captionX = border + (src.width ~/ 2) - (caption.length * 6);
-    final int captionY = border + src.height + (bottomBorder ~/ 2);
-    img.drawString(result, img.arial24, captionX, captionY, caption, color: kColorDarkText);
+    
+    // Perbaikan: Hitung lebar teks dengan lebih akurat
+    // Untuk font arial24, perkiraan lebar per karakter sekitar 12-14 pixel
+    final int approxCharWidth = 12;
+    final int captionWidth = caption.length * approxCharWidth;
+    final int captionX = border + ((src.width - captionWidth) ~/ 2);
+    final int captionY = border + src.height + (bottomBorder ~/ 2) + 8; // +8 untuk centering vertikal
+    
+    // Pastikan posisi tidak negatif
+    final int safeCaptionX = captionX < border ? border : captionX;
+    
+    img.drawString(result, img.arial24, safeCaptionX, captionY, caption, color: kColorDarkText);
+    
+    // Optional: Tambahkan garis pemisah seperti polaroid asli
+    if (showBorder) {
+      final int lineY = border + src.height + 5;
+      img.drawLine(result, border, lineY, border + src.width, lineY, kColorLightGrey);
+    }
     
     return WatermarkLayoutBase.encodeJpg(result);
   }

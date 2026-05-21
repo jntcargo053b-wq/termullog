@@ -34,30 +34,25 @@ class LayoutHUD extends WatermarkLayoutBase {
     int x = margin;
     int y = margin;
     
-    // Transparent panel
     for (int i = 0; i < 120; i++) {
       for (int j = 0; j < 220; j++) {
         img.drawPixel(src, x + j, y + i, img.ColorRgba8(0, 0, 0, 180));
       }
     }
     
-    // Cyan border
     img.drawRect(src, x1: x, y1: y, x2: x + 220, y2: y + 120, color: kColorCyan, thickness: 1);
     
     y += 16;
     x += 12;
     
-    // Time
     final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
     img.drawString(src, timeStr, font: img.arial24, x: x, y: y, color: kColorCyan);
     y += 32;
     
-    // Date
     final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
     img.drawString(src, dateStr, font: img.arial14, x: x, y: y, color: kColorCyan);
     y += 24;
     
-    // Coordinates
     if (hasPosition && showCoordinates && lat != null && lon != null) {
       final String coordStr = '${lat.toStringAsFixed(5)}° ${lon.toStringAsFixed(5)}°';
       img.drawString(src, coordStr, font: img.arial14, x: x, y: y, color: kColorWhite);

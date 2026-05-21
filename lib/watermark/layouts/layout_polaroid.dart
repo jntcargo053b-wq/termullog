@@ -37,13 +37,9 @@ class LayoutPolaroid extends WatermarkLayoutBase {
       height: src.height + border + bottomBorder,
     );
     
-    // Ivory background
     img.fill(result, color: kColorIvory);
-    
-    // Add photo
     img.compositeImage(result, src, dstX: border, dstY: border);
     
-    // Caption
     final String caption = DateFormat('dd MMM yyyy').format(timestamp);
     final int captionX = border + (src.width ~/ 2) - (caption.length * 6);
     final int captionY = border + src.height + (bottomBorder ~/ 2);

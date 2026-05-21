@@ -30,7 +30,6 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    // Add polaroid border
     final int border = 20;
     final int bottomBorder = 50;
     final img.Image result = img.Image(

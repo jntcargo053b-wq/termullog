@@ -37,14 +37,11 @@ class LayoutHUD extends WatermarkLayoutBase {
     int x = margin;
     int y = margin;
     
-    // Semi-transparent background
-    for (int i = 0; i < 120; i++) {
-      for (int j = 0; j < 200; j++) {
-        img.drawPixel(src, x + j, y + i, img.getColor(0, 0, 0, 180));
-      }
-    }
+    // Perbaikan: Gunakan fillRect untuk background semi-transparan
+    // Ganti loop drawPixel dengan fillRect yang lebih efisien
+    img.fillRect(src, x, y, x + 200, y + 120, img.getColor(0, 0, 0, 180));
     
-    // Cyan border
+    // Cyan border - perbaikan parameter untuk image 3.0.5
     img.drawRect(src, x1: x, y1: y, x2: x + 200, y2: y + 120, color: kColorCyan, thickness: 1);
     
     y += 16;

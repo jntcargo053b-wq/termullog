@@ -35,50 +35,37 @@ class LayoutSurvey extends WatermarkLayoutBase {
     final int panelX = 16;
     final int panelY = src.height - panelH - 16;
     
-    // Panel background
     for (int i = 0; i < panelH; i++) {
       for (int j = 0; j < panelW; j++) {
         img.drawPixel(src, panelX + j, panelY + i, img.ColorRgba8(0, 0, 20, 220));
       }
     }
     
-    // Teal border
     img.drawRect(src, x1: panelX, y1: panelY, x2: panelX + panelW, y2: panelY + panelH,
         color: kColorTeal, thickness: 2);
     
     int x = panelX + 16;
     int y = panelY + 16;
     
-    // Header
-    _drawText(src, 'SURVEY DATA', x, y, 14, kColorTeal);
+    img.drawString(src, 'SURVEY DATA', font: img.arial14, x: x, y: y, color: kColorTeal);
     y += 28;
     
-    // Rows
-    _drawRow(src, 'DATE', DateFormat('dd MMM yyyy').format(timestamp), x, y);
+    img.drawString(src, 'DATE : ${DateFormat('dd MMM yyyy').format(timestamp)}', font: img.arial14, x: x, y: y, color: kColorWhite);
     y += 24;
-    _drawRow(src, 'TIME', DateFormat('HH:mm:ss').format(timestamp), x, y);
+    img.drawString(src, 'TIME : ${DateFormat('HH:mm:ss').format(timestamp)}', font: img.arial14, x: x, y: y, color: kColorWhite);
     y += 24;
     
     if (hasPosition && lat != null && lon != null) {
-      _drawRow(src, 'LATITUDE', lat.toStringAsFixed(6), x, y);
+      img.drawString(src, 'LATITUDE : ${lat.toStringAsFixed(6)}', font: img.arial14, x: x, y: y, color: kColorWhite);
       y += 24;
-      _drawRow(src, 'LONGITUDE', lon.toStringAsFixed(6), x, y);
+      img.drawString(src, 'LONGITUDE : ${lon.toStringAsFixed(6)}', font: img.arial14, x: x, y: y, color: kColorWhite);
       y += 24;
       
       if (showAccuracy && acc != null) {
-        _drawRow(src, 'ACCURACY', '±${acc.toStringAsFixed(1)}m', x, y);
+        img.drawString(src, 'ACCURACY : ±${acc.toStringAsFixed(1)}m', font: img.arial14, x: x, y: y, color: kColorWhite);
       }
     }
     
     return WatermarkLayoutBase.encodeJpg(src);
-  }
-  
-  void _drawRow(img.Image image, String label, String value, int x, int y) {
-    _drawText(image, label, x, y, 11, kColorLightGrey);
-    _drawText(image, value, x + 100, y, 11, kColorWhite);
-  }
-  
-  void _drawText(img.Image image, String text, int x, int y, int size, img.Color color) {
-    img.drawString(image, text, font: img.arial14, x: x, y: y, color: color);
   }
 }

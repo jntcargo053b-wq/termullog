@@ -5,33 +5,42 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
-/// Base class untuk semua layout watermark
+/// Base class untuk semua layout watermark.
+/// Menyediakan helper standar untuk:
+/// - Adaptive scaling, font size, wrap text
+/// - Gambar teks dengan shadow, label‑value
+/// - Gradient multi‑stop, safe area untuk mini map, anti overflow
+/// - Load font aman dengan debug print
 abstract class WatermarkLayoutBase {
   /// Nama layout untuk debugging
   String get name;
 
-  /// Konstanta warna (img.ColorRgba8 tidak bisa const — pakai static final)
+  // ==========================================================================
+  // WARNA STANDAR (img package)
+  // ==========================================================================
   static final img.Color white    = img.ColorRgba8(255, 255, 255, 255);
   static final img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
   static final img.Color blue     = img.ColorRgba8(30, 144, 255, 255);
   static final img.Color grey     = img.ColorRgba8(150, 150, 150, 255);
 
-  /// Alias untuk layout baru
   static final img.Color imgWhite    = white;
   static final img.Color imgOffWhite = offWhite;
   static final img.Color imgBlue     = blue;
   static final img.Color imgGrey     = grey;
 
-  /// Warna untuk dart:ui Canvas
+  // ==========================================================================
+  // WARNA UNTUK DART:UI CANVAS
+  // ==========================================================================
   static const Color uiWhite    = Color(0xFFFFFFFF);
   static const Color uiBlue     = Color(0xFF1E90FF);
   static const Color uiGrey     = Color(0xFF969696);
   static const Color uiOffWhite = Color(0xFFE6E6E6);
 
-  /// Flag font sudah diload
+  // ==========================================================================
+  // LOAD FONT (aman + debug)
+  // ==========================================================================
   static bool _fontLoaded = false;
 
-  /// Load font Roboto dari assets (panggil sekali)
   static Future<void> loadFont() async {
     if (_fontLoaded) return;
     try {
@@ -41,13 +50,14 @@ abstract class WatermarkLayoutBase {
       await fontLoader.load();
       _fontLoaded = true;
     } catch (e) {
-      debugPrint('Font load failed: $e');
-      // Tetap set true agar tidak mencoba lagi berkali‑kali
-      _fontLoaded = true;
+      debugPrint('⚠️ Font load failed: $e');
+      _fontLoaded = true; // jangan coba lagi walau gagal
     }
   }
 
-  // ─── SYNC: wajib diimplementasikan dengan parameter opsional ─────
+  // ==========================================================================
+  // METODE UTAMA (wajib diimplementasikan)
+  // ==========================================================================
   Uint8List apply({
     required img.Image src,
     required DateTime timestamp,
@@ -68,7 +78,7 @@ abstract class WatermarkLayoutBase {
     String fontSize = 'normal',
   });
 
-  // ─── ASYNC: opsional ─────────────────────────────────────────────
+  // Versi async (opsional, fallback ke sync)
   Future<Uint8List> applyAsync({
     required img.Image src,
     required DateTime timestamp,
@@ -89,10 +99,18 @@ abstract class WatermarkLayoutBase {
     String fontSize = 'normal',
   }) async {
     return apply(
-      src: src, timestamp: timestamp, hasPosition: hasPosition,
-      lat: lat, lon: lon, acc: acc, address: address, weather: weather,
-      showWeather: showWeather, showAccuracy: showAccuracy,
-      showMiniMap: showMiniMap, mapBytes: mapBytes,
+      src: src,
+      timestamp: timestamp,
+      hasPosition: hasPosition,
+      lat: lat,
+      lon: lon,
+      acc: acc,
+      address: address,
+      weather: weather,
+      showWeather: showWeather,
+      showAccuracy: showAccuracy,
+      showMiniMap: showMiniMap,
+      mapBytes: mapBytes,
       showAddress: showAddress,
       showCoordinates: showCoordinates,
       opacity: opacity,
@@ -101,95 +119,10 @@ abstract class WatermarkLayoutBase {
     );
   }
 
-  // ─── CANVAS HELPERS ──────────────────────────────────────────────
-  static void canvasDrawText(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14, double letterSpacing = 1.0}) {
-    final tp = TextPainter(text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontFamily: 'Roboto', fontWeight: bold ? FontWeight.w700 : FontWeight.w400, letterSpacing: letterSpacing)), textDirection: TextDirection.ltr);
-    tp.layout(); tp.paint(canvas, Offset(x, y));
-  }
-
-  /// Text shadow dengan warna shadow yang bisa diatur
-  static void canvasDrawTextShadow(
-    Canvas canvas,
-    String text, {
-    required double x,
-    required double y,
-    Color color = uiWhite,
-    bool bold = false,
-    double size = 14,
-    Color shadowColor = Colors.black54,
-  }) {
-    canvasDrawText(canvas, text, x: x + 1, y: y + 1, color: shadowColor, bold: bold, size: size);
-    canvasDrawText(canvas, text, x: x, y: y, color: color, bold: bold, size: size);
-  }
-
-  static void canvasDrawChip(Canvas canvas, {required double x, required double y, required double width, required double height, Color color = uiBlue, double opacity = 0.15}) {
-    canvas.drawRRect(RRect.fromLTRBR(x, y, x + width, y + height, const Radius.circular(4)), Paint()..color = color.withOpacity(opacity));
-  }
-
-  /// Multi‑stop gradient: 3 stops untuk transisi lebih halus
-  static void canvasDrawGradient(Canvas canvas, {required double x, required double y, required double width, required double height, Color color = Colors.black, double startOpacity = 0.8, double endOpacity = 0.0, bool topToBottom = true}) {
-    final colors = [
-      color.withOpacity(startOpacity),
-      color.withOpacity(startOpacity * 0.5),
-      color.withOpacity(endOpacity),
-    ];
-    final startOffset = Offset(x, topToBottom ? y : y + height);
-    final endOffset = Offset(x, topToBottom ? y + height : y);
-    canvas.drawRect(Rect.fromLTWH(x, y, width, height),
-        Paint()..shader = ui.Gradient.linear(startOffset, endOffset, colors));
-  }
-
-  // ─── UTILITY TEXT COLOR ──────────────────────────────────────────
-  static Color adaptiveTextColor(bool darkBackground) {
-    return darkBackground ? Colors.white : Colors.black;
-  }
-
-  // ─── SAFE MINI MAP SYSTEM ────────────────────────────────────────
-  static Rect miniMapRect(img.Image src, int mapW, int mapH) {
-    final pad = 16; // padding aman, bisa disesuaikan dengan preferensi layout
-    return Rect.fromLTWH(
-      (src.width - mapW - pad).toDouble(),
-      (src.height - mapH - pad).toDouble(),
-      mapW.toDouble(),
-      mapH.toDouble(),
-    );
-  }
-
-  // ─── ANTI OVERFLOW ───────────────────────────────────────────────
-  static int clampWidth(int value, img.Image src) {
-    return value.clamp(100, src.width - 40);
-  }
-
-  // ─── KONVERSI IMAGE ──────────────────────────────────────────────
-  static Future<ui.Image> toUiImage(img.Image src) async {
-    final pngBytes = Uint8List.fromList(img.encodePng(src));
-    final codec = await ui.instantiateImageCodec(pngBytes);
-    final frame = await codec.getNextFrame();
-    return frame.image;
-  }
-
-  static Future<img.Image> recorderToImg(ui.PictureRecorder recorder, int width, int height) async {
-    final picture = recorder.endRecording();
-    final uiImage = await picture.toImage(width, height);
-    final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
-    return img.decodePng(byteData!.buffer.asUint8List())!;
-  }
-
-  // ─── IMG PACKAGE HELPERS ─────────────────────────────────────────
-  static img.Image decodeOrThrow(Uint8List bytes) {
-    if (bytes.isEmpty) throw Exception('Data gambar kosong');
-    if (bytes.length < 100) throw Exception('Data gambar terlalu kecil');
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw Exception('Format tidak didukung');
-    return decoded;
-  }
-
-  /// Encode ke JPEG
-  static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
-    return Uint8List.fromList(img.encodeJpg(src, quality: quality));
-  }
-
-  // ─── WRAP TEXT ───────────────────────────────────────────────────
+  // ==========================================================================
+  // HELPER: TEXT WRAP & LEBAR AMAN
+  // ==========================================================================
+  /// Memecah teks menjadi beberapa baris berdasarkan jumlah karakter maksimum.
   static String wrapText(String text, int maxChars) {
     final words = text.split(' ');
     String result = '';
@@ -204,5 +137,201 @@ abstract class WatermarkLayoutBase {
     }
     result += line;
     return result.trim();
+  }
+
+  /// Menghitung jumlah karakter maksimum agar teks muat di panel lebar tertentu.
+  static int safeMaxChars(int panelWidth, int fontSizePx) {
+    final int charWidth = (fontSizePx * 0.6).toInt(); // estimasi lebar per karakter
+    if (charWidth <= 0) return 30;
+    return ((panelWidth - 20) / charWidth).toInt().clamp(20, 60);
+  }
+
+  /// Clamp lebar panel agar tidak overflow.
+  static int clampWidth(int value, img.Image src) {
+    return value.clamp(100, src.width - 40);
+  }
+
+  // ==========================================================================
+  // HELPER: TINGGI BARIS ADAPTIF
+  // ==========================================================================
+  static int getLineHeight(String fontSize, double scale, {bool small = false}) {
+    final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
+    final int baseHeight = small ? 20 : 28;
+    return (baseHeight * scale * fsMultiplier).round();
+  }
+
+  // ==========================================================================
+  // HELPER: GAMBAR TEKS DENGAN SHADOW (untuk img package)
+  // ==========================================================================
+  static void drawTextWithShadow(
+    img.Image dst,
+    String text,
+    int x,
+    int y, {
+    required img.BitmapFont font,
+    required int color,
+    bool withShadow = true,
+  }) {
+    if (withShadow) {
+      img.drawString(dst, text, font: font, x: x + 1, y: y + 1,
+          color: img.ColorRgba8(0, 0, 0, 120));
+    }
+    img.drawString(dst, text, font: font, x: x, y: y, color: color);
+  }
+
+  // ==========================================================================
+  // HELPER: LABEL – VALUE UNTUK LAYOUT TABEL
+  // ==========================================================================
+  static void drawLabelValue(
+    img.Image dst,
+    String label,
+    String value,
+    int x,
+    int y,
+    int colW,
+    int rowH,
+    img.BitmapFont font, {
+    int labelColor = 0xFF969696,
+    int valueColor = 0xFFFFFFFF,
+  }) {
+    img.drawString(dst, label, font: font, x: x, y: y + (rowH ~/ 2 - 8),
+        color: labelColor);
+    img.drawString(dst, value, font: font, x: x + colW, y: y + (rowH ~/ 2 - 8),
+        color: valueColor);
+  }
+
+  // ==========================================================================
+  // HELPER: WAKTU & TANGGAL FORMAT
+  // ==========================================================================
+  static String formatDate(DateTime dt, {String pattern = 'dd MMM yyyy'}) {
+    return DateFormat(pattern).format(dt);
+  }
+
+  static String formatTime(DateTime dt, {String pattern = 'HH:mm:ss'}) {
+    return DateFormat(pattern).format(dt);
+  }
+
+  // ==========================================================================
+  // HELPER: ADAPTIVE TEXT COLOR (BERDASARKAN KECERAHAN BACKGROUND)
+  // ==========================================================================
+  static Color adaptiveTextColor(bool darkBackground) {
+    return darkBackground ? Colors.white : Colors.black;
+  }
+
+  // ==========================================================================
+  // HELPER: SAFE MINI MAP RECT
+  // ==========================================================================
+  static Rect miniMapRect(img.Image src, int mapW, int mapH, {int padding = 16}) {
+    return Rect.fromLTWH(
+      (src.width - mapW - padding).toDouble(),
+      (src.height - mapH - padding).toDouble(),
+      mapW.toDouble(),
+      mapH.toDouble(),
+    );
+  }
+
+  // ==========================================================================
+  // HELPER: GRADIEN MULTI‑STOP (UNTUK FLUTTER CANVAS)
+  // ==========================================================================
+  static void canvasDrawGradient(
+    Canvas canvas, {
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+    Color color = Colors.black,
+    double startOpacity = 0.8,
+    double endOpacity = 0.0,
+    bool topToBottom = true,
+  }) {
+    final colors = [
+      color.withOpacity(startOpacity),
+      color.withOpacity(startOpacity * 0.5),
+      color.withOpacity(endOpacity),
+    ];
+    final startOffset = Offset(x, topToBottom ? y : y + height);
+    final endOffset = Offset(x, topToBottom ? y + height : y);
+    canvas.drawRect(
+      Rect.fromLTWH(x, y, width, height),
+      Paint()..shader = ui.Gradient.linear(startOffset, endOffset, colors),
+    );
+  }
+
+  // ==========================================================================
+  // HELPER: TEKS PADA FLUTTER CANVAS (DENGAN SHADOW OPSIONAL)
+  // ==========================================================================
+  static void canvasDrawText(
+    Canvas canvas,
+    String text, {
+    required double x,
+    required double y,
+    Color color = uiWhite,
+    bool bold = false,
+    double size = 14,
+    double letterSpacing = 1.0,
+  }) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontFamily: 'Roboto',
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+          letterSpacing: letterSpacing,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    tp.layout();
+    tp.paint(canvas, Offset(x, y));
+  }
+
+  static void canvasDrawTextShadow(
+    Canvas canvas,
+    String text, {
+    required double x,
+    required double y,
+    Color color = uiWhite,
+    bool bold = false,
+    double size = 14,
+    Color shadowColor = Colors.black54,
+  }) {
+    canvasDrawText(canvas, text,
+        x: x + 1, y: y + 1, color: shadowColor, bold: bold, size: size);
+    canvasDrawText(canvas, text,
+        x: x, y: y, color: color, bold: bold, size: size);
+  }
+
+  // ==========================================================================
+  // HELPER: KONVERSI GAMBAR (ui.Image <-> img.Image)
+  // ==========================================================================
+  static Future<ui.Image> toUiImage(img.Image src) async {
+    final pngBytes = Uint8List.fromList(img.encodePng(src));
+    final codec = await ui.instantiateImageCodec(pngBytes);
+    final frame = await codec.getNextFrame();
+    return frame.image;
+  }
+
+  static Future<img.Image> recorderToImg(ui.PictureRecorder recorder, int width, int height) async {
+    final picture = recorder.endRecording();
+    final uiImage = await picture.toImage(width, height);
+    final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
+    return img.decodePng(byteData!.buffer.asUint8List())!;
+  }
+
+  // ==========================================================================
+  // HELPER: DECODE & ENCODE UNTUK IMG PACKAGE
+  // ==========================================================================
+  static img.Image decodeOrThrow(Uint8List bytes) {
+    if (bytes.isEmpty) throw Exception('Data gambar kosong');
+    if (bytes.length < 100) throw Exception('Data gambar terlalu kecil');
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) throw Exception('Format gambar tidak didukung');
+    return decoded;
+  }
+
+  static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
+    return Uint8List.fromList(img.encodeJpg(src, quality: quality));
   }
 }

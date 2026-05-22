@@ -2,12 +2,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:intl/intl.dart';
 import '../core/constants.dart';
-import '../services/settings_service.dart';
 import '../services/settings_cache.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -50,70 +48,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     setState(() => _isLoading = true);
 
-    final layout = await SettingsService.getWatermarkLayout();
-    final showWeather = await SettingsService.getShowWeather();
-    final showAccuracy = await SettingsService.getShowAccuracy();
-    final showAddress = await SettingsService.getShowAddress();
-    final showCoordinates = await SettingsService.getShowCoordinates();
-    final opacity = await SettingsService.getOpacity();
-    final showBorder = await SettingsService.getShowBorder();
-    final dateFormat = await SettingsService.getDateFormat();
-    final timeFormat = await SettingsService.getTimeFormat();
-    final showMiniMap = await SettingsService.getShowMiniMap();
-    final mapZoomLevel = await SettingsService.getMapZoomLevel();
-    final mapSize = await SettingsService.getMapSize();
-    final fontSize = await SettingsService.getFontSize();
-    final themeMode = await SettingsService.getThemeMode();
-    final imageQuality = await SettingsService.getImageQuality();
-    final keepScreenOn = await SettingsService.getKeepScreenOn();
-    final useHighAccuracy = await SettingsService.getUseHighAccuracy();
-    final autoSave = await SettingsService.getAutoSave();
+    // Memuat semua pengaturan dari SettingsCache
+    _selectedLayout = await SettingsCache.layout;
+    _showWeather = await SettingsCache.showWeather;
+    _showAccuracy = await SettingsCache.showAccuracy;
+    _showAddress = await SettingsCache.showAddress;
+    _showCoordinates = await SettingsCache.showCoordinates;
+    _opacity = await SettingsCache.opacity;
+    _showBorder = await SettingsCache.showBorder;
+    _dateFormat = await SettingsCache.dateFormat;
+    _timeFormat = await SettingsCache.timeFormat;
+    _showMiniMap = await SettingsCache.showMiniMap;
+    _mapZoomLevel = await SettingsCache.mapZoomLevel;
+    _mapSize = await SettingsCache.mapSize;
+    _themeMode = await SettingsCache.themeMode;
+    _imageQuality = await SettingsCache.imageQuality;
+    _keepScreenOn = await SettingsCache.keepScreenOn;
+    _useHighAccuracy = await SettingsCache.useHighAccuracy;
+    _autoSave = await SettingsCache.autoSave;
 
-    setState(() {
-      _selectedLayout = layout;
-      _showWeather = showWeather;
-      _showAccuracy = showAccuracy;
-      _showAddress = showAddress;
-      _showCoordinates = showCoordinates;
-      _opacity = opacity;
-      _showBorder = showBorder;
-      _dateFormat = dateFormat;
-      _timeFormat = timeFormat;
-      _showMiniMap = showMiniMap;
-      _mapZoomLevel = mapZoomLevel;
-      _mapSize = mapSize;
-      _fontSize = fontSize;
-      _themeMode = themeMode;
-      _imageQuality = imageQuality;
-      _keepScreenOn = keepScreenOn;
-      _useHighAccuracy = useHighAccuracy;
-      _autoSave = autoSave;
-      _isLoading = false;
-    });
+    // Konversi fontSize dari double (cache) ke string (UI)
+    final double fontSizeDouble = await SettingsCache.fontSize;
+    _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
+
+    setState(() => _isLoading = false);
   }
 
   Future<void> _saveSettings() async {
-    await SettingsService.setWatermarkLayout(_selectedLayout);
-    await SettingsService.setShowWeather(_showWeather);
-    await SettingsService.setShowAccuracy(_showAccuracy);
-    await SettingsService.setShowAddress(_showAddress);
-    await SettingsService.setShowCoordinates(_showCoordinates);
-    await SettingsService.setOpacity(_opacity);
-    await SettingsService.setShowBorder(_showBorder);
-    await SettingsService.setDateFormat(_dateFormat);
-    await SettingsService.setTimeFormat(_timeFormat);
-    await SettingsService.setShowMiniMap(_showMiniMap);
-    await SettingsService.setMapZoomLevel(_mapZoomLevel);
-    await SettingsService.setMapSize(_mapSize);
-    await SettingsService.setFontSize(_fontSize);
-    await SettingsService.setThemeMode(_themeMode);
-    await SettingsService.setImageQuality(_imageQuality);
-    await SettingsService.setKeepScreenOn(_keepScreenOn);
-    await SettingsService.setUseHighAccuracy(_useHighAccuracy);
-    await SettingsService.setAutoSave(_autoSave);
+    // Menyimpan semua pengaturan ke SettingsCache
+    await SettingsCache.setLayout(_selectedLayout);
+    await SettingsCache.setShowWeather(_showWeather);
+    await SettingsCache.setShowAccuracy(_showAccuracy);
+    await SettingsCache.setShowAddress(_showAddress);
+    await SettingsCache.setShowCoordinates(_showCoordinates);
+    await SettingsCache.setOpacity(_opacity);
+    await SettingsCache.setShowBorder(_showBorder);
+    await SettingsCache.setDateFormat(_dateFormat);
+    await SettingsCache.setTimeFormat(_timeFormat);
+    await SettingsCache.setShowMiniMap(_showMiniMap);
+    await SettingsCache.setMapZoomLevel(_mapZoomLevel);
+    await SettingsCache.setMapSize(_mapSize);
+    await SettingsCache.setThemeMode(_themeMode);
+    await SettingsCache.setImageQuality(_imageQuality);
+    await SettingsCache.setKeepScreenOn(_keepScreenOn);
+    await SettingsCache.setUseHighAccuracy(_useHighAccuracy);
+    await SettingsCache.setAutoSave(_autoSave);
 
+    // Konversi fontSize dari string (UI) ke double (cache)
+    final double fontSizeDouble = _fontSize == 'small' ? 13 : _fontSize == 'large' ? 20 : 16;
+    await SettingsCache.setFontSize(fontSizeDouble);
+
+    // Invalidasi cache agar nilai terbaru terbaca
     SettingsCache.invalidate();
 
+    // Terapkan efek langsung (tema, layar)
     _applyThemeMode();
     _applyKeepScreenOn();
 
@@ -135,7 +123,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _applyThemeMode() {}
+  void _applyThemeMode() {
+    // Implementasi perubahan tema (jika diperlukan)
+  }
+
   void _applyKeepScreenOn() {
     if (_keepScreenOn) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -145,7 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _resetToDefault() async {
-    await SettingsService.resetAllSettings();
+    await SettingsCache.resetAllSettings();
     await _loadSettings();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -443,7 +434,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : const SizedBox.shrink();
 
     switch (_selectedLayout) {
-      // ─── MINIMAL ──────────────────────────────────────────────
       case WatermarkLayout.minimal:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -469,7 +459,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── DSLR CORNER ──────────────────────────────────────────
       case WatermarkLayout.dslrCorner:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -504,7 +493,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── CINEMATIC ────────────────────────────────────────────
       case WatermarkLayout.cinematic:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -525,7 +513,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── FIELD SURVEY ─────────────────────────────────────────
       case WatermarkLayout.fieldSurvey:
         return Container(
           padding: const EdgeInsets.all(12),
@@ -553,7 +540,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── HUD MODERN ───────────────────────────────────────────
       case WatermarkLayout.hud:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -572,7 +558,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── GPS CARD ────────────────────────────────────────────
       case WatermarkLayout.gpsCard:
         return Container(
           padding: const EdgeInsets.all(12),
@@ -602,7 +587,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── POLAROID ────────────────────────────────────────────
       case WatermarkLayout.polaroid:
         return Container(
           color: const Color(0xFFF8F5EB),
@@ -624,7 +608,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── SIDE PANEL ──────────────────────────────────────────
       case WatermarkLayout.sidePanel:
         return Row(
           children: [
@@ -656,7 +639,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         );
 
-      // ─── CINEMATIC V2 ─────────────────────────────────────────
       case WatermarkLayout.cinematicV2:
         return Stack(
           children: [
@@ -710,7 +692,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         );
 
-      // ─── TIMEMARK STYLE ─────────────────────────────────────
       case WatermarkLayout.timeMarkStyle:
         return Container(
           padding: const EdgeInsets.all(14),
@@ -745,7 +726,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
 
-      // ─── MODERN CLEAN CARD ──────────────────────────────────
       case WatermarkLayout.modern:
         return Container(
           margin: const EdgeInsets.all(14),
@@ -799,10 +779,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showResetDialog() {
-    showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1F2E), title: const Text('Reset Pengaturan', style: TextStyle(color: Colors.white)), content: const Text('Apakah Anda yakin ingin mereset semua pengaturan watermark ke nilai default?', style: TextStyle(color: Colors.grey)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () { Navigator.pop(context); _resetToDefault(); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00B8D4), foregroundColor: Colors.black), child: const Text('Reset'))]));
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F2E),
+        title: const Text('Reset Pengaturan', style: TextStyle(color: Colors.white)),
+        content: const Text('Apakah Anda yakin ingin mereset semua pengaturan watermark ke nilai default?', style: TextStyle(color: Colors.grey)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _resetToDefault();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00B8D4), foregroundColor: Colors.black),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showClearCacheDialog() {
-    showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1F2E), title: const Text('Bersihkan Cache', style: TextStyle(color: Colors.white)), content: Text('Hapus $_tempFileCount file temporary (${_tempFileSize})?\n\nFile ini adalah foto sementara yang belum disimpan ke galeri. Foto yang sudah disimpan tidak akan terhapus.', style: TextStyle(color: Colors.grey.shade400)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () { Navigator.pop(context); _clearTempFiles(); }, style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white), child: const Text('Hapus Sekarang'))]));
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F2E),
+        title: const Text('Bersihkan Cache', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Hapus $_tempFileCount file temporary (${_tempFileSize})?\n\nFile ini adalah foto sementara yang belum disimpan ke galeri. Foto yang sudah disimpan tidak akan terhapus.',
+          style: TextStyle(color: Colors.grey.shade400),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _clearTempFiles();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
+            child: const Text('Hapus Sekarang'),
+          ),
+        ],
+      ),
+    );
   }
 }

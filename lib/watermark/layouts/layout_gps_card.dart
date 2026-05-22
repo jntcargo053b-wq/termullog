@@ -8,12 +8,7 @@ class LayoutGpsCard extends WatermarkLayoutBase {
   @override
   String get name => 'GPS Card';
 
-  static const int padX = 16;
-  static const int padY = 14;
-  static const int panelH = 150;
-  static const int mapW = 160;
-  static const int mapH = 100;
-  static const int lineH = 28;
+  static const bool _positionBottom = true;
 
   @override
   Uint8List apply({
@@ -35,67 +30,55 @@ class LayoutGpsCard extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    final bool isTop = false;
-    final int y0 = isTop ? 0 : src.height - panelH;
-    if (y0 < 0 || y0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
+    final double scale = (src.width / 1080).clamp(0.7, 2.0);
+    final int panelW = (src.width * 0.85).toInt();
+    final int padX = (15 * scale).round();
+    final int rowH = (24 * scale).round();
+    final int iconW = (30 * scale).round();
+    final img.BitmapFont fontS = fontSize == 'small' ? img.arial14 : img.arial24;
 
-    final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial24;
-    final smallFont = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial14;
+    int rows = 2;
+    if (showCoordinates && hasPosition) rows += 1;
+    if (showAccuracy && hasPosition) rows += 1;
+    if (showAddress && address.isNotEmpty) rows += 1;
+    if (showWeather && weather.isNotEmpty) rows += 1;
 
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + panelH,
-        color: img.ColorRgba8(0, 0, 10, (230 * opacity).toInt()));
-    img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + 4,
-        color: img.ColorRgba8(0, 180, 255, 255));
+    final int panelH = rows * rowH + 16;
+    final int y0 = _positionBottom ? src.height - panelH - 16 : 16;
+    final int x0 = (src.width - panelW) ~/ 2;
+    final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
 
-    int cy = y0 + padY;
-
-    img.fillCircle(src, x: padX + 6, y: cy + 10, radius: 5,
-        color: img.ColorRgba8(255, 50, 50, 255));
-    img.fillCircle(src, x: padX + 6, y: cy + 10, radius: 2,
-        color: WatermarkLayoutBase.white);
-
-    img.drawString(src, DateFormat('yyyy-MM-dd HH:mm:ss').format(timestamp),
-        font: font, x: padX + 16, y: cy, color: WatermarkLayoutBase.white);
-    cy += lineH;
-
-    if (showCoordinates && hasPosition) {
-      img.drawString(src, '${lat!.toStringAsFixed(6)}  ${lon!.toStringAsFixed(6)}',
-          font: font, x: padX + 16, y: cy, color: img.ColorRgba8(0, 180, 255, 255));
-      cy += lineH;
+    img.fillRect(src, x0, y0, x0 + panelW, y0 + panelH, bgColor);
+    if (showBorder) {
+      img.drawRect(src, x1: x0, y1: y0, x2: x0 + panelW, y2: y0 + panelH,
+          color: WatermarkLayoutBase.white, thickness: 1);
     }
 
-    if (showAccuracy && hasPosition) {
-      img.drawString(src, '±${acc?.toStringAsFixed(0) ?? '?'} m',
-          font: smallFont, x: padX + 16, y: cy, color: WatermarkLayoutBase.grey);
-      cy += lineH;
-    }
+    int cy = y0 + 8;
+    final dateStr = DateFormat('dd MMM yyyy').format(timestamp);
+    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    img.drawString(src, dateStr, font: fontS, x: x0 + padX + iconW, y: cy, color: WatermarkLayoutBase.white);
+    cy += rowH;
+    img.drawString(src, timeStr, font: fontS, x: x0 + padX + iconW, y: cy, color: WatermarkLayoutBase.white);
+    cy += rowH;
 
+    if (showCoordinates && hasPosition && lat != null && lon != null) {
+      final coord = '${lat.toStringAsFixed(5)}°, ${lon.toStringAsFixed(5)}°';
+      img.drawString(src, coord, font: fontS, x: x0 + padX + iconW, y: cy, color: WatermarkLayoutBase.blue);
+      cy += rowH;
+    }
+    if (showAccuracy && hasPosition && acc != null) {
+      final accStr = 'Accuracy: ±${acc.toStringAsFixed(1)} m';
+      img.drawString(src, accStr, font: fontS, x: x0 + padX + iconW, y: cy, color: WatermarkLayoutBase.grey);
+      cy += rowH;
+    }
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
-      final shortAddr = address.length > 45 ? '${address.substring(0, 44)}…' : address;
-      img.drawString(src, shortAddr,
-          font: smallFont, x: padX + 16, y: cy, color: WatermarkLayoutBase.grey);
-      cy += lineH;
+      final short = address.length > 35 ? '${address.substring(0, 32)}...' : address;
+      img.drawString(src, short, font: fontS, x: x0 + padX + iconW, y: cy, color: WatermarkLayoutBase.grey);
+      cy += rowH;
     }
-
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather,
-          font: smallFont, x: padX + 16, y: cy, color: img.ColorRgba8(0, 180, 255, 255));
-    }
-
-    if (showMiniMap && mapBytes != null && mapBytes.isNotEmpty) {
-      try {
-        final map = img.decodeImage(mapBytes);
-        if (map != null) {
-          final resized = img.copyResize(map, width: mapW, height: mapH);
-          final mx = src.width - mapW - padX;
-          final my = y0 + 25;
-          if (mx >= 0 && my >= 0) {
-            img.drawRect(src, x1: mx - 2, y1: my - 2, x2: mx + mapW + 1, y2: my + mapH + 1,
-                color: img.ColorRgba8(0, 180, 255, 100));
-            img.compositeImage(src, resized, dstX: mx, dstY: my, blend: img.BlendMode.alpha);
-          }
-        }
-      } catch (_) {}
+      img.drawString(src, weather, font: fontS, x: x0 + padX + iconW, y: cy, color: WatermarkLayoutBase.blue);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);

@@ -1,10 +1,6 @@
-// lib/watermark/layouts/layout_documentary.dart
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
-import 'package:image/src/font/arial_12.dart';
-import 'package:image/src/font/arial_14.dart';
-import 'package:image/src/font/arial_24.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -33,48 +29,52 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    // Bottom bar
-    final int barHeight = 70;
-    final int yBar = src.height - barHeight;
-    
-    // Dark gradient bar
-    for (int i = 0; i < barHeight; i++) {
-      final int alpha = (200 - (i * 2)).clamp(0, 255);
-      for (int j = 0; j < src.width; j++) {
-        img.drawPixel(src, j, yBar + i, img.getColor(0, 0, 0, alpha));
+    final int margin = 20;
+    final int padding = 15;
+    final int x = margin;
+    final int y = margin;
+    final int panelWidth = 280;
+    final int panelHeight = hasPosition ? 180 : 120;
+
+    final int bgColor = (0x00000000 | ((opacity * 255).toInt() << 24)) & 0xCC000000;
+    img.fillRect(src, x, y, x + panelWidth, y + panelHeight, bgColor);
+
+    if (showBorder) {
+      img.drawRect(src, x1: x, y1: y, x2: x + panelWidth, y2: y + panelHeight, color: kColorWhite);
+    }
+
+    int textY = y + padding;
+    int textX = x + padding;
+
+    img.drawString(src, img.arial14, textX, textY, '📍 DOCUMENTARY', color: kColorWhite);
+    textY += 28;
+
+    final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
+    final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    img.drawString(src, img.arial12, textX, textY, '$dateStr | $timeStr', color: kColorLightGrey);
+    textY += 24;
+
+    if (hasPosition && showCoordinates && lat != null && lon != null) {
+      final String coordStr = '${lat.toStringAsFixed(6)}°, ${lon.toStringAsFixed(6)}°';
+      img.drawString(src, img.arial12, textX, textY, coordStr, color: kColorLightGrey);
+      textY += 20;
+      if (showAccuracy && acc != null) {
+        final String accStr = 'Accuracy: ±${acc.toStringAsFixed(1)}m';
+        img.drawString(src, img.arial12, textX, textY, accStr, color: getAccuracyColor(acc));
+        textY += 20;
       }
     }
-    
-    final int margin = 20;
-    int y = yBar + 25;
-    
-    // Date and time
-    final String dateTimeStr = DateFormat('dd MMM yyyy  •  HH:mm').format(timestamp);
-    _drawText(src, dateTimeStr, margin, y, 14, kColorWhite);
-    y += 28;
-    
-    // Coordinates
-    if (hasPosition && showCoordinates && lat != null && lon != null) {
-      final String coordStr = '📍 ${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°';
-      _drawText(src, coordStr, margin, y, 12, kColorLightGrey);
-      y += 24;
+
+    if (showAddress && address.isNotEmpty) {
+      final truncated = address.length > 40 ? '${address.substring(0, 37)}...' : address;
+      img.drawString(src, img.arial12, textX, textY, truncated, color: kColorLightGrey);
+      textY += 20;
     }
-    
-    // Weather
+
     if (showWeather && weather.isNotEmpty) {
-      _drawText(src, '☁️ $weather', margin, y, 12, kColorLightGrey);
+      img.drawString(src, img.arial12, textX, textY, weather, color: kColorLightGrey);
     }
-    
+
     return WatermarkLayoutBase.encodeJpg(src);
-  }
-  
-  void _drawText(img.Image image, String text, int x, int y, int size, img.Color color) {
-    if (size <= 12) {
-      img.drawString(image, img.arial12, x, y, text, color: color);
-    } else if (size <= 14) {
-      img.drawString(image, img.arial14, x, y, text, color: color);
-    } else {
-      img.drawString(image, img.arial24, x, y, text, color: color);
-    }
   }
 }

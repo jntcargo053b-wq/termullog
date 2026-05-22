@@ -28,17 +28,19 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    final double scale = (src.width / 1080).clamp(0.7, 2.0);
+    // Adaptive layout
+    final double scale = WatermarkLayoutBase.getAdaptiveScale(src);
+    final EdgeInsets safeArea = WatermarkLayoutBase.getSafePadding(src);
     final int headerH = (28 * scale).round();
-    final int rowH = WatermarkLayoutBase.getLineHeight(fontSize, scale, small: false);
+    final int rowH = WatermarkLayoutBase.getAdaptiveLineHeight(fontSize, scale, tight: false);
     final int padX = (14 * scale).round();
     final int colW = (60 * scale).round();
 
     final img.BitmapFont fontRow = fontSize == 'small' ? img.arial14 : img.arial24;
     final img.BitmapFont fontHeader = fontSize == 'small' ? img.arial14 : img.arial24;
 
+    // Build rows
     final List<Map<String, String>> rows = [];
-
     rows.add({'label': 'DATE', 'value': DateFormat('yyyy-MM-dd').format(timestamp)});
     rows.add({'label': 'TIME', 'value': DateFormat('HH:mm:ss').format(timestamp)});
 
@@ -65,14 +67,14 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     }
 
     final int totalH = headerH + rows.length * rowH + 8;
-    final int y0 = src.height - totalH;
-    if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
+    final int yBase = src.height - totalH - safeArea.bottom.toInt();
+    final int y0 = WatermarkLayoutBase.clampY(yBase, totalH, src);
 
-    // Background panel (warna proper)
+    // Background
     final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + totalH, color: bgColor);
 
-    // Header biru
+    // Header
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + headerH,
         color: WatermarkLayoutBase.blue);
     WatermarkLayoutBase.drawTextWithShadow(
@@ -80,6 +82,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       font: fontHeader, color: WatermarkLayoutBase.white,
     );
 
+    // Rows
     int cy = y0 + headerH;
     for (int i = 0; i < rows.length; i++) {
       final bool isEven = i.isEven;

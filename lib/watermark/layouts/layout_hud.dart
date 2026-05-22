@@ -1,10 +1,6 @@
-// lib/watermark/layouts/layout_hud.dart
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
-import 'package:image/src/font/arial_12.dart';
-import 'package:image/src/font/arial_14.dart';
-import 'package:image/src/font/arial_24.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -36,39 +32,31 @@ class LayoutHUD extends WatermarkLayoutBase {
     final int margin = 16;
     int x = margin;
     int y = margin;
-    
-    // Perbaikan: Gunakan fillRect untuk background semi-transparan
-    // Ganti loop drawPixel dengan fillRect yang lebih efisien
-    img.fillRect(src, x, y, x + 200, y + 120, img.getColor(0, 0, 0, 180));
-    
-    // Cyan border - perbaikan parameter untuk image 3.0.5
-    img.drawRect(src, x1: x, y1: y, x2: x + 200, y2: y + 120, color: kColorCyan, thickness: 1);
-    
+
+    img.fillRect(src, x, y, x + 200, y + 120, 0xB4000000); // semi-transparan hitam
+    img.drawRect(src, x1: x, y1: y, x2: x + 200, y2: y + 120, color: kColorCyan);
+
     y += 16;
     x += 12;
-    
-    // Time (large cyan)
+
     final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
     img.drawString(src, img.arial24, x, y, timeStr, color: kColorCyan);
     y += 32;
-    
-    // Date
+
     final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
     img.drawString(src, img.arial14, x, y, dateStr, color: kColorCyan);
     y += 24;
-    
-    // Coordinates
+
     if (hasPosition && showCoordinates && lat != null && lon != null) {
       final String coordStr = '${lat.toStringAsFixed(5)}° ${lon.toStringAsFixed(5)}°';
       img.drawString(src, img.arial12, x, y, coordStr, color: kColorWhite);
       y += 20;
-      
       if (showAccuracy && acc != null) {
         final String accStr = '±${acc.toStringAsFixed(1)}m';
         img.drawString(src, img.arial12, x, y, accStr, color: getAccuracyColor(acc));
       }
     }
-    
+
     return WatermarkLayoutBase.encodeJpg(src);
   }
 }

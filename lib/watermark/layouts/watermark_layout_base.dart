@@ -118,19 +118,19 @@ abstract class WatermarkLayoutBase {
     return (src.width / baseWidth).clamp(0.6, 1.8);
   }
 
-  static EdgeInsets getSafePadding(img.Image src, {double minPadding = 12}) {
+  /// Mendapatkan padding aman (kiri, kanan, atas, bawah) sebagai double
+  static void getSafePadding(img.Image src,
+      {double minPadding = 12, required double outLeft, required double outTop, required double outRight, required double outBottom}) {
     final bool isPortrait = src.height > src.width;
     final double scale = getAdaptiveScale(src);
     final double basePadding = minPadding * scale;
     final double horizontal = isPortrait ? basePadding : basePadding * 0.8;
     final double vertical = basePadding;
     final double notchExtra = (src.width / src.height > 2.0) ? 20.0 : 0.0;
-    return EdgeInsets.fromLTRB(
-      horizontal + notchExtra,
-      vertical,
-      horizontal + notchExtra,
-      vertical,
-    );
+    outLeft = horizontal + notchExtra;
+    outTop = vertical;
+    outRight = horizontal + notchExtra;
+    outBottom = vertical;
   }
 
   static int getAdaptiveLineHeight(String fontSize, double scale, {bool tight = false}) {
@@ -139,7 +139,6 @@ abstract class WatermarkLayoutBase {
     return (base * scale * fsMultiplier).round();
   }
 
-  // Alias untuk kompatibilitas
   static int getLineHeight(String fontSize, double scale, {bool small = false}) {
     return getAdaptiveLineHeight(fontSize, scale, tight: small);
   }
@@ -158,43 +157,8 @@ abstract class WatermarkLayoutBase {
     return x.clamp(horizontalMargin, maxX);
   }
 
-  static Rect getSafeLayoutRect(img.Image src, {
-    double widthFactor = 0.9,
-    double heightFactor = 0.85,
-    Alignment alignment = Alignment.bottomLeft,
-  }) {
-    final padding = getSafePadding(src);
-    final usableWidth = src.width - padding.left - padding.right;
-    final usableHeight = src.height - padding.top - padding.bottom;
-    final rectWidth = (usableWidth * widthFactor).toInt();
-    final rectHeight = (usableHeight * heightFactor).toInt();
-    int x, y;
-    switch (alignment) {
-      case Alignment.bottomLeft:
-        x = padding.left.toInt();
-        y = src.height - padding.bottom.toInt() - rectHeight;
-        break;
-      case Alignment.bottomRight:
-        x = src.width - padding.right.toInt() - rectWidth;
-        y = src.height - padding.bottom.toInt() - rectHeight;
-        break;
-      case Alignment.topLeft:
-        x = padding.left.toInt();
-        y = padding.top.toInt();
-        break;
-      case Alignment.topRight:
-        x = src.width - padding.right.toInt() - rectWidth;
-        y = padding.top.toInt();
-        break;
-      default:
-        x = padding.left.toInt();
-        y = src.height - padding.bottom.toInt() - rectHeight;
-    }
-    return Rect.fromLTWH(x.toDouble(), y.toDouble(), rectWidth.toDouble(), rectHeight.toDouble());
-  }
-
   // ==========================================================================
-  // SMART TEXT RENDERING
+  // SMART TEXT RENDERING (menggunakan font package image)
   // ==========================================================================
   static void drawSmartText(
     img.Image dst,
@@ -247,9 +211,9 @@ abstract class WatermarkLayoutBase {
 
   static img.BitmapFont _getAdaptiveFont(img.BitmapFont base, String text, int maxWidth) {
     if (_getTextWidth(base, text) <= maxWidth) return base;
-    if (_getTextWidth(img.Arial14, text) <= maxWidth) return img.Arial14;
-    if (_getTextWidth(img.Arial12, text) <= maxWidth) return img.Arial12;
-    return img.Arial12;
+    if (_getTextWidth(img.arial14, text) <= maxWidth) return img.arial14;
+    if (_getTextWidth(img.arial12, text) <= maxWidth) return img.arial12;
+    return img.arial12;
   }
 
   static String _ellipsisText(img.BitmapFont font, String text, int maxWidth) {
@@ -287,9 +251,8 @@ abstract class WatermarkLayoutBase {
   }
 
   static int _getTextWidth(img.BitmapFont font, String text) {
-    // Approximate based on font size
-    if (font == img.Arial24) return text.length * 12;
-    if (font == img.Arial14) return text.length * 8;
+    if (font == img.arial24) return text.length * 12;
+    if (font == img.arial14) return text.length * 8;
     return text.length * 6;
   }
 
@@ -365,7 +328,7 @@ abstract class WatermarkLayoutBase {
   static Color adaptiveTextColor(bool darkBackground) => darkBackground ? Colors.white : Colors.black;
 
   // ==========================================================================
-  // FLUTTER CANVAS HELPERS (untuk async rendering)
+  // FLUTTER CANVAS HELPERS
   // ==========================================================================
   static void canvasDrawText(
     Canvas canvas,

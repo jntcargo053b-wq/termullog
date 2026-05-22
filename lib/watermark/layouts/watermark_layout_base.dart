@@ -10,7 +10,7 @@ abstract class WatermarkLayoutBase {
   String get name;
 
   // ==========================================================================
-  // WARNA STANDAR (img package)
+  // WARNA STANDAR
   // ==========================================================================
   static final img.Color white    = img.ColorRgba8(255, 255, 255, 255);
   static final img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
@@ -28,7 +28,7 @@ abstract class WatermarkLayoutBase {
   static const Color uiOffWhite = Color(0xFFE6E6E6);
 
   // ==========================================================================
-  // LOAD FONT (aman + debug)
+  // LOAD FONT
   // ==========================================================================
   static bool _fontLoaded = false;
 
@@ -47,7 +47,7 @@ abstract class WatermarkLayoutBase {
   }
 
   // ==========================================================================
-  // METODE UTAMA (wajib diimplementasikan)
+  // METODE UTAMA
   // ==========================================================================
   Uint8List apply({
     required img.Image src,
@@ -69,7 +69,6 @@ abstract class WatermarkLayoutBase {
     String fontSize = 'normal',
   });
 
-  // Versi async (opsional)
   Future<Uint8List> applyAsync({
     required img.Image src,
     required DateTime timestamp,
@@ -108,6 +107,90 @@ abstract class WatermarkLayoutBase {
       showBorder: showBorder,
       fontSize: fontSize,
     );
+  }
+
+  // ==========================================================================
+  // ADAPTIVE LAYOUT ENGINE
+  // ==========================================================================
+  static bool isPortrait(img.Image src) => src.height > src.width;
+
+  static double getAdaptiveScale(img.Image src, {double baseWidth = 1080}) {
+    return (src.width / baseWidth).clamp(0.6, 1.8);
+  }
+
+  static EdgeInsets getSafePadding(img.Image src, {double minPadding = 12}) {
+    final bool isPortrait = src.height > src.width;
+    final double scale = getAdaptiveScale(src);
+    final double basePadding = minPadding * scale;
+    final double horizontal = isPortrait ? basePadding : basePadding * 0.8;
+    final double vertical = basePadding;
+    final double notchExtra = (src.width / src.height > 2.0) ? 20.0 : 0.0;
+    return EdgeInsets.fromLTRB(
+      horizontal + notchExtra,
+      vertical,
+      horizontal + notchExtra,
+      vertical,
+    );
+  }
+
+  static int getAdaptiveLineHeight(String fontSize, double scale, {bool tight = false}) {
+    final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
+    final int base = tight ? 22 : 28;
+    return (base * scale * fsMultiplier).round();
+  }
+
+  // Alias untuk kompatibilitas
+  static int getLineHeight(String fontSize, double scale, {bool small = false}) {
+    return getAdaptiveLineHeight(fontSize, scale, tight: small);
+  }
+
+  static int getAdaptiveSpacing(double scale, {int base = 8}) {
+    return (base * scale).round();
+  }
+
+  static int clampY(int y, int elementHeight, img.Image src, {int bottomMargin = 20}) {
+    final maxY = src.height - elementHeight - bottomMargin;
+    return y.clamp(0, maxY);
+  }
+
+  static int clampX(int x, int elementWidth, img.Image src, {int horizontalMargin = 20}) {
+    final maxX = src.width - elementWidth - horizontalMargin;
+    return x.clamp(horizontalMargin, maxX);
+  }
+
+  static Rect getSafeLayoutRect(img.Image src, {
+    double widthFactor = 0.9,
+    double heightFactor = 0.85,
+    Alignment alignment = Alignment.bottomLeft,
+  }) {
+    final padding = getSafePadding(src);
+    final usableWidth = src.width - padding.left - padding.right;
+    final usableHeight = src.height - padding.top - padding.bottom;
+    final rectWidth = (usableWidth * widthFactor).toInt();
+    final rectHeight = (usableHeight * heightFactor).toInt();
+    int x, y;
+    switch (alignment) {
+      case Alignment.bottomLeft:
+        x = padding.left.toInt();
+        y = src.height - padding.bottom.toInt() - rectHeight;
+        break;
+      case Alignment.bottomRight:
+        x = src.width - padding.right.toInt() - rectWidth;
+        y = src.height - padding.bottom.toInt() - rectHeight;
+        break;
+      case Alignment.topLeft:
+        x = padding.left.toInt();
+        y = padding.top.toInt();
+        break;
+      case Alignment.topRight:
+        x = src.width - padding.right.toInt() - rectWidth;
+        y = padding.top.toInt();
+        break;
+      default:
+        x = padding.left.toInt();
+        y = src.height - padding.bottom.toInt() - rectHeight;
+    }
+    return Rect.fromLTWH(x.toDouble(), y.toDouble(), rectWidth.toDouble(), rectHeight.toDouble());
   }
 
   // ==========================================================================
@@ -164,9 +247,9 @@ abstract class WatermarkLayoutBase {
 
   static img.BitmapFont _getAdaptiveFont(img.BitmapFont base, String text, int maxWidth) {
     if (_getTextWidth(base, text) <= maxWidth) return base;
-    if (_getTextWidth(img.arial14, text) <= maxWidth) return img.arial14;
-    if (_getTextWidth(img.arial12, text) <= maxWidth) return img.arial12;
-    return img.arial12;
+    if (_getTextWidth(img.Arial14, text) <= maxWidth) return img.Arial14;
+    if (_getTextWidth(img.Arial12, text) <= maxWidth) return img.Arial12;
+    return img.Arial12;
   }
 
   static String _ellipsisText(img.BitmapFont font, String text, int maxWidth) {
@@ -204,89 +287,10 @@ abstract class WatermarkLayoutBase {
   }
 
   static int _getTextWidth(img.BitmapFont font, String text) {
-    // Approximate width: average character width based on font size
-    final int approxCharWidth = font == img.arial24 ? 12 : font == img.arial14 ? 8 : 6;
-    return text.length * approxCharWidth;
-  }
-
-  // ==========================================================================
-  // ADAPTIVE LAYOUT ENGINE
-  // ==========================================================================
-  static bool isPortrait(img.Image src) => src.height > src.width;
-
-  static double getAdaptiveScale(img.Image src, {double baseWidth = 1080}) {
-    return (src.width / baseWidth).clamp(0.6, 1.8);
-  }
-
-  static EdgeInsets getSafePadding(img.Image src, {double minPadding = 12}) {
-    final bool isPortrait = src.height > src.width;
-    final double scale = getAdaptiveScale(src);
-    final double basePadding = minPadding * scale;
-    final double horizontal = isPortrait ? basePadding : basePadding * 0.8;
-    final double vertical = basePadding;
-    // Extra for notch / dynamic island (simple heuristic)
-    final double notchExtra = (src.width / src.height > 2.0) ? 20.0 : 0.0;
-    return EdgeInsets.fromLTRB(
-      horizontal + notchExtra,
-      vertical,
-      horizontal + notchExtra,
-      vertical,
-    );
-  }
-
-  static int getAdaptiveLineHeight(String fontSize, double scale, {bool tight = false}) {
-    final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
-    final int base = tight ? 22 : 28;
-    return (base * scale * fsMultiplier).round();
-  }
-
-  static int getAdaptiveSpacing(double scale, {int base = 8}) {
-    return (base * scale).round();
-  }
-
-  static int clampY(int y, int elementHeight, img.Image src, {int bottomMargin = 20}) {
-    final maxY = src.height - elementHeight - bottomMargin;
-    return y.clamp(0, maxY);
-  }
-
-  static int clampX(int x, int elementWidth, img.Image src, {int horizontalMargin = 20}) {
-    final maxX = src.width - elementWidth - horizontalMargin;
-    return x.clamp(horizontalMargin, maxX);
-  }
-
-  static Rect getSafeLayoutRect(img.Image src, {
-    double widthFactor = 0.9,
-    double heightFactor = 0.85,
-    Alignment alignment = Alignment.bottomLeft,
-  }) {
-    final padding = getSafePadding(src);
-    final usableWidth = src.width - padding.left - padding.right;
-    final usableHeight = src.height - padding.top - padding.bottom;
-    final rectWidth = (usableWidth * widthFactor).toInt();
-    final rectHeight = (usableHeight * heightFactor).toInt();
-    int x, y;
-    switch (alignment) {
-      case Alignment.bottomLeft:
-        x = padding.left.toInt();
-        y = src.height - padding.bottom.toInt() - rectHeight;
-        break;
-      case Alignment.bottomRight:
-        x = src.width - padding.right.toInt() - rectWidth;
-        y = src.height - padding.bottom.toInt() - rectHeight;
-        break;
-      case Alignment.topLeft:
-        x = padding.left.toInt();
-        y = padding.top.toInt();
-        break;
-      case Alignment.topRight:
-        x = src.width - padding.right.toInt() - rectWidth;
-        y = padding.top.toInt();
-        break;
-      default:
-        x = padding.left.toInt();
-        y = src.height - padding.bottom.toInt() - rectHeight;
-    }
-    return Rect.fromLTWH(x.toDouble(), y.toDouble(), rectWidth.toDouble(), rectHeight.toDouble());
+    // Approximate based on font size
+    if (font == img.Arial24) return text.length * 12;
+    if (font == img.Arial14) return text.length * 8;
+    return text.length * 6;
   }
 
   // ==========================================================================
@@ -361,6 +365,76 @@ abstract class WatermarkLayoutBase {
   static Color adaptiveTextColor(bool darkBackground) => darkBackground ? Colors.white : Colors.black;
 
   // ==========================================================================
+  // FLUTTER CANVAS HELPERS (untuk async rendering)
+  // ==========================================================================
+  static void canvasDrawText(
+    Canvas canvas,
+    String text, {
+    required double x,
+    required double y,
+    Color color = uiWhite,
+    bool bold = false,
+    double size = 14,
+    double letterSpacing = 1.0,
+  }) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontFamily: 'Roboto',
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+          letterSpacing: letterSpacing,
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+    );
+    tp.layout();
+    tp.paint(canvas, Offset(x, y));
+  }
+
+  static void canvasDrawTextShadow(
+    Canvas canvas,
+    String text, {
+    required double x,
+    required double y,
+    Color color = uiWhite,
+    bool bold = false,
+    double size = 14,
+    Color shadowColor = Colors.black54,
+  }) {
+    canvasDrawText(canvas, text,
+        x: x + 1, y: y + 1, color: shadowColor, bold: bold, size: size);
+    canvasDrawText(canvas, text,
+        x: x, y: y, color: color, bold: bold, size: size);
+  }
+
+  static void canvasDrawGradient(
+    Canvas canvas, {
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+    Color color = Colors.black,
+    double startOpacity = 0.8,
+    double endOpacity = 0.0,
+    bool topToBottom = true,
+  }) {
+    final colors = [
+      color.withOpacity(startOpacity),
+      color.withOpacity(startOpacity * 0.5),
+      color.withOpacity(endOpacity),
+    ];
+    final startOffset = Offset(x, topToBottom ? y : y + height);
+    final endOffset = Offset(x, topToBottom ? y + height : y);
+    canvas.drawRect(
+      Rect.fromLTWH(x, y, width, height),
+      Paint()..shader = ui.Gradient.linear(startOffset, endOffset, colors),
+    );
+  }
+
+  // ==========================================================================
   // KONVERSI GAMBAR
   // ==========================================================================
   static Future<ui.Image> toUiImage(img.Image src) async {
@@ -369,18 +443,21 @@ abstract class WatermarkLayoutBase {
     final frame = await codec.getNextFrame();
     return frame.image;
   }
+
   static Future<img.Image> recorderToImg(ui.PictureRecorder recorder, int width, int height) async {
     final picture = recorder.endRecording();
     final uiImage = await picture.toImage(width, height);
     final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
     return img.decodePng(byteData!.buffer.asUint8List())!;
   }
+
   static img.Image decodeOrThrow(Uint8List bytes) {
     if (bytes.isEmpty) throw Exception('Data gambar kosong');
     final decoded = img.decodeImage(bytes);
     if (decoded == null) throw Exception('Format gambar tidak didukung');
     return decoded;
   }
+
   static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
     return Uint8List.fromList(img.encodeJpg(src, quality: quality));
   }

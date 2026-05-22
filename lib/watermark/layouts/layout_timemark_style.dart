@@ -1,4 +1,4 @@
-// lib/watermark/layouts/layout_time_mark_style.dart
+// lib/watermark/layouts/layout_timemark_style.dart
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -37,16 +37,16 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     final int margin = (16 * scale).round();
     final int cx = src.width - cardW - margin;
     final int cy = _positionBottom ? src.height - cardH - margin : margin;
-    final img.BitmapFont fontLarge = fontSize == 'small' ? img.arial14 : img.arial24;
-    final img.BitmapFont fontSmall = fontSize == 'small' ? img.arial12 : img.arial14;
+    
+    // Perbaikan: gunakan font dengan huruf kapital (Arial12, Arial14, Arial24)
+    final img.BitmapFont fontLarge = fontSize == 'small' ? img.Arial14 : img.Arial24;
+    final img.BitmapFont fontSmall = fontSize == 'small' ? img.Arial12 : img.Arial14;
 
     final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
     
-    // Perbaikan: fillRect dengan named parameter 'color'
     img.fillRect(src, x1: cx, y1: cy, x2: cx + cardW, y2: cy + cardH, color: bgColor);
     
     if (showBorder) {
-      // Perbaikan: drawRect dengan named parameters
       img.drawRect(src, 
           x1: cx, y1: cy, 
           x2: cx + cardW, y2: cy + cardH, 

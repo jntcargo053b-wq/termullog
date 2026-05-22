@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart'; // enum WatermarkLayout, dll.
+import 'package:shared_preferences/shared_preferences.dart';
+import '../core/constants.dart';   // <── WAJIB! untuk enum WatermarkLayout
 
 class SettingsCache {
   static SharedPreferences? _prefs;

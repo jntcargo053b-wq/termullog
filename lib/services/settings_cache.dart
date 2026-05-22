@@ -14,6 +14,94 @@ class SettingsCache {
   static double? _fontSize;
 
   // ==========================================================================
+  // WATERMARK LAYOUT
+  // ==========================================================================
+
+  static String? _layout;
+
+  static Future<String> get layout async {
+    await preload();
+
+    _layout ??=
+        _prefs!.getString('layout') ?? 'cinematic';
+
+    return _layout!;
+  }
+
+  static Future<void> setLayout(String value) async {
+    await preload();
+
+    _layout = value;
+
+    await _prefs!.setString('layout', value);
+  }
+
+  // ==========================================================================
+  // SHOW WEATHER
+  // ==========================================================================
+
+  static bool? _showWeather;
+
+  static Future<bool> get showWeather async {
+    await preload();
+
+    _showWeather ??=
+        _prefs!.getBool('showWeather') ?? true;
+
+    return _showWeather!;
+  }
+
+  static Future<void> setShowWeather(bool value) async {
+    await preload();
+
+    _showWeather = value;
+
+    await _prefs!.setBool('showWeather', value);
+  }
+
+  // ==========================================================================
+  // SHOW ACCURACY
+  // ==========================================================================
+
+  static bool? _showAccuracy;
+
+  static Future<bool> get showAccuracy async {
+    await preload();
+
+    _showAccuracy ??=
+        _prefs!.getBool('showAccuracy') ?? true;
+
+    return _showAccuracy!;
+  }
+
+  static Future<void> setShowAccuracy(bool value) async {
+    await preload();
+
+    _showAccuracy = value;
+
+    await _prefs!.setBool('showAccuracy', value);
+  }
+
+  // ==========================================================================
+  // INVALIDATE CACHE
+  // ==========================================================================
+
+  static void invalidate() {
+    _showMiniMap = null;
+    _mapSize = null;
+    _mapZoomLevel = null;
+    _showAddress = null;
+    _showCoordinates = null;
+    _opacity = null;
+    _showBorder = null;
+    _fontSize = null;
+
+    _layout = null;
+    _showWeather = null;
+    _showAccuracy = null;
+  }
+
+  // ==========================================================================
   // INIT
   // ==========================================================================
 

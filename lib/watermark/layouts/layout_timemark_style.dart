@@ -37,20 +37,19 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     final int margin = (16 * scale).round();
     final int cx = src.width - cardW - margin;
     final int cy = _positionBottom ? src.height - cardH - margin : margin;
-    
-    // Perbaikan: gunakan font dengan huruf kapital (Arial12, Arial14, Arial24)
+
+    // Perbaikan: gunakan Arial dengan huruf kapital (Arial12, Arial14, Arial24)
     final img.BitmapFont fontLarge = fontSize == 'small' ? img.Arial14 : img.Arial24;
     final img.BitmapFont fontSmall = fontSize == 'small' ? img.Arial12 : img.Arial14;
 
     final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
-    
+
     img.fillRect(src, x1: cx, y1: cy, x2: cx + cardW, y2: cy + cardH, color: bgColor);
-    
     if (showBorder) {
-      img.drawRect(src, 
-          x1: cx, y1: cy, 
-          x2: cx + cardW, y2: cy + cardH, 
-          color: WatermarkLayoutBase.blue, 
+      img.drawRect(src,
+          x1: cx, y1: cy,
+          x2: cx + cardW, y2: cy + cardH,
+          color: WatermarkLayoutBase.blue,
           thickness: 1);
     }
 
@@ -61,7 +60,7 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
     img.drawString(src, dateStr, font: fontSmall, x: cx + pad, y: y, color: WatermarkLayoutBase.grey);
     y += (20 * scale).round();
-    
+
     if (showCoordinates && hasPosition && lat != null && lon != null) {
       final String coord = '${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°';
       img.drawString(src, coord, font: fontSmall, x: cx + pad, y: y, color: WatermarkLayoutBase.blue);

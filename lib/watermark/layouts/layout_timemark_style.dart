@@ -41,25 +41,34 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     final img.BitmapFont fontSmall = fontSize == 'small' ? img.arial12 : img.arial14;
 
     final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
-    img.fillRect(src, cx, cy, cx + cardW, cy + cardH, bgColor);
+    
+    // Perbaikan: fillRect dengan named parameter 'color'
+    img.fillRect(src, x1: cx, y1: cy, x2: cx + cardW, y2: cy + cardH, color: bgColor);
+    
     if (showBorder) {
-      img.drawRect(src, cx, cy, cx + cardW, cy + cardH, color: WatermarkLayoutBase.blue, thickness: 1);
+      // Perbaikan: drawRect dengan named parameters
+      img.drawRect(src, 
+          x1: cx, y1: cy, 
+          x2: cx + cardW, y2: cy + cardH, 
+          color: WatermarkLayoutBase.blue, 
+          thickness: 1);
     }
 
     int y = cy + pad;
-    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
+    final String timeStr = DateFormat('HH:mm:ss').format(timestamp);
     img.drawString(src, timeStr, font: fontLarge, x: cx + pad, y: y, color: WatermarkLayoutBase.white);
     y += (28 * scale).round();
-    final dateStr = DateFormat('dd MMM yyyy').format(timestamp);
+    final String dateStr = DateFormat('dd MMM yyyy').format(timestamp);
     img.drawString(src, dateStr, font: fontSmall, x: cx + pad, y: y, color: WatermarkLayoutBase.grey);
     y += (20 * scale).round();
+    
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord = '${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°';
+      final String coord = '${lat.toStringAsFixed(4)}°, ${lon.toStringAsFixed(4)}°';
       img.drawString(src, coord, font: fontSmall, x: cx + pad, y: y, color: WatermarkLayoutBase.blue);
       y += (20 * scale).round();
     }
     if (showAccuracy && hasPosition && acc != null) {
-      final accStr = '±${acc.toStringAsFixed(1)}m';
+      final String accStr = '±${acc.toStringAsFixed(1)}m';
       img.drawString(src, accStr, font: fontSmall, x: cx + pad, y: y, color: WatermarkLayoutBase.grey);
     }
 

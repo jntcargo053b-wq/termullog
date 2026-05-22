@@ -1,169 +1,181 @@
-// lib/core/constants.dart
-import 'package:image/image.dart' as img;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../core/constants.dart'; // enum WatermarkLayout, dll.
 
-// ============================================================
-// OUTPUT & KUALITAS
-// ============================================================
-const int kMaxOutputWidth = 1600;
-const int kJpegQuality = 90;
-const int kSigMaxWidth = 260;
-const int kLogoMaxWidth = 90;
+class SettingsCache {
+  static SharedPreferences? _prefs;
 
-// ============================================================
-// WATERMARK LAYOUT STYLE
-// ============================================================
-enum WatermarkLayout {
-  minimal,          // 0 - Film Strip
-  dslrCorner,       // 1 - DSLR Corner
-  cinematic,        // 2 - Cinematic
-  fieldSurvey,      // 3 - Field Survey
-  hud,              // 4 - HUD Modern
-  gpsCard,          // 5 - GPS Card
-  polaroid,         // 6 - Polaroid
-  sidePanel,        // 7 - Side Panel
-  cinematicV2,      // 8 - Cinematic V2
-  timeMarkStyle,    // 9 - TimeMark Style
-  modern,           // 10 - Modern Clean Card
-}
+  // CACHE
+  static bool? _showMiniMap;
+  static String? _mapSize;
+  static int? _mapZoomLevel;
+  static bool? _showAddress;
+  static bool? _showCoordinates;
+  static double? _opacity;
+  static bool? _showBorder;
+  static double? _fontSize; // double
+  static WatermarkLayout? _layout;
+  static bool? _showWeather;
+  static bool? _showAccuracy;
 
-extension WatermarkLayoutExtension on WatermarkLayout {
-  String get displayName {
-    switch (this) {
-      case WatermarkLayout.minimal:        return 'Film Strip';
-      case WatermarkLayout.dslrCorner:     return 'DSLR Corner';
-      case WatermarkLayout.cinematic:      return 'Cinematic';
-      case WatermarkLayout.fieldSurvey:    return 'Field Survey';
-      case WatermarkLayout.hud:            return 'HUD Modern';
-      case WatermarkLayout.gpsCard:        return 'GPS Card';
-      case WatermarkLayout.polaroid:       return 'Polaroid';
-      case WatermarkLayout.sidePanel:      return 'Side Panel';
-      case WatermarkLayout.cinematicV2:    return 'Cinematic V2';
-      case WatermarkLayout.timeMarkStyle:  return 'TimeMark Style';
-      case WatermarkLayout.modern:         return 'Modern Clean Card';
-    }
+  // ==========================================================================
+  // INIT
+  // ==========================================================================
+  static Future<void> preload() async {
+    _prefs ??= await SharedPreferences.getInstance();
+
+    _showMiniMap ??= _prefs!.getBool('showMiniMap') ?? true;
+    _mapSize ??= _prefs!.getString('mapSize') ?? 'medium';
+    _mapZoomLevel ??= _prefs!.getInt('mapZoomLevel') ?? 17;
+    _showAddress ??= _prefs!.getBool('showAddress') ?? true;
+    _showCoordinates ??= _prefs!.getBool('showCoordinates') ?? true;
+    _opacity ??= _prefs!.getDouble('opacity') ?? 0.85;
+    _showBorder ??= _prefs!.getBool('showBorder') ?? true;
+    _fontSize ??= _prefs!.getDouble('fontSize') ?? 16.0;
+    _showWeather ??= _prefs!.getBool('showWeather') ?? true;
+    _showAccuracy ??= _prefs!.getBool('showAccuracy') ?? true;
   }
 
-  String get description {
-    switch (this) {
-      case WatermarkLayout.minimal:        return 'Gaya strip film dengan border biru profesional';
-      case WatermarkLayout.dslrCorner:     return 'Informasi seperti tampilan kamera DSLR di pojok';
-      case WatermarkLayout.cinematic:      return 'Gaya sinematik dengan gradasi halus dan elegan';
-      case WatermarkLayout.fieldSurvey:    return 'Gaya form survey dengan tabel data terstruktur';
-      case WatermarkLayout.hud:            return 'Heads-Up Display modern dengan efek transparan';
-      case WatermarkLayout.gpsCard:        return 'Panel GPS dengan map strip adaptif';
-      case WatermarkLayout.polaroid:       return 'Gaya polaroid klasik dengan bingkai ivory';
-      case WatermarkLayout.sidePanel:      return 'Panel samping vertikal dengan jam besar';
-      case WatermarkLayout.cinematicV2:    return 'Gaya sinematik dengan font modern Roboto (Canvas)';
-      case WatermarkLayout.timeMarkStyle:  return 'Gaya GPS TimeMark Camera dengan font modern';
-      case WatermarkLayout.modern:         return 'Desain bersih, navy gelap, aksen teal modern';
+  // ==========================================================================
+  // WATERMARK LAYOUT (enum dari constants.dart)
+  // ==========================================================================
+  static Future<WatermarkLayout> get layout async {
+    await preload();
+    if (_layout == null) {
+      final saved = _prefs!.getString('layout');
+      _layout = WatermarkLayout.values.firstWhere(
+        (e) => e.name == (saved ?? 'modern'),
+        orElse: () => WatermarkLayout.modern,
+      );
     }
+    return _layout!;
   }
-}
 
-// ============================================================
-// WATERMARK THEME (GLOBAL STYLE)
-// ============================================================
-enum WatermarkTheme {
-  dark,       // Tema gelap modern
-  light,      // Tema terang bersih
-  kodak,      // Tema retro Kodak
-  cinematic,  // Tema sinematik
-  survey,     // Tema survey profesional
-}
+  static Future<void> setLayout(WatermarkLayout value) async {
+    await preload();
+    _layout = value;
+    await _prefs!.setString('layout', value.name);
+  }
 
-// ============================================================
-// WATERMARK LAYOUT GEOMETRY
-// ============================================================
-const int kPanelPaddingX = 25;
-const int kSidebarPadX = 18;
-const int kAccentBarWidth = 10;
-const int kCornerMargin = 20;
-const int kTextLineSmall = 18;
-const int kTextLineLarge = 28;
-const int kSectionGap = 12;
+  // ==========================================================================
+  // SHOW WEATHER & ACCURACY
+  // ==========================================================================
+  static Future<bool> get showWeather async {
+    await preload();
+    return _showWeather!;
+  }
+  static Future<void> setShowWeather(bool value) async {
+    await preload();
+    _showWeather = value;
+    await _prefs!.setBool('showWeather', value);
+  }
 
-// ============================================================
-// WATERMARK COLOURS (untuk package image)
-// ============================================================
-final img.Color kColorWhite = img.ColorRgb8(255, 255, 255);
-final img.Color kColorCyan = img.ColorRgb8(0, 184, 148);
-final img.Color kColorGrey = img.ColorRgb8(210, 210, 210);
-final img.Color kColorDarkBg = img.ColorRgba8(15, 23, 42, 230);
-final img.Color kColorDarkBgMed = img.ColorRgba8(15, 23, 42, 210);
-final img.Color kColorBlackCard = img.ColorRgba8(0, 0, 0, 170);
-final img.Color kColorGlassBg = img.ColorRgba8(0, 0, 0, 120);
-final img.Color kColorShadow = img.ColorRgb8(0, 0, 0);
+  static Future<bool> get showAccuracy async {
+    await preload();
+    return _showAccuracy!;
+  }
+  static Future<void> setShowAccuracy(bool value) async {
+    await preload();
+    _showAccuracy = value;
+    await _prefs!.setBool('showAccuracy', value);
+  }
 
-// ============================================================
-// LAYOUT WATERMARK TAMBAHAN
-// ============================================================
-final img.Color kColorLightBlue = img.ColorRgb8(30, 144, 255);
-final img.Color kColorDimBlue = img.ColorRgb8(20, 80, 160);
-final img.Color kColorOffWhite = img.ColorRgb8(220, 225, 235);
-final img.Color kColorDarkGrey = img.ColorRgb8(140, 150, 165);
-final img.Color kColorVeryDarkBg = img.ColorRgba8(0, 0, 10, 210);
-final img.Color kColorBlackerBg = img.ColorRgba8(0, 0, 8, 235);
-final img.Color kColorDimBlue200 = img.ColorRgb8(20, 80, 160);
-final img.Color kColorLightGrey = img.ColorRgb8(200, 200, 205);
-final img.Color kColorGold = img.ColorRgb8(255, 180, 50);
+  // ==========================================================================
+  // GETTER/SETTER LAINNYA (disesuaikan dengan SettingsScreen)
+  // ==========================================================================
+  static Future<bool> get showMiniMap async {
+    await preload();
+    return _showMiniMap!;
+  }
+  static Future<void> setShowMiniMap(bool value) async {
+    await preload();
+    _showMiniMap = value;
+    await _prefs!.setBool('showMiniMap', value);
+  }
 
-// ============================================================
-// WARNA TAMBAHAN UNTUK LAYOUT BARU
-// ============================================================
-final img.Color kColorIvory = img.ColorRgb8(248, 245, 235);
-final img.Color kColorDarkText = img.ColorRgb8(40, 40, 40);
-final img.Color kColorNavy = img.ColorRgba8(10, 15, 40, 240);
-final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
-final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
+  static Future<String> get mapSize async {
+    await preload();
+    return _mapSize!;
+  }
+  static Future<void> setMapSize(String value) async {
+    await preload();
+    _mapSize = value;
+    await _prefs!.setString('mapSize', value);
+  }
 
-// ============================================================
-// UI COLOURS (Flutter Widget)
-// ============================================================
-const int kColorNavyUi = 0xFF1B4F72;
-const int kColorNavyDarkUi = 0xFF0D2137;
-const int kColorBlueUi = 0xFF2980B9;
-const int kColorCyanLightUi = 0xFF00B8D4;
-const int kColorCyanDarkUi = 0xFF0077B6;
+  static Future<int> get mapZoomLevel async {
+    await preload();
+    return _mapZoomLevel!;
+  }
+  static Future<void> setMapZoomLevel(int value) async {
+    await preload();
+    _mapZoomLevel = value;
+    await _prefs!.setInt('mapZoomLevel', value);
+  }
 
-// ============================================================
-// WATERMARK GEOMETRY TAMBAHAN
-// ============================================================
-const int kWatermarkPadX = 14;
-const int kWatermarkPadY = 12;
-const int kHeaderHeight = 22;
-const int kRowHeight = 20;
-const int kColumnValueWidth = 100;
-const int kMaxAddressLength = 45;
-const int kMaxAddressLengthShort = 38;
-const int kMaxAddressLengthFilmStrip = 42;
+  static Future<bool> get showAddress async {
+    await preload();
+    return _showAddress!;
+  }
+  static Future<void> setShowAddress(bool value) async {
+    await preload();
+    _showAddress = value;
+    await _prefs!.setBool('showAddress', value);
+  }
 
-// ============================================================
-// GPS & LOCATION
-// ============================================================
-const double kTargetAccuracy = 10.0;
-const double kGoodAccuracy = 15.0;
-const double kMediumAccuracy = 25.0;
-const double kPoorAccuracy = 50.0;
-const double kMaxAccuracy = 80.0;
-const int kGpsTimeoutSeconds = 25;
-const int kGpsIntervalMs = 700;
+  static Future<bool> get showCoordinates async {
+    await preload();
+    return _showCoordinates!;
+  }
+  static Future<void> setShowCoordinates(bool value) async {
+    await preload();
+    _showCoordinates = value;
+    await _prefs!.setBool('showCoordinates', value);
+  }
 
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
-String truncateAddress(String address, int maxLength) {
-  if (address.length <= maxLength) return address;
-  return '${address.substring(0, maxLength - 1)}…';
-}
+  static Future<double> get opacity async {
+    await preload();
+    return _opacity!;
+  }
+  static Future<void> setOpacity(double value) async {
+    await preload();
+    _opacity = value;
+    await _prefs!.setDouble('opacity', value);
+  }
 
-img.Color getAccuracyColor(double accuracy) {
-  if (accuracy <= kTargetAccuracy) {
-    return kColorCyan;
-  } else if (accuracy <= kGoodAccuracy) {
-    return kColorLightBlue;
-  } else if (accuracy <= kMediumAccuracy) {
-    return kColorGold;
-  } else {
-    return kColorGrey;
+  static Future<bool> get showBorder async {
+    await preload();
+    return _showBorder!;
+  }
+  static Future<void> setShowBorder(bool value) async {
+    await preload();
+    _showBorder = value;
+    await _prefs!.setBool('showBorder', value);
+  }
+
+  static Future<double> get fontSize async {
+    await preload();
+    return _fontSize!;
+  }
+  static Future<void> setFontSize(double value) async {
+    await preload();
+    _fontSize = value;
+    await _prefs!.setDouble('fontSize', value);
+  }
+
+  // ==========================================================================
+  // INVALIDATE CACHE
+  // ==========================================================================
+  static void invalidate() {
+    _showMiniMap = null;
+    _mapSize = null;
+    _mapZoomLevel = null;
+    _showAddress = null;
+    _showCoordinates = null;
+    _opacity = null;
+    _showBorder = null;
+    _fontSize = null;
+    _layout = null;
+    _showWeather = null;
+    _showAccuracy = null;
   }
 }

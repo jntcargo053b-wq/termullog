@@ -28,7 +28,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    // Adaptive layout
+    // Adaptive scaling
     final double scale = WatermarkLayoutBase.getAdaptiveScale(src);
     final EdgeInsets safeArea = WatermarkLayoutBase.getSafePadding(src);
     final int headerH = (28 * scale).round();
@@ -36,11 +36,12 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     final int padX = (14 * scale).round();
     final int colW = (60 * scale).round();
 
-    final img.BitmapFont fontRow = fontSize == 'small' ? img.arial14 : img.arial24;
-    final img.BitmapFont fontHeader = fontSize == 'small' ? img.arial14 : img.arial24;
+    final img.BitmapFont fontRow = fontSize == 'small' ? img.Arial14 : img.Arial24;
+    final img.BitmapFont fontHeader = fontSize == 'small' ? img.Arial14 : img.Arial24;
 
     // Build rows
     final List<Map<String, String>> rows = [];
+
     rows.add({'label': 'DATE', 'value': DateFormat('yyyy-MM-dd').format(timestamp)});
     rows.add({'label': 'TIME', 'value': DateFormat('HH:mm:ss').format(timestamp)});
 
@@ -52,6 +53,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       }
     }
 
+    // Address with wrapping
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       final int maxChars = WatermarkLayoutBase.safeMaxChars(src.width, 12);
       final String wrapped = WatermarkLayoutBase.wrapText(address, maxChars);
@@ -70,11 +72,11 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     final int yBase = src.height - totalH - safeArea.bottom.toInt();
     final int y0 = WatermarkLayoutBase.clampY(yBase, totalH, src);
 
-    // Background
+    // Background panel
     final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + totalH, color: bgColor);
 
-    // Header
+    // Header (blue)
     img.fillRect(src, x1: 0, y1: y0, x2: src.width - 1, y2: y0 + headerH,
         color: WatermarkLayoutBase.blue);
     WatermarkLayoutBase.drawTextWithShadow(
@@ -109,6 +111,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       cy += rowH;
     }
 
+    // Optional border
     if (showBorder) {
       img.drawRect(src,
           x1: 0, y1: y0,

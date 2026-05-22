@@ -20,7 +20,7 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     required String weather,
     required bool showWeather,
     required bool showAccuracy,
-    required String watermarkPosition,
+    // watermarkPosition dihapus
     required bool showMiniMap,
     Uint8List? mapBytes,
     bool showAddress = true,

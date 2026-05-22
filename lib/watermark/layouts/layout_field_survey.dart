@@ -30,14 +30,19 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
   }) {
     // Adaptive scaling
     final double scale = WatermarkLayoutBase.getAdaptiveScale(src);
-    final EdgeInsets safeArea = WatermarkLayoutBase.getSafePadding(src);
+    
+    // Dapatkan padding aman
+    double safeLeft = 0, safeTop = 0, safeRight = 0, safeBottom = 0;
+    WatermarkLayoutBase.getSafePadding(src, minPadding: 12,
+        outLeft: safeLeft, outTop: safeTop, outRight: safeRight, outBottom: safeBottom);
+    
     final int headerH = (28 * scale).round();
     final int rowH = WatermarkLayoutBase.getAdaptiveLineHeight(fontSize, scale, tight: false);
     final int padX = (14 * scale).round();
     final int colW = (60 * scale).round();
 
-    final img.BitmapFont fontRow = fontSize == 'small' ? img.Arial14 : img.Arial24;
-    final img.BitmapFont fontHeader = fontSize == 'small' ? img.Arial14 : img.Arial24;
+    final img.BitmapFont fontRow = fontSize == 'small' ? img.arial14 : img.arial24;
+    final img.BitmapFont fontHeader = fontSize == 'small' ? img.arial14 : img.arial24;
 
     // Build rows
     final List<Map<String, String>> rows = [];
@@ -53,7 +58,6 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       }
     }
 
-    // Address with wrapping
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       final int maxChars = WatermarkLayoutBase.safeMaxChars(src.width, 12);
       final String wrapped = WatermarkLayoutBase.wrapText(address, maxChars);
@@ -69,7 +73,7 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     }
 
     final int totalH = headerH + rows.length * rowH + 8;
-    final int yBase = src.height - totalH - safeArea.bottom.toInt();
+    final int yBase = src.height - totalH - safeBottom.toInt();
     final int y0 = WatermarkLayoutBase.clampY(yBase, totalH, src);
 
     // Background panel
@@ -111,7 +115,6 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
       cy += rowH;
     }
 
-    // Optional border
     if (showBorder) {
       img.drawRect(src,
           x1: 0, y1: y0,

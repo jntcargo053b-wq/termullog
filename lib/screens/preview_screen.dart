@@ -184,9 +184,16 @@ class _PreviewScreenState extends State<PreviewScreen>
       final showCoordinates = await SettingsCache.showCoordinates;
       final opacity = await SettingsCache.opacity;
       final showBorder = await SettingsCache.showBorder;
-      final fontSize = await SettingsCache.fontSize;
+      final fontSizeDouble = await SettingsCache.fontSize;
+      // Konversi double ke string: small (<13), normal (14-19), large (>20)
+      final fontSizeStr = fontSizeDouble <= 13
+          ? 'small'
+          : fontSizeDouble >= 20
+              ? 'large'
+              : 'normal';
 
-      debugPrint('🔥 PREVIEW: layout = ${layout.displayName}, index = ${layout.index}');
+      debugPrint(
+          '🔥 PREVIEW: layout = ${layout.displayName}, index = ${layout.index}');
 
       // ── 4. FETCH MINI MAP ─────────────────────────────────────────
       Uint8List? mapBytes;
@@ -246,10 +253,10 @@ class _PreviewScreenState extends State<PreviewScreen>
         showCoordinates: showCoordinates,
         opacity: opacity,
         showBorder: showBorder,
-        fontSize: fontSize,
+        fontSize: fontSizeStr, // ← sekarang String
       );
 
-      // ── 6. PROCESS WATERMARK (HYBRID: MAIN THREAD FLUTTER CANVAS) ─
+      // ── 6. PROCESS WATERMARK (MAIN THREAD FLUTTER CANVAS) ──────────
       final processedBytes = await WatermarkEngine.applyFromMapAsync(params.toMap());
 
       // ── 7. SAVE TO APP DIRECTORY ──────────────────────────────────
@@ -365,7 +372,8 @@ class _PreviewScreenState extends State<PreviewScreen>
       }
     } catch (e) {
       final msg = e.toString();
-      _handleSaveError('Gagal menyimpan: ${msg.length > 60 ? '${msg.substring(0, 60)}…' : msg}');
+      _handleSaveError(
+          'Gagal menyimpan: ${msg.length > 60 ? '${msg.substring(0, 60)}…' : msg}');
     }
   }
 

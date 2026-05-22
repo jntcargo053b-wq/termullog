@@ -10,7 +10,7 @@ abstract class WatermarkLayoutBase {
   String get name;
 
   // ==========================================================================
-  // WARNA STANDAR
+  // WARNA STANDAR (img package)
   // ==========================================================================
   static final img.Color white    = img.ColorRgba8(255, 255, 255, 255);
   static final img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
@@ -28,7 +28,7 @@ abstract class WatermarkLayoutBase {
   static const Color uiOffWhite = Color(0xFFE6E6E6);
 
   // ==========================================================================
-  // LOAD FONT (opsional untuk canvas)
+  // LOAD FONT (opsional, untuk canvas)
   // ==========================================================================
   static bool _fontLoaded = false;
   static Future<void> loadFont() async {
@@ -46,7 +46,7 @@ abstract class WatermarkLayoutBase {
   }
 
   // ==========================================================================
-  // METODE UTAMA
+  // METODE UTAMA (harus diimplementasikan oleh setiap layout)
   // ==========================================================================
   Uint8List apply({
     required img.Image src,
@@ -68,6 +68,7 @@ abstract class WatermarkLayoutBase {
     String fontSize = 'normal',
   });
 
+  // Versi async (default fallback ke sync)
   Future<Uint8List> applyAsync({
     required img.Image src,
     required DateTime timestamp,
@@ -157,7 +158,7 @@ abstract class WatermarkLayoutBase {
   }
 
   // ==========================================================================
-  // HELPER DASAR (tanpa smart text yang bermasalah)
+  // HELPER DASAR
   // ==========================================================================
   static String wrapText(String text, int maxChars) {
     final words = text.split(' ');
@@ -210,7 +211,7 @@ abstract class WatermarkLayoutBase {
   }
 
   // ==========================================================================
-  // FLUTTER CANVAS HELPERS
+  // FLUTTER CANVAS HELPERS (untuk layout async)
   // ==========================================================================
   static void canvasDrawText(
     Canvas canvas,

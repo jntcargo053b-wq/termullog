@@ -39,15 +39,15 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     final int lineH = (28 * scale * fsMultiplier).round();
     final int lineHSmall = (22 * scale * fsMultiplier).round();
 
-    final bool isTop = false;
-    final int gradY0 = isTop ? 0 : src.height - gradH;
+    // Posisi tetap di bawah (bottom)
+    final int gradY0 = src.height - gradH;
     if (gradY0 < 0 || gradY0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
 
-    // ── Gradient background ───────────────────────────────────────
-    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTop: isTop, opacity: opacity);
+    // ── Gradient background (arah dari bawah ke atas, isTop = false) ──
+    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTop: false, opacity: opacity);
 
-    // ── Divider line ──────────────────────────────────────────────
-    final int divY = isTop ? gradH - (40 * scale).round() : gradY0 + (36 * scale).round();
+    // ── Divider line (posisi di bagian bawah panel) ────────────────
+    final int divY = gradY0 + (36 * scale).round();
     if (showBorder) {
       // Glow
       img.fillRect(src, x1: padX - 2, y1: divY - 1, x2: src.width - padX + 2, y2: divY + 3,
@@ -61,7 +61,8 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     final font = fontSize == 'small' ? img.arial14 : img.arial24;
     final fontSmall = fontSize == 'small' ? img.arial14 : img.arial24;
 
-    int cy = isTop ? (16 * scale).round() : gradY0 + (12 * scale).round();
+    // Posisi teks mulai dari atas panel (bottom)
+    int cy = gradY0 + (12 * scale).round();
 
     // ── Jam (dengan shadow) ───────────────────────────────────────
     _shadowText(src, DateFormat('HH : mm : ss').format(timestamp),
@@ -165,9 +166,10 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     required bool isTop,
     required double opacity,
   }) {
+    // isTop = false, gradien dari bawah ke atas (t = 0 di gradY0, t=1 di gradY0+gradH)
     for (int y = gradY0; y < gradY0 + gradH; y++) {
       if (y < 0 || y >= src.height) continue;
-      final t = isTop ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
+      final t = (y - gradY0) / gradH; // 0 di bawah, 1 di atas (karena isTop false)
       final alpha = (t * 220 * opacity).toInt().clamp(0, 220);
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);

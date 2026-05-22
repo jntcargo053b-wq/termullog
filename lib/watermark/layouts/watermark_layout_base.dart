@@ -45,6 +45,29 @@ abstract class WatermarkLayoutBase {
     }
   }
 
+  // ─── TEXT WRAPPER ──────────────────────────────────────────────────
+  /// Memecah teks menjadi beberapa baris berdasarkan jumlah karakter maksimum.
+  /// Berguna untuk alamat panjang.
+  static String wrapText(String text, int maxChars) {
+    final words = text.split(' ');
+    String result = '';
+    String line = '';
+
+    for (final word in words) {
+      // Cek apakah jika ditambah kata berikutnya akan melebihi maxChars
+      if ((line + word).length > maxChars) {
+        // Simpan baris saat ini (tanpa spasi di akhir)
+        result += '$line\n';
+        line = '$word ';
+      } else {
+        line += '$word ';
+      }
+    }
+    // Baris terakhir
+    result += line;
+    return result.trim();
+  }
+
   // ─── SYNC: wajib diimplementasikan dengan parameter opsional ─────
   Uint8List apply({
     required img.Image src,

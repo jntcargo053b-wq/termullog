@@ -1,14 +1,15 @@
+// lib/watermark/layouts/layout_survey.dart
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
-import 'package:image/src/font/arial_12.dart';
-import 'package:image/src/font/arial_14.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
 class LayoutSurvey extends WatermarkLayoutBase {
   @override
   String get name => 'Survey';
+
+  static const bool _positionTop = true; // top right
 
   @override
   Uint8List apply({
@@ -22,7 +23,6 @@ class LayoutSurvey extends WatermarkLayoutBase {
     required String weather,
     required bool showWeather,
     required bool showAccuracy,
-    // watermarkPosition dihapus
     required bool showMiniMap,
     Uint8List? mapBytes,
     bool showAddress = true,
@@ -33,7 +33,7 @@ class LayoutSurvey extends WatermarkLayoutBase {
   }) {
     final int margin = 20;
     final int panelW = 300;
-    final int panelY = margin;
+    final int panelY = _positionTop ? margin : src.height - 200;
     final int panelX = src.width - margin - panelW;
 
     int contentLines = 4;
@@ -55,7 +55,6 @@ class LayoutSurvey extends WatermarkLayoutBase {
 
     img.drawString(src, img.arial14, textX, textY, '📍 SURVEY DATA', color: kColorCyan);
     textY += 28;
-
     img.drawLine(src, textX, textY, panelX + panelW - 15, textY, kColorCyan);
     textY += 16;
 

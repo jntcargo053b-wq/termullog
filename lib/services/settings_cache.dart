@@ -1,12 +1,11 @@
+// lib/services/settings_cache.dart
 import 'package:shared_preferences/shared_preferences.dart';
-import '../core/constants.dart'; // enum WatermarkLayout, dll.
-import 'package:shared_preferences/shared_preferences.dart';
-import '../core/constants.dart';   // <── WAJIB! untuk enum WatermarkLayout
+import '../core/constants.dart';
 
 class SettingsCache {
   static SharedPreferences? _prefs;
 
-  // CACHE
+  // Cache variables (semua properti)
   static bool? _showMiniMap;
   static String? _mapSize;
   static int? _mapZoomLevel;
@@ -14,13 +13,20 @@ class SettingsCache {
   static bool? _showCoordinates;
   static double? _opacity;
   static bool? _showBorder;
-  static double? _fontSize; // double
+  static double? _fontSize;
   static WatermarkLayout? _layout;
   static bool? _showWeather;
   static bool? _showAccuracy;
+  static String? _dateFormat;
+  static String? _timeFormat;
+  static String? _themeMode;
+  static int? _imageQuality;
+  static bool? _keepScreenOn;
+  static bool? _useHighAccuracy;
+  static bool? _autoSave;
 
   // ==========================================================================
-  // INIT
+  // INIT / PRELOAD
   // ==========================================================================
   static Future<void> preload() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -35,10 +41,17 @@ class SettingsCache {
     _fontSize ??= _prefs!.getDouble('fontSize') ?? 16.0;
     _showWeather ??= _prefs!.getBool('showWeather') ?? true;
     _showAccuracy ??= _prefs!.getBool('showAccuracy') ?? true;
+    _dateFormat ??= _prefs!.getString('dateFormat') ?? 'dd/MM/yyyy';
+    _timeFormat ??= _prefs!.getString('timeFormat') ?? 'HH:mm:ss';
+    _themeMode ??= _prefs!.getString('themeMode') ?? 'dark';
+    _imageQuality ??= _prefs!.getInt('imageQuality') ?? 90;
+    _keepScreenOn ??= _prefs!.getBool('keepScreenOn') ?? true;
+    _useHighAccuracy ??= _prefs!.getBool('useHighAccuracy') ?? true;
+    _autoSave ??= _prefs!.getBool('autoSave') ?? false;
   }
 
   // ==========================================================================
-  // WATERMARK LAYOUT (enum dari constants.dart)
+  // WATERMARK LAYOUT
   // ==========================================================================
   static Future<WatermarkLayout> get layout async {
     await preload();
@@ -82,7 +95,7 @@ class SettingsCache {
   }
 
   // ==========================================================================
-  // GETTER/SETTER LAINNYA (disesuaikan dengan SettingsScreen)
+  // MINI MAP & MAP SETTINGS
   // ==========================================================================
   static Future<bool> get showMiniMap async {
     await preload();
@@ -114,6 +127,9 @@ class SettingsCache {
     await _prefs!.setInt('mapZoomLevel', value);
   }
 
+  // ==========================================================================
+  // ADDRESS & COORDINATES
+  // ==========================================================================
   static Future<bool> get showAddress async {
     await preload();
     return _showAddress!;
@@ -134,6 +150,9 @@ class SettingsCache {
     await _prefs!.setBool('showCoordinates', value);
   }
 
+  // ==========================================================================
+  // OPACITY & BORDER
+  // ==========================================================================
   static Future<double> get opacity async {
     await preload();
     return _opacity!;
@@ -154,6 +173,9 @@ class SettingsCache {
     await _prefs!.setBool('showBorder', value);
   }
 
+  // ==========================================================================
+  // FONT SIZE (double)
+  // ==========================================================================
   static Future<double> get fontSize async {
     await preload();
     return _fontSize!;
@@ -165,9 +187,105 @@ class SettingsCache {
   }
 
   // ==========================================================================
-  // INVALIDATE CACHE
+  // DATE & TIME FORMAT
   // ==========================================================================
-  static void invalidate() {
+  static Future<String> get dateFormat async {
+    await preload();
+    return _dateFormat!;
+  }
+  static Future<void> setDateFormat(String value) async {
+    await preload();
+    _dateFormat = value;
+    await _prefs!.setString('dateFormat', value);
+  }
+
+  static Future<String> get timeFormat async {
+    await preload();
+    return _timeFormat!;
+  }
+  static Future<void> setTimeFormat(String value) async {
+    await preload();
+    _timeFormat = value;
+    await _prefs!.setString('timeFormat', value);
+  }
+
+  // ==========================================================================
+  // THEME MODE
+  // ==========================================================================
+  static Future<String> get themeMode async {
+    await preload();
+    return _themeMode!;
+  }
+  static Future<void> setThemeMode(String value) async {
+    await preload();
+    _themeMode = value;
+    await _prefs!.setString('themeMode', value);
+  }
+
+  // ==========================================================================
+  // IMAGE QUALITY
+  // ==========================================================================
+  static Future<int> get imageQuality async {
+    await preload();
+    return _imageQuality!;
+  }
+  static Future<void> setImageQuality(int value) async {
+    await preload();
+    _imageQuality = value;
+    await _prefs!.setInt('imageQuality', value);
+  }
+
+  // ==========================================================================
+  // KEEP SCREEN ON
+  // ==========================================================================
+  static Future<bool> get keepScreenOn async {
+    await preload();
+    return _keepScreenOn!;
+  }
+  static Future<void> setKeepScreenOn(bool value) async {
+    await preload();
+    _keepScreenOn = value;
+    await _prefs!.setBool('keepScreenOn', value);
+  }
+
+  // ==========================================================================
+  // USE HIGH ACCURACY
+  // ==========================================================================
+  static Future<bool> get useHighAccuracy async {
+    await preload();
+    return _useHighAccuracy!;
+  }
+  static Future<void> setUseHighAccuracy(bool value) async {
+    await preload();
+    _useHighAccuracy = value;
+    await _prefs!.setBool('useHighAccuracy', value);
+  }
+
+  // ==========================================================================
+  // AUTO SAVE
+  // ==========================================================================
+  static Future<bool> get autoSave async {
+    await preload();
+    return _autoSave!;
+  }
+  static Future<void> setAutoSave(bool value) async {
+    await preload();
+    _autoSave = value;
+    await _prefs!.setBool('autoSave', value);
+  }
+
+  // ==========================================================================
+  // RESET ALL SETTINGS
+  // ==========================================================================
+  static Future<void> resetAllSettings() async {
+    await preload();
+    await _prefs!.clear();
+    _invalidateAll();
+    // Reload defaults
+    await preload();
+  }
+
+  static void _invalidateAll() {
     _showMiniMap = null;
     _mapSize = null;
     _mapZoomLevel = null;
@@ -179,5 +297,19 @@ class SettingsCache {
     _layout = null;
     _showWeather = null;
     _showAccuracy = null;
+    _dateFormat = null;
+    _timeFormat = null;
+    _themeMode = null;
+    _imageQuality = null;
+    _keepScreenOn = null;
+    _useHighAccuracy = null;
+    _autoSave = null;
+  }
+
+  // ==========================================================================
+  // INVALIDATE CACHE (public)
+  // ==========================================================================
+  static void invalidate() {
+    _invalidateAll();
   }
 }

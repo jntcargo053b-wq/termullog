@@ -9,6 +9,7 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
   String get name => 'Cinematic V2';
 
   static const int _padX = 36;
+  static const bool _positionBottom = true; // true = bottom, false = top
 
   @override
   Uint8List apply({
@@ -30,7 +31,6 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     bool showBorder = true,
     String fontSize = 'normal',
   }) {
-    // ── Adaptive scaling ──────────────────────────────────────────
     final double scale = (src.width / 1080).clamp(0.7, 2.0);
     final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
 
@@ -39,138 +39,69 @@ class LayoutCinematicV2 extends WatermarkLayoutBase {
     final int lineH = (28 * scale * fsMultiplier).round();
     final int lineHSmall = (22 * scale * fsMultiplier).round();
 
-    // Posisi tetap di bawah (bottom)
-    final int gradY0 = src.height - gradH;
+    final int gradY0 = _positionBottom ? src.height - gradH : 0;
     if (gradY0 < 0 || gradY0 >= src.height) return WatermarkLayoutBase.encodeJpg(src);
 
-    // ── Gradient background (arah dari bawah ke atas, isTop = false) ──
-    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTop: false, opacity: opacity);
+    _applyGradient(src, gradY0: gradY0, gradH: gradH, isTop: !_positionBottom, opacity: opacity);
 
-    // ── Divider line (posisi di bagian bawah panel) ────────────────
-    final int divY = gradY0 + (36 * scale).round();
+    final int divY = _positionBottom ? gradY0 + (36 * scale).round() : gradH - (40 * scale).round();
     if (showBorder) {
-      // Glow
       img.fillRect(src, x1: padX - 2, y1: divY - 1, x2: src.width - padX + 2, y2: divY + 3,
           color: img.ColorRgba8(30, 144, 255, 40));
-      // Main line
       img.fillRect(src, x1: padX, y1: divY, x2: src.width - padX, y2: divY + 2,
           color: img.ColorRgba8(30, 144, 255, 200));
     }
 
-    // ── Pilih font ────────────────────────────────────────────────
     final font = fontSize == 'small' ? img.arial14 : img.arial24;
     final fontSmall = fontSize == 'small' ? img.arial14 : img.arial24;
 
-    // Posisi teks mulai dari atas panel (bottom)
-    int cy = gradY0 + (12 * scale).round();
+    int cy = _positionBottom ? gradY0 + (12 * scale).round() : (16 * scale).round();
 
-    // ── Jam (dengan shadow) ───────────────────────────────────────
     _shadowText(src, DateFormat('HH : mm : ss').format(timestamp),
         font: font, x: padX, y: cy, color: WatermarkLayoutBase.white);
     cy += lineH;
-
-    // ── Tanggal ───────────────────────────────────────────────────
     _shadowText(src, DateFormat('dd  MMMM  yyyy').format(timestamp),
         font: font, x: padX, y: cy, color: WatermarkLayoutBase.blue);
     cy += lineH + (8 * scale).round();
 
-    // ── Koordinat ─────────────────────────────────────────────────
-    if (showCoordinates && hasPosition) {
-      img.drawString(src,
-          '${lat!.toStringAsFixed(5)}°N   ${lon!.toStringAsFixed(5)}°E',
+    if (showCoordinates && hasPosition && lat != null && lon != null) {
+      img.drawString(src, '${lat.toStringAsFixed(5)}°N   ${lon.toStringAsFixed(5)}°E',
           font: fontSmall, x: padX, y: cy, color: WatermarkLayoutBase.offWhite);
       cy += lineHSmall;
-
-      // ── Akurasi ─────────────────────────────────────────────────
-      if (showAccuracy) {
-        img.drawString(src,
-            'ACCURACY  ±${acc?.toStringAsFixed(0) ?? '?'} M',
+      if (showAccuracy && acc != null) {
+        img.drawString(src, 'ACCURACY  ±${acc.toStringAsFixed(0)} M',
             font: fontSmall, x: padX, y: cy, color: WatermarkLayoutBase.grey);
         cy += lineHSmall;
       }
     }
 
-    // ── Alamat ────────────────────────────────────────────────────
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       final maxChars = (src.width / 7).toInt().clamp(30, 55);
-      final shortAddr = address.length > maxChars
-          ? '${address.substring(0, maxChars - 1)}…' : address;
-      img.drawString(src, shortAddr,
-          font: fontSmall, x: padX, y: cy, color: WatermarkLayoutBase.grey);
+      final shortAddr = address.length > maxChars ? '${address.substring(0, maxChars - 1)}…' : address;
+      img.drawString(src, shortAddr, font: fontSmall, x: padX, y: cy, color: WatermarkLayoutBase.grey);
       cy += lineHSmall;
     }
 
-    // ── Cuaca ─────────────────────────────────────────────────────
     if (showWeather && weather.isNotEmpty) {
-      // Chip background
-      img.fillRect(src,
-          x1: padX - 4, y1: cy - 2,
+      img.fillRect(src, x1: padX - 4, y1: cy - 2,
           x2: padX + weather.length * 7 + 12, y2: cy + lineHSmall - 4,
           color: img.ColorRgba8(30, 144, 255, 30));
-      img.drawString(src, weather,
-          font: fontSmall, x: padX + 4, y: cy + 2, color: WatermarkLayoutBase.blue);
+      img.drawString(src, weather, font: fontSmall, x: padX + 4, y: cy + 2, color: WatermarkLayoutBase.blue);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
   }
 
-  // ─── ASYNC (fallback ke sync) ──────────────────────────────────
-  @override
-  Future<Uint8List> applyAsync({
-    required img.Image src,
-    required DateTime timestamp,
-    required bool hasPosition,
-    required double? lat,
-    required double? lon,
-    required double? acc,
-    required String address,
-    required String weather,
-    required bool showWeather,
-    required bool showAccuracy,
-    required bool showMiniMap,
-    Uint8List? mapBytes,
-    bool showAddress = true,
-    bool showCoordinates = true,
-    double opacity = 0.85,
-    bool showBorder = true,
-    String fontSize = 'normal',
-  }) async {
-    return apply(
-      src: src, timestamp: timestamp, hasPosition: hasPosition,
-      lat: lat, lon: lon, acc: acc, address: address, weather: weather,
-      showWeather: showWeather, showAccuracy: showAccuracy,
-      showMiniMap: showMiniMap,
-      mapBytes: mapBytes,
-      showAddress: showAddress,
-      showCoordinates: showCoordinates,
-      opacity: opacity,
-      showBorder: showBorder,
-      fontSize: fontSize,
-    );
-  }
-
-  // ─── Helpers ────────────────────────────────────────────────────
-  void _shadowText(img.Image src, String text, {
-    required img.BitmapFont font,
-    required int x, required int y,
-    required img.Color color,
-  }) {
-    img.drawString(src, text, font: font, x: x + 1, y: y + 1,
-        color: img.ColorRgba8(0, 0, 0, 120));
+  void _shadowText(img.Image src, String text, {required img.BitmapFont font, required int x, required int y, required img.Color color}) {
+    img.drawString(src, text, font: font, x: x + 1, y: y + 1, color: img.ColorRgba8(0, 0, 0, 120));
     img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 
-  void _applyGradient(img.Image src, {
-    required int gradY0,
-    required int gradH,
-    required bool isTop,
-    required double opacity,
-  }) {
-    // isTop = false, gradien dari bawah ke atas (t = 0 di gradY0, t=1 di gradY0+gradH)
+  void _applyGradient(img.Image src, {required int gradY0, required int gradH, required bool isTop, required double opacity}) {
     for (int y = gradY0; y < gradY0 + gradH; y++) {
       if (y < 0 || y >= src.height) continue;
-      final t = (y - gradY0) / gradH; // 0 di bawah, 1 di atas (karena isTop false)
-      final alpha = (t * 220 * opacity).toInt().clamp(0, 220);
+      final double t = isTop ? 1.0 - (y - gradY0) / gradH : (y - gradY0) / gradH;
+      final int alpha = (t * 220 * opacity).toInt().clamp(0, 220);
       for (int x = 0; x < src.width; x++) {
         final px = src.getPixel(x, y);
         src.setPixel(x, y, img.ColorRgba8(

@@ -40,31 +40,39 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
     // ── Pilih font ────────────────────────────────────────────────
     final font = fontSize == 'small' ? img.arial14 : img.arial24;
 
-    // ── Hitung jumlah baris ──────────────────────────────────────
+    // ── Bangun rows dinamis ──────────────────────────────────────
     final List<Map<String, String>> rows = [
       {'label': 'DATE', 'value': DateFormat('yyyy-MM-dd').format(timestamp)},
       {'label': 'TIME', 'value': DateFormat('HH:mm:ss').format(timestamp)},
     ];
-    if (showCoordinates && hasPosition) {
-      rows.add({'label': 'LAT', 'value': lat!.toStringAsFixed(6)});
-      rows.add({'label': 'LON', 'value': lon!.toStringAsFixed(6)});
-      if (showAccuracy) {
-        rows.add({'label': 'ACC', 'value': '±${acc?.toStringAsFixed(0) ?? '?'} m'});
+
+    if (showCoordinates && hasPosition && lat != null && lon != null) {
+      rows.add({'label': 'LAT', 'value': lat.toStringAsFixed(6)});
+      rows.add({'label': 'LON', 'value': lon.toStringAsFixed(6)});
+      if (showAccuracy && acc != null) {
+        rows.add({'label': 'ACC', 'value': '±${acc.toStringAsFixed(0)} m'});
       }
     }
+
+    // Address dengan wrapText (multi‑line)
     if (showAddress && address.isNotEmpty && address != 'Tidak ada lokasi' && !address.startsWith('GPS:')) {
       final maxChars = (src.width / 6).toInt().clamp(30, 50);
-      final shortAddr = address.length > maxChars
-          ? '${address.substring(0, maxChars - 1)}…' : address;
-      rows.add({'label': 'ADDR', 'value': shortAddr});
+      final wrapped = WatermarkLayoutBase.wrapText(address, maxChars);
+      final lines = wrapped.split('\n');
+      for (int i = 0; i < lines.length; i++) {
+        rows.add({
+          'label': i == 0 ? 'ADDR' : '',
+          'value': lines[i],
+        });
+      }
     }
+
     if (showWeather && weather.isNotEmpty) {
       rows.add({'label': 'WX', 'value': weather});
     }
 
     final int totalH = headerH + rows.length * rowH + 8;
-    final bool isTop = false;
-    final int y0 = isTop ? 0 : src.height - totalH;
+    final int y0 = src.height - totalH; // posisi bottom (isTop dihapus)
     if (y0 < 0) return WatermarkLayoutBase.encodeJpg(src);
 
     // ── Background table ──────────────────────────────────────────
@@ -90,10 +98,13 @@ class LayoutFieldSurvey extends WatermarkLayoutBase {
           : img.ColorRgba8(0, 0, 0, 0);
       img.fillRect(src, x1: 0, y1: cy, x2: src.width - 1, y2: cy + rowH, color: bgColor);
 
-      // Label (abu-abu)
-      img.drawString(src, rows[i]['label']!,
-          font: font, x: padX, y: cy + (rowH / 2 - 10).round(),
-          color: WatermarkLayoutBase.grey);
+      // Label (abu-abu) - hanya jika tidak kosong
+      final label = rows[i]['label']!;
+      if (label.isNotEmpty) {
+        img.drawString(src, label,
+            font: font, x: padX, y: cy + (rowH / 2 - 10).round(),
+            color: WatermarkLayoutBase.grey);
+      }
 
       // Value (putih)
       img.drawString(src, rows[i]['value']!,

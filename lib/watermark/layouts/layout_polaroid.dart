@@ -101,7 +101,9 @@ class LayoutPolaroid extends WatermarkLayoutBase {
     // ── Address ───────────────────────────────────────────────────
     if (showAddress && _validAddress(address)) {
       final wrapCols = ((canvasW - padSide * 2) ~/ 8).clamp(28, 58);
-      for (final line in _wrap(address, wrapCols).take(2)) {
+      final wrapped = WatermarkLayoutBase.wrapText(address, wrapCols);
+      final lines = wrapped.split('\n');
+      for (final line in lines.take(2)) {
         img.drawString(canvas, line, font: fontSmall, x: padSide, y: y, color: _textMuted);
         y += lineHSmall;
       }
@@ -197,20 +199,4 @@ class LayoutPolaroid extends WatermarkLayoutBase {
   }
 
   bool _validAddress(String a) => a.isNotEmpty && a != 'Tidak ada lokasi' && !a.startsWith('GPS:');
-
-  List<String> _wrap(String text, int maxCols) {
-    final lines = <String>[];
-    var buf = '';
-    for (final word in text.split(' ')) {
-      final candidate = buf.isEmpty ? word : '$buf $word';
-      if (candidate.length > maxCols) {
-        if (buf.isNotEmpty) lines.add(buf);
-        buf = word;
-      } else {
-        buf = candidate;
-      }
-    }
-    if (buf.isNotEmpty) lines.add(buf);
-    return lines;
-  }
 }

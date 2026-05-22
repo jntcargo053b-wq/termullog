@@ -38,9 +38,9 @@ class LayoutTimeMarkStyle extends WatermarkLayoutBase {
     final int cx = src.width - cardW - margin;
     final int cy = _positionBottom ? src.height - cardH - margin : margin;
 
-    // Perbaikan: gunakan Arial dengan huruf kapital (Arial12, Arial14, Arial24)
-    final img.BitmapFont fontLarge = fontSize == 'small' ? img.Arial14 : img.Arial24;
-    final img.BitmapFont fontSmall = fontSize == 'small' ? img.Arial12 : img.Arial14;
+    // Gunakan font yang tersedia di package image (huruf kecil)
+    final img.BitmapFont fontLarge = fontSize == 'small' ? img.arial14 : img.arial24;
+    final img.BitmapFont fontSmall = img.arial14; // fallback, hindari arial12 jika tidak ada
 
     final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
 

@@ -41,6 +41,8 @@ abstract class WatermarkLayoutBase {
       await fontLoader.load();
       _fontLoaded = true;
     } catch (e) {
+      debugPrint('Font load failed: $e');
+      // Tetap set true agar tidak mencoba lagi berkali‑kali
       _fontLoaded = true;
     }
   }
@@ -105,8 +107,18 @@ abstract class WatermarkLayoutBase {
     tp.layout(); tp.paint(canvas, Offset(x, y));
   }
 
-  static void canvasDrawTextShadow(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14}) {
-    canvasDrawText(canvas, text, x: x + 1, y: y + 1, color: Colors.black54, bold: bold, size: size);
+  /// Text shadow dengan warna shadow yang bisa diatur
+  static void canvasDrawTextShadow(
+    Canvas canvas,
+    String text, {
+    required double x,
+    required double y,
+    Color color = uiWhite,
+    bool bold = false,
+    double size = 14,
+    Color shadowColor = Colors.black54,
+  }) {
+    canvasDrawText(canvas, text, x: x + 1, y: y + 1, color: shadowColor, bold: bold, size: size);
     canvasDrawText(canvas, text, x: x, y: y, color: color, bold: bold, size: size);
   }
 
@@ -125,6 +137,27 @@ abstract class WatermarkLayoutBase {
     final endOffset = Offset(x, topToBottom ? y + height : y);
     canvas.drawRect(Rect.fromLTWH(x, y, width, height),
         Paint()..shader = ui.Gradient.linear(startOffset, endOffset, colors));
+  }
+
+  // ─── UTILITY TEXT COLOR ──────────────────────────────────────────
+  static Color adaptiveTextColor(bool darkBackground) {
+    return darkBackground ? Colors.white : Colors.black;
+  }
+
+  // ─── SAFE MINI MAP SYSTEM ────────────────────────────────────────
+  static Rect miniMapRect(img.Image src, int mapW, int mapH) {
+    final pad = 16; // padding aman, bisa disesuaikan dengan preferensi layout
+    return Rect.fromLTWH(
+      (src.width - mapW - pad).toDouble(),
+      (src.height - mapH - pad).toDouble(),
+      mapW.toDouble(),
+      mapH.toDouble(),
+    );
+  }
+
+  // ─── ANTI OVERFLOW ───────────────────────────────────────────────
+  static int clampWidth(int value, img.Image src) {
+    return value.clamp(100, src.width - 40);
   }
 
   // ─── KONVERSI IMAGE ──────────────────────────────────────────────
@@ -156,7 +189,7 @@ abstract class WatermarkLayoutBase {
     return Uint8List.fromList(img.encodeJpg(src, quality: quality));
   }
 
-  // ─── UTILITY WRAP TEXT ───────────────────────────────────────────
+  // ─── WRAP TEXT ───────────────────────────────────────────────────
   static String wrapText(String text, int maxChars) {
     final words = text.split(' ');
     String result = '';

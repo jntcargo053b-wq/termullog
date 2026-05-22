@@ -98,11 +98,10 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
             ? (src.width * 0.30).clamp(180, 280).toInt()
             : (src.width * 0.38).clamp(220, 340).toInt();
 
-    // ── Posisi ───────────────────────────────────────────────────
-    final bool isTop = false;
+    // ── Posisi (selalu di pojok kanan bawah) ─────────────────────
     final int margin = (src.width * 0.02).clamp(8, 20).toInt();
     final int cx = src.width - cardW - margin;
-    final int cy = isTop ? margin : src.height - cardH - margin;
+    final int cy = src.height - cardH - margin;   // ← fixed bottom
     if (cx < 0 || cy < 0 || cy + cardH > src.height) {
       return WatermarkLayoutBase.encodeJpg(src);
     }

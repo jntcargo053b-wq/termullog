@@ -48,7 +48,8 @@ class LayoutGpsCard extends WatermarkLayoutBase {
     final int x0 = (src.width - panelW) ~/ 2;
     final img.Color bgColor = img.ColorRgba8(0, 0, 0, (200 * opacity).toInt());
 
-    img.fillRect(src, x0, y0, x0 + panelW, y0 + panelH, bgColor);
+    // Perbaikan: gunakan named parameter 'color:'
+    img.fillRect(src, x0, y0, x0 + panelW, y0 + panelH, color: bgColor);
     if (showBorder) {
       img.drawRect(src, x1: x0, y1: y0, x2: x0 + panelW, y2: y0 + panelH,
           color: WatermarkLayoutBase.white, thickness: 1);

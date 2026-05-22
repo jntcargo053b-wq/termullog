@@ -6,19 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 
-/// Base class untuk semua layout watermark.
-/// Menyediakan helper standar untuk:
-/// - Adaptive scaling, font size, wrap text
-/// - Gambar teks dengan shadow, label‑value
-/// - Gradient multi‑stop, safe area untuk mini map, anti overflow
-/// - Load font aman dengan debug print
 abstract class WatermarkLayoutBase {
-  /// Nama layout untuk debugging
   String get name;
 
-  // ==========================================================================
-  // WARNA STANDAR (img package)
-  // ==========================================================================
   static final img.Color white    = img.ColorRgba8(255, 255, 255, 255);
   static final img.Color offWhite = img.ColorRgba8(230, 230, 230, 255);
   static final img.Color blue     = img.ColorRgba8(30, 144, 255, 255);
@@ -29,17 +19,11 @@ abstract class WatermarkLayoutBase {
   static final img.Color imgBlue     = blue;
   static final img.Color imgGrey     = grey;
 
-  // ==========================================================================
-  // WARNA UNTUK DART:UI CANVAS
-  // ==========================================================================
   static const Color uiWhite    = Color(0xFFFFFFFF);
   static const Color uiBlue     = Color(0xFF1E90FF);
   static const Color uiGrey     = Color(0xFF969696);
   static const Color uiOffWhite = Color(0xFFE6E6E6);
 
-  // ==========================================================================
-  // LOAD FONT (aman + debug)
-  // ==========================================================================
   static bool _fontLoaded = false;
 
   static Future<void> loadFont() async {
@@ -52,13 +36,10 @@ abstract class WatermarkLayoutBase {
       _fontLoaded = true;
     } catch (e) {
       debugPrint('⚠️ Font load failed: $e');
-      _fontLoaded = true; // jangan coba lagi walau gagal
+      _fontLoaded = true;
     }
   }
 
-  // ==========================================================================
-  // METODE UTAMA (wajib diimplementasikan)
-  // ==========================================================================
   Uint8List apply({
     required img.Image src,
     required DateTime timestamp,
@@ -79,7 +60,6 @@ abstract class WatermarkLayoutBase {
     String fontSize = 'normal',
   });
 
-  // Versi async (opsional, fallback ke sync)
   Future<Uint8List> applyAsync({
     required img.Image src,
     required DateTime timestamp,
@@ -120,10 +100,6 @@ abstract class WatermarkLayoutBase {
     );
   }
 
-  // ==========================================================================
-  // HELPER: TEXT WRAP & LEBAR AMAN
-  // ==========================================================================
-  /// Memecah teks menjadi beberapa baris berdasarkan jumlah karakter maksimum.
   static String wrapText(String text, int maxChars) {
     final words = text.split(' ');
     String result = '';
@@ -140,30 +116,22 @@ abstract class WatermarkLayoutBase {
     return result.trim();
   }
 
-  /// Menghitung jumlah karakter maksimum agar teks muat di panel lebar tertentu.
   static int safeMaxChars(int panelWidth, int fontSizePx) {
-    final int charWidth = (fontSizePx * 0.6).toInt(); // estimasi lebar per karakter
+    final int charWidth = (fontSizePx * 0.6).toInt();
     if (charWidth <= 0) return 30;
     return ((panelWidth - 20) / charWidth).toInt().clamp(20, 60);
   }
 
-  /// Clamp lebar panel agar tidak overflow.
   static int clampWidth(int value, img.Image src) {
     return value.clamp(100, src.width - 40);
   }
 
-  // ==========================================================================
-  // HELPER: TINGGI BARIS ADAPTIF
-  // ==========================================================================
   static int getLineHeight(String fontSize, double scale, {bool small = false}) {
     final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
     final int baseHeight = small ? 20 : 28;
     return (baseHeight * scale * fsMultiplier).round();
   }
 
-  // ==========================================================================
-  // HELPER: GAMBAR TEKS DENGAN SHADOW (untuk img package)
-  // ==========================================================================
   static void drawTextWithShadow(
     img.Image dst,
     String text,
@@ -180,9 +148,6 @@ abstract class WatermarkLayoutBase {
     img.drawString(dst, text, font: font, x: x, y: y, color: color);
   }
 
-  // ==========================================================================
-  // HELPER: LABEL – VALUE UNTUK LAYOUT TABEL
-  // ==========================================================================
   static void drawLabelValue(
     img.Image dst,
     String label,
@@ -192,8 +157,8 @@ abstract class WatermarkLayoutBase {
     int colW,
     int rowH,
     img.BitmapFont font, {
-    img.Color labelColor = grey,
-    img.Color valueColor = white,
+    required img.Color labelColor,
+    required img.Color valueColor,
   }) {
     img.drawString(dst, label, font: font, x: x, y: y + (rowH ~/ 2 - 8),
         color: labelColor);
@@ -201,9 +166,6 @@ abstract class WatermarkLayoutBase {
         color: valueColor);
   }
 
-  // ==========================================================================
-  // HELPER: WAKTU & TANGGAL FORMAT
-  // ==========================================================================
   static String formatDate(DateTime dt, {String pattern = 'dd MMM yyyy'}) {
     return DateFormat(pattern).format(dt);
   }
@@ -212,16 +174,10 @@ abstract class WatermarkLayoutBase {
     return DateFormat(pattern).format(dt);
   }
 
-  // ==========================================================================
-  // HELPER: ADAPTIVE TEXT COLOR (BERDASARKAN KECERAHAN BACKGROUND)
-  // ==========================================================================
   static Color adaptiveTextColor(bool darkBackground) {
     return darkBackground ? Colors.white : Colors.black;
   }
 
-  // ==========================================================================
-  // HELPER: SAFE MINI MAP RECT
-  // ==========================================================================
   static Rect miniMapRect(img.Image src, int mapW, int mapH, {int padding = 16}) {
     return Rect.fromLTWH(
       (src.width - mapW - padding).toDouble(),
@@ -231,9 +187,6 @@ abstract class WatermarkLayoutBase {
     );
   }
 
-  // ==========================================================================
-  // HELPER: GRADIEN MULTI‑STOP (UNTUK FLUTTER CANVAS)
-  // ==========================================================================
   static void canvasDrawGradient(
     Canvas canvas, {
     required double x,
@@ -258,9 +211,6 @@ abstract class WatermarkLayoutBase {
     );
   }
 
-  // ==========================================================================
-  // HELPER: TEKS PADA FLUTTER CANVAS (DENGAN SHADOW OPSIONAL)
-  // ==========================================================================
   static void canvasDrawText(
     Canvas canvas,
     String text, {
@@ -282,7 +232,7 @@ abstract class WatermarkLayoutBase {
           letterSpacing: letterSpacing,
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
     tp.layout();
     tp.paint(canvas, Offset(x, y));
@@ -304,9 +254,6 @@ abstract class WatermarkLayoutBase {
         x: x, y: y, color: color, bold: bold, size: size);
   }
 
-  // ==========================================================================
-  // HELPER: KONVERSI GAMBAR (ui.Image <-> img.Image)
-  // ==========================================================================
   static Future<ui.Image> toUiImage(img.Image src) async {
     final pngBytes = Uint8List.fromList(img.encodePng(src));
     final codec = await ui.instantiateImageCodec(pngBytes);
@@ -321,9 +268,6 @@ abstract class WatermarkLayoutBase {
     return img.decodePng(byteData!.buffer.asUint8List())!;
   }
 
-  // ==========================================================================
-  // HELPER: DECODE & ENCODE UNTUK IMG PACKAGE
-  // ==========================================================================
   static img.Image decodeOrThrow(Uint8List bytes) {
     if (bytes.isEmpty) throw Exception('Data gambar kosong');
     if (bytes.length < 100) throw Exception('Data gambar terlalu kecil');

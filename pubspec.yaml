@@ -11,25 +11,46 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # UI & Core
   cupertino_icons: ^1.0.6
   intl: ^0.19.0
+
+  # Camera & Gallery
   camera: ^0.10.5
   gallery_saver_plus: ^3.2.9
   share_plus: ^9.0.0
+
+  # Location & Maps
   geolocator: ^11.1.0
   geocoding: ^3.0.0
   flutter_map: ^6.1.0
+
+  # Permissions
   permission_handler: ^11.3.1
   device_info_plus: ^9.1.2
+
+  # Storage
   shared_preferences: ^2.2.2
   path_provider: ^2.1.2
   path: ^1.9.0
-  image: 3.2.0                     # <- versi yang tepat
-  http: ^1.2.0
-  flutter_svg: ^2.0.9              # kompatibel dengan xml ^6.0.1
 
+  # ============================================================
+  # KRUSIAL : Gunakan image 3.0.5 (embedded fonts)
+  # ============================================================
+  image: 3.0.5
+
+  # HTTP & Networking
+  http: ^1.2.0
+
+  # SVG (versi modern)
+  flutter_svg: ^2.0.9
+
+# ============================================================
+# FORCE XML agar kompatibel dengan image 3.0.5 dan flutter_svg
+# ============================================================
 dependency_overrides:
-  xml: ^6.0.1                      # menyelesaikan konflik
+  xml: ^6.0.1
 
 dev_dependencies:
   flutter_test:

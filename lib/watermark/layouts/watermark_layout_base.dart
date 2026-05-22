@@ -28,10 +28,9 @@ abstract class WatermarkLayoutBase {
   static const Color uiOffWhite = Color(0xFFE6E6E6);
 
   // ==========================================================================
-  // LOAD FONT
+  // LOAD FONT (opsional untuk canvas)
   // ==========================================================================
   static bool _fontLoaded = false;
-
   static Future<void> loadFont() async {
     if (_fontLoaded) return;
     try {
@@ -118,19 +117,19 @@ abstract class WatermarkLayoutBase {
     return (src.width / baseWidth).clamp(0.6, 1.8);
   }
 
-  /// Mendapatkan padding aman (kiri, kanan, atas, bawah) sebagai double
-  static void getSafePadding(img.Image src,
-      {double minPadding = 12, required double outLeft, required double outTop, required double outRight, required double outBottom}) {
+  static EdgeInsets getSafePadding(img.Image src, {double minPadding = 12}) {
     final bool isPortrait = src.height > src.width;
     final double scale = getAdaptiveScale(src);
     final double basePadding = minPadding * scale;
     final double horizontal = isPortrait ? basePadding : basePadding * 0.8;
     final double vertical = basePadding;
     final double notchExtra = (src.width / src.height > 2.0) ? 20.0 : 0.0;
-    outLeft = horizontal + notchExtra;
-    outTop = vertical;
-    outRight = horizontal + notchExtra;
-    outBottom = vertical;
+    return EdgeInsets.fromLTRB(
+      horizontal + notchExtra,
+      vertical,
+      horizontal + notchExtra,
+      vertical,
+    );
   }
 
   static int getAdaptiveLineHeight(String fontSize, double scale, {bool tight = false}) {
@@ -158,106 +157,7 @@ abstract class WatermarkLayoutBase {
   }
 
   // ==========================================================================
-  // SMART TEXT RENDERING (menggunakan font package image)
-  // ==========================================================================
-  static void drawSmartText(
-    img.Image dst,
-    String text,
-    int x,
-    int y, {
-    required int maxWidth,
-    required img.BitmapFont baseFont,
-    required img.Color color,
-    bool withShadow = true,
-    bool autoEllipsis = true,
-    bool autoWrap = false,
-    bool adaptiveFont = false,
-    int maxLines = 3,
-    int lineHeight = 24,
-  }) {
-    if (text.isEmpty) return;
-
-    img.BitmapFont finalFont = baseFont;
-    if (adaptiveFont) {
-      finalFont = _getAdaptiveFont(baseFont, text, maxWidth);
-    }
-
-    if (!autoWrap && autoEllipsis && _getTextWidth(finalFont, text) > maxWidth) {
-      final displayText = _ellipsisText(finalFont, text, maxWidth);
-      _drawSingleLine(dst, displayText, finalFont, x, y, color, withShadow);
-      return;
-    }
-
-    if (autoWrap) {
-      final lines = _wrapTextByWidth(finalFont, text, maxWidth, maxLines);
-      int currentY = y;
-      for (int i = 0; i < lines.length && i < maxLines; i++) {
-        _drawSingleLine(dst, lines[i], finalFont, x, currentY, color, withShadow);
-        currentY += lineHeight;
-      }
-      return;
-    }
-
-    _drawSingleLine(dst, text, finalFont, x, y, color, withShadow);
-  }
-
-  static void _drawSingleLine(img.Image dst, String text, img.BitmapFont font, int x, int y, img.Color color, bool withShadow) {
-    if (withShadow) {
-      img.drawString(dst, text, font: font, x: x + 1, y: y + 1,
-          color: img.ColorRgba8(0, 0, 0, 160));
-    }
-    img.drawString(dst, text, font: font, x: x, y: y, color: color);
-  }
-
-  static img.BitmapFont _getAdaptiveFont(img.BitmapFont base, String text, int maxWidth) {
-    if (_getTextWidth(base, text) <= maxWidth) return base;
-    if (_getTextWidth(img.arial14, text) <= maxWidth) return img.arial14;
-    if (_getTextWidth(img.arial12, text) <= maxWidth) return img.arial12;
-    return img.arial12;
-  }
-
-  static String _ellipsisText(img.BitmapFont font, String text, int maxWidth) {
-    if (_getTextWidth(font, text) <= maxWidth) return text;
-    for (int i = text.length - 1; i > 3; i--) {
-      final truncated = '${text.substring(0, i)}…';
-      if (_getTextWidth(font, truncated) <= maxWidth) return truncated;
-    }
-    return '…';
-  }
-
-  static List<String> _wrapTextByWidth(img.BitmapFont font, String text, int maxWidth, int maxLines) {
-    final words = text.split(' ');
-    final lines = <String>[];
-    String currentLine = '';
-    for (final word in words) {
-      final testLine = currentLine.isEmpty ? word : '$currentLine $word';
-      if (_getTextWidth(font, testLine) > maxWidth) {
-        if (currentLine.isNotEmpty) {
-          lines.add(currentLine);
-          currentLine = word;
-          if (lines.length >= maxLines) break;
-        } else {
-          final trimmed = _ellipsisText(font, word, maxWidth);
-          lines.add(trimmed);
-          currentLine = '';
-          if (lines.length >= maxLines) break;
-        }
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine.isNotEmpty && lines.length < maxLines) lines.add(currentLine);
-    return lines;
-  }
-
-  static int _getTextWidth(img.BitmapFont font, String text) {
-    if (font == img.arial24) return text.length * 12;
-    if (font == img.arial14) return text.length * 8;
-    return text.length * 6;
-  }
-
-  // ==========================================================================
-  // HELPER DASAR
+  // HELPER DASAR (tanpa smart text yang bermasalah)
   // ==========================================================================
   static String wrapText(String text, int maxChars) {
     final words = text.split(' ');
@@ -301,31 +201,13 @@ abstract class WatermarkLayoutBase {
     img.drawString(dst, text, font: font, x: x, y: y, color: color);
   }
 
-  static void drawLabelValue(
-    img.Image dst,
-    String label,
-    String value,
-    int x,
-    int y,
-    int colW,
-    int rowH,
-    img.BitmapFont font, {
-    required img.Color labelColor,
-    required img.Color valueColor,
-  }) {
-    img.drawString(dst, label, font: font, x: x, y: y + (rowH ~/ 2 - 8),
-        color: labelColor);
-    img.drawString(dst, value, font: font, x: x + colW, y: y + (rowH ~/ 2 - 8),
-        color: valueColor);
-  }
-
   static String formatDate(DateTime dt, {String pattern = 'dd MMM yyyy'}) {
     return DateFormat(pattern).format(dt);
   }
+
   static String formatTime(DateTime dt, {String pattern = 'HH:mm:ss'}) {
     return DateFormat(pattern).format(dt);
   }
-  static Color adaptiveTextColor(bool darkBackground) => darkBackground ? Colors.white : Colors.black;
 
   // ==========================================================================
   // FLUTTER CANVAS HELPERS

@@ -1,5 +1,26 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+// ==========================================================================
+// ENUM FOR WATERMARK LAYOUT
+// ==========================================================================
+
+enum WatermarkLayout {
+  cinematic,
+  standard,
+  wide;
+
+  String get displayName {
+    switch (this) {
+      case WatermarkLayout.cinematic:
+        return 'Cinematic';
+      case WatermarkLayout.standard:
+        return 'Standard';
+      case WatermarkLayout.wide:
+        return 'Wide';
+    }
+  }
+}
+
 class SettingsCache {
   static SharedPreferences? _prefs;
 
@@ -14,27 +35,39 @@ class SettingsCache {
   static double? _fontSize;
 
   // ==========================================================================
-  // WATERMARK LAYOUT
+  // WATERMARK LAYOUT (ENUM)
   // ==========================================================================
 
-  static String? _layout;
+  static WatermarkLayout? _layout;
 
-  static Future<String> get layout async {
+  static Future<WatermarkLayout> get layout async {
     await preload();
 
-    _layout ??=
-        _prefs!.getString('layout') ?? 'cinematic';
+    _layout ??= _stringToWatermarkLayout(
+      _prefs!.getString('layout') ?? 'cinematic',
+    );
 
     return _layout!;
   }
 
-  static Future<void> setLayout(String value) async {
+  static Future<void> setLayout(WatermarkLayout value) async {
     await preload();
 
     _layout = value;
 
-    await _prefs!.setString('layout', value);
+    await _prefs!.setString('layout', _watermarkLayoutToString(value));
   }
+
+  // Helper untuk konversi enum <-> string
+  static WatermarkLayout _stringToWatermarkLayout(String value) {
+    return WatermarkLayout.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => WatermarkLayout.cinematic,
+    );
+  }
+
+  static String _watermarkLayoutToString(WatermarkLayout layout) =>
+      layout.name;
 
   // ==========================================================================
   // SHOW WEATHER
@@ -45,8 +78,7 @@ class SettingsCache {
   static Future<bool> get showWeather async {
     await preload();
 
-    _showWeather ??=
-        _prefs!.getBool('showWeather') ?? true;
+    _showWeather ??= _prefs!.getBool('showWeather') ?? true;
 
     return _showWeather!;
   }
@@ -68,8 +100,7 @@ class SettingsCache {
   static Future<bool> get showAccuracy async {
     await preload();
 
-    _showAccuracy ??=
-        _prefs!.getBool('showAccuracy') ?? true;
+    _showAccuracy ??= _prefs!.getBool('showAccuracy') ?? true;
 
     return _showAccuracy!;
   }
@@ -109,21 +140,17 @@ class SettingsCache {
     _prefs ??= await SharedPreferences.getInstance();
 
     _showMiniMap ??= _prefs!.getBool('showMiniMap') ?? true;
-
     _mapSize ??= _prefs!.getString('mapSize') ?? 'medium';
-
     _mapZoomLevel ??= _prefs!.getInt('mapZoomLevel') ?? 17;
-
     _showAddress ??= _prefs!.getBool('showAddress') ?? true;
-
-    _showCoordinates ??=
-        _prefs!.getBool('showCoordinates') ?? true;
-
+    _showCoordinates ??= _prefs!.getBool('showCoordinates') ?? true;
     _opacity ??= _prefs!.getDouble('opacity') ?? 0.85;
-
     _showBorder ??= _prefs!.getBool('showBorder') ?? true;
-
     _fontSize ??= _prefs!.getDouble('fontSize') ?? 14.0;
+
+    // Layout (enum) - jangan diinisialisasi di sini karena sudah ditangani di getter
+    // Tapi kita tetap baca dari sharedPrefs untuk keperluan internal jika diperlukan
+    // Namun karena getter sudah menggunakan ??=, kita biarkan null di sini.
   }
 
   // ==========================================================================
@@ -137,9 +164,7 @@ class SettingsCache {
 
   static Future<void> setShowMiniMap(bool value) async {
     await preload();
-
     _showMiniMap = value;
-
     await _prefs!.setBool('showMiniMap', value);
   }
 
@@ -154,9 +179,7 @@ class SettingsCache {
 
   static Future<void> setMapSize(String value) async {
     await preload();
-
     _mapSize = value;
-
     await _prefs!.setString('mapSize', value);
   }
 
@@ -171,9 +194,7 @@ class SettingsCache {
 
   static Future<void> setMapZoomLevel(int value) async {
     await preload();
-
     _mapZoomLevel = value;
-
     await _prefs!.setInt('mapZoomLevel', value);
   }
 
@@ -188,9 +209,7 @@ class SettingsCache {
 
   static Future<void> setShowAddress(bool value) async {
     await preload();
-
     _showAddress = value;
-
     await _prefs!.setBool('showAddress', value);
   }
 
@@ -205,9 +224,7 @@ class SettingsCache {
 
   static Future<void> setShowCoordinates(bool value) async {
     await preload();
-
     _showCoordinates = value;
-
     await _prefs!.setBool('showCoordinates', value);
   }
 
@@ -222,9 +239,7 @@ class SettingsCache {
 
   static Future<void> setOpacity(double value) async {
     await preload();
-
     _opacity = value;
-
     await _prefs!.setDouble('opacity', value);
   }
 
@@ -239,9 +254,7 @@ class SettingsCache {
 
   static Future<void> setShowBorder(bool value) async {
     await preload();
-
     _showBorder = value;
-
     await _prefs!.setBool('showBorder', value);
   }
 
@@ -256,9 +269,7 @@ class SettingsCache {
 
   static Future<void> setFontSize(double value) async {
     await preload();
-
     _fontSize = value;
-
     await _prefs!.setDouble('fontSize', value);
   }
 }

@@ -22,7 +22,7 @@ class LayoutSurvey extends WatermarkLayoutBase {
     required String weather,
     required bool showWeather,
     required bool showAccuracy,
-    required String watermarkPosition,
+    // watermarkPosition dihapus
     required bool showMiniMap,
     Uint8List? mapBytes,
     bool showAddress = true,
@@ -43,7 +43,6 @@ class LayoutSurvey extends WatermarkLayoutBase {
     if (showWeather && weather.isNotEmpty) contentLines += 1;
 
     final int panelH = 40 + (contentLines * 24);
-    // Untuk image 3.0.5, kita gunakan img.getColor untuk membuat warna dengan opacity
     final img.Color bgColor = img.getColor(0, 0, 0, (opacity * 255).toInt());
 
     img.fillRect(src, panelX, panelY, panelX + panelW, panelY + panelH, bgColor);

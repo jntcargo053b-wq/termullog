@@ -1,3 +1,4 @@
+// lib/watermark/layouts/layout_documentary.dart
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
@@ -7,6 +8,8 @@ import '../../core/constants.dart';
 class LayoutDocumentary extends WatermarkLayoutBase {
   @override
   String get name => 'Documentary';
+
+  static const bool _positionTop = true; // top left
 
   @override
   Uint8List apply({
@@ -20,7 +23,6 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     required String weather,
     required bool showWeather,
     required bool showAccuracy,
-    // watermarkPosition dihapus
     required bool showMiniMap,
     Uint8List? mapBytes,
     bool showAddress = true,
@@ -32,7 +34,7 @@ class LayoutDocumentary extends WatermarkLayoutBase {
     final int margin = 20;
     final int padding = 15;
     final int x = margin;
-    final int y = margin;
+    final int y = _positionTop ? margin : src.height - 180; // fallback, tapi top
     final int panelWidth = 280;
     final int panelHeight = hasPosition ? 180 : 120;
 

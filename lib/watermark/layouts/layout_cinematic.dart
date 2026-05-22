@@ -89,13 +89,16 @@ class LayoutCinematic extends WatermarkLayoutBase {
     img.fillRect(src, x1: cardX + padX, y1: cy, x2: cardX + cardW - padX, y2: cy + 2,
         color: img.ColorRgba8(255, 255, 255, 20));
     cy += 12;
+    
     if (showAddress && address.isNotEmpty) {
-      final lines = _splitAddress(address);
+      final wrapped = WatermarkLayoutBase.wrapText(address, 40);
+      final lines = wrapped.split('\n');
       for (final line in lines.take(2)) {
         img.drawString(src, line, font: fontSmall, x: cardX + padX, y: cy, color: WatermarkLayoutBase.white);
         cy += smallLine;
       }
     }
+    
     if (showCoordinates && hasPosition) {
       img.drawString(src, '${lat!.toStringAsFixed(2)}°, ${lon!.toStringAsFixed(2)}°',
           font: fontSmall, x: cardX + padX, y: cy, color: WatermarkLayoutBase.blue);
@@ -204,7 +207,8 @@ class LayoutCinematic extends WatermarkLayoutBase {
     cy += 12 * scale;
 
     if (showAddress && address.isNotEmpty) {
-      final lines = _splitAddress(address);
+      final wrapped = WatermarkLayoutBase.wrapText(address, 40);
+      final lines = wrapped.split('\n');
       for (final line in lines.take(2)) {
         WatermarkLayoutBase.canvasDrawTextShadow(canvas, line,
             x: cardX + padX, y: cy, color: Colors.white70, bold: false, size: 13 * fs);
@@ -220,17 +224,5 @@ class LayoutCinematic extends WatermarkLayoutBase {
 
     final resultImg = await WatermarkLayoutBase.recorderToImg(recorder, w.toInt(), h.toInt());
     return WatermarkLayoutBase.encodeJpg(resultImg);
-  }
-
-  List<String> _splitAddress(String address) {
-    const maxLen = 42;
-    final parts = address.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (parts.isEmpty) return [address.length > maxLen ? '${address.substring(0, maxLen - 1)}…' : address];
-    final l1 = parts.first;
-    final rest = parts.skip(1).join(', ');
-    return [
-      l1.length > maxLen ? '${l1.substring(0, maxLen - 1)}…' : l1,
-      if (rest.isNotEmpty) rest.length > maxLen ? '${rest.substring(0, maxLen - 1)}…' : rest,
-    ];
   }
 }

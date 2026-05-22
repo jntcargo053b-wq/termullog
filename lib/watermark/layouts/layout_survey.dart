@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:image/src/font/arial_12.dart';
+import 'package:image/src/font/arial_14.dart';
 import 'watermark_layout_base.dart';
 import '../../core/constants.dart';
 
@@ -41,11 +43,12 @@ class LayoutSurvey extends WatermarkLayoutBase {
     if (showWeather && weather.isNotEmpty) contentLines += 1;
 
     final int panelH = 40 + (contentLines * 24);
-    final int bgColor = (0x00000000 | ((opacity * 255).toInt() << 24)) & 0xCC000000;
+    // Untuk image 3.0.5, kita gunakan img.getColor untuk membuat warna dengan opacity
+    final img.Color bgColor = img.getColor(0, 0, 0, (opacity * 255).toInt());
 
     img.fillRect(src, panelX, panelY, panelX + panelW, panelY + panelH, bgColor);
     if (showBorder) {
-      img.drawRect(src, x1: panelX, y1: panelY, x2: panelX + panelW, y2: panelY + panelH, color: kColorCyan);
+      img.drawRect(src, x1: panelX, y1: panelY, x2: panelX + panelW, y2: panelY + panelH, color: kColorCyan, thickness: 2);
     }
 
     int textY = panelY + 20;

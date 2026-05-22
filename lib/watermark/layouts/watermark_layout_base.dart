@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+import 'package:intl/intl.dart';
 
 /// Base class untuk semua layout watermark.
 /// Menyediakan helper standar untuk:
@@ -169,7 +170,7 @@ abstract class WatermarkLayoutBase {
     int x,
     int y, {
     required img.BitmapFont font,
-    required int color,
+    required img.Color color,
     bool withShadow = true,
   }) {
     if (withShadow) {
@@ -191,8 +192,8 @@ abstract class WatermarkLayoutBase {
     int colW,
     int rowH,
     img.BitmapFont font, {
-    int labelColor = 0xFF969696,
-    int valueColor = 0xFFFFFFFF,
+    img.Color labelColor = grey,
+    img.Color valueColor = white,
   }) {
     img.drawString(dst, label, font: font, x: x, y: y + (rowH ~/ 2 - 8),
         color: labelColor);

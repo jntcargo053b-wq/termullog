@@ -45,29 +45,6 @@ abstract class WatermarkLayoutBase {
     }
   }
 
-  // ─── TEXT WRAPPER ──────────────────────────────────────────────────
-  /// Memecah teks menjadi beberapa baris berdasarkan jumlah karakter maksimum.
-  /// Berguna untuk alamat panjang.
-  static String wrapText(String text, int maxChars) {
-    final words = text.split(' ');
-    String result = '';
-    String line = '';
-
-    for (final word in words) {
-      // Cek apakah jika ditambah kata berikutnya akan melebihi maxChars
-      if ((line + word).length > maxChars) {
-        // Simpan baris saat ini (tanpa spasi di akhir)
-        result += '$line\n';
-        line = '$word ';
-      } else {
-        line += '$word ';
-      }
-    }
-    // Baris terakhir
-    result += line;
-    return result.trim();
-  }
-
   // ─── SYNC: wajib diimplementasikan dengan parameter opsional ─────
   Uint8List apply({
     required img.Image src,
@@ -137,8 +114,17 @@ abstract class WatermarkLayoutBase {
     canvas.drawRRect(RRect.fromLTRBR(x, y, x + width, y + height, const Radius.circular(4)), Paint()..color = color.withOpacity(opacity));
   }
 
+  /// Multi‑stop gradient: 3 stops untuk transisi lebih halus
   static void canvasDrawGradient(Canvas canvas, {required double x, required double y, required double width, required double height, Color color = Colors.black, double startOpacity = 0.8, double endOpacity = 0.0, bool topToBottom = true}) {
-    canvas.drawRect(Rect.fromLTWH(x, y, width, height), Paint()..shader = ui.Gradient.linear(Offset(x, topToBottom ? y : y + height), Offset(x, topToBottom ? y + height : y), [color.withOpacity(startOpacity), color.withOpacity(endOpacity)]));
+    final colors = [
+      color.withOpacity(startOpacity),
+      color.withOpacity(startOpacity * 0.5),
+      color.withOpacity(endOpacity),
+    ];
+    final startOffset = Offset(x, topToBottom ? y : y + height);
+    final endOffset = Offset(x, topToBottom ? y + height : y);
+    canvas.drawRect(Rect.fromLTWH(x, y, width, height),
+        Paint()..shader = ui.Gradient.linear(startOffset, endOffset, colors));
   }
 
   // ─── KONVERSI IMAGE ──────────────────────────────────────────────
@@ -168,5 +154,22 @@ abstract class WatermarkLayoutBase {
   /// Encode ke JPEG
   static Uint8List encodeJpg(img.Image src, {int quality = 90}) {
     return Uint8List.fromList(img.encodeJpg(src, quality: quality));
+  }
+
+  // ─── UTILITY WRAP TEXT ───────────────────────────────────────────
+  static String wrapText(String text, int maxChars) {
+    final words = text.split(' ');
+    String result = '';
+    String line = '';
+    for (final word in words) {
+      if ((line + word).length > maxChars) {
+        result += '$line\n';
+        line = '$word ';
+      } else {
+        line += '$word ';
+      }
+    }
+    result += line;
+    return result.trim();
   }
 }

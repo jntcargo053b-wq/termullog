@@ -1,15 +1,15 @@
-// lib/watermark/watermark_params.dart
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
+/// Data class untuk parameter watermark yang diserialisasi ke isolate
 class WatermarkParams {
   final TransferableTypedData transferable;
   final TransferableTypedData? mapTransferable;
   final DateTime timestamp;
   final String address;
   final String weather;
-  final String layoutType;  // ← String, BUKAN int!
+  final int layoutIndex;
   final bool showWeather;
   final bool showAccuracy;
   final bool showAddress;
@@ -17,7 +17,6 @@ class WatermarkParams {
   final double opacity;
   final bool showBorder;
   final String fontSize;
-  final String watermarkPosition;
   final bool showMiniMap;
   final double? lat;
   final double? lon;
@@ -31,7 +30,7 @@ class WatermarkParams {
     required this.timestamp,
     required this.address,
     required this.weather,
-    required this.layoutType,
+    required this.layoutIndex,
     required this.showWeather,
     required this.showAccuracy,
     this.showAddress = true,
@@ -39,7 +38,6 @@ class WatermarkParams {
     this.opacity = 0.85,
     this.showBorder = true,
     this.fontSize = 'normal',
-    required this.watermarkPosition,
     required this.showMiniMap,
     this.lat,
     this.lon,
@@ -48,6 +46,7 @@ class WatermarkParams {
     this.mapZoomLevel = 16,
   });
 
+  /// Serialisasi ke Map untuk dikirim ke isolate
   Map<String, dynamic> toMap() {
     return {
       'transferable': transferable,
@@ -55,7 +54,7 @@ class WatermarkParams {
       'timestamp': timestamp,
       'address': address,
       'weather': weather,
-      'layoutType': layoutType,
+      'layoutIndex': layoutIndex,
       'showWeather': showWeather,
       'showAccuracy': showAccuracy,
       'showAddress': showAddress,
@@ -63,7 +62,6 @@ class WatermarkParams {
       'opacity': opacity,
       'showBorder': showBorder,
       'fontSize': fontSize,
-      'watermarkPosition': watermarkPosition,
       'showMiniMap': showMiniMap,
       'lat': lat,
       'lon': lon,
@@ -73,6 +71,7 @@ class WatermarkParams {
     };
   }
 
+  /// Deserialisasi dari Map (dipakai di dalam isolate)
   factory WatermarkParams.fromMap(Map<String, dynamic> map) {
     return WatermarkParams(
       transferable: map['transferable'] as TransferableTypedData,
@@ -80,7 +79,7 @@ class WatermarkParams {
       timestamp: map['timestamp'] as DateTime,
       address: map['address'] as String? ?? '',
       weather: map['weather'] as String? ?? '',
-      layoutType: map['layoutType'] as String? ?? 'modern',
+      layoutIndex: map['layoutIndex'] as int,
       showWeather: map['showWeather'] as bool? ?? true,
       showAccuracy: map['showAccuracy'] as bool? ?? true,
       showAddress: map['showAddress'] as bool? ?? true,
@@ -88,7 +87,6 @@ class WatermarkParams {
       opacity: (map['opacity'] as num?)?.toDouble() ?? 0.85,
       showBorder: map['showBorder'] as bool? ?? true,
       fontSize: map['fontSize'] as String? ?? 'normal',
-      watermarkPosition: map['watermarkPosition'] as String? ?? 'bottom',
       showMiniMap: map['showMiniMap'] as bool? ?? false,
       lat: map['lat'] as double?,
       lon: map['lon'] as double?,

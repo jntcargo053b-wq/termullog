@@ -21,47 +21,47 @@ class WatermarkThemeConfig {
 
   /// Tema gelap (default)
   static const dark = WatermarkThemeConfig(
-    background: img.getColor(0, 0, 0, 200),
-    primaryText: img.getColor(255, 255, 255, 255),
-    secondaryText: img.getColor(200, 200, 200, 255),
-    accent: img.getColor(30, 144, 255, 255),
-    border: img.getColor(255, 255, 255, 40),
+    background: img.ColorRgba8(0, 0, 0, 200),
+    primaryText: img.ColorRgba8(255, 255, 255, 255),
+    secondaryText: img.ColorRgba8(200, 200, 200, 255),
+    accent: img.ColorRgba8(30, 144, 255, 255),
+    border: img.ColorRgba8(255, 255, 255, 40),
   );
 
   /// Tema terang
   static const light = WatermarkThemeConfig(
-    background: img.getColor(255, 255, 255, 200),
-    primaryText: img.getColor(30, 30, 30, 255),
-    secondaryText: img.getColor(100, 100, 100, 255),
-    accent: img.getColor(0, 120, 210, 255),
-    border: img.getColor(0, 0, 0, 30),
+    background: img.ColorRgba8(255, 255, 255, 200),
+    primaryText: img.ColorRgba8(30, 30, 30, 255),
+    secondaryText: img.ColorRgba8(100, 100, 100, 255),
+    accent: img.ColorRgba8(0, 120, 210, 255),
+    border: img.ColorRgba8(0, 0, 0, 30),
   );
 
   /// Tema Kodak retro
   static const kodak = WatermarkThemeConfig(
-    background: img.getColor(20, 15, 10, 230),
-    primaryText: img.getColor(255, 140, 50, 255),
-    secondaryText: img.getColor(200, 160, 100, 255),
-    accent: img.getColor(255, 200, 50, 255),
-    border: img.getColor(255, 140, 50, 80),
+    background: img.ColorRgba8(20, 15, 10, 230),
+    primaryText: img.ColorRgba8(255, 140, 50, 255),
+    secondaryText: img.ColorRgba8(200, 160, 100, 255),
+    accent: img.ColorRgba8(255, 200, 50, 255),
+    border: img.ColorRgba8(255, 140, 50, 80),
   );
 
   /// Tema sinematik
   static const cinematic = WatermarkThemeConfig(
-    background: img.getColor(0, 0, 15, 220),
-    primaryText: img.getColor(220, 225, 235, 255),
-    secondaryText: img.getColor(140, 150, 165, 255),
-    accent: img.getColor(30, 144, 255, 255),
-    border: img.getColor(30, 144, 255, 60),
+    background: img.ColorRgba8(0, 0, 15, 220),
+    primaryText: img.ColorRgba8(220, 225, 235, 255),
+    secondaryText: img.ColorRgba8(140, 150, 165, 255),
+    accent: img.ColorRgba8(30, 144, 255, 255),
+    border: img.ColorRgba8(30, 144, 255, 60),
   );
 
   /// Tema survey profesional
   static const survey = WatermarkThemeConfig(
-    background: img.getColor(0, 0, 10, 235),
-    primaryText: img.getColor(255, 255, 255, 255),
-    secondaryText: img.getColor(150, 150, 150, 255),
-    accent: img.getColor(0, 180, 255, 255),
-    border: img.getColor(0, 180, 255, 100),
+    background: img.ColorRgba8(0, 0, 10, 235),
+    primaryText: img.ColorRgba8(255, 255, 255, 255),
+    secondaryText: img.ColorRgba8(150, 150, 150, 255),
+    accent: img.ColorRgba8(0, 180, 255, 255),
+    border: img.ColorRgba8(0, 180, 255, 100),
   );
 
   /// Mendapatkan tema berdasarkan enum

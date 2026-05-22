@@ -1,39 +1,169 @@
+// lib/core/constants.dart
 import 'package:image/image.dart' as img;
 
-// Warna sebagai img.Color
-final img.Color kColorWhite = img.ColorRgb8(255, 255, 255);
-final img.Color kColorBlack = img.ColorRgb8(0, 0, 0);
-final img.Color kColorRed = img.ColorRgb8(255, 0, 0);
-final img.Color kColorGreen = img.ColorRgb8(0, 255, 0);
-final img.Color kColorBlue = img.ColorRgb8(0, 0, 255);
-final img.Color kColorCyan = img.ColorRgb8(0, 255, 255);
-final img.Color kColorYellow = img.ColorRgb8(255, 255, 0);
-final img.Color kColorLightGrey = img.ColorRgb8(200, 200, 200);
-final img.Color kColorDarkGrey = img.ColorRgb8(50, 50, 50);
-final img.Color kColorIvory = img.ColorRgb8(255, 255, 240);
-final img.Color kColorDarkText = img.ColorRgb8(30, 30, 30);
-final img.Color kColorTransparent = img.ColorRgba8(0, 0, 0, 0);
+// ============================================================
+// OUTPUT & KUALITAS
+// ============================================================
+const int kMaxOutputWidth = 1600;
+const int kJpegQuality = 90;
+const int kSigMaxWidth = 260;
+const int kLogoMaxWidth = 90;
 
-img.Color getAccuracyColor(double? acc) {
-  if (acc == null) return kColorLightGrey;
-  if (acc < 5) return kColorGreen;
-  if (acc < 15) return kColorYellow;
-  return kColorRed;
+// ============================================================
+// WATERMARK LAYOUT STYLE
+// ============================================================
+enum WatermarkLayout {
+  minimal,          // 0 - Film Strip
+  dslrCorner,       // 1 - DSLR Corner
+  cinematic,        // 2 - Cinematic
+  fieldSurvey,      // 3 - Field Survey
+  hud,              // 4 - HUD Modern
+  gpsCard,          // 5 - GPS Card
+  polaroid,         // 6 - Polaroid
+  sidePanel,        // 7 - Side Panel
+  cinematicV2,      // 8 - Cinematic V2
+  timeMarkStyle,    // 9 - TimeMark Style
+  modern,           // 10 - Modern Clean Card
 }
 
-// Theme colors (jika dibutuhkan)
-final Map<String, dynamic> lightTheme = {
-  'primaryColor': img.ColorRgb8(27, 42, 74),
-  'primaryImgColor': img.getColor(27, 42, 74),
-  // ...
-};
+extension WatermarkLayoutExtension on WatermarkLayout {
+  String get displayName {
+    switch (this) {
+      case WatermarkLayout.minimal:        return 'Film Strip';
+      case WatermarkLayout.dslrCorner:     return 'DSLR Corner';
+      case WatermarkLayout.cinematic:      return 'Cinematic';
+      case WatermarkLayout.fieldSurvey:    return 'Field Survey';
+      case WatermarkLayout.hud:            return 'HUD Modern';
+      case WatermarkLayout.gpsCard:        return 'GPS Card';
+      case WatermarkLayout.polaroid:       return 'Polaroid';
+      case WatermarkLayout.sidePanel:      return 'Side Panel';
+      case WatermarkLayout.cinematicV2:    return 'Cinematic V2';
+      case WatermarkLayout.timeMarkStyle:  return 'TimeMark Style';
+      case WatermarkLayout.modern:         return 'Modern Clean Card';
+    }
+  }
 
-final Map<String, dynamic> darkTheme = {
-  'primaryColor': img.ColorRgb8(0, 184, 212),
-  'primaryImgColor': img.getColor(0, 184, 212),
-};
+  String get description {
+    switch (this) {
+      case WatermarkLayout.minimal:        return 'Gaya strip film dengan border biru profesional';
+      case WatermarkLayout.dslrCorner:     return 'Informasi seperti tampilan kamera DSLR di pojok';
+      case WatermarkLayout.cinematic:      return 'Gaya sinematik dengan gradasi halus dan elegan';
+      case WatermarkLayout.fieldSurvey:    return 'Gaya form survey dengan tabel data terstruktur';
+      case WatermarkLayout.hud:            return 'Heads-Up Display modern dengan efek transparan';
+      case WatermarkLayout.gpsCard:        return 'Panel GPS dengan map strip adaptif';
+      case WatermarkLayout.polaroid:       return 'Gaya polaroid klasik dengan bingkai ivory';
+      case WatermarkLayout.sidePanel:      return 'Panel samping vertikal dengan jam besar';
+      case WatermarkLayout.cinematicV2:    return 'Gaya sinematik dengan font modern Roboto (Canvas)';
+      case WatermarkLayout.timeMarkStyle:  return 'Gaya GPS TimeMark Camera dengan font modern';
+      case WatermarkLayout.modern:         return 'Desain bersih, navy gelap, aksen teal modern';
+    }
+  }
+}
 
-final Map<String, dynamic> sepiaTheme = {
-  'primaryColor': img.ColorRgb8(248, 245, 235),
-  'primaryImgColor': img.getColor(248, 245, 235),
-};
+// ============================================================
+// WATERMARK THEME (GLOBAL STYLE)
+// ============================================================
+enum WatermarkTheme {
+  dark,       // Tema gelap modern
+  light,      // Tema terang bersih
+  kodak,      // Tema retro Kodak
+  cinematic,  // Tema sinematik
+  survey,     // Tema survey profesional
+}
+
+// ============================================================
+// WATERMARK LAYOUT GEOMETRY
+// ============================================================
+const int kPanelPaddingX = 25;
+const int kSidebarPadX = 18;
+const int kAccentBarWidth = 10;
+const int kCornerMargin = 20;
+const int kTextLineSmall = 18;
+const int kTextLineLarge = 28;
+const int kSectionGap = 12;
+
+// ============================================================
+// WATERMARK COLOURS (untuk package image)
+// ============================================================
+final img.Color kColorWhite = img.ColorRgb8(255, 255, 255);
+final img.Color kColorCyan = img.ColorRgb8(0, 184, 148);
+final img.Color kColorGrey = img.ColorRgb8(210, 210, 210);
+final img.Color kColorDarkBg = img.ColorRgba8(15, 23, 42, 230);
+final img.Color kColorDarkBgMed = img.ColorRgba8(15, 23, 42, 210);
+final img.Color kColorBlackCard = img.ColorRgba8(0, 0, 0, 170);
+final img.Color kColorGlassBg = img.ColorRgba8(0, 0, 0, 120);
+final img.Color kColorShadow = img.ColorRgb8(0, 0, 0);
+
+// ============================================================
+// LAYOUT WATERMARK TAMBAHAN
+// ============================================================
+final img.Color kColorLightBlue = img.ColorRgb8(30, 144, 255);
+final img.Color kColorDimBlue = img.ColorRgb8(20, 80, 160);
+final img.Color kColorOffWhite = img.ColorRgb8(220, 225, 235);
+final img.Color kColorDarkGrey = img.ColorRgb8(140, 150, 165);
+final img.Color kColorVeryDarkBg = img.ColorRgba8(0, 0, 10, 210);
+final img.Color kColorBlackerBg = img.ColorRgba8(0, 0, 8, 235);
+final img.Color kColorDimBlue200 = img.ColorRgb8(20, 80, 160);
+final img.Color kColorLightGrey = img.ColorRgb8(200, 200, 205);
+final img.Color kColorGold = img.ColorRgb8(255, 180, 50);
+
+// ============================================================
+// WARNA TAMBAHAN UNTUK LAYOUT BARU
+// ============================================================
+final img.Color kColorIvory = img.ColorRgb8(248, 245, 235);
+final img.Color kColorDarkText = img.ColorRgb8(40, 40, 40);
+final img.Color kColorNavy = img.ColorRgba8(10, 15, 40, 240);
+final img.Color kColorGpsPanel = img.ColorRgba8(0, 0, 8, 235);
+final img.Color kColorGpsAccent = img.ColorRgb8(0, 180, 255);
+
+// ============================================================
+// UI COLOURS (Flutter Widget)
+// ============================================================
+const int kColorNavyUi = 0xFF1B4F72;
+const int kColorNavyDarkUi = 0xFF0D2137;
+const int kColorBlueUi = 0xFF2980B9;
+const int kColorCyanLightUi = 0xFF00B8D4;
+const int kColorCyanDarkUi = 0xFF0077B6;
+
+// ============================================================
+// WATERMARK GEOMETRY TAMBAHAN
+// ============================================================
+const int kWatermarkPadX = 14;
+const int kWatermarkPadY = 12;
+const int kHeaderHeight = 22;
+const int kRowHeight = 20;
+const int kColumnValueWidth = 100;
+const int kMaxAddressLength = 45;
+const int kMaxAddressLengthShort = 38;
+const int kMaxAddressLengthFilmStrip = 42;
+
+// ============================================================
+// GPS & LOCATION
+// ============================================================
+const double kTargetAccuracy = 10.0;
+const double kGoodAccuracy = 15.0;
+const double kMediumAccuracy = 25.0;
+const double kPoorAccuracy = 50.0;
+const double kMaxAccuracy = 80.0;
+const int kGpsTimeoutSeconds = 25;
+const int kGpsIntervalMs = 700;
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+String truncateAddress(String address, int maxLength) {
+  if (address.length <= maxLength) return address;
+  return '${address.substring(0, maxLength - 1)}…';
+}
+
+img.Color getAccuracyColor(double accuracy) {
+  if (accuracy <= kTargetAccuracy) {
+    return kColorCyan;
+  } else if (accuracy <= kGoodAccuracy) {
+    return kColorLightBlue;
+  } else if (accuracy <= kMediumAccuracy) {
+    return kColorGold;
+  } else {
+    return kColorGrey;
+  }
+}

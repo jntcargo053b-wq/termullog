@@ -6,7 +6,6 @@ class SettingsCache {
   static WatermarkLayout? _layout;
   static bool? _showWeather;
   static bool? _showAccuracy;
-  static String? _watermarkPosition;
   static bool? _showMiniMap;
   static String? _mapSize;
   static int? _mapZoomLevel;
@@ -39,7 +38,6 @@ class SettingsCache {
         SettingsService.getWatermarkLayout(),   // 0
         SettingsService.getShowWeather(),        // 1
         SettingsService.getShowAccuracy(),       // 2
-        SettingsService.getWatermarkPosition(),  // 3
         SettingsService.getShowMiniMap(),        // 4
         SettingsService.getMapSize(),            // 5
         SettingsService.getMapZoomLevel(),       // 6
@@ -53,15 +51,14 @@ class SettingsCache {
       _layout = results[0] as WatermarkLayout;
       _showWeather = results[1] as bool;
       _showAccuracy = results[2] as bool;
-      _watermarkPosition = results[3] as String;
-      _showMiniMap = results[4] as bool;
-      _mapSize = results[5] as String;
-      _mapZoomLevel = results[6] as int;
-      _showAddress = results[7] as bool;
-      _showCoordinates = results[8] as bool;
-      _opacity = results[9] as double;
-      _showBorder = results[10] as bool;
-      _fontSize = results[11] as String;
+      _showMiniMap = results[3] as bool;
+      _mapSize = results[4] as String;
+      _mapZoomLevel = results[5] as int;
+      _showAddress = results[6] as bool;
+      _showCoordinates = results[7] as bool;
+      _opacity = results[8] as double;
+      _showBorder = results[9] as bool;
+      _fontSize = results[10] as String;
       _lastLoad = DateTime.now();
     } catch (e) {
       _lastLoad = null;
@@ -87,10 +84,7 @@ class SettingsCache {
     return _showAccuracy!;
   }
 
-  static Future<String> get watermarkPosition async {
     await preload();
-    if (_watermarkPosition == null) throw StateError('watermarkPosition gagal dimuat');
-    return _watermarkPosition!;
   }
 
   static Future<bool> get showMiniMap async {
@@ -162,7 +156,6 @@ class SettingsCache {
   }
 
   static Future<void> refreshWatermarkPosition() async {
-    _watermarkPosition = await SettingsService.getWatermarkPosition();
     _lastLoad = DateTime.now();
   }
 

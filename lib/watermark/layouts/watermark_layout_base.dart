@@ -99,6 +99,157 @@ abstract class WatermarkLayoutBase {
     );
   }
 
+  // ==========================================================================
+  // FUNGSI-FUNGSI BARU: Safe Area, Auto Font Scale, Wrap, Shadow, Anti Overflow
+  // ==========================================================================
+
+  /// Mendapatkan rect aman berdasarkan orientasi gambar
+  /// (notch area untuk portrait/landscape)
+  static Rect getSafeArea(img.Image src, Orientation orientation) {
+    final width = src.width;
+    final height = src.height;
+    if (orientation == Orientation.portrait) {
+      // Contoh: sisakan 44 pixel di atas untuk notch, 34 di bawah untuk home indicator
+      return Rect.fromLTRB(0, 44, width.toDouble(), (height - 34).toDouble());
+    } else {
+      // Landscape: sisakan 44 pixel di kiri/kanan untuk notch
+      return Rect.fromLTRB(44, 0, (width - 44).toDouble(), height.toDouble());
+    }
+  }
+
+  /// Menyesuaikan opacity secara adaptif berdasarkan kecerahan area
+  /// (implementasi sederhana: ambil sampel area, jika cerah -> opacity lebih rendah)
+  static double getAdaptiveOpacity(img.Image src, int x, int y, int w, int h, double baseOpacity) {
+    // Hitung rata-rata kecerahan area yang akan ditimpa watermark
+    int total = 0;
+    int count = 0;
+    final step = (w * h) ~/ 100; // sampel 1% piksel
+    for (int i = 0; i < w; i += (w ~/ 20) + 1) {
+      for (int j = 0; j < h; j += (h ~/ 20) + 1) {
+        final px = src.getPixel(x + i, y + j);
+        final brightness = (px.r + px.g + px.b) ~/ 3;
+        total += brightness;
+        count++;
+      }
+    }
+    final avgBrightness = total / count;
+    if (avgBrightness > 200) return baseOpacity * 0.6; // area terang -> lebih transparan
+    if (avgBrightness > 150) return baseOpacity * 0.8;
+    return baseOpacity;
+  }
+
+  /// Menggambar teks dengan fitur lengkap: shadow, auto scale, wrap, anti overflow
+  /// Parameter:
+  /// - dst: gambar tujuan
+  /// - text: teks
+  /// - x, y: posisi (koordinat piksel)
+  /// - font: font yang digunakan (img.BitmapFont)
+  /// - color: warna
+  /// - enableShadow: true untuk shadow hitam di bawah
+  /// - autoScale: true untuk mengecilkan font jika melebihi maxWidth
+  /// - maxWidth: lebar maksimum (0 = ambil dari lebar gambar - x - 20)
+  /// - maxLines: maksimal baris (jika wrap=true, akan dibatasi)
+  /// - wrap: true untuk memecah teks menjadi beberapa baris berdasarkan maxWidth
+  /// - lineHeight: tinggi antar baris (default font.height + 4)
+  /// - overflowAction: jika teks masih overflow, bisa 'ellipsis' atau 'clip'
+  void drawSafeText(
+    img.Image dst,
+    String text,
+    int x, int y, {
+    required img.BitmapFont font,
+    required int color,
+    bool enableShadow = true,
+    bool autoScale = true,
+    int maxWidth = 0,
+    int maxLines = 1,
+    bool wrap = false,
+    int? lineHeight,
+    String overflowAction = 'ellipsis',
+  }) {
+    if (text.isEmpty) return;
+
+    // Tentukan lebar maksimum
+    final effectiveMaxWidth = maxWidth > 0 ? maxWidth : dst.width - x - 20;
+    if (effectiveMaxWidth <= 0) return;
+
+    // Jika wrap=true, pecah teks menjadi baris
+    List<String> lines = wrap ? _wrapText(text, font, effectiveMaxWidth) : [text];
+
+    // Jika perlu auto scale dan baris pertama overflow, coba turunkan font
+    img.BitmapFont currentFont = font;
+    if (autoScale && lines.isNotEmpty && _isTextOverflow(lines.first, currentFont, effectiveMaxWidth)) {
+      currentFont = _getScaledFont(font, effectiveMaxWidth, lines.first);
+      // setelah scaling, ulang wrap jika perlu
+      if (wrap) {
+        lines = _wrapText(text, currentFont, effectiveMaxWidth);
+      }
+    }
+
+    // Potong jika melebihi maxLines
+    if (lines.length > maxLines) {
+      if (overflowAction == 'ellipsis') {
+        lines = lines.sublist(0, maxLines - 1);
+        lines.add('...');
+      } else {
+        lines = lines.sublist(0, maxLines);
+      }
+    }
+
+    // Hitung tinggi baris
+    final lineH = lineHeight ?? (currentFont.height + 4);
+    int currentY = y;
+
+    for (final line in lines) {
+      // Cek overflow vertikal
+      if (currentY + currentFont.height > dst.height) break;
+
+      // Gambar shadow jika diperlukan
+      if (enableShadow) {
+        img.drawString(dst, line, font: currentFont, x: x + 1, y: currentY + 1,
+            color: (color & 0x00FFFFFF) | 0x44000000); // shadow semi transparan
+      }
+      // Gambar teks utama
+      img.drawString(dst, line, font: currentFont, x: x, y: currentY, color: color);
+      currentY += lineH;
+    }
+  }
+
+  /// Memecah teks menjadi baris-baris berdasarkan lebar maksimum
+  List<String> _wrapText(String text, img.BitmapFont font, int maxWidth) {
+    final words = text.split(' ');
+    final lines = <String>[];
+    String currentLine = '';
+    for (final word in words) {
+      final testLine = currentLine.isEmpty ? word : '$currentLine $word';
+      if (font.getWidth(testLine) <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine.isNotEmpty) lines.add(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine.isNotEmpty) lines.add(currentLine);
+    return lines;
+  }
+
+  /// Cek apakah teks melebihi lebar maksimum
+  bool _isTextOverflow(String text, img.BitmapFont font, int maxWidth) {
+    return font.getWidth(text) > maxWidth;
+  }
+
+  /// Mendapatkan font dengan ukuran lebih kecil (hardcoded fallback)
+  img.BitmapFont _getScaledFont(img.BitmapFont original, int maxWidth, String text) {
+    // Coba ukuran font yang lebih kecil
+    if (original == img.arial24) {
+      if (img.arial14.getWidth(text) <= maxWidth) return img.arial14;
+      return img.arial12;
+    } else if (original == img.arial14) {
+      if (img.arial12.getWidth(text) <= maxWidth) return img.arial12;
+    }
+    // Fallback: tetap pakai original (tidak ada ukuran lebih kecil)
+    return original;
+  }
+
   // ─── CANVAS HELPERS ──────────────────────────────────────────────
   static void canvasDrawText(Canvas canvas, String text, {required double x, required double y, Color color = uiWhite, bool bold = false, double size = 14, double letterSpacing = 1.0}) {
     final tp = TextPainter(text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontFamily: 'Roboto', fontWeight: bold ? FontWeight.w700 : FontWeight.w400, letterSpacing: letterSpacing)), textDirection: TextDirection.ltr);

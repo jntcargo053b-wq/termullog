@@ -34,17 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeCamera();
     _loadRecentPhotos();
-  }
-  
-  Future<void> _initializeCamera() async {
-    try {
-      await CameraRegistry.initialize();
-      debugPrint('Camera initialized: ${CameraRegistry.cameras.length} cameras found');
-    } catch (e) {
-      debugPrint('Camera init error: $e');
-    }
   }
   
   Future<void> _loadRecentPhotos() async {
@@ -209,9 +199,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: InkWell(
                   onTap: () async {
                     HapticFeedback.mediumImpact();
+                    final cameras = CameraRegistry.cameras;
+                    if (cameras.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Kamera tidak tersedia')),
+                      );
+                      return;
+                    }
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const CameraScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => CameraScreen(cameras: cameras),
+                      ),
                     );
                     _refreshPhotos();
                   },

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/camera_registry.dart';
+import 'services/settings_cache.dart';
 import 'ui/app.dart';
 
 void main() async {
@@ -23,13 +24,15 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  // Load pengaturan dari SharedPreferences (cache)
+  await SettingsCache.preload();
+
   // Init kamera global
   try {
     CameraRegistry.cameras = await availableCameras();
     debugPrint('Camera initialized: ${CameraRegistry.cameras.length} cameras found');
   } catch (e) {
     debugPrint('Camera initialization failed: $e');
-    // Inisialisasi dengan list kosong agar tidak crash
     CameraRegistry.cameras = [];
   }
 

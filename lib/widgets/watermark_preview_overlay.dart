@@ -1,8 +1,8 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../core/constants.dart';
 import '../services/settings_cache.dart';
+import '../core/constants.dart';
 
 class WatermarkPreviewOverlay extends StatefulWidget {
   final Size previewSize;
@@ -73,52 +73,33 @@ class _WatermarkPreviewOverlayState extends State<WatermarkPreviewOverlay> {
   Widget build(BuildContext context) {
     if (_currentLayout == null) return const SizedBox.shrink();
 
-    switch (_currentLayout!) {
-      case WatermarkLayout.cinematic:
-        return CustomPaint(
-          size: widget.previewSize,
-          painter: CinematicPreviewPainter(
-            timestamp: widget.timestamp,
-            hasPosition: widget.hasPosition,
-            lat: widget.lat,
-            lon: widget.lon,
-            acc: widget.acc,
-            address: widget.address,
-            weather: widget.weather,
-            showWeather: _showWeather,
-            showAccuracy: _showAccuracy,
-            showAddress: _showAddress,
-            showCoordinates: _showCoordinates,
-            opacity: _opacity,
-            showBorder: _showBorder,
-            fontSize: _fontSize,
-          ),
-        );
-      default:
-        return CustomPaint(
-          size: widget.previewSize,
-          painter: MinimalPreviewPainter(
-            timestamp: widget.timestamp,
-            hasPosition: widget.hasPosition,
-            lat: widget.lat,
-            lon: widget.lon,
-            acc: widget.acc,
-            address: widget.address,
-            weather: widget.weather,
-            showWeather: _showWeather,
-            showAccuracy: _showAccuracy,
-            showAddress: _showAddress,
-            showCoordinates: _showCoordinates,
-            opacity: _opacity,
-            showBorder: _showBorder,
-            fontSize: _fontSize,
-          ),
-        );
-    }
+    // Untuk semua layout, kita gunakan painter CinematicPreviewPainter
+    // karena itu yang paling mendekati hasil akhir.
+    // Jika ingin sesuai layout yang dipilih, bisa ditambah switch, tapi untuk menjaga kualitas,
+    // kita paksa cinematic preview.
+    return CustomPaint(
+      size: widget.previewSize,
+      painter: CinematicPreviewPainter(
+        timestamp: widget.timestamp,
+        hasPosition: widget.hasPosition,
+        lat: widget.lat,
+        lon: widget.lon,
+        acc: widget.acc,
+        address: widget.address,
+        weather: widget.weather,
+        showWeather: _showWeather,
+        showAccuracy: _showAccuracy,
+        showAddress: _showAddress,
+        showCoordinates: _showCoordinates,
+        opacity: _opacity,
+        showBorder: _showBorder,
+        fontSize: _fontSize,
+      ),
+    );
   }
 }
 
-// ─── PAINTER UNTUK LAYOUT CINEMATIC ────────────────────────────────────
+// Painter untuk gaya Cinematic (mirip dengan layout asli)
 class CinematicPreviewPainter extends CustomPainter {
   final DateTime timestamp;
   final bool hasPosition;
@@ -155,13 +136,15 @@ class CinematicPreviewPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double scale = size.width / 1080;
+    final double margin = 12 * scale;
     final double padX = 24 * scale;
     final double padY = 20 * scale;
     final double rowH = 32 * scale;
     final double smallRowH = 24 * scale;
-    final double margin = 12 * scale;
     final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
+    final double radius = 16 * scale;
 
+    // Hitung jumlah baris
     int rowCount = 2;
     if (showCoordinates && hasPosition) rowCount++;
     if (showAccuracy && hasPosition) rowCount++;
@@ -173,9 +156,10 @@ class CinematicPreviewPainter extends CustomPainter {
     final double x0 = margin;
     final double panelW = size.width - margin * 2;
 
-    // Background
+    // Background rounded
+    final RRect bgRect = RRect.fromRectAndRadius(Rect.fromLTWH(x0, y0, panelW, panelH), Radius.circular(radius));
     final Paint bgPaint = Paint()..color = Colors.black.withOpacity(opacity);
-    canvas.drawRect(Rect.fromLTWH(x0, y0, panelW, panelH), bgPaint);
+    canvas.drawRRect(bgRect, bgPaint);
 
     // Border
     if (showBorder) {
@@ -183,11 +167,12 @@ class CinematicPreviewPainter extends CustomPainter {
         ..color = Colors.white.withOpacity(0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1;
-      canvas.drawRect(Rect.fromLTWH(x0, y0, panelW, panelH), borderPaint);
+      canvas.drawRRect(bgRect, borderPaint);
     }
 
     double cy = y0 + padY;
 
+    // Helper teks dengan shadow
     void drawText(String text, double x, double y, Color color, {bool bold = false, double size = 16}) {
       final tp = TextPainter(
         text: TextSpan(
@@ -197,50 +182,50 @@ class CinematicPreviewPainter extends CustomPainter {
             fontSize: size,
             fontWeight: bold ? FontWeight.bold : FontWeight.normal,
             fontFamily: 'Roboto',
+            shadows: const [Shadow(offset: Offset(1, 1), color: Colors.black54)],
           ),
         ),
         textDirection: ui.TextDirection.ltr,
       );
       tp.layout();
-      // Shadow
-      final shadowPainter = TextPainter(
-        text: TextSpan(text: text, style: TextStyle(color: Colors.black54, fontSize: size, fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
-        textDirection: ui.TextDirection.ltr,
-      );
-      shadowPainter.layout();
-      shadowPainter.paint(canvas, Offset(x + 1, y + 1));
       tp.paint(canvas, Offset(x, y));
     }
 
-    final dateStr = DateFormat('EEE, dd MMM yyyy').format(timestamp);
-    drawText(dateStr, x0 + padX, cy, Colors.white, size: 16 * fsMultiplier);
+    // Tanggal
+    drawText(DateFormat('EEE, dd MMM yyyy').format(timestamp), x0 + padX, cy, Colors.white, size: 16 * fsMultiplier);
     cy += rowH;
 
-    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
-    drawText(timeStr, x0 + padX, cy, Colors.white, bold: true, size: 22 * fsMultiplier);
+    // Waktu
+    drawText(DateFormat('HH:mm:ss').format(timestamp), x0 + padX, cy, Colors.white, bold: true, size: 22 * fsMultiplier);
     cy += rowH;
 
+    // Garis tipis
+    final Paint linePaint = Paint()..color = Colors.white24..strokeWidth = 1;
+    canvas.drawLine(Offset(x0 + padX, cy), Offset(x0 + panelW - padX, cy), linePaint);
+    cy += 12 * scale;
+
+    // Koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord = '${lat!.toStringAsFixed(5)}°, ${lon!.toStringAsFixed(5)}°';
-      drawText(coord, x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
+      drawText('${lat!.toStringAsFixed(5)}°, ${lon!.toStringAsFixed(5)}°', x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
       cy += smallRowH;
     }
 
+    // Akurasi
     if (showAccuracy && hasPosition && acc != null) {
-      final accStr = 'Akurasi ±${acc!.toStringAsFixed(1)}m';
-      drawText(accStr, x0 + padX, cy, Colors.grey.shade400, size: 13 * fsMultiplier);
+      drawText('Akurasi ±${acc!.toStringAsFixed(1)}m', x0 + padX, cy, Colors.grey[400]!, size: 13 * fsMultiplier);
       cy += smallRowH;
     }
 
+    // Alamat (wrap)
     if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) {
-      final maxChars = 45;
-      final lines = _wrapText(address, maxChars);
+      final lines = _wrapText(address, 45);
       for (int i = 0; i < lines.length && i < 2; i++) {
         drawText(lines[i], x0 + padX, cy, Colors.white70, size: 13 * fsMultiplier);
         cy += smallRowH;
       }
     }
 
+    // Cuaca
     if (showWeather && weather.isNotEmpty) {
       drawText(weather, x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
     }
@@ -263,92 +248,19 @@ class CinematicPreviewPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(CinematicPreviewPainter oldDelegate) {
-    return oldDelegate.timestamp != timestamp ||
-        oldDelegate.hasPosition != hasPosition ||
-        oldDelegate.lat != lat ||
-        oldDelegate.lon != lon ||
-        oldDelegate.acc != acc ||
-        oldDelegate.address != address ||
-        oldDelegate.weather != weather ||
-        oldDelegate.showWeather != showWeather ||
-        oldDelegate.showAccuracy != showAccuracy ||
-        oldDelegate.showAddress != showAddress ||
-        oldDelegate.showCoordinates != showCoordinates ||
-        oldDelegate.opacity != opacity ||
-        oldDelegate.showBorder != showBorder ||
-        oldDelegate.fontSize != fontSize;
-  }
-}
-
-// ─── PAINTER MINIMAL (FALLBACK) ──────────────────────────────────────
-class MinimalPreviewPainter extends CustomPainter {
-  final DateTime timestamp;
-  final bool hasPosition;
-  final double? lat;
-  final double? lon;
-  final double? acc;
-  final String address;
-  final String weather;
-  final bool showWeather;
-  final bool showAccuracy;
-  final bool showAddress;
-  final bool showCoordinates;
-  final double opacity;
-  final bool showBorder;
-  final String fontSize;
-
-  const MinimalPreviewPainter({
-    required this.timestamp,
-    required this.hasPosition,
-    this.lat,
-    this.lon,
-    this.acc,
-    required this.address,
-    required this.weather,
-    required this.showWeather,
-    required this.showAccuracy,
-    required this.showAddress,
-    required this.showCoordinates,
-    required this.opacity,
-    required this.showBorder,
-    required this.fontSize,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double scale = size.width / 1080;
-    final double pad = 16 * scale;
-    final double rowH = 28 * scale;
-    final double panelH = 80 * scale;
-    final double y0 = size.height - panelH - 20;
-
-    final Paint bgPaint = Paint()..color = Colors.black.withOpacity(opacity);
-    canvas.drawRect(Rect.fromLTWH(0, y0, size.width, panelH), bgPaint);
-
-    if (showBorder) {
-      final Paint borderPaint = Paint()..color = Colors.white30..style = PaintingStyle.stroke..strokeWidth = 1;
-      canvas.drawRect(Rect.fromLTWH(0, y0, size.width, panelH), borderPaint);
-    }
-
-    void drawText(String text, double x, double y, Color color, {double size = 16}) {
-      final tp = TextPainter(
-        text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontFamily: 'Roboto')),
-        textDirection: ui.TextDirection.ltr,
-      );
-      tp.layout();
-      tp.paint(canvas, Offset(x, y));
-    }
-
-    double y = y0 + pad;
-    final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp);
-    drawText(dateStr, pad, y, Colors.white, size: 14 * scale);
-    y += rowH;
-    if (showCoordinates && hasPosition && lat != null) {
-      drawText('${lat!.toStringAsFixed(4)}°, ${lon!.toStringAsFixed(4)}°', pad, y, Colors.white70, size: 12 * scale);
-    }
-  }
-
-  @override
-  bool shouldRepaint(MinimalPreviewPainter oldDelegate) => true;
+  bool shouldRepaint(CinematicPreviewPainter oldDelegate) =>
+      oldDelegate.timestamp != timestamp ||
+      oldDelegate.hasPosition != hasPosition ||
+      oldDelegate.lat != lat ||
+      oldDelegate.lon != lon ||
+      oldDelegate.acc != acc ||
+      oldDelegate.address != address ||
+      oldDelegate.weather != weather ||
+      oldDelegate.showWeather != showWeather ||
+      oldDelegate.showAccuracy != showAccuracy ||
+      oldDelegate.showAddress != showAddress ||
+      oldDelegate.showCoordinates != showCoordinates ||
+      oldDelegate.opacity != opacity ||
+      oldDelegate.showBorder != showBorder ||
+      oldDelegate.fontSize != fontSize;
 }

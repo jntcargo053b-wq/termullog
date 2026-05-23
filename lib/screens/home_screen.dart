@@ -68,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (ms != null) timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
             }
             
-            // Gunakan warna default (biru)
+            // Warna dominan rata-rata (fallback)
             final avgColor = 0xFF1B4F72;
             
             photos.add({
@@ -79,8 +79,8 @@ class _HomeScreenState extends State<HomeScreen> {
             });
             total++;
             
-            // Extract accuracy from filename or default
-            totalAccuracy += 10; // placeholder
+            // Akurasi sementara (akan diambil dari metadata nanti)
+            totalAccuracy += 10;
           }
         } catch (e) {
           debugPrint('Error loading photo: $e');

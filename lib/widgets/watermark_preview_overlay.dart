@@ -95,7 +95,6 @@ class _WatermarkPreviewOverlayState extends State<WatermarkPreviewOverlay> {
           ),
         );
       default:
-        // Fallback: layout minimal sederhana
         return CustomPaint(
           size: widget.previewSize,
           painter: MinimalPreviewPainter(
@@ -200,13 +199,13 @@ class CinematicPreviewPainter extends CustomPainter {
             fontFamily: 'Roboto',
           ),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       tp.layout();
-      // Shadow sederhana
+      // Shadow
       final shadowPainter = TextPainter(
         text: TextSpan(text: text, style: TextStyle(color: Colors.black54, fontSize: size, fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       shadowPainter.layout();
       shadowPainter.paint(canvas, Offset(x + 1, y + 1));
@@ -222,13 +221,13 @@ class CinematicPreviewPainter extends CustomPainter {
     cy += rowH;
 
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord = '${lat.toStringAsFixed(5)}°, ${lon.toStringAsFixed(5)}°';
+      final coord = '${lat!.toStringAsFixed(5)}°, ${lon!.toStringAsFixed(5)}°';
       drawText(coord, x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
       cy += smallRowH;
     }
 
     if (showAccuracy && hasPosition && acc != null) {
-      final accStr = 'Akurasi ±${acc.toStringAsFixed(1)}m';
+      final accStr = 'Akurasi ±${acc!.toStringAsFixed(1)}m';
       drawText(accStr, x0 + padX, cy, Colors.grey.shade400, size: 13 * fsMultiplier);
       cy += smallRowH;
     }
@@ -321,7 +320,6 @@ class MinimalPreviewPainter extends CustomPainter {
     final double scale = size.width / 1080;
     final double pad = 16 * scale;
     final double rowH = 28 * scale;
-    final double smallRowH = 22 * scale;
     final double panelH = 80 * scale;
     final double y0 = size.height - panelH - 20;
 
@@ -336,7 +334,7 @@ class MinimalPreviewPainter extends CustomPainter {
     void drawText(String text, double x, double y, Color color, {double size = 16}) {
       final tp = TextPainter(
         text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontFamily: 'Roboto')),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       tp.layout();
       tp.paint(canvas, Offset(x, y));
@@ -347,7 +345,7 @@ class MinimalPreviewPainter extends CustomPainter {
     drawText(dateStr, pad, y, Colors.white, size: 14 * scale);
     y += rowH;
     if (showCoordinates && hasPosition && lat != null) {
-      drawText('${lat.toStringAsFixed(4)}°, ${lon!.toStringAsFixed(4)}°', pad, y, Colors.white70, size: 12 * scale);
+      drawText('${lat!.toStringAsFixed(4)}°, ${lon!.toStringAsFixed(4)}°', pad, y, Colors.white70, size: 12 * scale);
     }
   }
 

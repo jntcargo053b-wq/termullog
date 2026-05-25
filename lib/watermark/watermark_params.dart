@@ -1,3 +1,4 @@
+// lib/watermark/watermark_params.dart
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -26,6 +27,7 @@ class WatermarkParams {
   final int imageQuality;
   final String dateFormat;
   final String timeFormat;
+  final double fontScale; // 🔥 baru
 
   const WatermarkParams({
     required this.transferable,
@@ -50,6 +52,7 @@ class WatermarkParams {
     this.imageQuality = 90,
     this.dateFormat = 'dd MMM yyyy',
     this.timeFormat = 'HH:mm:ss',
+    this.fontScale = 1.0, // 🔥 default
   });
 
   /// Serialisasi ke Map untuk dikirim ke isolate
@@ -77,6 +80,7 @@ class WatermarkParams {
       'imageQuality': imageQuality,
       'dateFormat': dateFormat,
       'timeFormat': timeFormat,
+      'fontScale': fontScale, // 🔥 tambahan
     };
   }
 
@@ -105,6 +109,7 @@ class WatermarkParams {
       imageQuality: map['imageQuality'] as int? ?? 90,
       dateFormat: map['dateFormat'] as String? ?? 'dd MMM yyyy',
       timeFormat: map['timeFormat'] as String? ?? 'HH:mm:ss',
+      fontScale: (map['fontScale'] as num?)?.toDouble() ?? 1.0,
     );
   }
 }

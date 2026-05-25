@@ -218,18 +218,28 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // ==================== CAPTURE ====================
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
+
+    // 🔥 Cegah capture jika GPS/alamat belum siap
+    if (_isLoadingLocation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tunggu hingga GPS mendapatkan lokasi...')),
+      );
+      return;
+    }
+
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
       debugPrint('CAMERA NOT READY');
       return;
     }
+
     setState(() => _isCapturing = true);
 
     try {
       final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 20));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
-      // 🔥 Gunakan fontScale dari posisi watermark yang tersimpan
+      // Gunakan fontScale dari posisi watermark yang tersimpan
       final finalBytes = await WatermarkEngine.process(
         imageBytes: rawBytes,
         timestamp: _currentTimestamp,
@@ -252,7 +262,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         imageQuality: 90,
         dateFormat: 'dd MMM yyyy',
         timeFormat: 'HH:mm:ss',
-        fontScale: _watermarkPosition.fontScale, // 🔥 parameter wajib
+        fontScale: _watermarkPosition.fontScale,
       );
 
       final dir = await getTemporaryDirectory();
@@ -336,14 +346,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: _takePhoto,
+                onTap: _isLoadingLocation ? null : _takePhoto,
                 child: Container(
                   width: 78,
                   height: 78,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 5),
-                    color: Colors.white24,
+                    border: Border.all(
+                      color: _isLoadingLocation ? Colors.grey : Colors.white,
+                      width: 5,
+                    ),
+                    color: _isLoadingLocation ? Colors.grey.withOpacity(0.3) : Colors.white24,
                   ),
                   child: _isCapturing
                       ? const Padding(

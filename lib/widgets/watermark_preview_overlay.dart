@@ -57,6 +57,9 @@ class _WatermarkPreviewOverlayState extends State<WatermarkPreviewOverlay> {
     final fontSizeDouble = await SettingsCache.fontSize;
     final fontSizeStr = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
 
+    // Cek mounted sebelum setState
+    if (!mounted) return;
+
     setState(() {
       _currentLayout = layout;
       _showWeather = showWeather;
@@ -73,10 +76,7 @@ class _WatermarkPreviewOverlayState extends State<WatermarkPreviewOverlay> {
   Widget build(BuildContext context) {
     if (_currentLayout == null) return const SizedBox.shrink();
 
-    // Untuk semua layout, kita gunakan painter CinematicPreviewPainter
-    // karena itu yang paling mendekati hasil akhir.
-    // Jika ingin sesuai layout yang dipilih, bisa ditambah switch, tapi untuk menjaga kualitas,
-    // kita paksa cinematic preview.
+    // Gunakan CinematicPreviewPainter yang sudah aman null
     return CustomPaint(
       size: widget.previewSize,
       painter: CinematicPreviewPainter(
@@ -145,9 +145,9 @@ class CinematicPreviewPainter extends CustomPainter {
     final double radius = 16 * scale;
 
     // Hitung jumlah baris
-    int rowCount = 2;
-    if (showCoordinates && hasPosition) rowCount++;
-    if (showAccuracy && hasPosition) rowCount++;
+    int rowCount = 2; // tanggal & waktu
+    if (showCoordinates && hasPosition && lat != null && lon != null) rowCount++;
+    if (showAccuracy && hasPosition && acc != null) rowCount++;
     if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) rowCount += 2;
     if (showWeather && weather.isNotEmpty) rowCount++;
 
@@ -204,7 +204,7 @@ class CinematicPreviewPainter extends CustomPainter {
     canvas.drawLine(Offset(x0 + padX, cy), Offset(x0 + panelW - padX, cy), linePaint);
     cy += 12 * scale;
 
-    // Koordinat
+    // Koordinat (sudah aman karena sudah dicek != null)
     if (showCoordinates && hasPosition && lat != null && lon != null) {
       drawText('${lat!.toStringAsFixed(5)}°, ${lon!.toStringAsFixed(5)}°', x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
       cy += smallRowH;

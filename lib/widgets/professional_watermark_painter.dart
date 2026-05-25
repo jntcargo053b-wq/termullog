@@ -1,7 +1,7 @@
-// lib/widgets/professional_watermark_painter.dart
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../core/constants.dart';
 
 class ProfessionalWatermarkPainter extends CustomPainter {
   final DateTime timestamp;
@@ -17,9 +17,10 @@ class ProfessionalWatermarkPainter extends CustomPainter {
   final bool showAddress;
   final bool showCoordinates;
 
-  final double opacity; // parameter untuk card, tidak digunakan dalam painter tapi biarkan
+  final double opacity;
   final bool showBorder;
-  final String fontSize; // 'small', 'normal', 'large'
+  final String fontSize;
+  final WatermarkLayout layout;
 
   const ProfessionalWatermarkPainter({
     required this.timestamp,
@@ -36,27 +37,19 @@ class ProfessionalWatermarkPainter extends CustomPainter {
     required this.opacity,
     required this.showBorder,
     required this.fontSize,
+    required this.layout,
   });
 
-  /// Menghitung tinggi yang dibutuhkan berdasarkan konten (sinkron)
   double computeHeightSync(Size canvasSize) {
     final baseWidth = 320.0;
     final scale = (canvasSize.width / baseWidth).clamp(0.75, 1.4);
     final padX = 20.0 * scale;
     double cy = 18 * scale;
-
-    final fsMultiplier = fontSize == 'small'
-        ? 0.82
-        : fontSize == 'large'
-            ? 1.22
-            : 1.0;
+    final fsMultiplier = fontSize == 'small' ? 0.82 : fontSize == 'large' ? 1.22 : 1.0;
 
     double simulateTextHeight(String text, double fontSizePt, int maxLines) {
       final tp = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(fontSize: fontSizePt, height: 1.25),
-        ),
+        text: TextSpan(text: text, style: TextStyle(fontSize: fontSizePt, height: 1.25)),
         textDirection: ui.TextDirection.ltr,
         maxLines: maxLines,
       );
@@ -65,60 +58,50 @@ class ProfessionalWatermarkPainter extends CustomPainter {
     }
 
     // Date
-    double dateHeight = simulateTextHeight(
-        DateFormat('EEE, dd MMM yyyy').format(timestamp), 14 * fsMultiplier, 1);
-    cy += dateHeight + (8 * scale);
-
+    cy += simulateTextHeight(DateFormat('EEE, dd MMM yyyy').format(timestamp), 14 * fsMultiplier, 1) + (8 * scale);
     // Time
-    double timeHeight = simulateTextHeight(
-        DateFormat('HH:mm:ss').format(timestamp), 29 * fsMultiplier, 1);
-    cy += timeHeight + (8 * scale);
+    cy += simulateTextHeight(DateFormat('HH:mm:ss').format(timestamp), 29 * fsMultiplier, 1) + (8 * scale);
+    cy += 18 * scale; // line space
 
-    // Line space
-    cy += 18 * scale;
+    if (showCoordinates && hasPosition && lat != null && lon != null)
+      cy += simulateTextHeight('📍 ${lat!.toStringAsFixed(5)}, ${lon!.toStringAsFixed(5)}', 12.5 * fsMultiplier, 1) + (8 * scale);
+    if (showAccuracy && hasPosition && acc != null)
+      cy += simulateTextHeight('🎯 Accuracy ±${acc!.toStringAsFixed(1)}m', 11.5 * fsMultiplier, 1) + (8 * scale);
+    if (showAddress && address.isNotEmpty)
+      cy += simulateTextHeight('🏠 $address', 12.5 * fsMultiplier, 3) + (8 * scale);
+    if (showWeather && weather.isNotEmpty)
+      cy += simulateTextHeight('☁ $weather', 12.5 * fsMultiplier, 2) + (8 * scale);
 
-    // Coordinate
-    if (showCoordinates && hasPosition && lat != null && lon != null) {
-      double coordHeight = simulateTextHeight(
-          '📍 ${lat!.toStringAsFixed(5)}, ${lon!.toStringAsFixed(5)}',
-          12.5 * fsMultiplier, 1);
-      cy += coordHeight + (8 * scale);
-    }
-
-    // Accuracy
-    if (showAccuracy && hasPosition && acc != null) {
-      double accHeight = simulateTextHeight(
-          '🎯 Accuracy ±${acc!.toStringAsFixed(1)}m', 11.5 * fsMultiplier, 1);
-      cy += accHeight + (8 * scale);
-    }
-
-    // Address
-    if (showAddress && address.isNotEmpty) {
-      double addrHeight = simulateTextHeight('🏠 $address', 12.5 * fsMultiplier, 3);
-      cy += addrHeight + (8 * scale);
-    }
-
-    // Weather
-    if (showWeather && weather.isNotEmpty) {
-      double weatherHeight = simulateTextHeight('☁ $weather', 12.5 * fsMultiplier, 2);
-      cy += weatherHeight + (8 * scale);
-    }
-
-    return cy + 16; // extra bottom padding
+    return cy + 16;
   }
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Tentukan radius berdasarkan layout (hanya untuk referensi, tidak digunakan karena card sudah fixed)
+    double effectiveOpacity = opacity;
+    switch (layout) {
+      case WatermarkLayout.modern:
+      case WatermarkLayout.gpsCard:
+        effectiveOpacity = 0.82;
+        break;
+      case WatermarkLayout.minimal:
+        effectiveOpacity = 0.72;
+        break;
+      case WatermarkLayout.hud:
+        effectiveOpacity = 0.55;
+        break;
+      case WatermarkLayout.cinematic:
+      case WatermarkLayout.cinematicV2:
+        effectiveOpacity = 0.90;
+        break;
+      default:
+        effectiveOpacity = opacity;
+    }
+
     final baseWidth = 320.0;
     final scale = (size.width / baseWidth).clamp(0.75, 1.4);
     final padX = 20.0 * scale;
-
-    final fsMultiplier = fontSize == 'small'
-        ? 0.82
-        : fontSize == 'large'
-            ? 1.22
-            : 1.0;
-
+    final fsMultiplier = fontSize == 'small' ? 0.82 : fontSize == 'large' ? 1.22 : 1.0;
     double cy = 18 * scale;
 
     void drawText({
@@ -139,9 +122,7 @@ class ProfessionalWatermarkPainter extends CustomPainter {
             height: 1.25,
             letterSpacing: spacing,
             fontFamily: 'Roboto',
-            shadows: const [
-              Shadow(blurRadius: 3, color: Colors.black54, offset: Offset(1, 1))
-            ],
+            shadows: const [Shadow(blurRadius: 3, color: Colors.black54, offset: Offset(1, 1))],
           ),
         ),
         textDirection: ui.TextDirection.ltr,
@@ -154,71 +135,25 @@ class ProfessionalWatermarkPainter extends CustomPainter {
     }
 
     // Date
-    drawText(
-      text: DateFormat('EEE, dd MMM yyyy').format(timestamp),
-      fontSizePt: 14 * fsMultiplier,
-      color: Colors.white70,
-      spacing: 0.3,
-    );
-
+    drawText(text: DateFormat('EEE, dd MMM yyyy').format(timestamp), fontSizePt: 14 * fsMultiplier, color: Colors.white70, spacing: 0.3);
     // Time
-    drawText(
-      text: DateFormat('HH:mm:ss').format(timestamp),
-      fontSizePt: 29 * fsMultiplier,
-      color: Colors.white,
-      bold: true,
-      spacing: 0.9,
-    );
-
-    // Garis pemisah
-    final linePaint = Paint()
-      ..color = Colors.white.withOpacity(0.10)
-      ..strokeWidth = 1;
-    canvas.drawLine(
-      Offset(padX, cy),
-      Offset(size.width - padX, cy),
-      linePaint,
-    );
+    drawText(text: DateFormat('HH:mm:ss').format(timestamp), fontSizePt: 29 * fsMultiplier, color: Colors.white, bold: true, spacing: 0.9);
+    // Line
+    final linePaint = Paint()..color = Colors.white.withOpacity(0.10)..strokeWidth = 1;
+    canvas.drawLine(Offset(padX, cy), Offset(size.width - padX, cy), linePaint);
     cy += 18 * scale;
 
-    // Coordinate
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      drawText(
-        text: '📍 ${lat!.toStringAsFixed(5)}, ${lon!.toStringAsFixed(5)}',
-        fontSizePt: 12.5 * fsMultiplier,
-        color: const Color(0xFF64B5F6),
-        maxLines: 1,
-      );
+      drawText(text: '📍 ${lat!.toStringAsFixed(5)}, ${lon!.toStringAsFixed(5)}', fontSizePt: 12.5 * fsMultiplier, color: const Color(0xFF64B5F6), maxLines: 1);
     }
-
-    // Accuracy
     if (showAccuracy && hasPosition && acc != null) {
-      drawText(
-        text: '🎯 Accuracy ±${acc!.toStringAsFixed(1)}m',
-        fontSizePt: 11.5 * fsMultiplier,
-        color: Colors.white60,
-        maxLines: 1,
-      );
+      drawText(text: '🎯 Accuracy ±${acc!.toStringAsFixed(1)}m', fontSizePt: 11.5 * fsMultiplier, color: Colors.white60, maxLines: 1);
     }
-
-    // Address
     if (showAddress && address.isNotEmpty) {
-      drawText(
-        text: '🏠 $address',
-        fontSizePt: 12.5 * fsMultiplier,
-        color: Colors.white70,
-        maxLines: 3,
-      );
+      drawText(text: '🏠 $address', fontSizePt: 12.5 * fsMultiplier, color: Colors.white70, maxLines: 3);
     }
-
-    // Weather
     if (showWeather && weather.isNotEmpty) {
-      drawText(
-        text: '☁ $weather',
-        fontSizePt: 12.5 * fsMultiplier,
-        color: const Color(0xFF4FC3F7),
-        maxLines: 2,
-      );
+      drawText(text: '☁ $weather', fontSizePt: 12.5 * fsMultiplier, color: const Color(0xFF4FC3F7), maxLines: 2);
     }
   }
 
@@ -234,6 +169,7 @@ class ProfessionalWatermarkPainter extends CustomPainter {
         old.showAccuracy != showAccuracy ||
         old.showAddress != showAddress ||
         old.showCoordinates != showCoordinates ||
-        old.fontSize != fontSize;
+        old.fontSize != fontSize ||
+        old.layout != layout;
   }
 }

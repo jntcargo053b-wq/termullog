@@ -137,6 +137,58 @@ class WatermarkEngine {
     }
   }
 
+  /// Helper method untuk memudahkan pemanggilan dari camera_screen
+  static Future<Uint8List> process({
+    required Uint8List imageBytes,
+    required DateTime timestamp,
+    required WatermarkLayout layout,
+    required double? lat,
+    required double? lon,
+    required double? acc,
+    required String address,
+    required String weather,
+    required bool showWeather,
+    required bool showAccuracy,
+    required bool showAddress,
+    required bool showCoordinates,
+    required double opacity,
+    required bool showBorder,
+    required String fontSize,
+    required bool showMiniMap,
+    required String mapSize,
+    required int mapZoomLevel,
+    required int imageQuality,
+    required String dateFormat,
+    required String timeFormat,
+    Uint8List? mapBytes,
+  }) async {
+    final params = createParams(
+      imageBytes: imageBytes,
+      timestamp: timestamp,
+      layoutIndex: layout.index,
+      address: address,
+      weather: weather,
+      showWeather: showWeather,
+      showAccuracy: showAccuracy,
+      showAddress: showAddress,
+      showCoordinates: showCoordinates,
+      opacity: opacity,
+      showBorder: showBorder,
+      fontSize: fontSize,
+      showMiniMap: showMiniMap,
+      lat: lat,
+      lon: lon,
+      acc: acc,
+      mapBytes: mapBytes,
+      mapSize: mapSize,
+      mapZoomLevel: mapZoomLevel,
+      imageQuality: imageQuality,
+      dateFormat: dateFormat,
+      timeFormat: timeFormat,
+    );
+    return await applyFromMapAsync(params.toMap());
+  }
+
   static WatermarkParams createParams({
     required Uint8List imageBytes,
     required DateTime timestamp,

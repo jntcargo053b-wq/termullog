@@ -1,3 +1,4 @@
+// lib/widgets/draggable_watermark_overlay.dart
 import 'package:flutter/material.dart';
 import '../models/watermark_position.dart';
 import 'professional_watermark_card.dart';
@@ -44,8 +45,7 @@ class DraggableWatermarkOverlay extends StatefulWidget {
   });
 
   @override
-  State<DraggableWatermarkOverlay> createState() =>
-      _DraggableWatermarkOverlayState();
+  State<DraggableWatermarkOverlay> createState() => _DraggableWatermarkOverlayState();
 }
 
 class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> {
@@ -66,31 +66,34 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    // Hitung tinggi painter secara dinamis
-    final double painterHeight = ProfessionalWatermarkPainter.computeHeight(
+    // Buat painter dummy untuk hitung tinggi
+    final dummyPainter = ProfessionalWatermarkPainter(
+      timestamp: widget.timestamp,
       hasPosition: widget.hasPosition,
-      showCoordinates: widget.showCoordinates,
+      lat: widget.lat,
+      lon: widget.lon,
+      acc: widget.acc,
+      address: widget.address,
+      weather: widget.weather,
+      showWeather: widget.showWeather,
       showAccuracy: widget.showAccuracy,
       showAddress: widget.showAddress,
-      address: widget.address,
-      showWeather: widget.showWeather,
-      weather: widget.weather,
+      showCoordinates: widget.showCoordinates,
+      opacity: widget.opacity,
+      showBorder: widget.showBorder,
       fontSize: widget.fontSize,
     );
-
-    final cardWidth = 320.0; // lebar tetap card
-    final cardHeight = painterHeight;
+    final double painterHeight = dummyPainter.computeHeightSync(Size(320, 400));
+    final double cardWidth = 320.0;
+    final double cardHeight = painterHeight;
 
     final screenWidth = widget.previewSize.width;
     final screenHeight = widget.previewSize.height;
 
-    // Batas agar card tidak keluar layar (dengan margin kecil)
-    final maxLeft = screenWidth - cardWidth;
-    final maxTop = screenHeight - cardHeight;
     double left = screenWidth * _position.x;
     double top = screenHeight * _position.y;
-    left = left.clamp(0.0, maxLeft);
-    top = top.clamp(0.0, maxTop);
+    left = left.clamp(0.0, screenWidth - cardWidth * _position.scale);
+    top = top.clamp(0.0, screenHeight - cardHeight * _position.scale);
 
     return Positioned(
       left: left,
@@ -99,8 +102,8 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> {
         onPanUpdate: (details) {
           double newLeft = left + details.delta.dx;
           double newTop = top + details.delta.dy;
-          newLeft = newLeft.clamp(0.0, maxLeft);
-          newTop = newTop.clamp(0.0, maxTop);
+          newLeft = newLeft.clamp(0.0, screenWidth - cardWidth * _position.scale);
+          newTop = newTop.clamp(0.0, screenHeight - cardHeight * _position.scale);
           final newX = newLeft / screenWidth;
           final newY = newTop / screenHeight;
           _updatePosition(_position.copyWith(x: newX, y: newY));

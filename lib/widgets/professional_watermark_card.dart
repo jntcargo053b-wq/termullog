@@ -1,4 +1,3 @@
-// lib/widgets/professional_watermark_card.dart
 import 'package:flutter/material.dart';
 
 class ProfessionalWatermarkCard extends StatelessWidget {

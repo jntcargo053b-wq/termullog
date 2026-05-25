@@ -33,6 +33,9 @@ class LayoutCinematic extends WatermarkLayoutBase {
     double opacity = 0.85,
     bool showBorder = true,
     String fontSize = 'normal',
+    String mapSize = 'medium',
+    String dateFormat = 'dd MMM yyyy',
+    String timeFormat = 'HH:mm:ss',
   }) {
     final double scale = (src.width / 1080).clamp(0.7, 2.0);
     final int mapH = (120 * scale).round();
@@ -99,7 +102,7 @@ class LayoutCinematic extends WatermarkLayoutBase {
       }
     }
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      img.drawString(src, '${lat.toStringAsFixed(2)}°, ${lon.toStringAsFixed(2)}°',
+      img.drawString(src, '${lat.toStringAsFixed(5)}°, ${lon.toStringAsFixed(5)}°',
           font: fontSmall, x: cardX + padX, y: cy, color: WatermarkLayoutBase.blue);
     }
     return WatermarkLayoutBase.encodeJpg(src);

@@ -23,6 +23,9 @@ class WatermarkParams {
   final double? acc;
   final String mapSize;
   final int mapZoomLevel;
+  final int imageQuality;
+  final String dateFormat;
+  final String timeFormat;
 
   const WatermarkParams({
     required this.transferable,
@@ -44,6 +47,9 @@ class WatermarkParams {
     this.acc,
     this.mapSize = 'medium',
     this.mapZoomLevel = 16,
+    this.imageQuality = 90,
+    this.dateFormat = 'dd MMM yyyy',
+    this.timeFormat = 'HH:mm:ss',
   });
 
   /// Serialisasi ke Map untuk dikirim ke isolate
@@ -68,6 +74,9 @@ class WatermarkParams {
       'acc': acc,
       'mapSize': mapSize,
       'mapZoomLevel': mapZoomLevel,
+      'imageQuality': imageQuality,
+      'dateFormat': dateFormat,
+      'timeFormat': timeFormat,
     };
   }
 
@@ -93,6 +102,9 @@ class WatermarkParams {
       acc: map['acc'] as double?,
       mapSize: map['mapSize'] as String? ?? 'medium',
       mapZoomLevel: map['mapZoomLevel'] as int? ?? 16,
+      imageQuality: map['imageQuality'] as int? ?? 90,
+      dateFormat: map['dateFormat'] as String? ?? 'dd MMM yyyy',
+      timeFormat: map['timeFormat'] as String? ?? 'HH:mm:ss',
     );
   }
 }

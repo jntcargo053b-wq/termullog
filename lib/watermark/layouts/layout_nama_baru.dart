@@ -36,6 +36,9 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
     double opacity = 0.85,
     bool showBorder = true,
     String fontSize = 'normal',
+    String mapSize = 'medium',
+    String dateFormat = 'dd MMM yyyy',
+    String timeFormat = 'HH:mm:ss',
   }) {
     final bool isTop = false;
     final int panelH = (address.length > 70) ? 165 : 140;
@@ -44,7 +47,7 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
 
     final int w = src.width;
     final double scale = (src.width / 1080).clamp(0.85, 1.3);
-    final int mapSz = (_mapSz(showMiniMap, mapBytes) * scale).round();
+    final int mapSz = (_mapSz(showMiniMap, mapBytes, mapSize) * scale).round();
 
     _gradientBg(src, y0: y0, w: w, panelH: panelH, isTop: isTop, opacity: opacity);
 
@@ -165,8 +168,10 @@ class LayoutNamaBaru extends WatermarkLayoutBase {
     } catch (_) {}
   }
 
-  int _mapSz(bool showMiniMap, Uint8List? mapBytes) {
+  int _mapSz(bool showMiniMap, Uint8List? mapBytes, String mapSize) {
     if (!showMiniMap || mapBytes == null || mapBytes.isEmpty) return 0;
+    if (mapSize == 'small') return 70;
+    if (mapSize == 'large') return 130;
     return 100;
   }
 

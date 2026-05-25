@@ -31,6 +31,9 @@ class LayoutSidePanel extends WatermarkLayoutBase {
     double opacity = 0.85,
     bool showBorder = true,
     String fontSize = 'normal',
+    String mapSize = 'medium',
+    String dateFormat = 'dd MMM yyyy',
+    String timeFormat = 'HH:mm:ss',
   }) {
     final font = fontSize == 'small' ? img.arial14 : fontSize == 'large' ? img.arial24 : img.arial24;
 
@@ -83,9 +86,11 @@ class LayoutSidePanel extends WatermarkLayoutBase {
   }
 
   void _drawCentered(img.Image src, String text, img.BitmapFont font, int panelW, int y, img.Color color) {
-    final textW = text.length * 12;
-    final x = (panelW - textW) ~/ 2;
-    if (x > 0) {
+    // arial24: avg char width ~14px (was wrongly 12, causing left-shift)
+    final textW = text.length * 14;
+    final x = ((panelW - textW) ~/ 2).clamp(2, panelW - textW - 2);
+    if (x >= 0) {
+      img.drawString(src, text, font: font, x: x + 1, y: y + 1, color: img.ColorRgba8(0, 0, 0, 140));
       img.drawString(src, text, font: font, x: x, y: y, color: color);
     }
   }

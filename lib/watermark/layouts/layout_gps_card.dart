@@ -35,6 +35,9 @@ class LayoutGpsCard extends WatermarkLayoutBase {
     double opacity = 0.85,
     bool showBorder = true,
     String fontSize = 'normal',
+    String mapSize = 'medium',
+    String dateFormat = 'dd MMM yyyy',
+    String timeFormat = 'HH:mm:ss',
   }) {
     final double scale = (src.width / 1080).clamp(0.7, 2.0);
     final img.BitmapFont fontS = img.arial14;
@@ -46,7 +49,11 @@ class LayoutGpsCard extends WatermarkLayoutBase {
 
     // ── Map size ──────────────────────────────────────────────────
     final bool hasMap = showMiniMap && mapBytes != null && mapBytes.isNotEmpty;
-    final int mapSz   = hasMap ? (84 * scale).round() : 0;
+    final int mapSz   = hasMap
+        ? (mapSize == 'small'  ? (60 * scale).round()
+         : mapSize == 'large'  ? (110 * scale).round()
+         :                       (84 * scale).round())
+        : 0;
 
     // ── Rows ──────────────────────────────────────────────────────
     int rows = 2; // date + time

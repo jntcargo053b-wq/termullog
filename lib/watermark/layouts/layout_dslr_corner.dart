@@ -40,6 +40,9 @@ class LayoutDSLRCorner extends WatermarkLayoutBase {
     double opacity      = 0.85,
     bool showBorder     = true,
     String fontSize     = 'normal',
+    String mapSize     = 'medium',
+    String dateFormat  = 'dd MMM yyyy',
+    String timeFormat  = 'HH:mm:ss',
   }) {
     final double scale = (src.width / 1080).clamp(0.7, 2.0);
     final bool isLargeFont = fontSize == 'large';

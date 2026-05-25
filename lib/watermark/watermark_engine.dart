@@ -42,9 +42,10 @@ class WatermarkEngine {
     if (src == null) return bytes ?? Uint8List(0);
 
     final layout = _getLayout(wmParams.layoutIndex);
-    if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
+    final quality = wmParams.imageQuality.clamp(50, 100);
+    if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src), quality: quality);
 
-    debugPrint('🔄 WatermarkEngine SYNC: apply layout [${layout.name}]');
+    debugPrint('🔄 WatermarkEngine SYNC: apply layout [${layout.name}], quality=$quality');
 
     try {
       final result = layout.apply(
@@ -65,12 +66,22 @@ class WatermarkEngine {
         opacity: wmParams.opacity,
         showBorder: wmParams.showBorder,
         fontSize: wmParams.fontSize,
+        mapSize: wmParams.mapSize,
+        dateFormat: wmParams.dateFormat,
+        timeFormat: wmParams.timeFormat,
       );
+      // Re-encode dengan quality dari settings jika berbeda dari default 90
+      if (quality != 90) {
+        try {
+          final decoded = img.decodeJpg(result);
+          if (decoded != null) return WatermarkLayoutBase.encodeJpg(decoded, quality: quality);
+        } catch (_) {}
+      }
       return result;
     } catch (e, stackTrace) {
       debugPrint('❌ WatermarkEngine SYNC error: $e');
       debugPrintStack(stackTrace: stackTrace);
-      return WatermarkLayoutBase.encodeJpg(src);
+      return WatermarkLayoutBase.encodeJpg(src, quality: quality);
     }
   }
 
@@ -83,9 +94,10 @@ class WatermarkEngine {
     if (src == null) return bytes ?? Uint8List(0);
 
     final layout = _getLayout(wmParams.layoutIndex);
-    if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src));
+    final quality = wmParams.imageQuality.clamp(50, 100);
+    if (layout == null) return WatermarkLayoutBase.encodeJpg(_resizeIfNeeded(src), quality: quality);
 
-    debugPrint('🎨 WatermarkEngine ASYNC: apply layout [${layout.name}]');
+    debugPrint('🎨 WatermarkEngine ASYNC: apply layout [${layout.name}], quality=$quality');
 
     try {
       final result = await layout.applyAsync(
@@ -106,7 +118,17 @@ class WatermarkEngine {
         opacity: wmParams.opacity,
         showBorder: wmParams.showBorder,
         fontSize: wmParams.fontSize,
+        mapSize: wmParams.mapSize,
+        dateFormat: wmParams.dateFormat,
+        timeFormat: wmParams.timeFormat,
       );
+      // Re-encode dengan quality dari settings jika berbeda dari default 90
+      if (quality != 90) {
+        try {
+          final decoded = img.decodeJpg(result);
+          if (decoded != null) return WatermarkLayoutBase.encodeJpg(decoded, quality: quality);
+        } catch (_) {}
+      }
       return result;
     } catch (e, stackTrace) {
       debugPrint('❌ WatermarkEngine ASYNC error: $e');
@@ -134,6 +156,9 @@ class WatermarkEngine {
     double? acc,
     Uint8List? mapBytes,
     String mapSize = 'medium',
+    int imageQuality = 90,
+    String dateFormat = 'dd MMM yyyy',
+    String timeFormat = 'HH:mm:ss',
     int mapZoomLevel = 16,
   }) {
     return WatermarkParams(
@@ -158,6 +183,9 @@ class WatermarkEngine {
       acc: acc,
       mapSize: mapSize,
       mapZoomLevel: mapZoomLevel,
+      imageQuality: imageQuality,
+      dateFormat: dateFormat,
+      timeFormat: timeFormat,
     );
   }
 

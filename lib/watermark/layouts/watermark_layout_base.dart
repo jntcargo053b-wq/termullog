@@ -66,6 +66,9 @@ abstract class WatermarkLayoutBase {
     double opacity = 0.85,
     bool showBorder = true,
     String fontSize = 'normal',
+    String mapSize = 'medium',
+    String dateFormat = 'dd MMM yyyy',
+    String timeFormat = 'HH:mm:ss',
   });
 
   // Versi async (default fallback ke sync)
@@ -87,6 +90,9 @@ abstract class WatermarkLayoutBase {
     double opacity = 0.85,
     bool showBorder = true,
     String fontSize = 'normal',
+    String mapSize = 'medium',
+    String dateFormat = 'dd MMM yyyy',
+    String timeFormat = 'HH:mm:ss',
   }) async {
     return apply(
       src: src,
@@ -106,6 +112,9 @@ abstract class WatermarkLayoutBase {
       opacity: opacity,
       showBorder: showBorder,
       fontSize: fontSize,
+      mapSize: mapSize,
+      dateFormat: dateFormat,
+      timeFormat: timeFormat,
     );
   }
 

@@ -185,6 +185,9 @@ class _PreviewScreenState extends State<PreviewScreen>
       final opacity = await SettingsCache.opacity;
       final showBorder = await SettingsCache.showBorder;
       final fontSizeDouble = await SettingsCache.fontSize;
+      final imageQuality = await SettingsCache.imageQuality;
+      final dateFormat = await SettingsCache.dateFormat;
+      final timeFormat = await SettingsCache.timeFormat;
       // Konversi double ke string: small (<13), normal (14-19), large (>20)
       final fontSizeStr = fontSizeDouble <= 13
           ? 'small'
@@ -254,6 +257,9 @@ class _PreviewScreenState extends State<PreviewScreen>
         opacity: opacity,
         showBorder: showBorder,
         fontSize: fontSizeStr, // ← sekarang String
+        imageQuality: imageQuality,
+        dateFormat: dateFormat,
+        timeFormat: timeFormat,
       );
 
       // ── 6. PROCESS WATERMARK (MAIN THREAD FLUTTER CANVAS) ──────────

@@ -1,4 +1,3 @@
-// lib/screens/camera_screen.dart (final version)
 import 'dart:async';
 import 'dart:io';
 
@@ -67,54 +66,95 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== CAMERA ====================
   Future<void> _initCamera() async {
-    if (widget.cameras.isEmpty) return;
-    final controller = CameraController(
-      widget.cameras.first,
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-    _controller = controller;
-    await controller.initialize().timeout(const Duration(seconds: 20));
-    await controller.lockCaptureOrientation();
-    if (mounted) setState(() => _isCameraReady = true);
+    try {
+      if (widget.cameras.isEmpty) return;
+
+      // dispose controller lama untuk menghindari double instance
+      await _controller?.dispose();
+
+      final controller = CameraController(
+        widget.cameras.first,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+
+      _controller = controller;
+
+      await controller.initialize().timeout(const Duration(seconds: 20));
+      await controller.lockCaptureOrientation();
+
+      if (!mounted) return;
+
+      setState(() {
+        _isCameraReady = true;
+      });
+
+      debugPrint('CAMERA READY');
+    } catch (e, s) {
+      debugPrint('INIT CAMERA ERROR: $e');
+      debugPrint(s.toString());
+    }
   }
 
+  // ==================== LOCATION ====================
   Future<void> _initLocation() async {
     try {
+      // Cek layanan GPS
       if (!await Geolocator.isLocationServiceEnabled()) {
-        if (mounted) setState(() {
-          _address = 'GPS tidak aktif';
-          _isLoadingLocation = false;
-        });
+        if (mounted) {
+          setState(() {
+            _address = 'GPS tidak aktif';
+            _isLoadingLocation = false;
+          });
+        }
         return;
       }
-      var permission = await Geolocator.checkPermission();
+
+      // Cek izin
+      LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (mounted) setState(() {
-          _address = 'Izin lokasi ditolak';
-          _isLoadingLocation = false;
-        });
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() {
+            _address = 'Izin lokasi ditolak';
+            _isLoadingLocation = false;
+          });
+        }
         return;
       }
 
-      // Ambil posisi awal cepat
-      final firstPos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-        timeLimit: const Duration(seconds: 10),
-      );
-      await _updateLocationData(firstPos);
-      if (mounted) setState(() => _isLoadingLocation = false);
+      // Ambil lokasi awal dengan timeout fallback
+      Position? firstPos;
+      try {
+        firstPos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best,
+          timeLimit: const Duration(seconds: 10),
+        );
+      } catch (e) {
+        debugPrint('FIRST POSITION TIMEOUT: $e');
+        // fallback ke last known position
+        firstPos = await Geolocator.getLastKnownPosition();
+      }
 
-      // Stream realtime dengan distanceFilter
+      if (firstPos != null) {
+        await _updateLocationData(firstPos);
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoadingLocation = false;
+        });
+      }
+
+      // Stream realtime dengan akurasi high (lebih ringan)
       _positionSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.best,
+          accuracy: LocationAccuracy.high,
           distanceFilter: 5,
         ),
       ).listen((pos) async {
@@ -122,19 +162,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       });
     } catch (e) {
       debugPrint('LOCATION ERROR: $e');
-      if (mounted) setState(() {
-        _address = 'Gagal memuat lokasi';
-        _isLoadingLocation = false;
-      });
+      if (mounted) {
+        setState(() {
+          _address = 'Gagal memuat lokasi';
+          _isLoadingLocation = false;
+        });
+      }
     }
   }
 
   Future<void> _updateLocationData(Position pos) async {
     if (!mounted) return;
+
     setState(() {
       _currentPosition = pos;
       _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
     });
+
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos)
           .timeout(const Duration(seconds: 12));
@@ -149,21 +193,29 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== CLOCK ====================
   void _startClock() {
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _currentTimestamp = DateTime.now());
     });
   }
 
+  // ==================== CAPTURE ====================
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
+
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
+    if (controller == null || !controller.value.isInitialized) {
+      debugPrint('CAMERA NOT READY');
+      return;
+    }
 
     setState(() => _isCapturing = true);
+
     try {
       final XFile file = await controller.takePicture().timeout(const Duration(seconds: 20));
       final imageBytes = await File(file.path).readAsBytes();
+
       await SettingsCache.preload();
 
       final layout = await SettingsCache.layout;
@@ -177,6 +229,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final showMiniMap = await SettingsCache.showMiniMap;
       final mapSize = await SettingsCache.mapSize;
       final mapZoomLevel = await SettingsCache.mapZoomLevel;
+
       final fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
 
       final params = WatermarkEngine.createParams(
@@ -201,7 +254,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
 
       if (mounted) {
-        await Navigator.pushReplacementNamed(context, '/preview', arguments: params.toMap());
+        // Gunakan pushNamed, BUKAN pushReplacementNamed
+        await Navigator.pushNamed(
+          context,
+          '/preview',
+          arguments: params.toMap(),
+        );
       }
     } catch (e) {
       debugPrint('CAPTURE ERROR: $e');
@@ -215,9 +273,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== BUILD ====================
   @override
   Widget build(BuildContext context) {
-    if (!_isCameraReady || _controller == null) {
+    // Safety check sebelum menampilkan preview
+    final isPreviewReady = _controller != null && _controller!.value.isInitialized;
+
+    if (!_isCameraReady || !isPreviewReady) {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(child: CircularProgressIndicator()),
@@ -229,8 +291,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Camera preview dengan safety
           CameraPreview(_controller!),
-          // Live watermark preview (jika ada posisi)
+
+          // Live watermark preview (hanya jika ada posisi)
           if (_currentPosition != null)
             WatermarkPreviewOverlay(
               previewSize: MediaQuery.of(context).size,
@@ -242,6 +306,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               address: _address,
               weather: _weather,
             ),
+
           // Indikator loading GPS
           if (_isLoadingLocation)
             const Positioned(
@@ -255,6 +320,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
+
           // Tombol capture
           Positioned(
             bottom: 40,

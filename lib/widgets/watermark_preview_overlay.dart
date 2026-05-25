@@ -57,9 +57,7 @@ class _WatermarkPreviewOverlayState extends State<WatermarkPreviewOverlay> {
     final fontSizeDouble = await SettingsCache.fontSize;
     final fontSizeStr = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
 
-    // Cek mounted sebelum setState
     if (!mounted) return;
-
     setState(() {
       _currentLayout = layout;
       _showWeather = showWeather;
@@ -75,8 +73,6 @@ class _WatermarkPreviewOverlayState extends State<WatermarkPreviewOverlay> {
   @override
   Widget build(BuildContext context) {
     if (_currentLayout == null) return const SizedBox.shrink();
-
-    // Gunakan CinematicPreviewPainter yang sudah aman null
     return CustomPaint(
       size: widget.previewSize,
       painter: CinematicPreviewPainter(
@@ -99,7 +95,6 @@ class _WatermarkPreviewOverlayState extends State<WatermarkPreviewOverlay> {
   }
 }
 
-// Painter untuk gaya Cinematic (mirip dengan layout asli)
 class CinematicPreviewPainter extends CustomPainter {
   final DateTime timestamp;
   final bool hasPosition;
@@ -136,28 +131,49 @@ class CinematicPreviewPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double scale = size.width / 1080;
-    final double margin = 12 * scale;
+    final double margin = 16 * scale;
     final double padX = 24 * scale;
     final double padY = 20 * scale;
-    final double rowH = 32 * scale;
-    final double smallRowH = 24 * scale;
+    
+    // Perbesar tinggi baris agar teks tidak tumpang tindih
+    final double rowH = 38 * scale;      // untuk tanggal & waktu
+    final double smallRowH = 30 * scale; // untuk koordinat, akurasi, alamat, cuaca
+    
     final double fsMultiplier = fontSize == 'small' ? 0.75 : fontSize == 'large' ? 1.4 : 1.0;
     final double radius = 16 * scale;
 
-    // Hitung jumlah baris
-    int rowCount = 2; // tanggal & waktu
+    // Hitung jumlah baris secara akurat
+    int rowCount = 2; // tanggal + waktu
     if (showCoordinates && hasPosition && lat != null && lon != null) rowCount++;
     if (showAccuracy && hasPosition && acc != null) rowCount++;
-    if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) rowCount += 2;
+    
+    int addressLines = 0;
+    if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) {
+      addressLines = _wrapText(address, 45).length;
+      if (addressLines > 2) addressLines = 2;
+      rowCount += addressLines;
+    }
+    
     if (showWeather && weather.isNotEmpty) rowCount++;
-
-    final double panelH = padY * 2 + rowCount * rowH + 20;
-    final double y0 = size.height - panelH - margin;
+    
+    // Garis pemisah + ruang ekstra
+    final double separatorSpace = 12 * scale;
+    final double bottomPadding = 16 * scale;
+    
+    final double panelH = padY * 2 + 
+                          (rowCount - 2) * smallRowH + 
+                          2 * rowH + 
+                          separatorSpace + 
+                          bottomPadding;
+    
+    double y0 = size.height - panelH - margin;
+    if (y0 < margin) y0 = margin; // safety
     final double x0 = margin;
     final double panelW = size.width - margin * 2;
 
-    // Background rounded
-    final RRect bgRect = RRect.fromRectAndRadius(Rect.fromLTWH(x0, y0, panelW, panelH), Radius.circular(radius));
+    // Background
+    final RRect bgRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x0, y0, panelW, panelH), Radius.circular(radius));
     final Paint bgPaint = Paint()..color = Colors.black.withOpacity(opacity);
     canvas.drawRRect(bgRect, bgPaint);
 
@@ -172,8 +188,8 @@ class CinematicPreviewPainter extends CustomPainter {
 
     double cy = y0 + padY;
 
-    // Helper teks dengan shadow
-    void drawText(String text, double x, double y, Color color, {bool bold = false, double size = 16}) {
+    void drawText(String text, double x, double y, Color color,
+        {bool bold = false, double size = 16}) {
       final tp = TextPainter(
         text: TextSpan(
           text: text,
@@ -192,31 +208,35 @@ class CinematicPreviewPainter extends CustomPainter {
     }
 
     // Tanggal
-    drawText(DateFormat('EEE, dd MMM yyyy').format(timestamp), x0 + padX, cy, Colors.white, size: 16 * fsMultiplier);
+    drawText(DateFormat('EEE, dd MMM yyyy').format(timestamp),
+        x0 + padX, cy, Colors.white, size: 16 * fsMultiplier);
     cy += rowH;
 
     // Waktu
-    drawText(DateFormat('HH:mm:ss').format(timestamp), x0 + padX, cy, Colors.white, bold: true, size: 22 * fsMultiplier);
+    drawText(DateFormat('HH:mm:ss').format(timestamp),
+        x0 + padX, cy, Colors.white, bold: true, size: 22 * fsMultiplier);
     cy += rowH;
 
-    // Garis tipis
+    // Garis pemisah
     final Paint linePaint = Paint()..color = Colors.white24..strokeWidth = 1;
     canvas.drawLine(Offset(x0 + padX, cy), Offset(x0 + panelW - padX, cy), linePaint);
-    cy += 12 * scale;
+    cy += separatorSpace;
 
-    // Koordinat (sudah aman karena sudah dicek != null)
+    // Koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      drawText('${lat!.toStringAsFixed(5)}°, ${lon!.toStringAsFixed(5)}°', x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
+      drawText('${lat!.toStringAsFixed(5)}°, ${lon!.toStringAsFixed(5)}°',
+          x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
       cy += smallRowH;
     }
 
     // Akurasi
     if (showAccuracy && hasPosition && acc != null) {
-      drawText('Akurasi ±${acc!.toStringAsFixed(1)}m', x0 + padX, cy, Colors.grey[400]!, size: 13 * fsMultiplier);
+      drawText('Akurasi ±${acc!.toStringAsFixed(1)}m',
+          x0 + padX, cy, Colors.grey[400]!, size: 13 * fsMultiplier);
       cy += smallRowH;
     }
 
-    // Alamat (wrap)
+    // Alamat
     if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) {
       final lines = _wrapText(address, 45);
       for (int i = 0; i < lines.length && i < 2; i++) {
@@ -228,6 +248,7 @@ class CinematicPreviewPainter extends CustomPainter {
     // Cuaca
     if (showWeather && weather.isNotEmpty) {
       drawText(weather, x0 + padX, cy, const Color(0xFF1E90FF), size: 13 * fsMultiplier);
+      // tidak perlu cy += karena terakhir
     }
   }
 
@@ -248,19 +269,20 @@ class CinematicPreviewPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(CinematicPreviewPainter oldDelegate) =>
-      oldDelegate.timestamp != timestamp ||
-      oldDelegate.hasPosition != hasPosition ||
-      oldDelegate.lat != lat ||
-      oldDelegate.lon != lon ||
-      oldDelegate.acc != acc ||
-      oldDelegate.address != address ||
-      oldDelegate.weather != weather ||
-      oldDelegate.showWeather != showWeather ||
-      oldDelegate.showAccuracy != showAccuracy ||
-      oldDelegate.showAddress != showAddress ||
-      oldDelegate.showCoordinates != showCoordinates ||
-      oldDelegate.opacity != opacity ||
-      oldDelegate.showBorder != showBorder ||
-      oldDelegate.fontSize != fontSize;
+  bool shouldRepaint(CinematicPreviewPainter oldDelegate) {
+    return oldDelegate.timestamp != timestamp ||
+        oldDelegate.hasPosition != hasPosition ||
+        oldDelegate.lat != lat ||
+        oldDelegate.lon != lon ||
+        oldDelegate.acc != acc ||
+        oldDelegate.address != address ||
+        oldDelegate.weather != weather ||
+        oldDelegate.showWeather != showWeather ||
+        oldDelegate.showAccuracy != showAccuracy ||
+        oldDelegate.showAddress != showAddress ||
+        oldDelegate.showCoordinates != showCoordinates ||
+        oldDelegate.opacity != opacity ||
+        oldDelegate.showBorder != showBorder ||
+        oldDelegate.fontSize != fontSize;
+  }
 }

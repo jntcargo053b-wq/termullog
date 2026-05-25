@@ -65,7 +65,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _loadSettingsAndPosition() async {
     await SettingsCache.preload();
 
-    // Load all settings
     _showWeather = await SettingsCache.showWeather;
     _showAccuracy = await SettingsCache.showAccuracy;
     _showAddress = await SettingsCache.showAddress;
@@ -76,10 +75,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
     _currentLayout = await SettingsCache.layout;
 
-    // Load saved position
     _watermarkPosition = await _loadWatermarkPosition();
-
-    // Start initialization
     _initialize();
   }
 
@@ -102,7 +98,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _initialize() async {
     await _initCamera();
-    _initLocation(); // non-blocking
+    _initLocation();
     _startClock();
   }
 
@@ -130,27 +126,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _initCamera() async {
     try {
       if (widget.cameras.isEmpty) return;
-
       await _controller?.dispose();
-
       final controller = CameraController(
         widget.cameras.first,
         ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
-
       _controller = controller;
-
       await controller.initialize().timeout(const Duration(seconds: 20));
       await controller.lockCaptureOrientation();
-
       if (!mounted) return;
-
-      setState(() {
-        _isCameraReady = true;
-      });
-
+      setState(() => _isCameraReady = true);
       debugPrint('CAMERA READY');
     } catch (e) {
       debugPrint('INIT CAMERA ERROR: $e');
@@ -161,30 +148,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _initLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        if (mounted) {
-          setState(() {
-            _address = 'GPS tidak aktif';
-            _isLoadingLocation = false;
-          });
-        }
+        if (mounted) setState(() {
+          _address = 'GPS tidak aktif';
+          _isLoadingLocation = false;
+        });
         return;
       }
-
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (mounted) {
-          setState(() {
-            _address = 'Izin lokasi ditolak';
-            _isLoadingLocation = false;
-          });
-        }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (mounted) setState(() {
+          _address = 'Izin lokasi ditolak';
+          _isLoadingLocation = false;
+        });
         return;
       }
-
       Position? firstPos;
       try {
         firstPos = await Geolocator.getCurrentPosition(
@@ -195,57 +175,37 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         debugPrint('FIRST POSITION TIMEOUT: $e');
         firstPos = await Geolocator.getLastKnownPosition();
       }
-
-      if (firstPos != null) {
-        await _updateLocationData(firstPos);
-      }
-
-      if (mounted) {
-        setState(() {
-          _isLoadingLocation = false;
-        });
-      }
+      if (firstPos != null) await _updateLocationData(firstPos);
+      if (mounted) setState(() => _isLoadingLocation = false);
 
       _positionSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
           distanceFilter: 5,
         ),
-      ).listen((pos) async {
-        await _updateLocationData(pos);
-      });
+      ).listen((pos) async => await _updateLocationData(pos));
     } catch (e) {
       debugPrint('LOCATION ERROR: $e');
-      if (mounted) {
-        setState(() {
-          _address = 'Gagal memuat lokasi';
-          _isLoadingLocation = false;
-        });
-      }
+      if (mounted) setState(() {
+        _address = 'Gagal memuat lokasi';
+        _isLoadingLocation = false;
+      });
     }
   }
 
   Future<void> _updateLocationData(Position pos) async {
     if (!mounted) return;
-
-    setState(() {
-      _currentPosition = pos;
-    });
-
+    setState(() => _currentPosition = pos);
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos)
           .timeout(const Duration(seconds: 12));
-      if (mounted) {
-        setState(() {
-          _address = result.address;
-          _weather = result.weather;
-        });
-      }
+      if (mounted) setState(() {
+        _address = result.address;
+        _weather = result.weather;
+      });
     } catch (e) {
       debugPrint('ADDRESS/WEATHER ERROR: $e');
-      setState(() {
-        _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
-      });
+      setState(() => _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}');
     }
   }
 
@@ -258,20 +218,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // ==================== CAPTURE ====================
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
-
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
       debugPrint('CAMERA NOT READY');
       return;
     }
-
     setState(() => _isCapturing = true);
 
     try {
       final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 20));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
-      // Apply watermark using WatermarkEngine
+      // 🔥 Gunakan fontScale dari posisi watermark yang tersimpan
       final finalBytes = await WatermarkEngine.process(
         imageBytes: rawBytes,
         timestamp: _currentTimestamp,
@@ -294,13 +252,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         imageQuality: 90,
         dateFormat: 'dd MMM yyyy',
         timeFormat: 'HH:mm:ss',
+        fontScale: _watermarkPosition.fontScale, // 🔥 parameter wajib
       );
 
       final dir = await getTemporaryDirectory();
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
       final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(finalBytes);
-
       await GallerySaver.saveImage(file.path, albumName: 'Timestamp Camera');
 
       if (!mounted) return;
@@ -323,7 +281,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     final isPreviewReady = _controller != null && _controller!.value.isInitialized;
-
     if (!_isCameraReady || !isPreviewReady) {
       return const Scaffold(
         backgroundColor: Colors.black,
@@ -337,7 +294,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         fit: StackFit.expand,
         children: [
           CameraPreview(_controller!),
-
           if (_currentPosition != null)
             DraggableWatermarkOverlay(
               previewSize: MediaQuery.of(context).size,
@@ -362,7 +318,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 _saveWatermarkPosition(pos);
               },
             ),
-
           if (_isLoadingLocation)
             const Positioned(
               top: 50,
@@ -375,7 +330,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
-
           Positioned(
             bottom: 40,
             left: 0,

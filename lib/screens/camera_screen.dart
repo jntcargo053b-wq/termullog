@@ -9,12 +9,15 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:gallery_saver_plus/gallery_saver.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/watermark_position.dart';
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
+import '../watermark/watermark_engine.dart';
+import '../core/constants.dart';
 import '../widgets/draggable_watermark_overlay.dart';
-import '../widgets/professional_watermark_painter.dart';
 
 class CameraScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -39,7 +42,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Timer? _clockTimer;
   DateTime _currentTimestamp = DateTime.now();
 
-  // Settings watermark
+  // Watermark settings
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -47,7 +50,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   double _opacity = 0.82;
   bool _showBorder = true;
   String _fontSize = 'normal';
+  WatermarkLayout _currentLayout = WatermarkLayout.modern;
 
+  // Watermark position (custom)
   WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
 
   @override
@@ -60,6 +65,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _loadSettingsAndPosition() async {
     await SettingsCache.preload();
 
+    // Load all settings
     _showWeather = await SettingsCache.showWeather;
     _showAccuracy = await SettingsCache.showAccuracy;
     _showAddress = await SettingsCache.showAddress;
@@ -67,13 +73,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _opacity = await SettingsCache.opacity;
     _showBorder = await SettingsCache.showBorder;
     final fontSizeDouble = await SettingsCache.fontSize;
-    _fontSize = fontSizeDouble <= 13
-        ? 'small'
-        : fontSizeDouble >= 20
-            ? 'large'
-            : 'normal';
+    _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
+    _currentLayout = await SettingsCache.layout;
 
+    // Load saved position
     _watermarkPosition = await _loadWatermarkPosition();
+
+    // Start initialization
     _initialize();
   }
 
@@ -96,7 +102,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _initialize() async {
     await _initCamera();
-    _initLocation();
+    _initLocation(); // non-blocking
     _startClock();
   }
 
@@ -146,9 +152,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       });
 
       debugPrint('CAMERA READY');
-    } catch (e, s) {
+    } catch (e) {
       debugPrint('INIT CAMERA ERROR: $e');
-      debugPrint(s.toString());
     }
   }
 
@@ -263,25 +268,45 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     setState(() => _isCapturing = true);
 
     try {
-      final XFile file = await controller.takePicture().timeout(const Duration(seconds: 20));
-      final imageBytes = await File(file.path).readAsBytes();
+      final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 20));
+      final rawBytes = await File(rawFile.path).readAsBytes();
 
-      // Render watermark
-      final ui.Image watermarkedImage = await _applyWatermark(imageBytes);
+      // Apply watermark using WatermarkEngine
+      final finalBytes = await WatermarkEngine.process(
+        imageBytes: rawBytes,
+        timestamp: _currentTimestamp,
+        layout: _currentLayout,
+        lat: _currentPosition?.latitude,
+        lon: _currentPosition?.longitude,
+        acc: _currentPosition?.accuracy,
+        address: _address,
+        weather: _weather,
+        showWeather: _showWeather,
+        showAccuracy: _showAccuracy,
+        showAddress: _showAddress,
+        showCoordinates: _showCoordinates,
+        opacity: _opacity,
+        showBorder: _showBorder,
+        fontSize: _fontSize,
+        showMiniMap: false,
+        mapSize: 'medium',
+        mapZoomLevel: 16,
+        imageQuality: 90,
+        dateFormat: 'dd MMM yyyy',
+        timeFormat: 'HH:mm:ss',
+      );
 
-      // Simpan atau lanjutkan ke preview (contoh: simpan ke galeri)
-      final ByteData? byteData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData != null) {
-        final savedBytes = byteData.buffer.asUint8List();
-        // TODO: simpan ke galeri atau navigasi ke preview screen
-        debugPrint('Photo with watermark size: ${savedBytes.length}');
-      }
+      final dir = await getTemporaryDirectory();
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(finalBytes);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Foto berhasil diambil')),
-        );
-      }
+      await GallerySaver.saveImage(file.path, albumName: 'Timestamp Camera');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto berhasil disimpan ke Galeri')),
+      );
     } catch (e) {
       debugPrint('CAPTURE ERROR: $e');
       if (mounted) {
@@ -292,78 +317,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
-  }
-
-  Future<ui.Image> _applyWatermark(Uint8List imageBytes) async {
-    final ui.Image originalImage = await decodeImageFromList(imageBytes);
-    final int width = originalImage.width;
-    final int height = originalImage.height;
-
-    // Lebar card proporsional terhadap lebar gambar
-    const double baseReferenceWidth = 1080.0;
-    double cardWidth = 320.0 * (width / baseReferenceWidth);
-    cardWidth = cardWidth.clamp(200.0, 500.0);
-
-    final dummyPainter = ProfessionalWatermarkPainter(
-      timestamp: _currentTimestamp,
-      hasPosition: _currentPosition != null,
-      lat: _currentPosition?.latitude,
-      lon: _currentPosition?.longitude,
-      acc: _currentPosition?.accuracy,
-      address: _address,
-      weather: _weather,
-      showWeather: _showWeather,
-      showAccuracy: _showAccuracy,
-      showAddress: _showAddress,
-      showCoordinates: _showCoordinates,
-      opacity: _opacity,
-      showBorder: _showBorder,
-      fontSize: _fontSize,
-    );
-    final double cardHeight = dummyPainter.computeHeightSync(Size(cardWidth, 0));
-
-    // Posisi absolut
-    double left = width * _watermarkPosition.x;
-    double top = height * _watermarkPosition.y;
-    left = left.clamp(0.0, width - cardWidth * _watermarkPosition.scale);
-    top = top.clamp(0.0, height - cardHeight * _watermarkPosition.scale);
-
-    final recorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    canvas.drawImage(originalImage, Offset.zero, Paint());
-
-    canvas.save();
-    canvas.translate(left, top);
-    canvas.scale(_watermarkPosition.scale);
-
-    // Gambar background card
-    final RRect rect = RRect.fromRectAndRadius(
-      Offset.zero & Size(cardWidth, cardHeight),
-      const Radius.circular(24),
-    );
-    final Paint bgPaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xCC000000), Color(0xBF000000)],
-      ).createShader(Offset.zero & Size(cardWidth, cardHeight));
-    canvas.drawRRect(rect, bgPaint);
-    if (_showBorder) {
-      final Paint borderPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = Colors.white.withOpacity(0.15);
-      canvas.drawRRect(rect, borderPaint);
-    }
-    canvas.drawShadow(Path()..addRRect(rect), Colors.black, 18, true);
-
-    dummyPainter.paint(canvas, Size(cardWidth, cardHeight));
-
-    canvas.restore();
-
-    final picture = recorder.endRecording();
-    final ui.Image output = await picture.toImage(width, height);
-    return output;
   }
 
   // ==================== BUILD ====================
@@ -402,6 +355,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               opacity: _opacity,
               showBorder: _showBorder,
               fontSize: _fontSize,
+              layout: _currentLayout,
               initialPosition: _watermarkPosition,
               onPositionChanged: (pos) {
                 _watermarkPosition = pos;
@@ -451,13 +405,4 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       ),
     );
   }
-}
-
-// Helper decode image
-Future<ui.Image> decodeImageFromList(Uint8List bytes) async {
-  final Completer<ui.Image> completer = Completer();
-  ui.decodeImageFromList(bytes, (ui.Image image) {
-    completer.complete(image);
-  });
-  return completer.future;
 }

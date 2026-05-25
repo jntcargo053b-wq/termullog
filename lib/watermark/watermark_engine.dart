@@ -69,9 +69,8 @@ class WatermarkEngine {
         mapSize: wmParams.mapSize,
         dateFormat: wmParams.dateFormat,
         timeFormat: wmParams.timeFormat,
-        fontScale: wmParams.fontScale, // 🔥 tambahan
+        // fontScale tidak dikirim ke layout (tidak dibutuhkan di image library)
       );
-      // Re-encode dengan quality dari settings jika berbeda dari default 90
       if (quality != 90) {
         try {
           final decoded = img.decodeJpg(result);
@@ -122,9 +121,8 @@ class WatermarkEngine {
         mapSize: wmParams.mapSize,
         dateFormat: wmParams.dateFormat,
         timeFormat: wmParams.timeFormat,
-        fontScale: wmParams.fontScale, // 🔥 tambahan
+        // fontScale tidak dikirim ke layout
       );
-      // Re-encode dengan quality dari settings jika berbeda dari default 90
       if (quality != 90) {
         try {
           final decoded = img.decodeJpg(result);
@@ -162,7 +160,7 @@ class WatermarkEngine {
     required int imageQuality,
     required String dateFormat,
     required String timeFormat,
-    required double fontScale, // 🔥 tambahan
+    required double fontScale,
     Uint8List? mapBytes,
   }) async {
     final params = createParams(
@@ -188,7 +186,7 @@ class WatermarkEngine {
       imageQuality: imageQuality,
       dateFormat: dateFormat,
       timeFormat: timeFormat,
-      fontScale: fontScale, // 🔥 tambahan
+      fontScale: fontScale,
     );
     return await applyFromMapAsync(params.toMap());
   }
@@ -216,7 +214,7 @@ class WatermarkEngine {
     String dateFormat = 'dd MMM yyyy',
     String timeFormat = 'HH:mm:ss',
     int mapZoomLevel = 16,
-    double fontScale = 1.0, // 🔥 tambahan
+    double fontScale = 1.0,
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
@@ -243,7 +241,7 @@ class WatermarkEngine {
       imageQuality: imageQuality,
       dateFormat: dateFormat,
       timeFormat: timeFormat,
-      fontScale: fontScale, // 🔥 tambahan
+      fontScale: fontScale,
     );
   }
 

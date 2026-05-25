@@ -69,6 +69,7 @@ class WatermarkEngine {
         mapSize: wmParams.mapSize,
         dateFormat: wmParams.dateFormat,
         timeFormat: wmParams.timeFormat,
+        fontScale: wmParams.fontScale, // 🔥 tambahan
       );
       // Re-encode dengan quality dari settings jika berbeda dari default 90
       if (quality != 90) {
@@ -121,6 +122,7 @@ class WatermarkEngine {
         mapSize: wmParams.mapSize,
         dateFormat: wmParams.dateFormat,
         timeFormat: wmParams.timeFormat,
+        fontScale: wmParams.fontScale, // 🔥 tambahan
       );
       // Re-encode dengan quality dari settings jika berbeda dari default 90
       if (quality != 90) {
@@ -160,6 +162,7 @@ class WatermarkEngine {
     required int imageQuality,
     required String dateFormat,
     required String timeFormat,
+    required double fontScale, // 🔥 tambahan
     Uint8List? mapBytes,
   }) async {
     final params = createParams(
@@ -185,6 +188,7 @@ class WatermarkEngine {
       imageQuality: imageQuality,
       dateFormat: dateFormat,
       timeFormat: timeFormat,
+      fontScale: fontScale, // 🔥 tambahan
     );
     return await applyFromMapAsync(params.toMap());
   }
@@ -212,6 +216,7 @@ class WatermarkEngine {
     String dateFormat = 'dd MMM yyyy',
     String timeFormat = 'HH:mm:ss',
     int mapZoomLevel = 16,
+    double fontScale = 1.0, // 🔥 tambahan
   }) {
     return WatermarkParams(
       transferable: TransferableTypedData.fromList([imageBytes]),
@@ -238,6 +243,7 @@ class WatermarkEngine {
       imageQuality: imageQuality,
       dateFormat: dateFormat,
       timeFormat: timeFormat,
+      fontScale: fontScale, // 🔥 tambahan
     );
   }
 

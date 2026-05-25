@@ -543,17 +543,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case WatermarkLayout.hud:
         return Container(
           padding: const EdgeInsets.all(14),
-          color: bgColor,
+          decoration: BoxDecoration(
+            color: const Color(0xFF04081A),
+            border: Border(
+              top: BorderSide(color: const Color(0xFF00C8F0).withOpacity(0.6), width: 2),
+              bottom: BorderSide(color: const Color(0xFF00C8F0).withOpacity(0.6), width: 2),
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('$dateStr   $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(timeStr, style: TextStyle(color: Colors.white, fontSize: titleFontSize, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                  Text(dateStr, style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 2)),
+                ],
+              ),
+              const SizedBox(height: 6),
               if (_showCoordinates)
-                Text('-6.123456, 106.123456', style: TextStyle(color: accent, fontSize: fontSize, fontWeight: FontWeight.w600)),
+                Text('-6.12345° S   106.12345° E', style: TextStyle(color: const Color(0xFF00C8F0), fontSize: fontSize - 1)),
               if (_showAccuracy)
-                Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
+                Text('GPS Accuracy  ± 5 m', style: TextStyle(color: Colors.greenAccent.shade400, fontSize: fontSize - 2)),
+              if (_showAddress)
+                Text('Jl. Contoh No. 123, Malang', style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 2)),
             ],
           ),
         );
@@ -562,8 +576,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: bgColor,
-            border: Border(bottom: BorderSide(color: accent, width: 3)),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF08142A), Color(0xFF101826)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            border: Border(
+              left: BorderSide(color: accent, width: 4),
+              bottom: BorderSide(color: accent, width: 2),
+            ),
           ),
           child: Row(
             children: [
@@ -572,17 +593,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$dateStr  $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize - 2)),
-                    const SizedBox(height: 6),
-                    Text('-6.123456°N  106.123456°E', style: TextStyle(color: accent, fontSize: fontSize - 2)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(timeStr, style: TextStyle(color: Colors.white, fontSize: titleFontSize, fontWeight: FontWeight.bold)),
+                        Text(dateStr, style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 3)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    if (_showCoordinates)
+                      Text('-6.12345° S   106.12345° E', style: TextStyle(color: accent, fontSize: fontSize - 2)),
                     if (_showAccuracy)
-                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+                      Text('Accuracy  ± 5 m', style: TextStyle(color: Colors.greenAccent.shade400, fontSize: fontSize - 3)),
                     if (_showAddress)
-                      Text('Jl. Contoh No. 123, Kec. Contoh', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3), maxLines: 2),
+                      Text('Jl. Contoh No. 123, Kec. Contoh', style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 3), maxLines: 1),
                   ],
                 ),
               ),
-              if (_showMiniMap) miniMapPlaceholder,
+              if (_showMiniMap) ...[const SizedBox(width: 8), miniMapPlaceholder],
             ],
           ),
         );
@@ -696,32 +724,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: bgColor,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF08122A), Color(0xFF101826)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
             borderRadius: BorderRadius.circular(14),
-            border: _showBorder ? Border.all(color: accent.withOpacity(0.4)) : null,
+            border: _showBorder ? Border.all(color: accent.withOpacity(0.35)) : null,
           ),
           child: Row(
             children: [
-              const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 28),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 26),
+                ],
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$timeStr', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
+                    Text(timeStr, style: TextStyle(color: Colors.white, fontSize: titleFontSize, fontWeight: FontWeight.bold, height: 1.1)),
+                    const SizedBox(height: 4),
                     Text(dateStr, style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
                     if (_showCoordinates)
-                      Text('-6.123456°, 106.123456°', style: TextStyle(color: accent, fontSize: fontSize - 3)),
+                      Text('-6.1234° S   106.1234° E', style: TextStyle(color: accent, fontSize: fontSize - 3)),
                     if (_showAccuracy)
-                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
+                      Text('± 5 m', style: TextStyle(color: Colors.greenAccent.shade400, fontSize: fontSize - 3)),
                     if (_showWeather)
                       Text('Cerah 32°C', style: TextStyle(color: accent, fontSize: fontSize - 3)),
                   ],
                 ),
               ),
-              if (_showMiniMap) miniMapPlaceholder,
+              if (_showMiniMap) ...[const SizedBox(width: 8), miniMapPlaceholder],
             ],
           ),
         );

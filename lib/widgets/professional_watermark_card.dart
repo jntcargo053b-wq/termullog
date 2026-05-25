@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 class ProfessionalWatermarkCard extends StatelessWidget {
   final Widget child;
-  final double opacity;      // 0..1
+  final double opacity;
   final bool showBorder;
-  final VoidCallback? onTap; // opsional untuk edit
+  final VoidCallback? onTap;
 
   const ProfessionalWatermarkCard({
     super.key,
@@ -19,7 +19,6 @@ class ProfessionalWatermarkCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 320,  // lebar tetap, tidak fullscreen
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),

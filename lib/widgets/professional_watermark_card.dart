@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import '../models/watermark_position.dart';
 
 class ProfessionalWatermarkCard extends StatelessWidget {
   final Widget child;
   final double opacity;
   final bool showBorder;
   final VoidCallback? onTap;
+  final WatermarkPosition position;
+  final Size screenSize;
+  final bool isLandscape;
 
   const ProfessionalWatermarkCard({
     super.key,
     required this.child,
+    required this.position,
+    required this.screenSize,
+    required this.isLandscape,
     this.opacity = 0.82,
     this.showBorder = true,
     this.onTap,
@@ -16,12 +23,20 @@ class ProfessionalWatermarkCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 🔥 Dynamic width based on orientation
+    double baseWidth = isLandscape ? 340 : 320;
+    double dynamicWidth = (baseWidth * position.scale).clamp(220, 480);
+    
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        width: dynamicWidth,
+        padding: EdgeInsets.symmetric(
+          horizontal: 16 * (isLandscape ? 0.8 : 1.0),
+          vertical: 14 * (isLandscape ? 0.8 : 1.0),
+        ),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(isLandscape ? 20 : 24),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,

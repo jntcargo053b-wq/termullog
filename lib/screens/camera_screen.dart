@@ -1,18 +1,18 @@
 // lib/screens/camera_screen.dart
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/watermark_position.dart';
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
-import '../watermark/watermark_engine.dart';
 import '../widgets/draggable_watermark_overlay.dart';
 import '../widgets/professional_watermark_painter.dart';
 
@@ -39,7 +39,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Timer? _clockTimer;
   DateTime _currentTimestamp = DateTime.now();
 
-  // Settings watermark (akan dimuat dari cache)
+  // Settings watermark
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -48,8 +48,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _showBorder = true;
   String _fontSize = 'normal';
 
-  // Posisi watermark custom
-  late WatermarkPosition _watermarkPosition;
+  WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
 
   @override
   void initState() {
@@ -61,7 +60,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _loadSettingsAndPosition() async {
     await SettingsCache.preload();
 
-    final layout = await SettingsCache.layout; // tidak dipakai, tapi tetap loading
     _showWeather = await SettingsCache.showWeather;
     _showAccuracy = await SettingsCache.showAccuracy;
     _showAddress = await SettingsCache.showAddress;
@@ -75,10 +73,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             ? 'large'
             : 'normal';
 
-    // Load posisi tersimpan
     _watermarkPosition = await _loadWatermarkPosition();
-
-    // Mulai inisialisasi kamera & GPS setelah loading selesai
     _initialize();
   }
 
@@ -87,9 +82,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     final String? jsonStr = prefs.getString('watermark_position');
     if (jsonStr == null) return WatermarkPosition.initial;
     try {
-      final Map<String, dynamic> json = Map<String, dynamic>.from(
-        await Future.value(jsonDecode(jsonStr)),
-      );
+      final Map<String, dynamic> json = jsonDecode(jsonStr);
       return WatermarkPosition.fromJson(json);
     } catch (e) {
       return WatermarkPosition.initial;
@@ -103,7 +96,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _initialize() async {
     await _initCamera();
-    _initLocation(); // non-blocking
+    _initLocation();
     _startClock();
   }
 
@@ -251,7 +244,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== CLOCK ====================
   void _startClock() {
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _currentTimestamp = DateTime.now());
@@ -273,24 +265,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       final XFile file = await controller.takePicture().timeout(const Duration(seconds: 20));
       final imageBytes = await File(file.path).readAsBytes();
-      final imageWidth = await _getImageWidth(imageBytes);
 
-      // Render watermark dengan painter yang SAMA persis dengan preview
-      final ui.Image watermarkedImage = await _applyWatermark(
-        imageBytes: imageBytes,
-        imageWidth: imageWidth,
-      );
+      // Render watermark
+      final ui.Image watermarkedImage = await _applyWatermark(imageBytes);
 
-      // Simpan atau lanjutkan ke preview screen
+      // Simpan atau lanjutkan ke preview (contoh: simpan ke galeri)
+      final ByteData? byteData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData != null) {
+        final savedBytes = byteData.buffer.asUint8List();
+        // TODO: simpan ke galeri atau navigasi ke preview screen
+        debugPrint('Photo with watermark size: ${savedBytes.length}');
+      }
+
       if (mounted) {
-        // Kirim data ke halaman preview (atau simpan langsung)
-        await Navigator.pushNamed(
-          context,
-          '/preview',
-          arguments: {
-            'imageBytes': await watermarkedImage.toByteData(format: ui.ImageByteFormat.png)?.buffer.asUint8List(),
-            // tambahkan argumen lain jika perlu
-          },
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto berhasil diambil')),
         );
       }
     } catch (e) {
@@ -305,32 +294,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  /// Dapatkan lebar gambar asli (untuk skala painter)
-  Future<int> _getImageWidth(Uint8List imageBytes) async {
-    final ui.Codec codec = await ui.instantiateImageCodec(imageBytes);
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    return frame.image.width;
-  }
-
-  /// Render watermark ke dalam gambar menggunakan painter yang sama
-  Future<ui.Image> _applyWatermark({
-    required Uint8List imageBytes,
-    required int imageWidth,
-  }) async {
+  Future<ui.Image> _applyWatermark(Uint8List imageBytes) async {
     final ui.Image originalImage = await decodeImageFromList(imageBytes);
     final int width = originalImage.width;
     final int height = originalImage.height;
 
-    // Ukuran card di hasil foto harus proporsional dengan lebar gambar
-    // Lebar card di preview = 320 (virtual). Di hasil foto, kita ingin card memiliki lebar relatif sama
-    // Misal lebar card hasil = width * (320 / layar_lebar) -> tapi kita bebas menentukan.
-    // Cara sederhana: lebar card = 320 * (width / 1080) misal. Tapi lebih baik ukuran tetap 320?
-    // Kita akan set cardWidth = 320 * (width / 1080) untuk proporsi. Atau tetap 320? Lebih baik proporsional.
-    const double baseWidthReference = 1080.0;
-    double cardWidth = 320.0 * (width / baseWidthReference);
+    // Lebar card proporsional terhadap lebar gambar
+    const double baseReferenceWidth = 1080.0;
+    double cardWidth = 320.0 * (width / baseReferenceWidth);
     cardWidth = cardWidth.clamp(200.0, 500.0);
 
-    // Hitung tinggi painter sesuai konten
     final dummyPainter = ProfessionalWatermarkPainter(
       timestamp: _currentTimestamp,
       hasPosition: _currentPosition != null,
@@ -349,47 +322,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
     final double cardHeight = dummyPainter.computeHeightSync(Size(cardWidth, 0));
 
-    // Posisi absolut pada gambar (berdasarkan persen)
+    // Posisi absolut
     double left = width * _watermarkPosition.x;
     double top = height * _watermarkPosition.y;
-    // Batasi agar card tidak keluar frame
-    left = left.clamp(0.0, width - cardWidth);
-    top = top.clamp(0.0, height - cardHeight);
+    left = left.clamp(0.0, width - cardWidth * _watermarkPosition.scale);
+    top = top.clamp(0.0, height - cardHeight * _watermarkPosition.scale);
 
-    // Buat recorder dan canvas
     final recorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(recorder);
-    // Gambar original foto
     canvas.drawImage(originalImage, Offset.zero, Paint());
-    // Simpan state, translasi ke posisi watermark, lalu gambar kartu
+
     canvas.save();
     canvas.translate(left, top);
-    // Skala card (jika ada scaling dari user, sudah termasuk dalam _watermarkPosition.scale)
     canvas.scale(_watermarkPosition.scale);
-    // Gambar background card (gradient, shadow, border) -> kita gambar manual atau pakai widget? Lebih mudah gambar manual.
-    _drawWatermarkCard(canvas, Size(cardWidth, cardHeight), dummyPainter);
-    canvas.restore();
 
-    final picture = recorder.endRecording();
-    final ui.Image outputImage = await picture.toImage(width, height);
-    return outputImage;
-  }
-
-  /// Gambar background card dan painter di atasnya
-  void _drawWatermarkCard(Canvas canvas, Size cardSize, ProfessionalWatermarkPainter painter) {
+    // Gambar background card
     final RRect rect = RRect.fromRectAndRadius(
-      Offset.zero & cardSize,
+      Offset.zero & Size(cardWidth, cardHeight),
       const Radius.circular(24),
     );
-    // Gradient background
     final Paint bgPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [Color(0xCC000000), Color(0xBF000000)],
-      ).createShader(Offset.zero & cardSize);
+      ).createShader(Offset.zero & Size(cardWidth, cardHeight));
     canvas.drawRRect(rect, bgPaint);
-    // Border
     if (_showBorder) {
       final Paint borderPaint = Paint()
         ..style = PaintingStyle.stroke
@@ -397,10 +355,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         ..color = Colors.white.withOpacity(0.15);
       canvas.drawRRect(rect, borderPaint);
     }
-    // Shadow (manual)
     canvas.drawShadow(Path()..addRRect(rect), Colors.black, 18, true);
-    // Gambar painter watermark
-    painter.paint(canvas, cardSize);
+
+    dummyPainter.paint(canvas, Size(cardWidth, cardHeight));
+
+    canvas.restore();
+
+    final picture = recorder.endRecording();
+    final ui.Image output = await picture.toImage(width, height);
+    return output;
   }
 
   // ==================== BUILD ====================
@@ -422,7 +385,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         children: [
           CameraPreview(_controller!),
 
-          // Watermark overlay (draggable & scalable) hanya jika GPS sudah siap (atau bisa tampil walau belum)
           if (_currentPosition != null)
             DraggableWatermarkOverlay(
               previewSize: MediaQuery.of(context).size,
@@ -447,7 +409,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               },
             ),
 
-          // Indikator loading GPS
           if (_isLoadingLocation)
             const Positioned(
               top: 50,
@@ -461,7 +422,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
 
-          // Tombol capture
           Positioned(
             bottom: 40,
             left: 0,
@@ -493,7 +453,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 }
 
-// Helper untuk decode image dari bytes (jika belum ada di Flutter)
+// Helper decode image
 Future<ui.Image> decodeImageFromList(Uint8List bytes) async {
   final Completer<ui.Image> completer = Completer();
   ui.decodeImageFromList(bytes, (ui.Image image) {

@@ -1,6 +1,8 @@
 // lib/services/settings_cache.dart
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
+import '../models/watermark_position.dart';
 
 class SettingsCache {
   static SharedPreferences? _prefs;
@@ -311,5 +313,26 @@ class SettingsCache {
   // ==========================================================================
   static void invalidate() {
     _invalidateAll();
+  }
+
+  // ==========================================================================
+  // WATERMARK POSITION (persistent)
+  // ==========================================================================
+  static Future<void> saveWatermarkPosition(WatermarkPosition pos) async {
+    await preload();
+    final jsonString = jsonEncode(pos.toJson());
+    await _prefs!.setString('watermark_position', jsonString);
+  }
+
+  static Future<WatermarkPosition> loadWatermarkPosition() async {
+    await preload();
+    final raw = _prefs!.getString('watermark_position');
+    if (raw == null) return WatermarkPosition.initial;
+    try {
+      final Map<String, dynamic> map = jsonDecode(raw);
+      return WatermarkPosition.fromJson(map);
+    } catch (_) {
+      return WatermarkPosition.initial;
+    }
   }
 }

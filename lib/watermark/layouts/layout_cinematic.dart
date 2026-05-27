@@ -1,14 +1,48 @@
 // lib/watermark/layouts/layout_cinematic.dart
 import 'dart:typed_data';
-import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:intl/intl.dart';
 import 'watermark_layout_base.dart';
 
 class LayoutCinematic extends WatermarkLayoutBase {
   @override
   String get name => 'Cinematic Modern';
+
+  // Warna tema (modern dark cinematic)
+  static final _bgTop = img.ColorRgba8(18, 20, 28, 235);
+  static final _bgBottom = img.ColorRgba8(8, 10, 16, 250);
+  static final _borderLight = img.ColorRgba8(255, 255, 255, 45);
+  static final _textWhite = img.ColorRgba8(245, 248, 255, 255);
+  static final _textMuted = img.ColorRgba8(170, 180, 200, 255);
+  static final _accentBlue = img.ColorRgba8(80, 170, 250, 255);
+  static final _accentGreen = img.ColorRgba8(100, 220, 140, 255);
+  static final _accentCyan = img.ColorRgba8(60, 210, 230, 255);
+  static final _shadowColor = img.ColorRgba8(0, 0, 0, 80);
+
+  // Hanya menggunakan font yang tersedia: arial14, arial24, arial48
+  img.BitmapFont _getDateFont(String fontSize) {
+    switch (fontSize) {
+      case 'large': return img.arial24;
+      case 'small': return img.arial14;
+      default: return img.arial24; // normal
+    }
+  }
+
+  img.BitmapFont _getTimeFont(String fontSize) {
+    switch (fontSize) {
+      case 'large': return img.arial48;
+      case 'small': return img.arial24;
+      default: return img.arial48; // normal juga pakai arial48 agar lebih tegas
+    }
+  }
+
+  img.BitmapFont _getInfoFont(String fontSize) {
+    switch (fontSize) {
+      case 'large': return img.arial24;
+      case 'small': return img.arial14;
+      default: return img.arial24; // normal
+    }
+  }
 
   @override
   Uint8List apply({
@@ -34,230 +68,197 @@ class LayoutCinematic extends WatermarkLayoutBase {
     String timeFormat = 'HH:mm:ss',
   }) {
     final double scale = (src.width / 1080).clamp(0.7, 2.0);
+    
+    final fontDate = _getDateFont(fontSize);
+    final fontTime = _getTimeFont(fontSize);
+    final fontInfo = _getInfoFont(fontSize);
+    
     final int padX = (24 * scale).round();
     final int padY = (20 * scale).round();
     final int margin = (16 * scale).round();
-    final int radius = (24 * scale).round();
-
-    // Pilih font berdasarkan fontSize
-    final img.BitmapFont fontDate = (fontSize == 'large')
-        ? img.arial24
-        : (fontSize == 'small')
-            ? img.arial14
-            : img.arial20;
-    final img.BitmapFont fontTime = (fontSize == 'large')
-        ? img.arial24
-        : (fontSize == 'small')
-            ? img.arial20
-            : img.arial24;
-    final img.BitmapFont fontInfo = (fontSize == 'large')
-        ? img.arial20
-        : (fontSize == 'small')
-            ? img.arial12
-            : img.arial14;
-
-    // Hitung tinggi panel
+    final int shadowOffset = (6 * scale).round();
+    
+    // Hitung tinggi panel (tanpa emoji)
     int contentHeight = 0;
-    contentHeight += (fontDate.height + 8).toInt();
-    contentHeight += (fontTime.height + 12).toInt();
-    contentHeight += 16; // separator
-    if (showCoordinates && hasPosition && lat != null && lon != null)
-      contentHeight += (fontInfo.height + 6).toInt();
-    if (showAccuracy && hasPosition && acc != null)
-      contentHeight += (fontInfo.height + 6).toInt();
-    if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) {
-      final lines = _splitAddress(address, scale);
-      contentHeight += lines.length * (fontInfo.height + 6).toInt();
+    contentHeight += fontDate.height + 8;
+    contentHeight += fontTime.height + 12;
+    contentHeight += 8; // separator
+    
+    List<String> addressLines = [];
+    if (showAddress && address.isNotEmpty && !_isInvalidAddress(address)) {
+      addressLines = _splitAddress(address, scale);
+      contentHeight += addressLines.length * (fontInfo.height + 6);
     }
-    if (showWeather && weather.isNotEmpty)
-      contentHeight += (fontInfo.height + 6).toInt();
-
-    // Mini map
-    final bool hasMap = showMiniMap && mapBytes != null && mapBytes.isNotEmpty;
-    if (hasMap) {
-      contentHeight += (120 * scale).round() + padY;
+    if (showCoordinates && hasPosition && lat != null && lon != null) {
+      contentHeight += fontInfo.height + 6;
     }
-
+    if (showAccuracy && hasPosition && acc != null) {
+      contentHeight += fontInfo.height + 6;
+    }
+    if (showWeather && weather.isNotEmpty) {
+      contentHeight += fontInfo.height + 6;
+    }
+    
     final int panelHeight = contentHeight + padY * 2;
     final int cardWidth = src.width - margin * 2;
     final int cardX = margin;
-    final int cardY = src.height - panelHeight - margin;
-
-    // 1. Gambar background dengan gradien (simulasi gradien dengan dua lapis)
-    final bgColor1 = img.ColorRgba8(15, 15, 20, (255 * opacity).toInt());
-    final bgColor2 = img.ColorRgba8(5, 5, 10, (255 * opacity).toInt());
-    img.fillRect(src,
-        x1: cardX, y1: cardY,
-        x2: cardX + cardWidth, y2: cardY + panelHeight,
-        color: bgColor1);
-    // Efek gradien vertikal (lebih gelap di bawah)
+    int cardY = src.height - panelHeight - margin;
+    
+    // Safety bounds (jangan keluar gambar)
+    if (cardY < margin) cardY = margin;
+    if (cardY + panelHeight > src.height) {
+      // fallback: simpan di posisi aman
+      return WatermarkLayoutBase.encodeJpg(src);
+    }
+    
+    // 1. Background gradien (loop aman, cepat)
     for (int y = cardY; y < cardY + panelHeight; y++) {
       final double t = (y - cardY) / panelHeight;
-      final int r = (bgColor2.r * t + bgColor1.r * (1 - t)).round();
-      final int g = (bgColor2.g * t + bgColor1.g * (1 - t)).round();
-      final int b = (bgColor2.b * t + bgColor1.b * (1 - t)).round();
+      final int r = _lerp(_bgTop.r, _bgBottom.r, t);
+      final int g = _lerp(_bgTop.g, _bgBottom.g, t);
+      final int b = _lerp(_bgTop.b, _bgBottom.b, t);
+      final int a = (_lerp(_bgTop.a, _bgBottom.a, t) * opacity).toInt().clamp(0, 255);
       img.drawLine(src,
           x1: cardX, y1: y,
           x2: cardX + cardWidth, y2: y,
-          color: img.ColorRgba8(r, g, b, bgColor1.a));
+          color: img.ColorRgba8(r, g, b, a));
     }
-
-    // 2. Border radius (simulasi dengan gambar lingkaran di keempat sudut)
-    _drawRoundedRect(src, cardX, cardY, cardX + cardWidth, cardY + panelHeight, radius);
-
-    // 3. Border (jika aktif)
+    
+    // 2. Border dengan radius (simulasi)
     if (showBorder) {
-      _drawRectBorder(src, cardX, cardY, cardX + cardWidth, cardY + panelHeight, radius,
-          img.ColorRgba8(255, 255, 255, 60), 2);
+      _drawRoundedBorder(src, cardX, cardY, cardX + cardWidth, cardY + panelHeight, (16 * scale).round());
     }
-
-    // 4. Shadow (simulasi bayangan bawah)
-    final shadowOffset = (8 * scale).round();
-    if (shadowOffset > 0) {
-      img.fillRect(src,
-          x1: cardX + 4, y1: cardY + panelHeight,
-          x2: cardX + cardWidth - 4, y2: cardY + panelHeight + shadowOffset,
-          color: img.ColorRgba8(0, 0, 0, 80));
-    }
-
-    int cy = cardY + padY;
-
-    // Mini map
-    if (hasMap) {
-      try {
-        final map = img.decodeImage(mapBytes!);
-        if (map != null) {
-          final mapH = (120 * scale).round();
-          final resized = img.copyResize(map, width: cardWidth - padX * 2, height: mapH);
-          final mapX = cardX + padX;
-          img.compositeImage(src, resized, dstX: mapX, dstY: cy, blend: img.BlendMode.alpha);
-          // Pin marker
-          final pinX = mapX + resized.width ~/ 2;
-          final pinY = cy + mapH ~/ 2;
-          img.fillCircle(src,
-              x: pinX, y: pinY, radius: (6 * scale).round(),
-              color: img.ColorRgba8(255, 60, 60, 255));
-          img.fillCircle(src,
-              x: pinX, y: pinY, radius: (2 * scale).round(),
-              color: img.ColorRgba8(255, 255, 255, 200));
-        }
-      } catch (_) {}
-      cy += (120 * scale).round() + padY;
-    }
-
-    // Tanggal (dengan icon kalender kecil - opsional)
-    final dateStr = DateFormat(dateFormat).format(timestamp);
-    img.drawString(src, dateStr,
-        font: fontDate,
-        x: cardX + padX,
-        y: cy,
-        color: img.ColorRgba8(200, 200, 220, 255));
-    cy += fontDate.height + 8;
-
-    // Waktu (dengan efek neon)
-    final timeStr = DateFormat(timeFormat).format(timestamp);
-    img.drawString(src, timeStr,
-        font: fontTime,
-        x: cardX + padX,
-        y: cy,
-        color: img.ColorRgba8(255, 255, 255, 255));
-    cy += fontTime.height + 12;
-
-    // Separator garis halus dengan gradasi
-    final lineY = cy;
-    for (int x = cardX + padX; x < cardX + cardWidth - padX; x++) {
-      final alpha = (30 + ((x - (cardX + padX)) % 10) * 2).clamp(20, 50);
-      img.drawPixel(src, x, lineY, img.ColorRgba8(255, 255, 255, alpha));
-      img.drawPixel(src, x, lineY + 1, img.ColorRgba8(255, 255, 255, alpha ~/ 2));
-    }
-    cy += 16;
-
-    // Alamat
-    if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) {
-      final lines = _splitAddress(address, scale);
-      for (final line in lines) {
-        img.drawString(src, line,
-            font: fontInfo,
-            x: cardX + padX,
-            y: cy,
-            color: img.ColorRgba8(220, 220, 240, 255));
-        cy += fontInfo.height + 6;
+    
+    // 3. Shadow bawah (efek mengambang) dengan batas aman
+    if (shadowOffset > 0 && cardY + panelHeight + shadowOffset <= src.height) {
+      for (int i = 1; i <= shadowOffset; i++) {
+        final int alpha = (40 * (1 - i / shadowOffset)).toInt().clamp(0, 40);
+        img.drawLine(src,
+            x1: cardX + 8, y1: cardY + panelHeight + i - 1,
+            x2: cardX + cardWidth - 8, y2: cardY + panelHeight + i - 1,
+            color: img.ColorRgba8(0, 0, 0, alpha));
       }
     }
-
-    // Koordinat
+    
+    int cy = cardY + padY;
+    
+    // Tanggal
+    final dateStr = DateFormat(dateFormat).format(timestamp);
+    img.drawString(src, dateStr, font: fontDate, x: cardX + padX, y: cy, color: _textMuted);
+    cy += fontDate.height + 8;
+    
+    // Waktu
+    final timeStr = DateFormat(timeFormat).format(timestamp);
+    img.drawString(src, timeStr, font: fontTime, x: cardX + padX, y: cy, color: _textWhite);
+    cy += fontTime.height + 12;
+    
+    // Separator garis tipis (efisien)
+    img.drawLine(src,
+        x1: cardX + padX, y1: cy,
+        x2: cardX + cardWidth - padX, y2: cy,
+        color: img.ColorRgba8(255, 255, 255, 30),
+        thickness: 1);
+    cy += 8;
+    
+    // Alamat
+    for (final line in addressLines) {
+      img.drawString(src, line, font: fontInfo, x: cardX + padX, y: cy, color: _textMuted);
+      cy += fontInfo.height + 6;
+    }
+    
+    // Koordinat (tanpa emoji, pakai huruf N/S/E/W)
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      img.drawString(src,
-          '📍 ${lat.toStringAsFixed(5)}°, ${lon.toStringAsFixed(5)}°',
-          font: fontInfo,
-          x: cardX + padX,
-          y: cy,
-          color: img.ColorRgba8(100, 180, 250, 255));
+      final latDir = lat >= 0 ? "N" : "S";
+      final lonDir = lon >= 0 ? "E" : "W";
+      final coordStr = "${lat.abs().toStringAsFixed(5)}° $latDir   ${lon.abs().toStringAsFixed(5)}° $lonDir";
+      img.drawString(src, coordStr, font: fontInfo, x: cardX + padX, y: cy, color: _accentBlue);
       cy += fontInfo.height + 6;
     }
-
-    // Akurasi
+    
+    // Akurasi (tanpa emoji)
     if (showAccuracy && hasPosition && acc != null) {
-      img.drawString(src,
-          '🎯 Akurasi ±${acc.toStringAsFixed(1)}m',
-          font: fontInfo,
-          x: cardX + padX,
-          y: cy,
-          color: img.ColorRgba8(180, 230, 180, 255));
+      final accStr = "Akurasi ± ${acc.toStringAsFixed(1)} m";
+      img.drawString(src, accStr, font: fontInfo, x: cardX + padX, y: cy, color: _accentGreen);
       cy += fontInfo.height + 6;
     }
-
-    // Cuaca
+    
+    // Cuaca (tanpa emoji, dengan background highlight)
     if (showWeather && weather.isNotEmpty) {
-      img.drawString(src, weather,
-          font: fontInfo,
-          x: cardX + padX,
-          y: cy,
-          color: img.ColorRgba8(160, 210, 255, 255));
+      // Background highlight transparan (opsional)
+      img.fillRect(src,
+          x1: cardX + padX - 4, y1: cy - 2,
+          x2: cardX + padX + weather.length * (fontInfo.width ~/ 2) + 8,
+          y2: cy + fontInfo.height + 2,
+          color: img.ColorRgba8(80, 180, 255, 25));
+      img.drawString(src, weather, font: fontInfo, x: cardX + padX, y: cy, color: _accentCyan);
     }
-
+    
     return WatermarkLayoutBase.encodeJpg(src);
   }
-
-  // Simulasi rounded rectangle dengan menggambar lingkaran di keempat sudut
-  void _drawRoundedRect(img.Image src, int x1, int y1, int x2, int y2, int radius) {
-    final color = img.ColorRgba8(0, 0, 0, 0); // transparent, hanya untuk memotong sudut
-    // Sebenarnya image library tidak support clip, jadi kita gambar kotak biasa dan tidak ada efek rounded.
-    // Tapi kita bisa gambar border dengan rounded jika ada fungsi, namun sementara diabaikan.
-    // Untuk rounded yang sebenarnya, kita perlu plugin yang lebih canggih. Alternatif: gambar border rounded.
-  }
-
-  // Gambar border dengan radius (simulasi)
-  void _drawRectBorder(img.Image src, int x1, int y1, int x2, int y2, int radius, img.Color color, int thickness) {
-    // Sederhana: gambar border tebal di tepi
-    for (int i = 0; i < thickness; i++) {
-      // atas
-      img.drawLine(src, x1: x1 + radius, y1: y1 + i, x2: x2 - radius, y2: y1 + i, color: color);
-      // bawah
-      img.drawLine(src, x1: x1 + radius, y1: y2 - i - 1, x2: x2 - radius, y2: y2 - i - 1, color: color);
-      // kiri
-      img.drawLine(src, x1: x1 + i, y1: y1 + radius, x2: x1 + i, y2: y2 - radius, color: color);
-      // kanan
-      img.drawLine(src, x1: x2 - i - 1, y1: y1 + radius, x2: x2 - i - 1, y2: y2 - radius, color: color);
+  
+  // Gambar border dengan sudut membulat (simulasi)
+  void _drawRoundedBorder(img.Image src, int x1, int y1, int x2, int y2, int r) {
+    final int thickness = 2;
+    // Garis tepi
+    img.drawLine(src,
+        x1: x1 + r, y1: y1,
+        x2: x2 - r, y2: y1,
+        color: _borderLight, thickness: thickness);
+    img.drawLine(src,
+        x1: x1 + r, y1: y2,
+        x2: x2 - r, y2: y2,
+        color: _borderLight, thickness: thickness);
+    img.drawLine(src,
+        x1: x1, y1: y1 + r,
+        x2: x1, y2: y2 - r,
+        color: _borderLight, thickness: thickness);
+    img.drawLine(src,
+        x1: x2, y1: y1 + r,
+        x2: x2, y2: y2 - r,
+        color: _borderLight, thickness: thickness);
+    // Gambar lengkungan sudut (lingkaran kecil)
+    if (r > 4) {
+      img.drawCircle(src, x: x1 + r, y: y1 + r, radius: r, color: _borderLight, thickness: thickness);
+      img.drawCircle(src, x: x2 - r, y: y1 + r, radius: r, color: _borderLight, thickness: thickness);
+      img.drawCircle(src, x: x1 + r, y: y2 - r, radius: r, color: _borderLight, thickness: thickness);
+      img.drawCircle(src, x: x2 - r, y: y2 - r, radius: r, color: _borderLight, thickness: thickness);
     }
-    // Tambahkan lengkungan sudut (opsional, untuk efek halus)
   }
-
-  // Helper split address
+  
+  // Deteksi alamat invalid
+  bool _isInvalidAddress(String addr) {
+    return addr.isEmpty ||
+        addr == 'Tidak ada lokasi' ||
+        addr.startsWith('GPS:') ||
+        addr.startsWith('Mencari');
+  }
+  
+  // Pecah alamat menjadi maksimal 2 baris dengan panjang dinamis
   List<String> _splitAddress(String address, double scale) {
-    final int maxLen = (38 + (scale * 8).round()).clamp(38, 55);
-    final words = address.split(' ');
-    final lines = <String>[];
-    String current = '';
-    for (final word in words) {
-      if ((current + word).length > maxLen) {
-        lines.add(current.trim());
-        current = '$word ';
-      } else {
-        current += '$word ';
+    final int maxLen = (38 + (scale * 6).round()).clamp(38, 55);
+    final List<String> parts = address.split(',');
+    if (parts.length == 1) {
+      final List<String> words = address.split(' ');
+      final List<String> lines = [];
+      String current = '';
+      for (final word in words) {
+        if ((current + word).length > maxLen) {
+          if (current.isNotEmpty) lines.add(current.trim());
+          current = word;
+        } else {
+          current += (current.isEmpty ? word : ' $word');
+        }
       }
+      if (current.isNotEmpty) lines.add(current.trim());
+      return lines.take(2).toList();
+    } else {
+      String first = parts.first.trim();
+      String rest = parts.skip(1).join(',').trim();
+      if (first.length > maxLen) first = first.substring(0, maxLen - 3) + '…';
+      if (rest.length > maxLen) rest = rest.substring(0, maxLen - 3) + '…';
+      return [first, rest];
     }
-    if (current.trim().isNotEmpty) lines.add(current.trim());
-    return lines.take(2).toList(); // maksimal 2 baris
   }
+  
+  int _lerp(int a, int b, double t) => (a + (b - a) * t).round().clamp(0, 255);
 }

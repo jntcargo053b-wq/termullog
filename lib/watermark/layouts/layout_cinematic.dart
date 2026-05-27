@@ -1,48 +1,12 @@
 // lib/watermark/layouts/layout_cinematic.dart
 import 'dart:typed_data';
-import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
+import 'package:image/image.dart' as img;
 import 'watermark_layout_base.dart';
 
 class LayoutCinematic extends WatermarkLayoutBase {
   @override
   String get name => 'Cinematic Modern';
-
-  // Warna tema (modern dark cinematic)
-  static final _bgTop = img.ColorRgba8(18, 20, 28, 235);
-  static final _bgBottom = img.ColorRgba8(8, 10, 16, 250);
-  static final _borderLight = img.ColorRgba8(255, 255, 255, 45);
-  static final _textWhite = img.ColorRgba8(245, 248, 255, 255);
-  static final _textMuted = img.ColorRgba8(170, 180, 200, 255);
-  static final _accentBlue = img.ColorRgba8(80, 170, 250, 255);
-  static final _accentGreen = img.ColorRgba8(100, 220, 140, 255);
-  static final _accentCyan = img.ColorRgba8(60, 210, 230, 255);
-  static final _shadowColor = img.ColorRgba8(0, 0, 0, 80);
-
-  // Hanya menggunakan font yang tersedia: arial14, arial24, arial48
-  img.BitmapFont _getDateFont(String fontSize) {
-    switch (fontSize) {
-      case 'large': return img.arial24;
-      case 'small': return img.arial14;
-      default: return img.arial24; // normal
-    }
-  }
-
-  img.BitmapFont _getTimeFont(String fontSize) {
-    switch (fontSize) {
-      case 'large': return img.arial48;
-      case 'small': return img.arial24;
-      default: return img.arial48; // normal juga pakai arial48 agar lebih tegas
-    }
-  }
-
-  img.BitmapFont _getInfoFont(String fontSize) {
-    switch (fontSize) {
-      case 'large': return img.arial24;
-      case 'small': return img.arial14;
-      default: return img.arial24; // normal
-    }
-  }
 
   @override
   Uint8List apply({
@@ -68,197 +32,196 @@ class LayoutCinematic extends WatermarkLayoutBase {
     String timeFormat = 'HH:mm:ss',
   }) {
     final double scale = (src.width / 1080).clamp(0.7, 2.0);
-    
-    final fontDate = _getDateFont(fontSize);
-    final fontTime = _getTimeFont(fontSize);
-    final fontInfo = _getInfoFont(fontSize);
-    
-    final int padX = (24 * scale).round();
-    final int padY = (20 * scale).round();
+    final int padX   = (24 * scale).round();
+    final int padY   = (20 * scale).round();
     final int margin = (16 * scale).round();
-    final int shadowOffset = (6 * scale).round();
-    
-    // Hitung tinggi panel (tanpa emoji)
-    int contentHeight = 0;
-    contentHeight += fontDate.height + 8;
-    contentHeight += fontTime.height + 12;
-    contentHeight += 8; // separator
-    
+
+    // Font (hanya arial14, arial24, arial48 yang ada di image 4.x)
+    final img.BitmapFont fontDate = fontSize == 'small' ? img.arial14 : img.arial24;
+    final img.BitmapFont fontTime = img.arial24;
+    final img.BitmapFont fontInfo = fontSize == 'large' ? img.arial24 : img.arial14;
+
+    // FIX: gunakan .lineHeight (bukan .height yang tidak ada di image 4.8)
+    final int dateH  = fontDate.lineHeight;
+    final int timeH  = fontTime.lineHeight;
+    final int infoH  = fontInfo.lineHeight;
+
+    // Hitung tinggi panel dari baris yang benar-benar digambar
+    int contentH = 0;
+    contentH += dateH + 8;
+    contentH += timeH + 12;
+    contentH += 14; // separator
+
+    final bool drawCoord   = showCoordinates && hasPosition && lat != null && lon != null;
+    final bool drawAcc     = showAccuracy && hasPosition && acc != null;
+    final bool drawWeather = showWeather && weather.isNotEmpty;
+    final bool hasMap      = showMiniMap && mapBytes != null && mapBytes.isNotEmpty;
+    final int  mapH        = (120 * scale).round();
+
     List<String> addressLines = [];
-    if (showAddress && address.isNotEmpty && !_isInvalidAddress(address)) {
+    if (showAddress && address.isNotEmpty && !address.startsWith('GPS:')) {
       addressLines = _splitAddress(address, scale);
-      contentHeight += addressLines.length * (fontInfo.height + 6);
+      contentH += addressLines.length * (infoH + 6);
     }
-    if (showCoordinates && hasPosition && lat != null && lon != null) {
-      contentHeight += fontInfo.height + 6;
+    if (drawCoord)   contentH += infoH + 6;
+    if (drawAcc)     contentH += infoH + 6;
+    if (drawWeather) contentH += infoH + 6;
+    if (hasMap)      contentH += mapH + padY;
+
+    final int panelH = contentH + padY * 2;
+    final int cardW  = src.width - margin * 2;
+    final int cardX  = margin;
+
+    if (panelH > src.height) return WatermarkLayoutBase.encodeJpg(src);
+    final int cardY = (src.height - panelH - margin).clamp(0, src.height - panelH);
+
+    // ── 1. Background gradien (16 step batch) ────────────────────────────
+    final int alphaInt = (255 * opacity).round().clamp(0, 255);
+    const int bgR1 = 20, bgG1 = 20, bgB1 = 28;
+    const int bgR2 =  8, bgG2 =  8, bgB2 = 12;
+    const int steps = 16;
+    final int stepH = (panelH / steps).ceil();
+    for (int s = 0; s < steps; s++) {
+      final double t = s / (steps - 1);
+      final int y1 = cardY + s * stepH;
+      final int y2 = (y1 + stepH).clamp(0, cardY + panelH);
+      if (y1 >= y2) continue;
+      img.fillRect(src,
+          x1: cardX, y1: y1, x2: cardX + cardW, y2: y2,
+          color: img.ColorRgba8(
+            _lerp(bgR1, bgR2, t),
+            _lerp(bgG1, bgG2, t),
+            _lerp(bgB1, bgB2, t),
+            alphaInt,
+          ));
     }
-    if (showAccuracy && hasPosition && acc != null) {
-      contentHeight += fontInfo.height + 6;
-    }
-    if (showWeather && weather.isNotEmpty) {
-      contentHeight += fontInfo.height + 6;
-    }
-    
-    final int panelHeight = contentHeight + padY * 2;
-    final int cardWidth = src.width - margin * 2;
-    final int cardX = margin;
-    int cardY = src.height - panelHeight - margin;
-    
-    // Safety bounds (jangan keluar gambar)
-    if (cardY < margin) cardY = margin;
-    if (cardY + panelHeight > src.height) {
-      // fallback: simpan di posisi aman
-      return WatermarkLayoutBase.encodeJpg(src);
-    }
-    
-    // 1. Background gradien (loop aman, cepat)
-    for (int y = cardY; y < cardY + panelHeight; y++) {
-      final double t = (y - cardY) / panelHeight;
-      final int r = _lerp(_bgTop.r, _bgBottom.r, t);
-      final int g = _lerp(_bgTop.g, _bgBottom.g, t);
-      final int b = _lerp(_bgTop.b, _bgBottom.b, t);
-      final int a = (_lerp(_bgTop.a, _bgBottom.a, t) * opacity).toInt().clamp(0, 255);
-      img.drawLine(src,
-          x1: cardX, y1: y,
-          x2: cardX + cardWidth, y2: y,
-          color: img.ColorRgba8(r, g, b, a));
-    }
-    
-    // 2. Border dengan radius (simulasi)
+
+    // ── 2. Border ────────────────────────────────────────────────────────
     if (showBorder) {
-      _drawRoundedBorder(src, cardX, cardY, cardX + cardWidth, cardY + panelHeight, (16 * scale).round());
+      _drawBorder(src, cardX, cardY, cardW, panelH,
+          img.ColorRgba8(255, 255, 255, 55), 2);
     }
-    
-    // 3. Shadow bawah (efek mengambang) dengan batas aman
-    if (shadowOffset > 0 && cardY + panelHeight + shadowOffset <= src.height) {
-      for (int i = 1; i <= shadowOffset; i++) {
-        final int alpha = (40 * (1 - i / shadowOffset)).toInt().clamp(0, 40);
-        img.drawLine(src,
-            x1: cardX + 8, y1: cardY + panelHeight + i - 1,
-            x2: cardX + cardWidth - 8, y2: cardY + panelHeight + i - 1,
-            color: img.ColorRgba8(0, 0, 0, alpha));
-      }
+
+    // ── 3. Shadow bawah ───────────────────────────────────────────────────
+    final int shadowH  = (6 * scale).round();
+    final int shadowY1 = cardY + panelH;
+    final int shadowY2 = (shadowY1 + shadowH).clamp(0, src.height);
+    if (shadowY1 < src.height && shadowY1 < shadowY2) {
+      img.fillRect(src,
+          x1: cardX + 4, y1: shadowY1,
+          x2: cardX + cardW - 4, y2: shadowY2,
+          color: img.ColorRgba8(0, 0, 0, 70));
     }
-    
+
+    // ── Render konten ────────────────────────────────────────────────────
     int cy = cardY + padY;
-    
+
+    // Mini map
+    if (hasMap) {
+      try {
+        final map = img.decodeImage(mapBytes!);
+        if (map != null) {
+          final mapW    = cardW - padX * 2;
+          final resized = img.copyResize(map, width: mapW, height: mapH);
+          img.compositeImage(src, resized,
+              dstX: cardX + padX, dstY: cy, blend: img.BlendMode.alpha);
+          final pinX = cardX + padX + mapW ~/ 2;
+          final pinY = cy + mapH ~/ 2;
+          img.fillCircle(src, x: pinX, y: pinY,
+              radius: (7 * scale).round(), color: img.ColorRgba8(255, 60, 60, 255));
+          img.fillCircle(src, x: pinX, y: pinY,
+              radius: (3 * scale).round(), color: img.ColorRgba8(255, 255, 255, 210));
+        }
+      } catch (_) {}
+      cy += mapH + padY;
+    }
+
     // Tanggal
-    final dateStr = DateFormat(dateFormat).format(timestamp);
-    img.drawString(src, dateStr, font: fontDate, x: cardX + padX, y: cy, color: _textMuted);
-    cy += fontDate.height + 8;
-    
+    img.drawString(src, DateFormat(dateFormat).format(timestamp),
+        font: fontDate, x: cardX + padX, y: cy,
+        color: img.ColorRgba8(200, 200, 225, 255));
+    cy += dateH + 8;
+
     // Waktu
-    final timeStr = DateFormat(timeFormat).format(timestamp);
-    img.drawString(src, timeStr, font: fontTime, x: cardX + padX, y: cy, color: _textWhite);
-    cy += fontTime.height + 12;
-    
-    // Separator garis tipis (efisien)
-    img.drawLine(src,
+    img.drawString(src, DateFormat(timeFormat).format(timestamp),
+        font: fontTime, x: cardX + padX, y: cy,
+        color: img.ColorRgba8(255, 255, 255, 255));
+    cy += timeH + 12;
+
+    // Separator
+    img.fillRect(src,
         x1: cardX + padX, y1: cy,
-        x2: cardX + cardWidth - padX, y2: cy,
-        color: img.ColorRgba8(255, 255, 255, 30),
-        thickness: 1);
-    cy += 8;
-    
+        x2: cardX + cardW - padX, y2: cy + 2,
+        color: img.ColorRgba8(255, 255, 255, 35));
+    cy += 14;
+
     // Alamat
     for (final line in addressLines) {
-      img.drawString(src, line, font: fontInfo, x: cardX + padX, y: cy, color: _textMuted);
-      cy += fontInfo.height + 6;
+      img.drawString(src, line,
+          font: fontInfo, x: cardX + padX, y: cy,
+          color: img.ColorRgba8(220, 220, 240, 255));
+      cy += infoH + 6;
     }
-    
-    // Koordinat (tanpa emoji, pakai huruf N/S/E/W)
-    if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final latDir = lat >= 0 ? "N" : "S";
-      final lonDir = lon >= 0 ? "E" : "W";
-      final coordStr = "${lat.abs().toStringAsFixed(5)}° $latDir   ${lon.abs().toStringAsFixed(5)}° $lonDir";
-      img.drawString(src, coordStr, font: fontInfo, x: cardX + padX, y: cy, color: _accentBlue);
-      cy += fontInfo.height + 6;
+
+    // Koordinat
+    if (drawCoord) {
+      img.drawString(src,
+          '${lat!.toStringAsFixed(6)}, ${lon!.toStringAsFixed(6)}',
+          font: fontInfo, x: cardX + padX, y: cy,
+          color: img.ColorRgba8(100, 180, 250, 255));
+      cy += infoH + 6;
     }
-    
-    // Akurasi (tanpa emoji)
-    if (showAccuracy && hasPosition && acc != null) {
-      final accStr = "Akurasi ± ${acc.toStringAsFixed(1)} m";
-      img.drawString(src, accStr, font: fontInfo, x: cardX + padX, y: cy, color: _accentGreen);
-      cy += fontInfo.height + 6;
+
+    // Akurasi
+    if (drawAcc) {
+      img.drawString(src,
+          'Akurasi: +/-${acc!.toStringAsFixed(1)}m',
+          font: fontInfo, x: cardX + padX, y: cy,
+          color: img.ColorRgba8(180, 230, 180, 255));
+      cy += infoH + 6;
     }
-    
-    // Cuaca (tanpa emoji, dengan background highlight)
-    if (showWeather && weather.isNotEmpty) {
-      // Background highlight transparan (opsional)
-      img.fillRect(src,
-          x1: cardX + padX - 4, y1: cy - 2,
-          x2: cardX + padX + weather.length * (fontInfo.width ~/ 2) + 8,
-          y2: cy + fontInfo.height + 2,
-          color: img.ColorRgba8(80, 180, 255, 25));
-      img.drawString(src, weather, font: fontInfo, x: cardX + padX, y: cy, color: _accentCyan);
+
+    // Cuaca
+    if (drawWeather) {
+      img.drawString(src, weather,
+          font: fontInfo, x: cardX + padX, y: cy,
+          color: img.ColorRgba8(160, 210, 255, 255));
     }
-    
+
     return WatermarkLayoutBase.encodeJpg(src);
   }
-  
-  // Gambar border dengan sudut membulat (simulasi)
-  void _drawRoundedBorder(img.Image src, int x1, int y1, int x2, int y2, int r) {
-    final int thickness = 2;
-    // Garis tepi
-    img.drawLine(src,
-        x1: x1 + r, y1: y1,
-        x2: x2 - r, y2: y1,
-        color: _borderLight, thickness: thickness);
-    img.drawLine(src,
-        x1: x1 + r, y1: y2,
-        x2: x2 - r, y2: y2,
-        color: _borderLight, thickness: thickness);
-    img.drawLine(src,
-        x1: x1, y1: y1 + r,
-        x2: x1, y2: y2 - r,
-        color: _borderLight, thickness: thickness);
-    img.drawLine(src,
-        x1: x2, y1: y1 + r,
-        x2: x2, y2: y2 - r,
-        color: _borderLight, thickness: thickness);
-    // Gambar lengkungan sudut (lingkaran kecil)
-    if (r > 4) {
-      img.drawCircle(src, x: x1 + r, y: y1 + r, radius: r, color: _borderLight, thickness: thickness);
-      img.drawCircle(src, x: x2 - r, y: y1 + r, radius: r, color: _borderLight, thickness: thickness);
-      img.drawCircle(src, x: x1 + r, y: y2 - r, radius: r, color: _borderLight, thickness: thickness);
-      img.drawCircle(src, x: x2 - r, y: y2 - r, radius: r, color: _borderLight, thickness: thickness);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  void _drawBorder(img.Image src, int x, int y, int w, int h,
+      img.Color color, int thickness) {
+    for (int i = 0; i < thickness; i++) {
+      img.fillRect(src, x1: x,         y1: y + i,         x2: x + w,     y2: y + i + 1,     color: color);
+      img.fillRect(src, x1: x,         y1: y + h - i - 1, x2: x + w,     y2: y + h - i,     color: color);
+      img.fillRect(src, x1: x + i,     y1: y,             x2: x + i + 1, y2: y + h,         color: color);
+      img.fillRect(src, x1: x + w-i-1, y1: y,             x2: x + w - i, y2: y + h,         color: color);
     }
   }
-  
-  // Deteksi alamat invalid
-  bool _isInvalidAddress(String addr) {
-    return addr.isEmpty ||
-        addr == 'Tidak ada lokasi' ||
-        addr.startsWith('GPS:') ||
-        addr.startsWith('Mencari');
-  }
-  
-  // Pecah alamat menjadi maksimal 2 baris dengan panjang dinamis
+
+  // FIX: terima int biasa (bukan num) — warna dikonversi sebelum dipanggil
+  int _lerp(int a, int b, double t) =>
+      (a + (b - a) * t).round().clamp(0, 255);
+
   List<String> _splitAddress(String address, double scale) {
-    final int maxLen = (38 + (scale * 6).round()).clamp(38, 55);
-    final List<String> parts = address.split(',');
-    if (parts.length == 1) {
-      final List<String> words = address.split(' ');
-      final List<String> lines = [];
-      String current = '';
-      for (final word in words) {
-        if ((current + word).length > maxLen) {
-          if (current.isNotEmpty) lines.add(current.trim());
-          current = word;
-        } else {
-          current += (current.isEmpty ? word : ' $word');
-        }
+    final int maxLen = (38 + (scale * 8).round()).clamp(38, 55);
+    final words = address.split(' ');
+    final lines = <String>[];
+    String current = '';
+    for (final word in words) {
+      if ((current + word).length > maxLen) {
+        if (current.isNotEmpty) lines.add(current.trim());
+        if (lines.length >= 2) break;
+        current = '$word ';
+      } else {
+        current += '$word ';
       }
-      if (current.isNotEmpty) lines.add(current.trim());
-      return lines.take(2).toList();
-    } else {
-      String first = parts.first.trim();
-      String rest = parts.skip(1).join(',').trim();
-      if (first.length > maxLen) first = first.substring(0, maxLen - 3) + '…';
-      if (rest.length > maxLen) rest = rest.substring(0, maxLen - 3) + '…';
-      return [first, rest];
     }
+    if (lines.length < 2 && current.trim().isNotEmpty) lines.add(current.trim());
+    return lines;
   }
-  
-  int _lerp(int a, int b, double t) => (a + (b - a) * t).round().clamp(0, 255);
 }

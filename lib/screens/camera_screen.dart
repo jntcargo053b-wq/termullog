@@ -1,5 +1,11 @@
 // lib/screens/camera_screen.dart
-// FINAL VERSION - Optimized GPS, efficient setState, robust lifecycle
+// FINAL PRODUCTION VERSION
+// - GPS akurasi tinggi dengan GpsLockManager (weighted average, outlier rejection)
+// - Menggunakan FusedLocationProvider (forceLocationManager: false)
+// - Filter akurasi sebelum capture (>15m peringatan)
+// - Optimalisasi setState dengan distance threshold
+// - Stable lifecycle & race condition handling
+
 import 'dart:async';
 import 'dart:io';
 
@@ -44,6 +50,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Position? _bestPosition;
   String _address = 'Mencari lokasi...';
   String _weather = '';
+  double? _currentAccuracy;
 
   Position? _lastGeocodedPosition;
   bool _isAddressLoading = false;
@@ -114,10 +121,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     super.dispose();
   }
 
-  // ==================== LIFECYCLE WITH RACE CONDITION GUARD ====================
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
-    // Guard against overlapping camera init during rapid state changes
     if (_isCameraInitializing) return;
 
     if (state == AppLifecycleState.inactive) {
@@ -128,14 +133,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
       if (mounted) setState(() => _isCameraReady = false);
 
-      // Cancel GPS stream and reset flag so it can be restarted cleanly
       await _positionSub?.cancel();
       _positionSub = null;
       _locationStreamActive = false;
-
     } else if (state == AppLifecycleState.resumed) {
       await _initCamera();
-      _initLocation(); // restart GPS stream
+      _initLocation();
       final pos = _currentPosition ?? _bestPosition;
       if (pos != null) unawaited(_fetchAddressAndWeather(pos, forceRefresh: true));
     }
@@ -183,7 +186,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GALLERY PERMISSION ====================
+  // ==================== PERMISSIONS ====================
   Future<void> _checkGalleryPermission() async {
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -205,7 +208,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== HIGH ACCURACY MODE ====================
   Future<void> _checkAndRequestHighAccuracyMode() async {
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -268,7 +270,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GPS LOCATION STREAM (optimized) ====================
+  // ==================== GPS LOCATION STREAM ====================
   Future<void> _initLocation() async {
     if (_locationStreamActive) return;
     _locationStreamActive = true;
@@ -299,55 +301,63 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Step 1: Last known position (instant)
+      // Step 1: Last known position (hanya jika akurasi <= 50m)
       final lastKnown = await Geolocator.getLastKnownPosition();
-      if (lastKnown != null && mounted) {
+      if (lastKnown != null && lastKnown.accuracy <= 50 && mounted) {
         setState(() {
           _currentPosition = lastKnown;
           _isLoadingLocation = false;
+          _currentAccuracy = lastKnown.accuracy;
         });
         _gpsLockManager.processSample(lastKnown, null);
         unawaited(_fetchAddressAndWeather(lastKnown, forceRefresh: true));
       }
 
-      // Step 2: Get current position (1-2 seconds, accurate)
-      try {
-        final freshPos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.bestForNavigation,
-          timeLimit: const Duration(seconds: 8),
-        );
-        if (mounted) {
-          setState(() {
-            _currentPosition = freshPos;
-            _isLoadingLocation = false;
-          });
-          _gpsLockManager.processSample(freshPos, null);
-          unawaited(_fetchAddressAndWeather(freshPos, forceRefresh: true));
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('getCurrentPosition error: $e');
+      // Step 2: Get current position (loop hingga akurasi <= 15m)
+      Position? accuratePos;
+      int attempts = 0;
+      while (attempts < 3 && (accuratePos == null || accuratePos.accuracy > 15)) {
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.bestForNavigation,
+            timeLimit: const Duration(seconds: 5),
+          );
+          if (accuratePos == null || pos.accuracy < accuratePos.accuracy) accuratePos = pos;
+          if (accuratePos.accuracy <= 10) break;
+          await Future.delayed(const Duration(milliseconds: 800));
+        } catch (e) { break; }
+        attempts++;
+      }
+      if (accuratePos != null && mounted) {
+        setState(() {
+          _currentPosition = accuratePos;
+          _isLoadingLocation = false;
+          _currentAccuracy = accuratePos.accuracy;
+        });
+        _gpsLockManager.processSample(accuratePos, null);
+        unawaited(_fetchAddressAndWeather(accuratePos, forceRefresh: true));
       }
 
-      // Step 3: Continuous stream with optimized filters
+      // Step 3: Continuous stream (FusedLocationProvider, forceLocationManager: false)
       LocationSettings locationSettings;
       if (Platform.isAndroid) {
         locationSettings = AndroidSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 1,               // 1 meter to reduce battery drain
-          intervalDuration: const Duration(milliseconds: 800),
-          forceLocationManager: false,
+          distanceFilter: 2,
+          intervalDuration: const Duration(seconds: 1),
+          forceLocationManager: false, // 🔥 lebih akurat di HP modern
         );
       } else if (Platform.isIOS) {
         locationSettings = AppleSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 1,
+          distanceFilter: 2,
           pauseLocationUpdatesAutomatically: false,
           activityType: ActivityType.fitness,
         );
       } else {
         locationSettings = const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 1,
+          distanceFilter: 2,
         );
       }
 
@@ -355,32 +365,34 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         (pos) {
           if (!mounted) return;
 
-          // Throttle setState: only if moved >= 0.5m or accuracy changed
+          // Tolak akurasi > 50m
+          if (pos.accuracy > 50) return;
+
+          // Throttle setState: update jika bergerak >= 0.5m atau akurasi meningkat signifikan
           final old = _currentPosition;
           final moved = old == null
               ? 999.0
-              : Geolocator.distanceBetween(
-                  old.latitude, old.longitude,
-                  pos.latitude, pos.longitude,
-                );
-          final accuracyChanged = old == null || old.accuracy != pos.accuracy;
+              : Geolocator.distanceBetween(old.latitude, old.longitude, pos.latitude, pos.longitude);
+          final accuracyImproved = old == null || pos.accuracy < old.accuracy - 2;
 
-          if (moved >= 0.5 || accuracyChanged) {
+          if (moved >= 0.5 || accuracyImproved) {
             setState(() {
               _currentPosition = pos;
               _isLoadingLocation = false;
+              _currentAccuracy = pos.accuracy;
             });
           }
 
           unawaited(_fetchAddressAndWeather(pos));
 
-          final justLocked = _gpsLockManager.processSample(pos, null);
+          final justLocked = _gpsLockManager.processSample(pos, _currentPosition);
           if (justLocked) {
             final lockData = _gpsLockManager.lockData;
             if (lockData != null) {
               if (mounted) setState(() {
                 _bestPosition = lockData.position;
                 _isGpsLocked = true;
+                _currentAccuracy = lockData.accuracy;
               });
               unawaited(_fetchAddressAndWeather(lockData.position, forceRefresh: true)
                   .then((_) => _gpsLockManager.updateLockAddress(_address, _weather)));
@@ -437,6 +449,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return;
     }
 
+    // Filter akurasi: peringatan jika > 15 meter
+    if (capturePosition.accuracy > 15) {
+      final shouldContinue = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Akurasi GPS Rendah'),
+          content: Text('Akurasi GPS saat ini ${capturePosition.accuracy.toStringAsFixed(0)}m.\nTetap ambil foto?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Tetap Ambil')),
+          ],
+        ),
+      );
+      if (shouldContinue != true) return;
+    }
+
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
 
@@ -487,9 +515,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final success = await GallerySaver.saveImage(file.path, albumName: 'Timestamp Camera');
       if (success != true) throw Exception('Gagal menyimpan foto ke galeri');
 
-      try {
-        await file.delete();
-      } catch (_) {}
+      try { await file.delete(); } catch (_) {}
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -505,6 +531,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
+  }
+
+  Color _getAccuracyColor(double? acc) {
+    if (acc == null) return Colors.white70;
+    if (acc <= 5) return Colors.green;
+    if (acc <= 10) return Colors.lightGreen;
+    if (acc <= 20) return Colors.orange;
+    return Colors.red;
   }
 
   // ==================== BUILD ====================
@@ -550,6 +584,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 _saveWatermarkPosition(pos);
               },
             ),
+          // Indikator loading GPS
           if (_isLoadingLocation && !_isGpsLocked && _currentPosition == null)
             Positioned(
               top: 50,
@@ -588,10 +623,34 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
-          if (_isGpsLocked && _isAddressLoading)
+          // Indikator akurasi (jika ada posisi)
+          if (_currentAccuracy != null && _currentPosition != null)
             Positioned(
               top: 50,
               right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.gps_fixed, size: 12, color: _getAccuracyColor(_currentAccuracy)),
+                    const SizedBox(width: 4),
+                    Text(
+                      '±${_currentAccuracy!.toStringAsFixed(0)}m',
+                      style: TextStyle(color: _getAccuracyColor(_currentAccuracy), fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (_isGpsLocked && _isAddressLoading)
+            Positioned(
+              top: 50,
+              left: 16,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -608,6 +667,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
+          // Tombol capture
           Positioned(
             bottom: 40,
             left: 0,

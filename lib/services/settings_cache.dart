@@ -283,7 +283,6 @@ class SettingsCache {
     await preload();
     await _prefs!.clear();
     _invalidateAll();
-    // Reload defaults
     await preload();
   }
 

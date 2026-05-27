@@ -41,14 +41,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // for live preview (immediate)
-  Position? _bestPosition;      // for final capture (after lock)
+  Position? _currentPosition;   // live preview
+  Position? _bestPosition;      // final capture after lock
   String _address = 'Mencari lokasi...';
   String _weather = '';
+
+  // Address freshness tracking
+  Position? _lastGeocodedPosition;
+  bool _isAddressLoading = false;
+  static const double _geocodeDistanceThreshold = 25.0;
+  static const int _geocodeTimeThresholdSeconds = 8;
 
   StreamSubscription<Position>? _positionSub;
   Timer? _clockTimer;
   DateTime _currentTimestamp = DateTime.now();
+  DateTime? _lastGeocodeTime;
 
   // Watermark settings
   bool _showWeather = true;
@@ -60,11 +67,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _fontSize = 'normal';
   WatermarkLayout _currentLayout = WatermarkLayout.modern;
 
-  // Watermark position (custom)
+  // Watermark position
   WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
-
-  // Throttle geocoding
-  DateTime? _lastGeocode;
 
   @override
   void initState() {
@@ -118,6 +122,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       await controller.dispose();
     } else if (state == AppLifecycleState.resumed) {
       await _initCamera();
+      final pos = _currentPosition ?? _bestPosition;
+      if (pos != null) {
+        await _fetchAddressAndWeather(pos, forceRefresh: true);
+      }
     }
   }
 
@@ -162,7 +170,58 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GPS LOCATION (with live preview) ====================
+  // ==================== SMART GEOCODING ====================
+  Future<void> _fetchAddressAndWeather(Position pos, {bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      if (_isAddressLoading) return;
+
+      final now = DateTime.now();
+      final timeSinceLast = _lastGeocodeTime != null
+          ? now.difference(_lastGeocodeTime!).inSeconds
+          : _geocodeTimeThresholdSeconds + 1;
+
+      final distanceMoved = _lastGeocodedPosition != null
+          ? Geolocator.distanceBetween(
+              _lastGeocodedPosition!.latitude,
+              _lastGeocodedPosition!.longitude,
+              pos.latitude,
+              pos.longitude,
+            )
+          : double.infinity;
+
+      if (timeSinceLast < _geocodeTimeThresholdSeconds && distanceMoved < _geocodeDistanceThreshold) {
+        debugPrint('📍 SKIP geocode: time=${timeSinceLast}s, moved=${distanceMoved.toStringAsFixed(1)}m');
+        return;
+      }
+    }
+
+    if (mounted) setState(() => _isAddressLoading = true);
+    _lastGeocodeTime = DateTime.now();
+
+    try {
+      final result = await LocationWeatherService.fetchFromPosition(pos)
+          .timeout(const Duration(seconds: 12));
+      if (mounted) {
+        setState(() {
+          _address = result.address;
+          _weather = result.weather;
+          _lastGeocodedPosition = pos;
+          _isAddressLoading = false;
+        });
+        debugPrint('📍 GEOCODE OK: ${_address.substring(0, _address.length.clamp(0, 50))}');
+      }
+    } catch (e) {
+      debugPrint('📍 GEOCODE ERROR: $e');
+      if (mounted) {
+        setState(() {
+          _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+          _isAddressLoading = false;
+        });
+      }
+    }
+  }
+
+  // ==================== GPS LOCATION STREAM ====================
   Future<void> _initLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
@@ -185,7 +244,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Ambil posisi awal (cepat) agar preview langsung muncul
+      // Posisi pertama (cepat)
       Position? firstPos;
       try {
         firstPos = await Geolocator.getCurrentPosition(
@@ -198,16 +257,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
 
       if (firstPos != null) {
-        setState(() {
-          _currentPosition = firstPos;
-        });
+        if (mounted) setState(() => _currentPosition = firstPos);
         _gpsLockManager.processSample(firstPos, null);
-        // Ambil alamat tanpa throttle agar cepat muncul
-        await _fetchAddressAndWeather(firstPos, throttle: false);
+        await _fetchAddressAndWeather(firstPos, forceRefresh: true);
       }
       if (mounted) setState(() => _isLoadingLocation = false);
 
-      // Konfigurasi GPS stream per platform
+      // Konfigurasi stream GPS
       LocationSettings locationSettings;
       if (Platform.isAndroid) {
         locationSettings = AndroidSettings(
@@ -234,15 +290,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _positionSub = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen((pos) async {
-        // Update live preview (immediate)
-        if (mounted) {
-          setState(() {
-            _currentPosition = pos;
-          });
-        }
-
-        // Ambil alamat dengan throttle (maks 15 detik)
-        await _fetchAddressAndWeather(pos, throttle: true);
+        if (mounted) setState(() => _currentPosition = pos);
+        await _fetchAddressAndWeather(pos);
 
         final justLocked = _gpsLockManager.processSample(pos, lastSample);
         lastSample = pos;
@@ -250,18 +299,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         if (justLocked) {
           final lockData = _gpsLockManager.lockData;
           if (lockData != null) {
-            setState(() {
+            if (mounted) setState(() {
               _bestPosition = lockData.position;
               _isGpsLocked = true;
             });
-            // Refresh alamat dengan posisi lock (tanpa throttle agar pasti terupdate)
-            await _fetchAddressAndWeather(lockData.position, throttle: false);
+            await _fetchAddressAndWeather(lockData.position, forceRefresh: true);
             _gpsLockManager.updateLockAddress(_address, _weather);
           }
         } else {
           final progress = _gpsLockManager.stationaryProgress;
           if (_gpsLockManager.state != GpsLockState.locked) {
-            setState(() {
+            if (mounted) setState(() {
               _gpsLockProgress = progress;
               _isGpsLocked = false;
               _isLoadingLocation = true;
@@ -269,16 +317,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           } else {
             final lockData = _gpsLockManager.lockData;
             if (lockData != null && _bestPosition != lockData.position) {
-              setState(() {
-                _bestPosition = lockData.position;
-              });
+              if (mounted) setState(() => _bestPosition = lockData.position);
             }
           }
         }
 
-        if (_isGpsLocked && mounted) {
-          setState(() => _isLoadingLocation = false);
-        }
+        if (_isGpsLocked && mounted) setState(() => _isLoadingLocation = false);
       });
     } catch (e) {
       debugPrint('LOCATION ERROR: $e');
@@ -286,34 +330,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _address = 'Gagal memuat lokasi';
         _isLoadingLocation = false;
       });
-    }
-  }
-
-  // Geocoding with optional throttle (to avoid too many requests)
-  Future<void> _fetchAddressAndWeather(Position pos, {bool throttle = true}) async {
-    if (throttle) {
-      if (_lastGeocode != null && DateTime.now().difference(_lastGeocode!).inSeconds < 15) {
-        return;
-      }
-      _lastGeocode = DateTime.now();
-    }
-
-    try {
-      final result = await LocationWeatherService.fetchFromPosition(pos)
-          .timeout(const Duration(seconds: 12));
-      if (mounted) {
-        setState(() {
-          _address = result.address;
-          _weather = result.weather;
-        });
-      }
-    } catch (e) {
-      debugPrint('ADDRESS/WEATHER ERROR: $e');
-      if (mounted) {
-        setState(() {
-          _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
-        });
-      }
     }
   }
 
@@ -349,6 +365,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final lockData = _gpsLockManager.lockData;
       if (lockData == null) throw Exception('GPS lock data hilang');
 
+      final captureAddress = (_address.isNotEmpty && _address != 'Mencari lokasi...')
+          ? _address
+          : lockData.address;
+      final captureWeather = _weather.isNotEmpty ? _weather : lockData.weather;
+
       final finalBytes = await WatermarkEngine.process(
         imageBytes: rawBytes,
         timestamp: _currentTimestamp,
@@ -356,8 +377,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         lat: lockData.position.latitude,
         lon: lockData.position.longitude,
         acc: lockData.position.accuracy,
-        address: lockData.address,
-        weather: lockData.weather,
+        address: captureAddress,
+        weather: captureWeather,
         showWeather: _showWeather,
         showAccuracy: _showAccuracy,
         showAddress: _showAddress,
@@ -407,7 +428,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
-    // Gunakan _currentPosition untuk live preview (muncul segera)
     final displayPosition = _currentPosition ?? _bestPosition;
 
     return Scaffold(
@@ -416,6 +436,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         fit: StackFit.expand,
         children: [
           CameraPreview(_controller!),
+
           if (displayPosition != null)
             DraggableWatermarkOverlay(
               previewSize: MediaQuery.of(context).size,
@@ -424,7 +445,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               lat: displayPosition.latitude,
               lon: displayPosition.longitude,
               acc: displayPosition.accuracy,
-              address: _address,
+              address: _isAddressLoading ? 'Memperbarui alamat...' : _address,
               weather: _weather,
               showWeather: _showWeather,
               showAccuracy: _showAccuracy,
@@ -440,6 +461,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 _saveWatermarkPosition(pos);
               },
             ),
+
           if (_isLoadingLocation && !_isGpsLocked)
             Positioned(
               top: 50,
@@ -453,14 +475,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
                 child: Row(
                   children: [
-                    const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan),
-                      ),
-                    ),
+                    const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan))),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -485,6 +500,28 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
+
+          if (_isGpsLocked && _isAddressLoading)
+            Positioned(
+              top: 50,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation<Color>(Colors.orange))),
+                    SizedBox(width: 6),
+                    Text('Memperbarui alamat', style: TextStyle(color: Colors.orange, fontSize: 10)),
+                  ],
+                ),
+              ),
+            ),
+
           Positioned(
             bottom: 40,
             left: 0,
@@ -497,17 +534,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   height: 78,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _isGpsLocked ? Colors.white : Colors.grey,
-                      width: 5,
-                    ),
+                    border: Border.all(color: _isGpsLocked ? Colors.white : Colors.grey, width: 5),
                     color: _isGpsLocked ? Colors.white24 : Colors.grey.withOpacity(0.3),
                   ),
                   child: _isCapturing
-                      ? const Padding(
-                          padding: EdgeInsets.all(20),
-                          child: CircularProgressIndicator(color: Colors.white),
-                        )
+                      ? const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: Colors.white))
                       : null,
                 ),
               ),

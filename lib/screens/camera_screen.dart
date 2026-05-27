@@ -1,5 +1,5 @@
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION VERSION - All null safety fixes applied
+// FINAL PRODUCTION VERSION - All null safety issues resolved
 import 'dart:async';
 import 'dart:io';
 
@@ -295,19 +295,20 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Step 1: Last known position (hanya jika akurasi <= 50m)
+      // Step 1: Last known position (only if accuracy <= 50m)
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null && lastKnown.accuracy <= 50 && mounted) {
+        final pos = lastKnown;
         setState(() {
-          _currentPosition = lastKnown;
+          _currentPosition = pos;
           _isLoadingLocation = false;
-          _currentAccuracy = lastKnown.accuracy;
+          _currentAccuracy = pos.accuracy;
         });
-        _gpsLockManager.processSample(lastKnown, null);
-        unawaited(_fetchAddressAndWeather(lastKnown, forceRefresh: true));
+        _gpsLockManager.processSample(pos, null);
+        unawaited(_fetchAddressAndWeather(pos, forceRefresh: true));
       }
 
-      // Step 2: Get current position (loop hingga akurasi <= 15m)
+      // Step 2: Get current position with retry until accuracy <= 15m
       Position? accuratePos;
       int attempts = 0;
       while (attempts < 3 && (accuratePos == null || accuratePos.accuracy > 15)) {
@@ -323,16 +324,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         attempts++;
       }
       if (accuratePos != null && mounted) {
+        final pos = accuratePos; // local non-nullable
         setState(() {
-          _currentPosition = accuratePos;
+          _currentPosition = pos;
           _isLoadingLocation = false;
-          _currentAccuracy = accuratePos.accuracy;
+          _currentAccuracy = pos.accuracy;
         });
-        _gpsLockManager.processSample(accuratePos, null);
-        unawaited(_fetchAddressAndWeather(accuratePos, forceRefresh: true));
+        _gpsLockManager.processSample(pos, null);
+        unawaited(_fetchAddressAndWeather(pos, forceRefresh: true));
       }
 
-      // Step 3: Continuous stream (FusedLocationProvider, forceLocationManager: false)
+      // Step 3: Continuous stream (FusedLocationProvider)
       LocationSettings locationSettings;
       if (Platform.isAndroid) {
         locationSettings = AndroidSettings(
@@ -358,7 +360,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _positionSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
         (pos) {
           if (!mounted) return;
-
           if (pos.accuracy > 50) return;
 
           final old = _currentPosition;
@@ -381,7 +382,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           if (justLocked) {
             final lockData = _gpsLockManager.lockData;
             if (lockData != null) {
-              if (mounted) setState(() {
+              setState(() {
                 _bestPosition = lockData.position;
                 _isGpsLocked = true;
                 _currentAccuracy = lockData.accuracy;
@@ -392,18 +393,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           } else {
             final progress = _gpsLockManager.stationaryProgress;
             if (_gpsLockManager.state != GpsLockState.locked) {
-              if (mounted) setState(() {
+              setState(() {
                 _gpsLockProgress = progress;
                 _isGpsLocked = false;
               });
             } else {
               final lockData = _gpsLockManager.lockData;
               if (lockData != null && _bestPosition != lockData.position) {
-                if (mounted) setState(() => _bestPosition = lockData.position);
+                setState(() => _bestPosition = lockData.position);
               }
             }
           }
-          if (_isGpsLocked && mounted) setState(() => _isLoadingLocation = false);
+          if (_isGpsLocked) setState(() => _isLoadingLocation = false);
         },
         onError: (e) {
           if (kDebugMode) debugPrint('GPS STREAM ERROR: $e');
@@ -441,6 +442,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return;
     }
 
+    // Accuracy warning if > 15m
     if (capturePosition.accuracy > 15) {
       final shouldContinue = await showDialog<bool>(
         context: context,

@@ -21,11 +21,10 @@ import '../services/settings_cache.dart';
 import '../watermark/watermark_engine.dart';
 import '../core/constants.dart';
 import '../widgets/draggable_watermark_overlay.dart';
-import '../services/gps_lock_manager.dart'; // import GpsLockManager
+import '../services/gps_lock_manager.dart';
 
 class CameraScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
-
   const CameraScreen({super.key, required this.cameras});
 
   @override
@@ -60,13 +59,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _fontSize = 'normal';
   WatermarkLayout _currentLayout = WatermarkLayout.modern;
 
-  // Watermark position
+  // Watermark position (custom) – akan disimpan via SettingsCache
   WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
 
-  // GPS history untuk filter (opsional, bisa juga memanfaatkan GpsLockManager)
-  final List<Position> _positionHistory = [];
-  static const int _maxHistorySize = 5;
-  static const double _outlierThresholdMeters = 50.0;
+  // Throttle geocoding
+  DateTime? _lastGeocode;
 
   @override
   void initState() {
@@ -88,25 +85,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
     _currentLayout = await SettingsCache.layout;
 
-    _watermarkPosition = await _loadWatermarkPosition();
+    // Gunakan SettingsCache untuk load posisi watermark
+    _watermarkPosition = await SettingsCache.loadWatermarkPosition();
     _initialize();
   }
 
-  Future<WatermarkPosition> _loadWatermarkPosition() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? jsonStr = prefs.getString('watermark_position');
-    if (jsonStr == null) return WatermarkPosition.initial;
-    try {
-      final Map<String, dynamic> json = jsonDecode(jsonStr);
-      return WatermarkPosition.fromJson(json);
-    } catch (e) {
-      return WatermarkPosition.initial;
-    }
-  }
-
   Future<void> _saveWatermarkPosition(WatermarkPosition pos) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('watermark_position', jsonEncode(pos.toJson()));
+    await SettingsCache.saveWatermarkPosition(pos);
   }
 
   Future<void> _initialize() async {
@@ -177,63 +162,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GPS FILTER (outlier + moving average) ====================
-  Position? _filterPosition(Position newPos) {
-    if (_positionHistory.isEmpty) {
-      _positionHistory.add(newPos);
-      return newPos;
-    }
-
-    final lastPos = _positionHistory.last;
-    final distance = _calculateDistance(
-      lastPos.latitude, lastPos.longitude,
-      newPos.latitude, newPos.longitude,
-    );
-
-    if (distance > _outlierThresholdMeters) {
-      debugPrint('GPS outlier detected: ${distance.toStringAsFixed(1)}m, ignored');
-      return null;
-    }
-
-    _positionHistory.add(newPos);
-    if (_positionHistory.length > _maxHistorySize) {
-      _positionHistory.removeAt(0);
-    }
-
-    double avgLat = 0.0, avgLon = 0.0, avgAcc = 0.0;
-    for (final p in _positionHistory) {
-      avgLat += p.latitude;
-      avgLon += p.longitude;
-      avgAcc += p.accuracy;
-    }
-    avgLat /= _positionHistory.length;
-    avgLon /= _positionHistory.length;
-    avgAcc /= _positionHistory.length;
-
-    return Position(
-      latitude: avgLat,
-      longitude: avgLon,
-      accuracy: avgAcc,
-      altitude: newPos.altitude,
-      heading: newPos.heading,
-      speed: newPos.speed,
-      speedAccuracy: newPos.speedAccuracy,
-      timestamp: newPos.timestamp,
-      altitudeAccuracy: newPos.altitudeAccuracy,
-      headingAccuracy: newPos.headingAccuracy,
-    );
-  }
-
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371000;
-    final dLat = (lat2 - lat1) * pi / 180;
-    final dLon = (lon2 - lon1) * pi / 180;
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180) * cos(lat2 * pi / 180) * sin(dLon / 2) * sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
-  }
-
-  // ==================== LOCATION (dengan GpsLockManager + platform settings) ====================
+  // ==================== LOCATION (menggunakan GpsLockManager saja) ====================
   Future<void> _initLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
@@ -256,7 +185,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Ambil posisi awal
+      // Ambil posisi awal (best effort)
       Position? firstPos;
       try {
         firstPos = await Geolocator.getCurrentPosition(
@@ -268,21 +197,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         firstPos = await Geolocator.getLastKnownPosition();
       }
       if (firstPos != null) {
-        final filtered = _filterPosition(firstPos);
-        if (filtered != null) {
-          _gpsLockManager.processSample(filtered, null);
-        }
+        _gpsLockManager.processSample(firstPos, null);
+        // Tidak perlu fetch address/weather sekarang, tunggu lock
       }
       if (mounted) setState(() => _isLoadingLocation = false);
 
-      // Konfigurasi location settings berdasarkan platform
+      // Konfigurasi GPS stream per platform
       LocationSettings locationSettings;
       if (Platform.isAndroid) {
         locationSettings = AndroidSettings(
           accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: 5,
           intervalDuration: const Duration(seconds: 5),
-          forceLocationManager: true, // gunakan LocationManager untuk stabilitas
+          forceLocationManager: true,
         );
       } else if (Platform.isIOS) {
         locationSettings = AppleSettings(
@@ -302,11 +229,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _positionSub = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen((pos) async {
-        final filteredPos = _filterPosition(pos);
-        if (filteredPos == null) return;
-
-        final justLocked = _gpsLockManager.processSample(filteredPos, lastSample);
-        lastSample = filteredPos;
+        final justLocked = _gpsLockManager.processSample(pos, lastSample);
+        lastSample = pos;
 
         if (justLocked) {
           final lockData = _gpsLockManager.lockData;
@@ -315,6 +239,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               _bestPosition = lockData.position;
               _isGpsLocked = true;
             });
+            // Ambil alamat & cuaca dengan throttle
             await _fetchAddressAndWeather(lockData.position);
             _gpsLockManager.updateLockAddress(_address, _weather);
           }
@@ -327,13 +252,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               _isLoadingLocation = true;
             });
           } else {
-            // locked, mungkin ada update posisi
+            // Lock sudah tercapai, mungkin ada update posisi jika akurasi meningkat
             final lockData = _gpsLockManager.lockData;
             if (lockData != null && _bestPosition != lockData.position) {
               setState(() {
                 _bestPosition = lockData.position;
               });
-              // optional update address/weather
+              // Jangan ambil address/weather setiap kali, tunggu perubahan besar
             }
           }
         }
@@ -351,7 +276,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // Geocoding dengan throttle (maksimal setiap 15 detik)
   Future<void> _fetchAddressAndWeather(Position pos) async {
+    if (_lastGeocode != null && DateTime.now().difference(_lastGeocode!).inSeconds < 15) {
+      return;
+    }
+    _lastGeocode = DateTime.now();
+
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos)
           .timeout(const Duration(seconds: 12));
@@ -363,9 +294,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     } catch (e) {
       debugPrint('ADDRESS/WEATHER ERROR: $e');
-      setState(() {
-        _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
-      });
+      if (mounted) {
+        setState(() {
+          _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+        });
+      }
     }
   }
 
@@ -489,7 +422,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 _saveWatermarkPosition(pos);
               },
             ),
-          // Indikator GPS lock
           if (_isLoadingLocation && !_isGpsLocked)
             Positioned(
               top: 50,
@@ -535,7 +467,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
-          // Tombol capture
           Positioned(
             bottom: 40,
             left: 0,

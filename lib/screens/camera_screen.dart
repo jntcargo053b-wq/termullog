@@ -37,11 +37,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isCapturing = false;
   bool _isLoadingLocation = true;
 
-  // GPS Lock Manager
+  // GPS data
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _bestPosition;
+  Position? _currentPosition;   // for live preview (immediate)
+  Position? _bestPosition;      // for final capture (after lock)
   String _address = 'Mencari lokasi...';
   String _weather = '';
 
@@ -59,7 +60,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _fontSize = 'normal';
   WatermarkLayout _currentLayout = WatermarkLayout.modern;
 
-  // Watermark position (custom) – akan disimpan via SettingsCache
+  // Watermark position (custom)
   WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
 
   // Throttle geocoding
@@ -85,7 +86,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
     _currentLayout = await SettingsCache.layout;
 
-    // Gunakan SettingsCache untuk load posisi watermark
     _watermarkPosition = await SettingsCache.loadWatermarkPosition();
     _initialize();
   }
@@ -162,7 +162,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== LOCATION (menggunakan GpsLockManager saja) ====================
+  // ==================== GPS LOCATION (with live preview) ====================
   Future<void> _initLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
@@ -185,7 +185,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Ambil posisi awal (best effort)
+      // Ambil posisi awal (cepat) agar preview langsung muncul
       Position? firstPos;
       try {
         firstPos = await Geolocator.getCurrentPosition(
@@ -196,9 +196,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         debugPrint('FIRST POSITION TIMEOUT: $e');
         firstPos = await Geolocator.getLastKnownPosition();
       }
+
       if (firstPos != null) {
+        setState(() {
+          _currentPosition = firstPos;
+        });
         _gpsLockManager.processSample(firstPos, null);
-        // Tidak perlu fetch address/weather sekarang, tunggu lock
+        // Ambil alamat tanpa throttle agar cepat muncul
+        await _fetchAddressAndWeather(firstPos, throttle: false);
       }
       if (mounted) setState(() => _isLoadingLocation = false);
 
@@ -229,6 +234,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _positionSub = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen((pos) async {
+        // Update live preview (immediate)
+        if (mounted) {
+          setState(() {
+            _currentPosition = pos;
+          });
+        }
+
+        // Ambil alamat dengan throttle (maks 15 detik)
+        await _fetchAddressAndWeather(pos, throttle: true);
+
         final justLocked = _gpsLockManager.processSample(pos, lastSample);
         lastSample = pos;
 
@@ -239,8 +254,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               _bestPosition = lockData.position;
               _isGpsLocked = true;
             });
-            // Ambil alamat & cuaca dengan throttle
-            await _fetchAddressAndWeather(lockData.position);
+            // Refresh alamat dengan posisi lock (tanpa throttle agar pasti terupdate)
+            await _fetchAddressAndWeather(lockData.position, throttle: false);
             _gpsLockManager.updateLockAddress(_address, _weather);
           }
         } else {
@@ -252,13 +267,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               _isLoadingLocation = true;
             });
           } else {
-            // Lock sudah tercapai, mungkin ada update posisi jika akurasi meningkat
             final lockData = _gpsLockManager.lockData;
             if (lockData != null && _bestPosition != lockData.position) {
               setState(() {
                 _bestPosition = lockData.position;
               });
-              // Jangan ambil address/weather setiap kali, tunggu perubahan besar
             }
           }
         }
@@ -276,12 +289,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // Geocoding dengan throttle (maksimal setiap 15 detik)
-  Future<void> _fetchAddressAndWeather(Position pos) async {
-    if (_lastGeocode != null && DateTime.now().difference(_lastGeocode!).inSeconds < 15) {
-      return;
+  // Geocoding with optional throttle (to avoid too many requests)
+  Future<void> _fetchAddressAndWeather(Position pos, {bool throttle = true}) async {
+    if (throttle) {
+      if (_lastGeocode != null && DateTime.now().difference(_lastGeocode!).inSeconds < 15) {
+        return;
+      }
+      _lastGeocode = DateTime.now();
     }
-    _lastGeocode = DateTime.now();
 
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos)
@@ -392,20 +407,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
+    // Gunakan _currentPosition untuk live preview (muncul segera)
+    final displayPosition = _currentPosition ?? _bestPosition;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
           CameraPreview(_controller!),
-          if (_bestPosition != null)
+          if (displayPosition != null)
             DraggableWatermarkOverlay(
               previewSize: MediaQuery.of(context).size,
               timestamp: _currentTimestamp,
               hasPosition: true,
-              lat: _bestPosition?.latitude,
-              lon: _bestPosition?.longitude,
-              acc: _bestPosition?.accuracy,
+              lat: displayPosition.latitude,
+              lon: displayPosition.longitude,
+              acc: displayPosition.accuracy,
               address: _address,
               weather: _weather,
               showWeather: _showWeather,

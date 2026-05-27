@@ -1,11 +1,5 @@
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION VERSION
-// - GPS akurasi tinggi dengan GpsLockManager (weighted average, outlier rejection)
-// - Menggunakan FusedLocationProvider (forceLocationManager: false)
-// - Filter akurasi sebelum capture (>15m peringatan)
-// - Optimalisasi setState dengan distance threshold
-// - Stable lifecycle & race condition handling
-
+// FINAL PRODUCTION VERSION - All null safety fixes applied
 import 'dart:async';
 import 'dart:io';
 
@@ -345,7 +339,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: 2,
           intervalDuration: const Duration(seconds: 1),
-          forceLocationManager: false, // 🔥 lebih akurat di HP modern
+          forceLocationManager: false,
         );
       } else if (Platform.isIOS) {
         locationSettings = AppleSettings(
@@ -365,10 +359,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         (pos) {
           if (!mounted) return;
 
-          // Tolak akurasi > 50m
           if (pos.accuracy > 50) return;
 
-          // Throttle setState: update jika bergerak >= 0.5m atau akurasi meningkat signifikan
           final old = _currentPosition;
           final moved = old == null
               ? 999.0
@@ -449,7 +441,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return;
     }
 
-    // Filter akurasi: peringatan jika > 15 meter
     if (capturePosition.accuracy > 15) {
       final shouldContinue = await showDialog<bool>(
         context: context,
@@ -584,7 +575,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 _saveWatermarkPosition(pos);
               },
             ),
-          // Indikator loading GPS
           if (_isLoadingLocation && !_isGpsLocked && _currentPosition == null)
             Positioned(
               top: 50,
@@ -623,7 +613,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
-          // Indikator akurasi (jika ada posisi)
           if (_currentAccuracy != null && _currentPosition != null)
             Positioned(
               top: 50,
@@ -667,7 +656,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
-          // Tombol capture
           Positioned(
             bottom: 40,
             left: 0,

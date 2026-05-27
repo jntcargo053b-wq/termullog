@@ -1,132 +1,255 @@
+// lib/screens/camera_screen.dart (dengan GpsLockManager terintegrasi)
+// Hanya menampilkan bagian yang diubah/ditambahkan, sisanya sama seperti sebelumnya.
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:gallery_saver_plus/gallery_saver.dart';
+import 'package:path_provider/path_provider.dart';
 
-enum GpsLockState { searching, acquiring, locked, stale }
+import '../models/watermark_position.dart';
+import '../services/location_weather_service.dart';
+import '../services/settings_cache.dart';
+import '../watermark/watermark_engine.dart';
+import '../core/constants.dart';
+import '../widgets/draggable_watermark_overlay.dart';
+import '../services/gps_lock_manager.dart';   // import GpsLockManager
 
-class GpsLockData {
-  final Position position;
-  final String address;
-  final String weather;
-  final DateTime lockedAt;
+class CameraScreen extends StatefulWidget {
+  final List<CameraDescription> cameras;
+  const CameraScreen({super.key, required this.cameras});
 
-  const GpsLockData({
-    required this.position,
-    required this.address,
-    required this.weather,
-    required this.lockedAt,
-  });
-
-  bool get isValid => DateTime.now().difference(lockedAt) < const Duration(minutes: 15);
-
-  GpsLockData copyWith({String? address, String? weather}) => GpsLockData(
-        position: position,
-        address: address ?? this.address,
-        weather: weather ?? this.weather,
-        lockedAt: lockedAt,
-      );
+  @override
+  State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class GpsLockManager {
-  GpsLockState _state = GpsLockState.searching;
-  GpsLockData? _lockData;
-  int _stationaryCount = 0;
-  DateTime? _lastMovement;
+class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
+  // ... (variabel yang sudah ada: _controller, _isCameraReady, dll)
 
-  static const int _samplesBeforeLock = 8;
-  static const double _moveThreshold = 3.0; // meter
-  static const double _lockAccuracyThreshold = 20.0;
+  // GpsLockManager instance
+  final GpsLockManager _gpsLockManager = GpsLockManager();
 
-  GpsLockState get state => _state;
-  GpsLockData? get lockData => _lockData;
-  bool get isLocked => _state == GpsLockState.locked && (_lockData?.isValid ?? false);
+  // Untuk UI status GPS lock
+  bool _isGpsLocked = false;
+  int _gpsLockProgress = 0;
 
-  /// Proses setiap sample GPS. Return true jika baru saja locked.
-  bool processSample(Position newPos, Position? lastBest) {
-    if (_state == GpsLockState.locked) {
-      // Cek apakah user mulai bergerak
-      if (_lockData != null) {
-        final dist = _haversine(
-          _lockData!.position.latitude, _lockData!.position.longitude,
-          newPos.latitude, newPos.longitude,
-        );
-        if (dist > _moveThreshold * 2) {
-          _unlock();
-          debugPrint('GPS Lock: UNLOCKED — moved ${dist.toStringAsFixed(1)}m');
-        } else if (newPos.accuracy < _lockData!.position.accuracy - 2) {
-          // Refresh posisi jika akurasi membaik
-          _lockData = GpsLockData(
-            position: newPos,
-            address: _lockData!.address,
-            weather: _lockData!.weather,
-            lockedAt: _lockData!.lockedAt,
-          );
+  // Posisi terbaik yang dihasilkan oleh lock manager
+  Position? _bestPosition;
+  String _address = 'Mencari lokasi...';
+  String _weather = '';
+
+  // ... (variabel lain tetap)
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadSettingsAndPosition();
+  }
+
+  Future<void> _initialize() async {
+    await _initCamera();
+    _initLocation(); // menggunakan GpsLockManager
+    _startClock();
+  }
+
+  // ==================== LOCATION (dengan GpsLockManager) ====================
+  Future<void> _initLocation() async {
+    try {
+      // Cek layanan dan izin (sama seperti sebelumnya)
+      if (!await Geolocator.isLocationServiceEnabled()) { ... }
+      // ... izin ...
+
+      // Gunakan stream dengan interval 2 detik untuk lock cepat
+      const locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2,        // update setiap 2 meter
+        intervalDuration: Duration(seconds: 2),
+      );
+
+      Position? lastSample;
+      _positionSub = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen((pos) async {
+        final bool justLocked = _gpsLockManager.processSample(pos, lastSample);
+        lastSample = pos;
+
+        if (justLocked) {
+          // Dapat lock baru, ambil posisi terbaik dari manager
+          final lockData = _gpsLockManager.lockData;
+          if (lockData != null) {
+            setState(() {
+              _bestPosition = lockData.position;
+              _isGpsLocked = true;
+            });
+            // Ambil address dan weather dari posisi yang terkunci
+            await _fetchAddressAndWeather(lockData.position);
+            // Setelah address diambil, simpan ke lockData
+            _gpsLockManager.updateLockAddress(_address, _weather);
+          }
+        } else {
+          // Update progress UI
+          final progress = _gpsLockManager.stationaryProgress;
+          if (_gpsLockManager.state != GpsLockState.locked) {
+            setState(() {
+              _gpsLockProgress = progress;
+              _isGpsLocked = false;
+            });
+          } else {
+            // Sudah locked, mungkin perlu update posisi jika akurasi meningkat
+            final lockData = _gpsLockManager.lockData;
+            if (lockData != null && _bestPosition != lockData.position) {
+              setState(() {
+                _bestPosition = lockData.position;
+              });
+              // Update address/weather jika perlu (opsional)
+              // ...
+            }
+          }
         }
+
+        // Update loading state
+        if (!_isGpsLocked && mounted) {
+          setState(() => _isLoadingLocation = true);
+        } else if (_isGpsLocked && mounted) {
+          setState(() => _isLoadingLocation = false);
+        }
+      });
+    } catch (e) {
+      // error handling
+    }
+  }
+
+  Future<void> _fetchAddressAndWeather(Position pos) async {
+    try {
+      final result = await LocationWeatherService.fetchFromPosition(pos)
+          .timeout(const Duration(seconds: 12));
+      if (mounted) {
+        setState(() {
+          _address = result.address;
+          _weather = result.weather;
+        });
       }
-      return false;
+    } catch (e) {
+      setState(() {
+        _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
+      });
     }
+  }
 
-    // Belum locked
-    if (lastBest != null) {
-      final dist = _haversine(
-        lastBest.latitude, lastBest.longitude,
-        newPos.latitude, newPos.longitude,
+  // ==================== CAPTURE menggunakan posisi terbaik ====================
+  Future<void> _takePhoto() async {
+    if (_isCapturing) return;
+
+    // Jangan izinkan capture jika belum locked
+    if (!_isGpsLocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Masih mengunci GPS, tunggu sebentar...')),
       );
-      if (dist > _moveThreshold) {
-        _stationaryCount = 0;
-        _lastMovement = DateTime.now();
-        _state = GpsLockState.acquiring;
-        return false;
-      }
+      return;
     }
 
-    _stationaryCount++;
-    _state = GpsLockState.acquiring;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
 
-    final readyToLock = _stationaryCount >= _samplesBeforeLock &&
-        newPos.accuracy <= _lockAccuracyThreshold;
+    setState(() => _isCapturing = true);
+    try {
+      final XFile rawFile = await controller.takePicture();
+      final rawBytes = await File(rawFile.path).readAsBytes();
 
-    if (readyToLock) {
-      _lockData = GpsLockData(
-        position: newPos,
-        address: '',
-        weather: '',
-        lockedAt: DateTime.now(),
+      // Gunakan posisi terbaik dari lock manager
+      final lockData = _gpsLockManager.lockData;
+      if (lockData == null) throw Exception('GPS lock data hilang');
+
+      final finalBytes = await WatermarkEngine.process(
+        imageBytes: rawBytes,
+        timestamp: _currentTimestamp,
+        layout: _currentLayout,
+        lat: lockData.position.latitude,
+        lon: lockData.position.longitude,
+        acc: lockData.position.accuracy,
+        address: lockData.address,   // sudah berisi alamat setelah lock
+        weather: lockData.weather,
+        // ... parameter lain sama
       );
-      _state = GpsLockState.locked;
-      debugPrint('GPS Lock: LOCKED at ${newPos.latitude}, ${newPos.longitude} ±${newPos.accuracy.toStringAsFixed(0)}m');
-      return true;
-    }
-    return false;
-  }
 
-  void updateLockAddress(String address, String weather) {
-    if (_lockData != null) {
-      _lockData = _lockData!.copyWith(address: address, weather: weather);
+      // Simpan ke gallery
+      // ...
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
     }
   }
 
-  void _unlock() {
-    _state = GpsLockState.acquiring;
-    _stationaryCount = 0;
-  }
+  // ==================== BUILD (tambahkan indikator GPS lock) ====================
+  @override
+  Widget build(BuildContext context) {
+    // ... existing code ...
 
-  void forceUnlock() {
-    _state = GpsLockState.searching;
-    _lockData = null;
-    _stationaryCount = 0;
-  }
+    return Scaffold(
+      body: Stack(
+        children: [
+          CameraPreview(_controller!),
+          if (_bestPosition != null) ... // watermark overlay (sama)
 
-  int get stationaryProgress =>
-      (_stationaryCount / _samplesBeforeLock * 100).clamp(0, 100).toInt();
+          // Indikator status GPS lock (gantikan chip "Mengambil GPS...")
+          if (_isLoadingLocation && !_isGpsLocked)
+            Positioned(
+              top: 50,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.cyan),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _gpsLockManager.state == GpsLockState.searching
+                                ? 'Mencari sinyal GPS...'
+                                : 'Mengunci posisi... ${_gpsLockProgress}%',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                          if (_gpsLockProgress > 0)
+                            LinearProgressIndicator(
+                              value: _gpsLockProgress / 100,
+                              backgroundColor: Colors.grey[800],
+                              valueColor: const AlwaysStoppedAnimation(Colors.cyan),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
-  double _haversine(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371000.0;
-    final dLat = (lat2 - lat1) * pi / 180;
-    final dLon = (lon2 - lon1) * pi / 180;
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180) * cos(lat2 * pi / 180) *
-        sin(dLon / 2) * sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
+          // Tombol capture (sama)
+        ],
+      ),
+    );
   }
 }

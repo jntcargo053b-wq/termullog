@@ -6,19 +6,22 @@ import 'watermark_layout_base.dart';
 
 class LayoutHUD extends WatermarkLayoutBase {
   @override
-  String get name => 'HUD';
+  String get name => 'HUD Modern';
 
-  static final _cyan    = img.ColorRgba8( 0, 200, 240, 255);
-  static final _cyanDim = img.ColorRgba8( 0, 200, 240, 140);
-  static final _white   = img.ColorRgba8(240, 242, 245, 255);
-  static final _grey    = img.ColorRgba8(140, 148, 160, 255);
-  static final _shadow  = img.ColorRgba8(  0,   0,   0, 180);
-  static final _green   = img.ColorRgba8( 60, 200, 100, 255);
-  static final _amber   = img.ColorRgba8(255, 180,  40, 255);
-  static final _red     = img.ColorRgba8(220,  60,  60, 255);
+  // Warna tema HUD (cyan neon, navy gelap)
+  static final _cyan    = img.ColorRgba8(  0, 210, 255, 255);
+  static final _cyanDim = img.ColorRgba8(  0, 210, 255, 140);
+  static final _white   = img.ColorRgba8(240, 245, 255, 255);
+  static final _grey    = img.ColorRgba8(160, 170, 190, 255);
+  static final _shadow  = img.ColorRgba8(  0,   0,   0, 200);
+  static final _green   = img.ColorRgba8( 70, 220, 120, 255);
+  static final _amber   = img.ColorRgba8(255, 190,  50, 255);
+  static final _red     = img.ColorRgba8(240,  70,  70, 255);
+  static final _bgTop   = img.ColorRgba8(  8,  12,  28, 220);
+  static final _bgBottom= img.ColorRgba8(  4,   6,  16, 230);
+  static final _scanLine= img.ColorRgba8(  0, 210, 255,  12);
 
-  static const bool _positionBottom = true;
-
+  // --------------------------------------------------------------
   @override
   Uint8List apply({
     required img.Image src,
@@ -43,127 +46,137 @@ class LayoutHUD extends WatermarkLayoutBase {
     String timeFormat = 'HH:mm:ss',
   }) {
     final double scale = (src.width / 1080).clamp(0.7, 2.0);
-    final img.BitmapFont fontL = img.arial24;
-    final img.BitmapFont fontS = img.arial14;
-    final int lL  = (30 * scale).round();
-    final int lS  = (20 * scale).round();
+    // Pilih font sesuai fontSize
+    final img.BitmapFont fontLarge = (fontSize == 'large') ? img.arial24 : (fontSize == 'small') ? img.arial20 : img.arial24;
+    final img.BitmapFont fontSmall = (fontSize == 'large') ? img.arial20 : (fontSize == 'small') ? img.arial12 : img.arial14;
+    final int lineLarge = (fontLarge.height + 4).round();
+    final int lineSmall = (fontSmall.height + 4).round();
     final int padX = (20 * scale).round();
     final int padY = (12 * scale).round();
+    final int marginTop = (16 * scale).round();
+    final int marginBottom = (16 * scale).round();
 
-    // ── Hitung baris ─────────────────────────────────────────────
-    int rows = 1; // date+time satu baris
+    // Hitung jumlah baris konten (selain header waktu)
+    int rows = 0;
     if (showCoordinates && hasPosition && lat != null && lon != null) rows++;
     if (showAccuracy && hasPosition && acc != null) rows++;
     if (showAddress && _validAddr(address)) rows++;
     if (showWeather && weather.isNotEmpty) rows++;
 
-    final int panelH = padY + lL + (rows - 1) * lS + padY;
-    final int y0 = _positionBottom ? src.height - panelH - (16 * scale).round() : (16 * scale).round();
+    // Tinggi panel: header (waktu + tanggal) + separator + baris info + padding
+    final int headerHeight = lineLarge + lineSmall + 8; // waktu + tanggal + spasi
+    final int separatorHeight = 4;
+    final int contentHeight = rows * lineSmall;
+    final int panelH = padY * 2 + headerHeight + separatorHeight + contentHeight;
+    final int y0 = src.height - panelH - marginBottom;
     if (y0 < 0 || y0 + panelH > src.height) return WatermarkLayoutBase.encodeJpg(src);
 
-    // ── Full-width gradient ───────────────────────────────────────
-    for (int row = y0; row < y0 + panelH; row++) {
-      if (row < 0 || row >= src.height) continue;
-      final double t = (row - y0) / panelH;
-      // HUD: dark navy dengan shimmer biru
-      final int r = _lerp(4, 10, t);
-      final int g = _lerp(8, 16, t);
-      final int b = _lerp(20, 32, t);
-      final int a = (_lerp(250, 220, t) * opacity).toInt().clamp(0, 255);
-      img.fillRect(src, x1: 0, y1: row, x2: src.width, y2: row + 1,
-          color: img.ColorRgba8(r, g, b, a));
+    // ── 1. Latar belakang gradien ─────────────────────────────────
+    for (int y = y0; y < y0 + panelH; y++) {
+      final double t = (y - y0) / panelH;
+      final int r = _lerp(_bgTop.r, _bgBottom.r, t);
+      final int g = _lerp(_bgTop.g, _bgBottom.g, t);
+      final int b = _lerp(_bgTop.b, _bgBottom.b, t);
+      final int a = (_lerp(_bgTop.a, _bgBottom.a, t) * opacity).toInt().clamp(0, 255);
+      img.drawLine(src, x1: 0, y1: y, x2: src.width, y2: y, color: img.ColorRgba8(r, g, b, a));
     }
 
-    // ── Scan-line HUD effect (1px garis tiap 4px) ─────────────────
-    for (int row = y0; row < y0 + panelH; row += 4) {
-      if (row >= src.height) break;
-      img.fillRect(src, x1: 0, y1: row, x2: src.width, y2: row + 1,
-          color: img.ColorRgba8(0, 200, 240, 8));
+    // ── 2. Efek scan line (garis tipis setiap 4px) ─────────────────
+    for (int y = y0; y < y0 + panelH; y += 4) {
+      img.drawLine(src, x1: 0, y1: y, x2: src.width, y2: y, color: _scanLine);
     }
 
-    // ── Border atas + bawah cyan ──────────────────────────────────
+    // ── 3. Border atas dan bawah (cyan) ───────────────────────────
     if (showBorder) {
-      img.fillRect(src, x1: 0, y1: y0, x2: src.width, y2: y0 + 2, color: _cyanDim);
-      img.fillRect(src, x1: 0, y1: y0 + panelH - 2, x2: src.width, y2: y0 + panelH, color: _cyanDim);
+      img.drawLine(src, x1: 0, y1: y0, x2: src.width, y2: y0, color: _cyanDim, thickness: 2);
+      img.drawLine(src, x1: 0, y1: y0 + panelH - 2, x2: src.width, y2: y0 + panelH - 2, color: _cyanDim, thickness: 2);
     }
 
-    // ── Corner brackets ───────────────────────────────────────────
-    _brackets(src, cx: 0, cy: y0, w: src.width, h: panelH);
+    // ── 4. Kurung sudut (HUD signature) ───────────────────────────
+    _drawCorners(src, x1: 0, y1: y0, x2: src.width, y2: y0 + panelH, color: _cyanDim);
 
-    // ── Content ───────────────────────────────────────────────────
-    int ty = y0 + padY;
+    // ── 5. Konten ─────────────────────────────────────────────────
+    int cy = y0 + padY;
     final int tx = padX;
 
-    // Jam besar
-    final timeStr = DateFormat('HH:mm:ss').format(timestamp);
-    _sh(src, timeStr, font: fontL, x: tx, y: ty, color: _white);
+    // Waktu besar (kiri) & tanggal (kanan)
+    final timeStr = DateFormat(timeFormat).format(timestamp);
+    _drawShadowText(src, timeStr, font: fontLarge, x: tx, y: cy, color: _white);
+    final dateStr = DateFormat(dateFormat).format(timestamp);
+    final dateWidth = dateStr.length * (fontSmall.width).round();
+    _drawShadowText(src, dateStr, font: fontSmall, x: src.width - tx - dateWidth, y: cy + 4, color: _grey);
+    cy += lineLarge + 4;
 
-    // Tanggal kanan
-    final dateStr = DateFormat('dd/MM/yyyy').format(timestamp);
-    _sh(src, dateStr, font: fontS,
-        x: src.width - padX - dateStr.length * 8, y: ty + 8, color: _grey);
-    ty += lL;
-
-    // Separator
-    img.fillRect(src, x1: padX, y1: ty, x2: src.width - padX, y2: ty + 1,
-        color: img.ColorRgba8(0, 200, 240, 30));
-    ty += 5;
+    // Separator garis tipis
+    img.drawLine(src, x1: tx, y1: cy, x2: src.width - tx, y2: cy, color: _cyanDim.withAlpha(60));
+    cy += separatorHeight;
 
     // Koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord = '${lat.abs().toStringAsFixed(5)}° ${lat >= 0 ? "N" : "S"}   '
-          '${lon.abs().toStringAsFixed(5)}° ${lon >= 0 ? "E" : "W"}';
-      _sh(src, coord, font: fontS, x: tx, y: ty, color: _cyan);
-      ty += lS;
+      final latDir = lat >= 0 ? "N" : "S";
+      final lonDir = lon >= 0 ? "E" : "W";
+      final coordStr = "${lat.abs().toStringAsFixed(5)}° $latDir   ${lon.abs().toStringAsFixed(5)}° $lonDir";
+      _drawShadowText(src, coordStr, font: fontSmall, x: tx, y: cy, color: _cyan);
+      cy += lineSmall;
     }
 
-    // Accuracy
+    // Akurasi (dengan warna sesuai level)
     if (showAccuracy && hasPosition && acc != null) {
       final accColor = acc <= 5 ? _green : acc <= 20 ? _amber : _red;
-      _sh(src, 'GPS Accuracy  ± ${acc.toStringAsFixed(0)} m', font: fontS, x: tx, y: ty, color: accColor);
-      ty += lS;
+      _drawShadowText(src, "GPS Accuracy  ± ${acc.toStringAsFixed(1)} m", font: fontSmall, x: tx, y: cy, color: accColor);
+      cy += lineSmall;
     }
 
-    // Address
+    // Alamat
     if (showAddress && _validAddr(address)) {
-      final maxC = ((src.width - padX * 2) / 7).toInt().clamp(28, 80);
-      final short = address.length > maxC ? '${address.substring(0, maxC - 1)}…' : address;
-      _sh(src, short, font: fontS, x: tx, y: ty, color: _grey);
-      ty += lS;
+      final maxChars = ((src.width - tx * 2) / (fontSmall.width * 0.6)).toInt().clamp(30, 70);
+      String shortAddr = address;
+      if (address.length > maxChars) shortAddr = address.substring(0, maxChars - 3) + '…';
+      _drawShadowText(src, shortAddr, font: fontSmall, x: tx, y: cy, color: _grey);
+      cy += lineSmall;
     }
 
-    // Weather
+    // Cuaca (dengan latar highlight cyan transparan)
     if (showWeather && weather.isNotEmpty) {
-      img.fillRect(src, x1: tx - 2, y1: ty - 1, x2: tx + weather.length * 7 + 8, y2: ty + lS - 2,
-          color: img.ColorRgba8(0, 200, 240, 22));
-      _sh(src, weather, font: fontS, x: tx, y: ty, color: _cyan);
+      final weatherText = weather;
+      final textWidth = weatherText.length * (fontSmall.width).round();
+      // Highlight background
+      img.fillRect(src, x1: tx - 4, y1: cy - 2, x2: tx + textWidth + 8, y2: cy + lineSmall - 2,
+          color: img.ColorRgba8(0, 210, 255, 28));
+      _drawShadowText(src, weatherText, font: fontSmall, x: tx, y: cy, color: _cyan);
     }
 
     return WatermarkLayoutBase.encodeJpg(src);
   }
 
-  void _sh(img.Image src, String text, {
+  // Helper untuk teks dengan bayangan
+  void _drawShadowText(img.Image src, String text, {
     required img.BitmapFont font, required int x, required int y, required img.Color color,
   }) {
     img.drawString(src, text, font: font, x: x + 1, y: y + 1, color: _shadow);
     img.drawString(src, text, font: font, x: x, y: y, color: color);
   }
 
-  void _brackets(img.Image src, {required int cx, required int cy, required int w, required int h}) {
-    const sz = 12; const th = 2;
-    final c = img.ColorRgba8(0, 200, 240, 180);
-    img.fillRect(src, x1: cx,     y1: cy,     x2: cx+sz, y2: cy+th,  color: c);
-    img.fillRect(src, x1: cx,     y1: cy,     x2: cx+th, y2: cy+sz,  color: c);
-    img.fillRect(src, x1: cx+w-sz,y1: cy,     x2: cx+w,  y2: cy+th,  color: c);
-    img.fillRect(src, x1: cx+w-th,y1: cy,     x2: cx+w,  y2: cy+sz,  color: c);
-    img.fillRect(src, x1: cx,     y1: cy+h-th,x2: cx+sz, y2: cy+h,   color: c);
-    img.fillRect(src, x1: cx,     y1: cy+h-sz,x2: cx+th, y2: cy+h,   color: c);
-    img.fillRect(src, x1: cx+w-sz,y1: cy+h-th,x2: cx+w, y2: cy+h,   color: c);
-    img.fillRect(src, x1: cx+w-th,y1: cy+h-sz,x2: cx+w, y2: cy+h,   color: c);
+  // Kurung sudut kiri-kanan (seperti head-up display)
+  void _drawCorners(img.Image src, {required int x1, required int y1, required int x2, required int y2, required img.Color color}) {
+    const int size = 14;
+    const int thick = 2;
+    // Kiri atas
+    img.fillRect(src, x1: x1, y1: y1, x2: x1 + size, y2: y1 + thick, color: color);
+    img.fillRect(src, x1: x1, y1: y1, x2: x1 + thick, y2: y1 + size, color: color);
+    // Kanan atas
+    img.fillRect(src, x1: x2 - size, y1: y1, x2: x2, y2: y1 + thick, color: color);
+    img.fillRect(src, x1: x2 - thick, y1: y1, x2: x2, y2: y1 + size, color: color);
+    // Kiri bawah
+    img.fillRect(src, x1: x1, y1: y2 - thick, x2: x1 + size, y2: y2, color: color);
+    img.fillRect(src, x1: x1, y1: y2 - size, x2: x1 + thick, y2: y2, color: color);
+    // Kanan bawah
+    img.fillRect(src, x1: x2 - size, y1: y2 - thick, x2: x2, y2: y2, color: color);
+    img.fillRect(src, x1: x2 - thick, y1: y2 - size, x2: x2, y2: y2, color: color);
   }
 
   bool _validAddr(String a) =>
-      a.isNotEmpty && a != 'Tidak ada lokasi' && !a.startsWith('GPS:');
+      a.isNotEmpty && a != 'Tidak ada lokasi' && !a.startsWith('GPS:') && !a.startsWith('Mencari');
 
   int _lerp(int a, int b, double t) => (a + (b - a) * t).round().clamp(0, 255);
 }

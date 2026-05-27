@@ -57,6 +57,15 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
   late WatermarkPosition _position;
   late AnimationController _snapAnimationController;
   bool _isDragging = false;
+  
+  // Cache untuk ukuran card (dihitung ulang hanya saat diperlukan)
+  late double _cachedPainterHeight;
+  late double _cachedCardWidth;
+  late double _cachedCardHeight;
+  late bool _isLandscape;
+  
+  // Flag untuk menandai perlu update cache
+  bool _needsCacheUpdate = true;
 
   static const List<Map<String, dynamic>> _presets = [
     {'name': 'Bawah Kiri', 'icon': Icons.crop_7_5, 'x': 0.04, 'y': 0.82, 'scale': 1.0},
@@ -75,6 +84,22 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
   }
 
   @override
+  void didUpdateWidget(covariant DraggableWatermarkOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reset cache jika parameter yang mempengaruhi ukuran berubah
+    if (oldWidget.fontSize != widget.fontSize ||
+        oldWidget.layout != widget.layout ||
+        oldWidget.address != widget.address ||
+        oldWidget.showCoordinates != widget.showCoordinates ||
+        oldWidget.showAccuracy != widget.showAccuracy ||
+        oldWidget.showAddress != widget.showAddress ||
+        oldWidget.showWeather != widget.showWeather ||
+        oldWidget.previewSize != widget.previewSize) {
+      _needsCacheUpdate = true;
+    }
+  }
+
+  @override
   void dispose() {
     _snapAnimationController.dispose();
     super.dispose();
@@ -82,34 +107,17 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
 
   void _updatePosition(WatermarkPosition newPos, {bool animate = false}) {
     if (animate) _snapAnimationController.forward(from: 0.0);
-    setState(() => _position = newPos);
+    setState(() {
+      _position = newPos;
+      _needsCacheUpdate = true; // skala berubah, ukuran card perlu dihitung ulang
+    });
     widget.onPositionChanged?.call(_position);
   }
 
-  WatermarkPosition _applySnap(WatermarkPosition pos, Size screenSize, Size cardSize) {
-    final screenW = screenSize.width;
-    final screenH = screenSize.height;
-    final cardW = cardSize.width * pos.scale;
-    final cardH = cardSize.height * pos.scale;
-    double newX = pos.x;
-    double newY = pos.y;
-    double left = screenW * pos.x;
-    double top = screenH * pos.y;
-
-    final centerX = (screenW - cardW) / 2;
-    if ((left - centerX).abs() < 25) newX = (centerX / screenW).clamp(0.04, 0.96);
-
-    final thirdTop = screenH * 0.33;
-    final thirdBottom = screenH * 0.66;
-    if ((top - thirdTop).abs() < 25) newY = (thirdTop / screenH).clamp(0.04, 0.92);
-    else if ((top - thirdBottom).abs() < 25) newY = (thirdBottom / screenH).clamp(0.04, 0.92);
-
-    return pos.copyWith(x: newX, y: newY);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isLandscape = widget.previewSize.width > widget.previewSize.height;
+  void _updateCacheIfNeeded() {
+    if (!_needsCacheUpdate) return;
+    
+    _isLandscape = widget.previewSize.width > widget.previewSize.height;
     final dummyPainter = ProfessionalWatermarkPainter(
       timestamp: widget.timestamp,
       hasPosition: widget.hasPosition,
@@ -129,17 +137,45 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
       fontScale: _position.fontScale,
     );
     
-    final double painterHeight = dummyPainter.computeHeightSync(Size(320, 400), isLandscape: isLandscape);
-    final double baseCardWidth = isLandscape ? 340 : 320;
-    final double cardWidth = (baseCardWidth * _position.scale).clamp(220, 480);
-    final double cardHeight = painterHeight * _position.scale;
+    _cachedPainterHeight = dummyPainter.computeHeightSync(Size(320, 400), isLandscape: _isLandscape);
+    final baseCardWidth = _isLandscape ? 340 : 320;
+    _cachedCardWidth = (baseCardWidth * _position.scale).clamp(220, 480);
+    _cachedCardHeight = _cachedPainterHeight * _position.scale;
+    
+    _needsCacheUpdate = false;
+  }
+
+  WatermarkPosition _applySnap(WatermarkPosition pos, Size screenSize, Size cardSize) {
+    final screenW = screenSize.width;
+    final screenH = screenSize.height;
+    final cardW = cardSize.width;
+    final cardH = cardSize.height;
+    double newX = pos.x;
+    double newY = pos.y;
+    double left = screenW * pos.x;
+    double top = screenH * pos.y;
+
+    final centerX = (screenW - cardW) / 2;
+    if ((left - centerX).abs() < 25) newX = (centerX / screenW).clamp(0.04, 0.96);
+
+    final thirdTop = screenH * 0.33;
+    final thirdBottom = screenH * 0.66;
+    if ((top - thirdTop).abs() < 25) newY = (thirdTop / screenH).clamp(0.04, 0.92);
+    else if ((top - thirdBottom).abs() < 25) newY = (thirdBottom / screenH).clamp(0.04, 0.92);
+
+    return pos.copyWith(x: newX, y: newY);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _updateCacheIfNeeded();
     
     final screenWidth = widget.previewSize.width;
     final screenHeight = widget.previewSize.height;
     final safeLeft = screenWidth * 0.04;
-    final safeRight = screenWidth * 0.96 - cardWidth;
+    final safeRight = screenWidth * 0.96 - _cachedCardWidth;
     final safeTop = screenHeight * 0.04;
-    final safeBottom = screenHeight * 0.92 - cardHeight;
+    final safeBottom = screenHeight * 0.92 - _cachedCardHeight;
     
     double left = screenWidth * _position.x;
     double top = screenHeight * _position.y;
@@ -150,12 +186,14 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
       children: [
         if (_isDragging && widget.showSnapGuides)
           IgnorePointer(
-            child: CustomPaint(
-              painter: SnapGuidePainter(screenSize: widget.previewSize, cardRect: Rect.fromLTWH(left, top, cardWidth, cardHeight)),
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: SnapGuidePainter(screenSize: widget.previewSize, cardRect: Rect.fromLTWH(left, top, _cachedCardWidth, _cachedCardHeight)),
+              ),
             ),
           ),
         
-        // Tombol preset (kanan atas)
+        // Tombol preset
         Positioned(
           top: 60,
           right: 10,
@@ -164,7 +202,7 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
               _buildPresetButton(Icons.grid_view, () => _showPresetDialog(context)),
               const SizedBox(height: 8),
               _buildPresetButton(Icons.center_focus_strong, () {
-                final snapped = _applySnap(_position, widget.previewSize, Size(cardWidth, cardHeight));
+                final snapped = _applySnap(_position, widget.previewSize, Size(_cachedCardWidth, _cachedCardHeight));
                 _updatePosition(snapped, animate: true);
               }),
               const SizedBox(height: 8),
@@ -192,7 +230,7 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
                   },
                   onPanEnd: (_) {
                     setState(() => _isDragging = false);
-                    final snapped = _applySnap(_position, widget.previewSize, Size(cardWidth, cardHeight));
+                    final snapped = _applySnap(_position, widget.previewSize, Size(_cachedCardWidth, _cachedCardHeight));
                     if (snapped != _position) _updatePosition(snapped, animate: true);
                   },
                   onScaleUpdate: (details) {
@@ -203,12 +241,12 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
                   child: ProfessionalWatermarkCard(
                     position: _position,
                     screenSize: widget.previewSize,
-                    isLandscape: isLandscape,
+                    isLandscape: _isLandscape,
                     opacity: widget.opacity,
                     showBorder: widget.showBorder,
                     child: SizedBox(
-                      width: cardWidth,
-                      height: cardHeight,
+                      width: _cachedCardWidth,
+                      height: _cachedCardHeight,
                       child: CustomPaint(
                         painter: ProfessionalWatermarkPainter(
                           timestamp: widget.timestamp,
@@ -298,5 +336,7 @@ class SnapGuidePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(SnapGuidePainter oldDelegate) => true;
+  bool shouldRepaint(SnapGuidePainter oldDelegate) {
+    return oldDelegate.screenSize != screenSize || oldDelegate.cardRect != cardRect;
+  }
 }

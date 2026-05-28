@@ -1,4 +1,3 @@
-// lib/services/kalman_filter_4d.dart
 import 'dart:math';
 
 /// 4D Kalman filter for GPS smoothing in ENU coordinates (east, north, vx, vy)
@@ -87,16 +86,15 @@ class KalmanFilter4D {
     return (_x, _P);
   }
 
-  /// Update step: incorporate measurement (innovation: east, north) and measurement noise R (m²).
+  /// Update step: incorporate measurement (innovation: de, dn) and measurement noise R (m²).
   /// Uses Joseph form for numerical stability.
   /// Returns (state, covariance) after update.
-  (List<double>, List<List<double>>) update(
-      (double de, double dn) innovation, double R, List<List<double>> Ppred) {
+  (List<double>, List<List<double>>) update(double de, double dn, double R, List<List<double>> Ppred) {
     final H = [
       [1.0, 0.0, 0.0, 0.0],
       [0.0, 1.0, 0.0, 0.0],
     ];
-    final z = [innovation.de, innovation.dn];
+    final z = [de, dn];
 
     // Innovation covariance S = H * Ppred * H^T + R*I
     final HP = _matMul(H, Ppred);

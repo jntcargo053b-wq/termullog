@@ -1,4 +1,3 @@
-// lib/widgets/draggable_watermark_overlay.dart (final)
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/watermark_position.dart';
@@ -58,6 +57,8 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
   late WatermarkPosition _position;
   late AnimationController _snapAnimationController;
   bool _isDragging = false;
+  
+  late double _cachedPainterHeight;
   late double _cachedCardWidth;
   late double _cachedCardHeight;
   late bool _isLandscape;
@@ -111,9 +112,11 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
 
   void _updateCacheIfNeeded() {
     if (!_needsCacheUpdate) return;
+    
     _isLandscape = widget.previewSize.width > widget.previewSize.height;
     final baseCardWidth = _isLandscape ? 340 : 320;
     _cachedCardWidth = (baseCardWidth * _position.scale).clamp(220.0, 480.0);
+    
     final dummyPainter = UnifiedWatermarkPainter(
       timestamp: widget.timestamp,
       hasPosition: widget.hasPosition,
@@ -135,7 +138,8 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
       isHighQuality: false,
       pixelRatio: 1.0,
     );
-    _cachedCardHeight = dummyPainter.computeHeight();
+    _cachedPainterHeight = dummyPainter.computeHeight();
+    _cachedCardHeight = _cachedPainterHeight;
     _needsCacheUpdate = false;
   }
 
@@ -163,13 +167,19 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
   @override
   Widget build(BuildContext context) {
     _updateCacheIfNeeded();
+    
     final screenWidth = widget.previewSize.width;
     final screenHeight = widget.previewSize.height;
-    const double safeMargin = 16.0;
-    double left = screenWidth * _position.x - _cachedCardWidth / 2;
-    double top = screenHeight * _position.y - _cachedCardHeight / 2;
-    left = left.clamp(safeMargin, screenWidth - _cachedCardWidth - safeMargin);
-    top = top.clamp(safeMargin, screenHeight - _cachedCardHeight - safeMargin);
+    const double safeMargin = 16;
+    final safeLeft = safeMargin;
+    final safeRight = screenWidth - _cachedCardWidth - safeMargin;
+    final safeTop = safeMargin;
+    final safeBottom = screenHeight - _cachedCardHeight - safeMargin;
+    
+    double left = screenWidth * _position.x;
+    double top = screenHeight * _position.y;
+    left = left.clamp(safeLeft, safeRight);
+    top = top.clamp(safeTop, safeBottom);
 
     return Stack(
       children: [
@@ -181,6 +191,7 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
               ),
             ),
           ),
+        
         Positioned(
           top: 60,
           right: 10,
@@ -197,6 +208,7 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
             ],
           ),
         ),
+        
         Positioned(
           left: left,
           top: top,
@@ -210,11 +222,9 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
                 child: GestureDetector(
                   onPanStart: (_) => setState(() => _isDragging = true),
                   onPanUpdate: (details) {
-                    double newLeft = (left + details.delta.dx).clamp(safeMargin, screenWidth - _cachedCardWidth - safeMargin);
-                    double newTop = (top + details.delta.dy).clamp(safeMargin, screenHeight - _cachedCardHeight - safeMargin);
-                    final newX = (newLeft + _cachedCardWidth / 2) / screenWidth;
-                    final newY = (newTop + _cachedCardHeight / 2) / screenHeight;
-                    _updatePosition(_position.copyWith(x: newX, y: newY));
+                    double newLeft = (left + details.delta.dx).clamp(safeLeft, safeRight);
+                    double newTop = (top + details.delta.dy).clamp(safeTop, safeBottom);
+                    _updatePosition(_position.copyWith(x: newLeft / screenWidth, y: newTop / screenHeight));
                   },
                   onPanEnd: (_) {
                     setState(() => _isDragging = false);
@@ -223,13 +233,13 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
                   },
                   onScaleUpdate: (details) {
                     double newScale = (_position.scale * details.scale).clamp(0.5, 2.5);
-                    double newFontScale = _position.fontScale;
-                    if (details.scale != 1.0) {
-                      newFontScale = (_position.fontScale * details.scale).clamp(0.7, 1.5);
-                    }
+                    double newFontScale = (_position.fontScale * details.scale).clamp(0.7, 1.5);
                     _updatePosition(_position.copyWith(scale: newScale, fontScale: newFontScale));
                   },
                   child: ProfessionalWatermarkCard(
+                    position: _position,
+                    screenSize: widget.previewSize,
+                    isLandscape: _isLandscape,
                     opacity: widget.opacity,
                     showBorder: widget.showBorder,
                     child: SizedBox(
@@ -255,7 +265,7 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
                           fontScale: _position.fontScale,
                           cardWidth: _cachedCardWidth,
                           isHighQuality: false,
-                          pixelRatio: 1.0,
+                          pixelRatio: MediaQuery.of(context).devicePixelRatio,
                         ),
                       ),
                     ),

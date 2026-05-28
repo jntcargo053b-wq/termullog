@@ -1,3 +1,4 @@
+// lib/watermark/watermark_engine.dart
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -7,6 +8,7 @@ import '../core/constants.dart';
 import '../widgets/unified_watermark_painter.dart';
 
 class WatermarkEngine {
+  /// Main entry point: apply watermark to image bytes and return JPEG bytes.
   static Future<Uint8List> process({
     required Uint8List imageBytes,
     required DateTime timestamp,
@@ -27,12 +29,15 @@ class WatermarkEngine {
     required int imageQuality,
     double pixelRatio = 1.0,
   }) async {
+    // 1. Decode original image
     final ui.Image original = await _decodeImage(imageBytes);
     final int width = original.width;
     final int height = original.height;
 
+    // 2. Calculate card width (responsive, ~38% of image width)
     final double cardWidth = (width * 0.38).clamp(220.0, 420.0);
 
+    // 3. Dummy painter to compute height
     final dummyPainter = UnifiedWatermarkPainter(
       timestamp: timestamp,
       hasPosition: lat != null && lon != null,
@@ -56,6 +61,7 @@ class WatermarkEngine {
     );
     final double cardHeight = dummyPainter.computeHeight();
 
+    // 4. Position (center-bottom, can be later read from SettingsCache)
     final double posX = 0.5;
     final double posY = 0.85;
     double left = (width * posX) - (cardWidth / 2);
@@ -64,6 +70,7 @@ class WatermarkEngine {
     left = left.clamp(safeMargin, width - cardWidth - safeMargin);
     top = top.clamp(safeMargin, height - cardHeight - safeMargin);
 
+    // 5. Render watermark using Flutter Canvas
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final ui.Canvas canvas = ui.Canvas(recorder);
     canvas.drawImage(original, ui.Offset.zero, ui.Paint());
@@ -97,16 +104,19 @@ class WatermarkEngine {
     final ui.Picture picture = recorder.endRecording();
     final ui.Image output = await picture.toImage(width, height);
 
+    // 6. Encode to JPEG (via image package)
     final ByteData? byteData = await output.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) throw Exception('Failed to get image bytes');
+    final Uint8List pixels = byteData.buffer.asUint8List();
     final img.Image jpegImg = img.Image.fromBytes(
       width: width,
       height: height,
-      bytes: byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes),
+      bytes: pixels,
       numChannels: 4,
     );
     final Uint8List jpegBytes = img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100));
 
+    // 7. Cleanup
     original.dispose();
     output.dispose();
     picture.dispose();

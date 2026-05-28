@@ -98,9 +98,10 @@ class WatermarkEngine {
     final ui.Picture picture = recorder.endRecording();
     final ui.Image output = await picture.toImage(width, height);
 
+    // Convert to JPEG using image package
     final ByteData? byteData = await output.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) throw Exception('Failed to get image bytes');
-    // Get the pixel data correctly
+    // Convert raw RGBA bytes to img.Image
     final Uint8List pixels = byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes);
     final img.Image jpegImg = img.Image.fromBytes(
       width: width,
@@ -110,6 +111,7 @@ class WatermarkEngine {
     );
     final Uint8List jpegBytes = img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100));
 
+    // Cleanup
     original.dispose();
     output.dispose();
     picture.dispose();

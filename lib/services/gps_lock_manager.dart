@@ -1,6 +1,14 @@
 // lib/services/gps_lock_manager.dart
-// Versi final: raw GPS untuk geocode, hybrid position lock, bootstrap median ENU
-// Tanpa weighted averaging, tanpa provisional state, tanpa ENU recenter
+// Final version with all critical fixes:
+// - Full copyWith
+// - Null-safe geocodePosition
+// - Reset ENU state on filter recreation
+// - Hybrid position for lock and update
+// - Heading clear on stop, not on move
+// - Softer movement thresholds
+// - Stale detection
+// - Consistent hybrid ratio (70/30)
+
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
@@ -29,15 +37,25 @@ class GpsLockData {
 
   bool get isValid => DateTime.now().difference(lockedAt) < const Duration(minutes: 2);
 
-  GpsLockData copyWith({String? address, String? weather}) => GpsLockData(
-        position: position,
-        address: address ?? this.address,
-        weather: weather ?? this.weather,
-        lockedAt: lockedAt,
-        accuracy: accuracy,
-        quality: quality,
-        confidence: confidence,
-      );
+  GpsLockData copyWith({
+    Position? position,
+    String? address,
+    String? weather,
+    DateTime? lockedAt,
+    double? accuracy,
+    String? quality,
+    double? confidence,
+  }) {
+    return GpsLockData(
+      position: position ?? this.position,
+      address: address ?? this.address,
+      weather: weather ?? this.weather,
+      lockedAt: lockedAt ?? this.lockedAt,
+      accuracy: accuracy ?? this.accuracy,
+      quality: quality ?? this.quality,
+      confidence: confidence ?? this.confidence,
+    );
+  }
 }
 
 class GpsLockManager {
@@ -53,24 +71,21 @@ class GpsLockManager {
   final List<double> _innovationHistory = [];
   static const int _innovationWindow = 10;
   double? _refLat, _refLon;
-  
-  // Untuk bootstrap ENU
+
   final List<Position> _bootstrapSamples = [];
   static const int _bootstrapRequired = 3;
 
-  // Raw position terbaru untuk geocoding
+  // Raw position for geocoding (nullable)
   Position? _latestRawPosition;
 
-  // Parameter
-  static const double _requiredAccuracyMeters = 6.0;   // lebih ketat
-  static const double _maxAllowedAccuracy = 20.0;
+  // Parameters
+  static const double _requiredAccuracyMeters = 6.0;
+  static const double _maxAllowedAccuracy = 35.0; // softer for startup
   static const double _requiredStableSeconds = 4.0;
   static const double _maxMovementMeters = 4.0;
-  static const double _movementSpeedThreshold = 2.0;
-  static const double _movementDistanceThreshold = 2.5;
+  static const double _movementSpeedThreshold = 1.0;    // softer
+  static const double _movementDistanceThreshold = 1.2; // softer
   static const double _maxSpeedMps = 60.0;
-  static const double _qPos = 2.5;
-  static const double _qVel = 3.0;
 
   DateTime? _sessionStart;
 
@@ -84,8 +99,8 @@ class GpsLockManager {
   int get stationaryProgress => ((_stableSeconds / _requiredStableSeconds) * 100).clamp(0, 100).toInt();
   double get confidence => _lockData?.confidence ?? 0.0;
 
-  // Posisi RAW terbaru (untuk geocoding, bukan untuk tampilan watermark)
-  Position get geocodePosition => _latestRawPosition ?? _lockData?.position ?? _latestRawPosition!;
+  // Raw position for reverse geocoding (safe nullable)
+  Position? get geocodePosition => _latestRawPosition ?? _lockData?.position;
 
   static String getQualityFromAccuracy(double acc) {
     if (acc <= 3) return 'Excellent';
@@ -116,7 +131,6 @@ class GpsLockManager {
     );
   }
 
-  // Heading (bearing)
   double _bearingBetween(double lat1, double lon1, double lat2, double lon2) {
     final dLon = (lon2 - lon1) * pi / 180.0;
     final y = sin(dLon) * cos(lat2 * pi / 180.0);
@@ -141,6 +155,7 @@ class GpsLockManager {
         _lastHeading = ((atan2(sinSum, cosSum) * 180.0 / pi) + 360) % 360;
       }
     }
+    // Keep heading history limited
     if (_headingHistory.length > 5) _headingHistory.removeAt(0);
   }
 
@@ -182,7 +197,13 @@ class GpsLockManager {
   }
 
   bool processSample(Position newPos, {Position? lastPositionForBearing}) {
-    // Simpan raw position untuk geocoding
+    // Stale detection: if no data for 5 seconds, force unlock
+    if (_lastTimestamp != null && DateTime.now().difference(_lastTimestamp!).inSeconds > 5) {
+      forceUnlock();
+      return false;
+    }
+
+    // Store raw position for geocoding
     _latestRawPosition = newPos;
 
     final timestamp = newPos.timestamp ?? DateTime.now();
@@ -190,7 +211,7 @@ class GpsLockManager {
     if (newPos.accuracy > _maxAllowedAccuracy) return false;
     if (newPos.speed.isFinite && newPos.speed > _maxSpeedMps) return false;
 
-    // Bootstrap ENU reference dengan median 3 sample (tidak pakai sample pertama)
+    // Bootstrap ENU with median of 3 samples
     if (_refLat == null) {
       _bootstrapSamples.add(newPos);
       if (_bootstrapSamples.length < _bootstrapRequired) return false;
@@ -215,6 +236,9 @@ class GpsLockManager {
     final (predicted, Ppred) = _kalman!.predict(dt);
     if (!_isFilterHealthy()) {
       _kalman = KalmanFilter4D();
+      _lastFilteredEast = null;
+      _lastFilteredNorth = null;
+      _stableSeconds = 0.0;
       return false;
     }
 
@@ -222,7 +246,6 @@ class GpsLockManager {
     final dn = local.north - predicted[1];
     final innovationNorm = sqrt(de * de + dn * dn);
 
-    // Measurement noise lebih kecil
     final adaptive = 1.0 + (_innovationRms * 0.05);
     final sigma = (newPos.accuracy * adaptive).clamp(1.5, 8.0);
     final R = sigma * sigma;
@@ -230,7 +253,7 @@ class GpsLockManager {
     final Sy = Ppred[1][1] + R;
     final mahal2 = (de * de) / Sx + (dn * dn) / Sy;
 
-    // Outlier rejection lebih ketat
+    // Outlier threshold 12 is sweet spot
     if (mahal2 > 12.0) {
       if (kDebugMode) debugPrint('GPS Lock: outlier mahal2=${mahal2.toStringAsFixed(1)}');
       return false;
@@ -240,6 +263,9 @@ class GpsLockManager {
     final (updated, Pupd) = _kalman!.update(de, dn, R, Ppred);
     if (!_isFilterHealthy()) {
       _kalman = KalmanFilter4D();
+      _lastFilteredEast = null;
+      _lastFilteredNorth = null;
+      _stableSeconds = 0.0;
       return false;
     }
 
@@ -257,7 +283,7 @@ class GpsLockManager {
             movedDistance > 3.0) &&
         _innovationRms > 1.2;
 
-    // Decay stableSeconds alih-alih hard reset
+    // Stable seconds with decay
     if (!isMoving && mahal2 < 2.5) {
       _stableSeconds += dt;
     } else {
@@ -268,13 +294,34 @@ class GpsLockManager {
         ? newPos.heading
         : _lastHeading;
     _updateHeading(rawHeading, speedMps, newPos, lastPositionForBearing);
-    if (isMoving) _headingHistory.clear();
+    // Clear heading history only when device is truly stationary (not moving)
+    if (!isMoving && speedMps < 0.5) {
+      _headingHistory.clear();
+    }
 
-    // Smoothed position hanya untuk tampilan, bukan untuk lock
+    // Smoothed position for hybrid
     final smoothedLatLon = _toGlobal(updated[0], updated[1]);
     final smoothedPosition = Position(
       latitude: smoothedLatLon.lat,
       longitude: smoothedLatLon.lon,
+      accuracy: newPos.accuracy,
+      altitude: newPos.altitude,
+      heading: _lastHeading,
+      speed: speedMps,
+      speedAccuracy: newPos.speedAccuracy,
+      timestamp: timestamp,
+      altitudeAccuracy: newPos.altitudeAccuracy,
+      headingAccuracy: _getHeadingAccuracy(),
+      floor: newPos.floor,
+      isMocked: newPos.isMocked,
+    );
+
+    // Hybrid position (70% raw, 30% smoothed) – used for lock and refinement
+    final hybridLat = newPos.latitude * 0.7 + smoothedPosition.latitude * 0.3;
+    final hybridLon = newPos.longitude * 0.7 + smoothedPosition.longitude * 0.3;
+    final hybridPosition = Position(
+      latitude: hybridLat,
+      longitude: hybridLon,
       accuracy: newPos.accuracy,
       altitude: newPos.altitude,
       heading: _lastHeading,
@@ -299,7 +346,7 @@ class GpsLockManager {
       if (_lockData != null && newPos.accuracy < _lockData!.accuracy - 1.5) {
         final conf = _computeConfidence(Pupd[0][0], Pupd[1][1], _innovationRms);
         _lockData = _lockData!.copyWith(
-          position: smoothedPosition,
+          position: hybridPosition, // use hybrid, not full smoothed
           accuracy: newPos.accuracy,
           quality: getQualityFromAccuracy(newPos.accuracy),
           confidence: conf,
@@ -318,24 +365,7 @@ class GpsLockManager {
     final goodAccuracy = newPos.accuracy <= _requiredAccuracyMeters;
     final enoughStable = _stableSeconds >= _requiredStableSeconds;
 
-    // Lock menggunakan hybrid position (70% raw, 30% smoothed) untuk mengurangi drift
     if (goodAccuracy && enoughStable && !isMoving) {
-      final hybridLat = newPos.latitude * 0.7 + smoothedPosition.latitude * 0.3;
-      final hybridLon = newPos.longitude * 0.7 + smoothedPosition.longitude * 0.3;
-      final hybridPosition = Position(
-        latitude: hybridLat,
-        longitude: hybridLon,
-        accuracy: newPos.accuracy,
-        altitude: newPos.altitude,
-        heading: _lastHeading,
-        speed: speedMps,
-        speedAccuracy: newPos.speedAccuracy,
-        timestamp: timestamp,
-        altitudeAccuracy: newPos.altitudeAccuracy,
-        headingAccuracy: _getHeadingAccuracy(),
-        floor: newPos.floor,
-        isMocked: newPos.isMocked,
-      );
       final conf = _computeConfidence(Pupd[0][0], Pupd[1][1], _innovationRms);
       _lockData = GpsLockData(
         position: hybridPosition,
@@ -367,7 +397,8 @@ class GpsLockManager {
     _refLat = _refLon = null;
     _kalman = null;
     _lastTimestamp = null;
-    _lastFilteredEast = _lastFilteredNorth = null;
+    _lastFilteredEast = null;
+    _lastFilteredNorth = null;
     _innovationHistory.clear();
     _headingHistory.clear();
     _innovationRms = 1.0;

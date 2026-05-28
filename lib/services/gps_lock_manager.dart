@@ -1,3 +1,4 @@
+// lib/services/gps_lock_manager.dart
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
@@ -38,22 +39,31 @@ class GpsLockData {
 
   bool get isValid => DateTime.now().difference(lockedAt) < const Duration(minutes: 2);
 
-  GpsLockData copyWith({String? address, String? weather}) => GpsLockData(
-        position: position,
-        address: address ?? this.address,
-        weather: weather ?? this.weather,
-        lockedAt: lockedAt,
-        accuracy: accuracy,
-        quality: quality,
-        confidence: confidence,
-      );
+  GpsLockData copyWith({
+    Position? position,
+    String? address,
+    String? weather,
+    DateTime? lockedAt,
+    double? accuracy,
+    String? quality,
+    double? confidence,
+  }) {
+    return GpsLockData(
+      position: position ?? this.position,
+      address: address ?? this.address,
+      weather: weather ?? this.weather,
+      lockedAt: lockedAt ?? this.lockedAt,
+      accuracy: accuracy ?? this.accuracy,
+      quality: quality ?? this.quality,
+      confidence: confidence ?? this.confidence,
+    );
+  }
 }
 
 class GpsLockManager {
   GpsLockState _state = GpsLockState.searching;
   GpsLockData? _lockData;
   int _stationaryCount = 0;
-  DateTime? _lastMovementTime;
   List<Position> _filteredSamples = [];
 
   // ENU reference
@@ -62,22 +72,26 @@ class GpsLockManager {
   DateTime? _lastTimestamp;
   double? _lastFilteredEast, _lastFilteredNorth;
 
-  // Stationary time (seconds) - replacing simple counter
+  // Stationary time (seconds)
   double _stableSeconds = 0.0;
-  static const double _requiredStableSeconds = 6.0;
+  static const double _defaultRequiredStableSeconds = 6.0;
+  double _requiredStableSeconds = _defaultRequiredStableSeconds;
 
-  // Heading smoothing
+  // Smoothed accuracy (low-pass filter)
+  double _smoothedAccuracy = 999.0;
+  double _smoothedAltitude = 0.0;
+  bool _hasAltitude = false;
+
+  // Heading from Kalman velocity (more accurate than GPS heading)
   double _lastHeading = 0.0;
-  final List<double> _headingHistory = [];
 
-  // Innovation RMS tracking (based on magnitude, not mahal2)
+  // Innovation RMS tracking (updated after outlier check)
   final List<double> _innovationHistory = [];
   double _innovationRms = 1.0;
   static const int _innovationWindow = 10;
 
-  // Lock parameters
-  static const int _requiredSamples = 8;
-  static const double _requiredAccuracyMeters = 10.0;
+  // Lock parameters (adaptive)
+  static const double _requiredBaseAccuracyMeters = 15.0;
   static const double _maxAllowedAccuracy = 35.0;
   static const int _maxSamples = 15;
   static const double _lockCovarianceThreshold = 25.0;
@@ -86,11 +100,21 @@ class GpsLockManager {
   // Speed sanity
   static const double _maxSpeedMps = 60.0;
 
-  // ENU re-centering
-  static const double _maxRefDistance = 500.0; // meters
+  // ENU re-centering (reduced to 250m)
+  static const double _maxRefDistance = 250.0;
 
-  // Session start for warm-up
+  // Session start for warm-up (5 seconds)
   DateTime? _sessionStart;
+
+  // Stale detection
+  static const int _maxNoDataSeconds = 5;
+
+  // Consistency counter
+  int _consistentGoodSamples = 0;
+
+  // Chi-squared threshold for 2-DOF (95% confidence = 5.99, 99% = 9.21)
+  static const double _chiSquared2Dof95 = 5.99;
+  static const double _chiSquared2Dof99 = 9.21;
 
   GpsLockManager() {
     _sessionStart = DateTime.now();
@@ -99,7 +123,10 @@ class GpsLockManager {
   GpsLockState get state => _state;
   GpsLockData? get lockData => _lockData;
   bool get isLocked => _state == GpsLockState.locked && (_lockData?.isValid ?? false);
-  int get stationaryProgress => ((_stationaryCount / _requiredSamples) * 100).clamp(0, 100).toInt();
+  int get stationaryProgress {
+    if (_requiredStableSeconds <= 0) return 0;
+    return ((_stableSeconds / _requiredStableSeconds) * 100).clamp(0, 100).toInt();
+  }
   double get confidence => _lockData?.confidence ?? 0.0;
 
   static String getQualityFromAccuracy(double acc) {
@@ -127,44 +154,24 @@ class GpsLockManager {
     return GlobalPoint(_refLat! + dLat * 180.0 / pi, _refLon! + dLon * 180.0 / pi);
   }
 
-  // --- Heading smoothing ---
-  double _angleDiff(double a, double b) {
-    double d = (a - b).abs() % 360.0;
-    return d > 180.0 ? 360.0 - d : d;
+  // --- Compute heading from Kalman velocity (east, north components) ---
+  double _headingFromVelocity(double vx, double vy) {
+    // atan2 returns radians, convert to degrees, 0 = north, clockwise
+    double heading = atan2(vx, vy) * 180.0 / pi;
+    if (heading < 0) heading += 360.0;
+    return heading;
   }
 
-  void _updateHeading(double rawHeading, double speedMps) {
-    if (speedMps < 2.8) return;
-    if (!rawHeading.isFinite || rawHeading < 0 || rawHeading > 360) return;
-    if (_headingHistory.isNotEmpty && _angleDiff(rawHeading, _lastHeading) > 90 && speedMps < 5.0) return;
-
-    _headingHistory.add(rawHeading);
-    if (_headingHistory.length > 5) _headingHistory.removeAt(0);
-    double sinSum = 0, cosSum = 0;
-    for (final h in _headingHistory) {
-      final rad = h * pi / 180.0;
-      sinSum += sin(rad);
-      cosSum += cos(rad);
-    }
-    _lastHeading = atan2(sinSum, cosSum) * 180.0 / pi;
-    if (_lastHeading < 0) _lastHeading += 360;
+  // --- Confidence decay over time (exponential) ---
+  double _applyConfidenceDecay(double confidence, DateTime lockedAt) {
+    final age = DateTime.now().difference(lockedAt).inSeconds;
+    if (age <= 0) return confidence;
+    // Decay factor: 0.99 per second -> after 120 seconds ~30% left
+    final decay = pow(0.99, age).toDouble();
+    return (confidence * decay).clamp(0.0, 100.0);
   }
 
-  // Heading accuracy based on circular variance
-  double _getHeadingAccuracy() {
-    if (_headingHistory.length < 2) return 20.0;
-    double sinSum = 0, cosSum = 0;
-    for (final h in _headingHistory) {
-      final rad = h * pi / 180.0;
-      sinSum += sin(rad);
-      cosSum += cos(rad);
-    }
-    final r = sqrt(sinSum * sinSum + cosSum * cosSum) / _headingHistory.length;
-    final circularVar = 1.0 - r;
-    return (circularVar * 30.0).clamp(2.0, 30.0);
-  }
-
-  // --- Innovation RMS based on magnitude ---
+  // --- Innovation RMS (only updated after passing outlier test) ---
   void _updateInnovationRms(double innovationNorm) {
     _innovationHistory.add(innovationNorm);
     if (_innovationHistory.length > _innovationWindow) _innovationHistory.removeAt(0);
@@ -174,15 +181,15 @@ class GpsLockManager {
     if (_innovationRms < 0.1) _innovationRms = 0.1;
   }
 
-  // --- Confidence score ---
+  // --- Confidence score (more realistic) ---
   double _computeConfidence(double varPosX, double varPosY, double rms) {
     final posStd = sqrt((varPosX + varPosY) / 2.0);
-    final posScore = exp(-posStd / 6.0);
-    final innovationScore = exp(-rms / 6.0);
+    final posScore = exp(-posStd / 10.0);
+    final innovationScore = exp(-rms / 8.0);
     return (posScore * innovationScore * 100.0).clamp(0.0, 100.0);
   }
 
-  // --- Health check ---
+  // --- Health check (soft reset) ---
   bool _isFilterHealthy() => _kalman != null && _kalman!.isHealthy();
 
   // --- Haversine distance ---
@@ -197,8 +204,8 @@ class GpsLockManager {
 
   // --- Process sample ---
   bool processSample(Position newPos) {
-    // Warm-up
-    if (_sessionStart != null && DateTime.now().difference(_sessionStart!).inSeconds < 3) {
+    // Warm-up: 5 seconds
+    if (_sessionStart != null && DateTime.now().difference(_sessionStart!).inSeconds < 5) {
       return false;
     }
 
@@ -209,6 +216,23 @@ class GpsLockManager {
     if (newPos.accuracy > _maxAllowedAccuracy) return false;
     if (newPos.speed.isFinite && newPos.speed > _maxSpeedMps) return false;
 
+    // Stale detection: if no data > _maxNoDataSeconds, reset
+    if (_lastTimestamp != null && DateTime.now().difference(_lastTimestamp!).inSeconds > _maxNoDataSeconds) {
+      if (kDebugMode) debugPrint('GPS Lock: stale stream, resetting');
+      _state = GpsLockState.searching;
+      _stableSeconds = 0.0;
+      _filteredSamples.clear();
+      _kalman = KalmanFilter4D();
+      _lastFilteredEast = null;
+      _lastFilteredNorth = null;
+      _refLat = newPos.latitude;
+      _refLon = newPos.longitude;
+      _kalman?.reset(0.0, 0.0);
+      _lastTimestamp = timestamp;
+      _smoothedAccuracy = newPos.accuracy;
+      _consistentGoodSamples = 0;
+    }
+
     // Initialize reference and Kalman on first good sample
     if (_refLat == null && newPos.accuracy <= 20) {
       _refLat = newPos.latitude;
@@ -218,11 +242,19 @@ class GpsLockManager {
       _lastFilteredEast = null;
       _lastFilteredNorth = null;
       _stableSeconds = 0.0;
+      _smoothedAccuracy = newPos.accuracy;
+      _hasAltitude = false;
     }
     if (_refLat == null) return false;
 
-    // dt using GPS timestamp
-    double dt = (timestamp.difference(_lastTimestamp!).inMicroseconds / 1e6).clamp(0.01, 1.5);
+    // dt with negative/zero guard
+    final rawDt = timestamp.difference(_lastTimestamp!).inMicroseconds / 1e6;
+    double dt;
+    if (!rawDt.isFinite || rawDt <= 0) {
+      dt = 0.1;
+    } else {
+      dt = rawDt.clamp(0.01, 1.5);
+    }
     _lastTimestamp = timestamp;
 
     // ENU conversion
@@ -232,38 +264,58 @@ class GpsLockManager {
     // Kalman prediction
     final (predicted, Ppred) = _kalman!.predict(dt);
     if (!_isFilterHealthy()) {
-      forceUnlock();
+      _kalman = KalmanFilter4D();
+      _stableSeconds = 0.0;
+      if (kDebugMode) debugPrint('GPS Lock: Kalman unhealthy, recreated');
       return false;
     }
 
-    // Innovation and Mahalanobis (with correct R as variance)
+    // Innovation and Normalised Innovation Squared (NIS) for 2-DOF
     final de = local.east - predicted[0];
     final dn = local.north - predicted[1];
     final double sigma = (newPos.accuracy * (1.0 + _innovationRms * 0.3)).clamp(1.0, 50.0);
     final double R = sigma * sigma;
     final Sx = Ppred[0][0] + R;
     final Sy = Ppred[1][1] + R;
-    final mahal2 = (de * de) / Sx + (dn * dn) / Sy;
+    final nis = (de * de) / Sx + (dn * dn) / Sy; // Normalised Innovation Squared
 
-    // Innovation RMS based on magnitude
+    // Outlier check using chi-squared threshold (dynamic)
+    final nisThreshold = _state == GpsLockState.locked ? _chiSquared2Dof99 : _chiSquared2Dof95;
+    if (nis > nisThreshold) {
+      if (kDebugMode) debugPrint('GPS Lock: outlier nis=$nis (threshold=$nisThreshold)');
+      return false;
+    }
+
+    // Innovation RMS updated AFTER passing outlier test
     final innovationNorm = sqrt(de * de + dn * dn);
     _updateInnovationRms(innovationNorm);
 
-    // Outlier rejection (3 sigma)
-    if (mahal2 > 9.0) {
-      if (kDebugMode) debugPrint('GPS Lock: outlier mahal2=$mahal2');
-      return false;
+    // Adaptive process noise: higher motion -> higher Q
+    double speedEst = sqrt(predicted[2] * predicted[2] + predicted[3] * predicted[3]);
+    if (speedEst < 1.0) {
+      _kalman!.setProcessNoiseScale(1.0); // stationary
+    } else if (speedEst < 5.0) {
+      _kalman!.setProcessNoiseScale(2.0); // walking
+    } else {
+      _kalman!.setProcessNoiseScale(4.0); // vehicle
     }
 
     // Kalman update
     final (updated, Pupd) = _kalman!.update(de, dn, R, Ppred);
     if (!_isFilterHealthy()) {
-      forceUnlock();
+      _kalman = KalmanFilter4D();
+      _stableSeconds = 0.0;
       return false;
     }
 
-    // Speed and movement delta
-    final speedMps = sqrt(updated[2] * updated[2] + updated[3] * updated[3]);
+    // Hybrid speed with damping
+    final gpsSpeed = (newPos.speed.isFinite && newPos.speed >= 0) ? newPos.speed : 0.0;
+    final kalmanSpeed = sqrt(updated[2] * updated[2] + updated[3] * updated[3]);
+    double rawSpeed = (kalmanSpeed * 0.7) + (gpsSpeed * 0.3);
+    final dampedSpeed = rawSpeed < 0.5 ? 0.0 : rawSpeed;
+    final speedMps = dampedSpeed;
+
+    // Movement delta
     double movedDistance = 0.0;
     if (_lastFilteredEast != null && _lastFilteredNorth != null) {
       final dx = updated[0] - _lastFilteredEast!;
@@ -273,74 +325,122 @@ class GpsLockManager {
     _lastFilteredEast = updated[0];
     _lastFilteredNorth = updated[1];
 
-    // Movement detection with innovation gating
-    final bool isMoving = ((speedMps > 2.0 && movedDistance > 1.0) || movedDistance > 3.0) &&
-        _innovationRms > 1.2;
+    // Update smoothed altitude
+    if (!_hasAltitude) {
+      _smoothedAltitude = newPos.altitude;
+      _hasAltitude = true;
+    } else {
+      _smoothedAltitude = _smoothedAltitude * 0.9 + newPos.altitude * 0.1;
+    }
 
-    // Update stationary time (using dt, not counter)
-    if (!isMoving && mahal2 < 2.5) {
+    // Update smoothed accuracy first
+    _smoothedAccuracy = _smoothedAccuracy * 0.8 + newPos.accuracy * 0.2;
+
+    // Then adaptive stable seconds based on new smoothed accuracy
+    _requiredStableSeconds = _smoothedAccuracy < 8 ? 4.0 : _defaultRequiredStableSeconds;
+
+    // Movement detection (more sensitive for slow vehicles)
+    final bool isMoving = (((speedMps > 2.2 && movedDistance > 1.5) || movedDistance > 4.0) &&
+            _innovationRms > 1.2) &&
+        _smoothedAccuracy < 20;
+
+    // Update stationary time with less sensitive threshold
+    if (!isMoving && nis < 4.0) {
       _stableSeconds += dt;
     } else {
       _stableSeconds = 0.0;
+      if (isMoving) {
+        _consistentGoodSamples = 0; // reset consistency on movement
+      }
     }
 
-    // Update heading (if moving) and clear history on movement
-    final rawHeading = (newPos.heading.isFinite && newPos.heading >= 0 && newPos.heading <= 360)
-        ? newPos.heading
-        : _lastHeading;
-    if (isMoving) {
-      _headingHistory.clear();
-      _lastHeading = rawHeading;
+    // Heading: use Kalman velocity when moving, otherwise keep last
+    double heading;
+    if (speedMps > 1.0) {
+      heading = _headingFromVelocity(updated[2], updated[3]);
+      _lastHeading = heading;
     } else {
-      _updateHeading(rawHeading, speedMps);
+      heading = _lastHeading;
     }
 
-    // Convert smoothed ENU back to lat/lon
+    // Convert smoothed ENU back to lat/lon, using smoothed accuracy & altitude
     final smoothedLatLon = _toGlobal(updated[0], updated[1]);
     final smoothedPosition = Position(
       latitude: smoothedLatLon.lat,
       longitude: smoothedLatLon.lon,
-      accuracy: newPos.accuracy,
-      altitude: newPos.altitude,
-      heading: _lastHeading,
+      accuracy: _smoothedAccuracy,
+      altitude: _smoothedAltitude,
+      heading: heading,
       speed: speedMps,
       speedAccuracy: newPos.speedAccuracy,
       timestamp: timestamp,
       altitudeAccuracy: newPos.altitudeAccuracy,
-      headingAccuracy: _getHeadingAccuracy(),
+      headingAccuracy: 5.0, // approximate
+      floor: newPos.floor,
+      isMocked: newPos.isMocked,
     );
 
+    // Update samples with partial clear on movement
     _filteredSamples.add(smoothedPosition);
     if (_filteredSamples.length > _maxSamples) _filteredSamples.removeAt(0);
-    if (isMoving) _filteredSamples.clear();
+    if (isMoving && _filteredSamples.length > 4) {
+      _filteredSamples.removeRange(0, _filteredSamples.length ~/ 2);
+    }
 
-    // Update stationary count for UI
-    _stationaryCount = (_stableSeconds / 1.0).round().clamp(0, _requiredSamples);
+    // Consistency counter for good samples
+    if (_smoothedAccuracy < 15 && nis < _chiSquared2Dof95) {
+      _consistentGoodSamples++;
+    } else {
+      _consistentGoodSamples = 0;
+    }
 
-    // If already locked, check movement and improvement
+    // Update UI counter
+    _stationaryCount = (_stableSeconds / 1.0).round().clamp(0, _requiredStableSeconds.toInt());
+
+    // ENU re-centering before lock attempt (to avoid lock then recenter)
+    if (_refLat != null) {
+      final distFromRef = _haversine(_refLat!, _refLon!, newPos.latitude, newPos.longitude);
+      if (distFromRef > _maxRefDistance) {
+        _refLat = newPos.latitude;
+        _refLon = newPos.longitude;
+        _kalman?.reset(0.0, 0.0);
+        _lastFilteredEast = _lastFilteredNorth = null;
+        _stableSeconds = 0.0;
+        _smoothedAccuracy = newPos.accuracy;
+        _consistentGoodSamples = 0;
+        if (kDebugMode) debugPrint('GPS Lock: re-centering ENU reference');
+      }
+    }
+
+    // Locked state
     if (_state == GpsLockState.locked) {
       if (isMoving) {
         _state = GpsLockState.acquiring;
-        _kalman!.inflateCovariance(6.0);
+        // Adaptive covariance inflation
+        final inflate = speedMps > 10 ? 5.0 : 2.5;
+        _kalman!.inflateCovariance(inflate);
         _stableSeconds = 0.0;
+        _consistentGoodSamples = 0;
         if (kDebugMode) debugPrint('GPS Lock: movement detected, re-acquiring');
         return false;
       }
       if (_lockData != null && newPos.accuracy < _lockData!.accuracy - 2) {
         final conf = _computeConfidence(Pupd[0][0], Pupd[1][1], _innovationRms);
-        _lockData = GpsLockData(
+        // Apply confidence decay based on age
+        final decayedConf = _applyConfidenceDecay(conf, _lockData!.lockedAt);
+        _lockData = _lockData!.copyWith(
           position: smoothedPosition,
-          address: _lockData!.address,
-          weather: _lockData!.weather,
-          lockedAt: _lockData!.lockedAt,
-          accuracy: newPos.accuracy,
-          quality: getQualityFromAccuracy(newPos.accuracy),
-          confidence: conf,
+          accuracy: _smoothedAccuracy,
+          quality: getQualityFromAccuracy(_smoothedAccuracy),
+          confidence: decayedConf,
         );
       }
       if (_lockData != null && !_lockData!.isValid) {
         _state = GpsLockState.stale;
         _lockData = null;
+        _filteredSamples.clear();
+        _consistentGoodSamples = 0;
+        _stableSeconds = 0.0;
         if (kDebugMode) debugPrint('GPS Lock: stale lock expired');
       }
       return false;
@@ -349,12 +449,13 @@ class GpsLockManager {
     // Acquiring state
     _state = GpsLockState.acquiring;
     final enoughStableTime = _stableSeconds >= _requiredStableSeconds;
-    final goodAccuracy = newPos.accuracy <= _requiredAccuracyMeters;
+    final goodAccuracy = _smoothedAccuracy <= _requiredBaseAccuracyMeters;
     final covConverged = (Pupd[0][0] < _lockCovarianceThreshold && Pupd[1][1] < _lockCovarianceThreshold);
     final velConverged = (Pupd[2][2] < _lockVelCovThreshold && Pupd[3][3] < _lockVelCovThreshold);
-    final enoughSamples = _filteredSamples.length >= _requiredSamples;
+    final enoughSamples = _filteredSamples.length >= 8;
+    final enoughConsistency = _consistentGoodSamples >= 5;
 
-    if (enoughSamples && goodAccuracy && covConverged && velConverged && enoughStableTime) {
+    if (enoughSamples && goodAccuracy && covConverged && velConverged && enoughStableTime && enoughConsistency) {
       // Final variance validation
       if (_filteredSamples.length >= 3) {
         final meters = <(double e, double n)>[];
@@ -382,16 +483,17 @@ class GpsLockManager {
         }
       }
 
-      // Weighted average (weight = 1/accuracy²)
+      // Weighted average with power 1.5
       double totalWeight = 0, weightedLat = 0, weightedLon = 0, bestAcc = double.infinity;
       for (final p in _filteredSamples) {
-        final acc = p.accuracy.clamp(1.0, 100.0);
-        final weight = 1.0 / (acc * acc);
+        final acc = p.accuracy.clamp(3.0, 30.0);
+        final weight = 1.0 / pow(acc, 1.5);
         totalWeight += weight;
         weightedLat += p.latitude * weight;
         weightedLon += p.longitude * weight;
         if (p.accuracy < bestAcc) bestAcc = p.accuracy;
       }
+      if (totalWeight <= 0) return false;
       final avgLat = weightedLat / totalWeight;
       final avgLon = weightedLon / totalWeight;
 
@@ -399,13 +501,15 @@ class GpsLockManager {
         latitude: avgLat,
         longitude: avgLon,
         accuracy: bestAcc,
-        altitude: newPos.altitude,
-        heading: _lastHeading,
+        altitude: _smoothedAltitude,
+        heading: heading,
         speed: speedMps,
         speedAccuracy: newPos.speedAccuracy,
         timestamp: timestamp,
         altitudeAccuracy: newPos.altitudeAccuracy,
-        headingAccuracy: _getHeadingAccuracy(),
+        headingAccuracy: 5.0,
+        floor: newPos.floor,
+        isMocked: newPos.isMocked,
       );
 
       final confidence = _computeConfidence(Pupd[0][0], Pupd[1][1], _innovationRms);
@@ -421,19 +525,6 @@ class GpsLockManager {
       _state = GpsLockState.locked;
       if (kDebugMode) debugPrint('GPS Lock: LOCKED accuracy=${bestAcc.toStringAsFixed(1)}m, confidence=${confidence.toStringAsFixed(0)}%');
       return true;
-    }
-
-    // Re-centering ENU if moved far from reference
-    if (_refLat != null) {
-      final distFromRef = _haversine(_refLat!, _refLon!, newPos.latitude, newPos.longitude);
-      if (distFromRef > _maxRefDistance) {
-        _refLat = newPos.latitude;
-        _refLon = newPos.longitude;
-        _kalman?.reset(0.0, 0.0);
-        _lastFilteredEast = _lastFilteredNorth = null;
-        _stableSeconds = 0.0;
-        if (kDebugMode) debugPrint('GPS Lock: re-centering ENU reference');
-      }
     }
 
     return false;
@@ -454,12 +545,14 @@ class GpsLockManager {
     _kalman = null;
     _lastTimestamp = null;
     _lastFilteredEast = _lastFilteredNorth = null;
-    _lastMovementTime = null;
     _innovationHistory.clear();
-    _headingHistory.clear();
     _innovationRms = 1.0;
     _lastHeading = 0.0;
     _stableSeconds = 0.0;
+    _smoothedAccuracy = 999.0;
+    _hasAltitude = false;
+    _smoothedAltitude = 0.0;
     _sessionStart = DateTime.now();
+    _consistentGoodSamples = 0;
   }
 }

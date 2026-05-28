@@ -1,5 +1,3 @@
-// lib/screens/camera_screen.dart
-// Final Production Version – Integrasi GPS Lock Manager, Kalman Filter 4D, Watermark Overlay
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -42,8 +40,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;    // live preview (updated continuously)
-  Position? _bestPosition;       // locked position for capture
+  Position? _currentPosition;
+  Position? _bestPosition;
   String _address = 'Mencari lokasi...';
   String _weather = '';
   double? _currentAccuracy;
@@ -57,7 +55,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   static const double _geocodeDistanceThreshold = 25.0;
   static const int _geocodeTimeThresholdSeconds = 5;
 
-  // Streams and timers
   StreamSubscription<Position>? _positionSub;
   Timer? _clockTimer;
   DateTime _currentTimestamp = DateTime.now();
@@ -74,7 +71,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   WatermarkLayout _currentLayout = WatermarkLayout.modern;
   WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
 
-  // Anti-shake delay
   static const int _antiShakeDelayMs = 200;
 
   @override
@@ -145,7 +141,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== CAMERA ====================
   Future<void> _initCamera() async {
     if (_isCameraInitializing) {
       await _cameraInitCompleter?.future;
@@ -187,7 +182,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== PERMISSIONS ====================
   Future<void> _checkGalleryPermission() async {
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -226,7 +220,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GEOCODING (throttled) ====================
   Future<void> _fetchAddressAndWeather(Position pos, {bool forceRefresh = false}) async {
     if (!forceRefresh) {
       if (_isAddressLoading) return;
@@ -267,7 +260,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GPS LOCATION STREAM (with GpsLockManager) ====================
   Future<void> _initLocationStream() async {
     if (_locationStreamActive) return;
     _locationStreamActive = true;
@@ -296,7 +288,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Use FusedLocationProvider for best accuracy
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.bestForNavigation,
@@ -319,13 +310,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _positionSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
         (pos) {
           if (!mounted) return;
-          // Process sample with GpsLockManager
           final justLocked = _gpsLockManager.processSample(pos);
           final lockData = _gpsLockManager.lockData;
-          final state = _gpsLockManager.state;
           final progress = _gpsLockManager.stationaryProgress;
 
-          // Update UI state
           setState(() {
             _currentPosition = pos;
             _isGpsLocked = _gpsLockManager.isLocked;
@@ -340,7 +328,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             }
           });
 
-          // When lock just achieved, refresh geocoding with lock position
           if (justLocked && lockData != null) {
             unawaited(_fetchAddressAndWeather(lockData.position, forceRefresh: true)
                 .then((_) => _gpsLockManager.updateLockAddress(_address, _weather)));
@@ -367,7 +354,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
 
-  // ==================== CAPTURE WITH ANTI-SHAKE, FOCUS/EXPOSURE LOCK ====================
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
     final capturePosition = _bestPosition ?? _currentPosition;
@@ -378,7 +364,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return;
     }
 
-    // Anti-shake delay (gyroscope settle)
     await Future.delayed(Duration(milliseconds: _antiShakeDelayMs));
 
     final controller = _controller;
@@ -387,15 +372,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     setState(() => _isCapturing = true);
 
     try {
-      // Lock exposure and focus for consistency
       await controller.setExposureMode(ExposureMode.locked);
       await controller.setFocusMode(FocusMode.locked);
 
-      // Capture image
       final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 8));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
-      // Prepare address for watermark
       final captureAddress = (_address.isNotEmpty &&
               _address != 'Mencari lokasi...' &&
               _address != 'GPS tidak aktif' &&
@@ -420,25 +402,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         opacity: _opacity,
         showBorder: _showBorder,
         fontSize: _fontSize,
-        showMiniMap: false,
-        mapSize: 'medium',
-        mapZoomLevel: 16,
-        imageQuality: 90,
-        dateFormat: 'dd MMM yyyy',
-        timeFormat: 'HH:mm:ss',
         fontScale: _watermarkPosition.fontScale,
+        imageQuality: 90,
       ).timeout(const Duration(seconds: 15));
 
-      // Save to gallery
       final dir = await getTemporaryDirectory();
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
       final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(watermarkBytes);
       final success = await GallerySaver.saveImage(file.path, albumName: 'Timestamp Camera');
       if (success != true) throw Exception('Gagal menyimpan foto ke galeri');
-      await file.delete(); // cleanup temporary
+      await file.delete();
 
-      // Restore camera auto modes
       await controller.setExposureMode(ExposureMode.auto);
       await controller.setFocusMode(FocusMode.auto);
 
@@ -458,7 +433,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== BUILD ====================
   @override
   Widget build(BuildContext context) {
     final isPreviewReady = _controller != null && _controller!.value.isInitialized;
@@ -552,8 +526,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.gps_fixed,
-                        size: 12, color: _getAccuracyColor(_currentAccuracy!)),
+                    Icon(Icons.gps_fixed, size: 12, color: _getAccuracyColor(_currentAccuracy!)),
                     const SizedBox(width: 4),
                     Text(
                       '±${_currentAccuracy!.toStringAsFixed(0)}m',

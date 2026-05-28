@@ -1,5 +1,4 @@
 // lib/screens/camera_screen.dart
-// Final Production Version – with raw GPS for geocoding, hybrid position watermark
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -42,7 +41,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;      // live preview position (hybrid)
+  Position? _currentPosition;      // live preview (hybrid)
   Position? _bestPosition;         // locked position (hybrid)
   String _address = 'Mencari lokasi...';
   String _weather = '';
@@ -50,12 +49,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _gpsQuality = 'Searching';
   double _gpsConfidence = 0.0;
 
-  // Geocoding throttling (still use raw position)
-  Position? _lastGeocodedPosition;
+  // Geocoding throttling (distance + time)
+  double? _lastGeocodeLat;
+  double? _lastGeocodeLon;
+  static const double _addressRefreshDistance = 15.0; // meters
+  static const int _geocodeTimeThresholdSeconds = 8;
   bool _isAddressLoading = false;
   DateTime? _lastGeocodeTime;
-  static const double _geocodeDistanceThreshold = 15.0;  // smaller for better refresh
-  static const int _geocodeTimeThresholdSeconds = 8;
 
   StreamSubscription<Position>? _positionSub;
   Timer? _clockTimer;
@@ -138,7 +138,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } else if (state == AppLifecycleState.resumed) {
       await _initCamera();
       _initLocationStream();
-      final rawPos = _gpsLockManager.geocodePosition;
+      final rawPos = _gpsLockManager.rawPosition;
       if (rawPos != null) unawaited(_fetchAddressAndWeather(rawPos, forceRefresh: true));
     }
   }
@@ -222,23 +222,33 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // 🔥 Geocoding now uses raw position from GpsLockManager
+  double _haversine(double lat1, double lon1, double lat2, double lon2) {
+    const R = 6371000.0;
+    final dLat = (lat2 - lat1) * pi / 180.0;
+    final dLon = (lon2 - lon1) * pi / 180.0;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) * sin(dLon / 2) * sin(dLon / 2);
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
+  }
+
   Future<void> _fetchAddressAndWeather(Position pos, {bool forceRefresh = false}) async {
     if (!forceRefresh) {
       if (_isAddressLoading) return;
-      final now = DateTime.now();
-      final timeSinceLast = _lastGeocodeTime != null
-          ? now.difference(_lastGeocodeTime!).inSeconds
-          : _geocodeTimeThresholdSeconds + 1;
-      final distanceMoved = _lastGeocodedPosition != null
-          ? Geolocator.distanceBetween(
-              _lastGeocodedPosition!.latitude,
-              _lastGeocodedPosition!.longitude,
-              pos.latitude,
-              pos.longitude,
-            )
-          : double.infinity;
-      if (timeSinceLast < _geocodeTimeThresholdSeconds && distanceMoved < _geocodeDistanceThreshold) return;
+      // Distance threshold
+      if (_lastGeocodeLat != null && _lastGeocodeLon != null) {
+        final distance = _haversine(
+          _lastGeocodeLat!, _lastGeocodeLon!,
+          pos.latitude, pos.longitude,
+        );
+        if (distance < _addressRefreshDistance) {
+          return;
+        }
+      }
+      // Time threshold
+      if (_lastGeocodeTime != null &&
+          DateTime.now().difference(_lastGeocodeTime!).inSeconds < _geocodeTimeThresholdSeconds) {
+        return;
+      }
     }
     if (mounted) setState(() => _isAddressLoading = true);
     _lastGeocodeTime = DateTime.now();
@@ -248,9 +258,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         setState(() {
           _address = result.address;
           _weather = result.weather;
-          _lastGeocodedPosition = pos;
           _isAddressLoading = false;
         });
+        _lastGeocodeLat = pos.latitude;
+        _lastGeocodeLon = pos.longitude;
       }
     } catch (e) {
       if (kDebugMode) debugPrint('GEOCODE ERROR: $e');
@@ -281,7 +292,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
       if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
         if (mounted) setState(() {
           _address = 'Izin lokasi ditolak';
@@ -291,7 +304,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Use bestForNavigation and distanceFilter 0 for maximum accuracy
+      // Best possible location settings
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.bestForNavigation,
@@ -315,7 +328,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         (pos) async {
           if (!mounted) return;
 
-          // Process with GpsLockManager (updates hybrid position, lock state)
           final justLocked = _gpsLockManager.processSample(pos);
           final lockData = _gpsLockManager.lockData;
           final progress = _gpsLockManager.stationaryProgress;
@@ -334,13 +346,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             }
           });
 
-          // 🔥 Use raw position from manager for geocoding
-          final rawPos = _gpsLockManager.geocodePosition;
+          // 🔥 Geocode using latest raw position (distance throttled)
+          final rawPos = _gpsLockManager.rawPosition;
+          if (rawPos != null) {
+            await _fetchAddressAndWeather(rawPos);
+          }
+
+          // Force refresh geocode when lock is achieved or upgraded
           if (justLocked && lockData != null && rawPos != null) {
             await _fetchAddressAndWeather(rawPos, forceRefresh: true);
             _gpsLockManager.updateLockAddress(_address, _weather);
-          } else if (rawPos != null) {
-            await _fetchAddressAndWeather(rawPos);
           }
         },
         onError: (e) {
@@ -386,7 +401,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 8));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
-      // Capture address from current state (already from raw position)
       final captureAddress = (_address.isNotEmpty &&
               _address != 'Mencari lokasi...' &&
               _address != 'GPS tidak aktif' &&

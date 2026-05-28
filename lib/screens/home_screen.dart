@@ -1,5 +1,5 @@
+// lib/screens/home_screen.dart
 import 'dart:io';
-import 'camera_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -9,7 +9,7 @@ import 'package:image/image.dart' as img;
 import 'package:share_plus/share_plus.dart';
 
 import '../core/camera_registry.dart';
-import 'camera_screen.dart';
+import 'camera_screen.dart'; // ✅ import CameraScreen
 import 'settings_screen.dart';
 import 'history_screen.dart';
 
@@ -48,7 +48,6 @@ class _HomeScreenState extends State<HomeScreen> {
           .where((f) => f.path.endsWith('.jpg'))
           .toList();
       
-      // Sort by last modified (newest first)
       files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
       
       final List<Map<String, dynamic>> photos = [];
@@ -60,7 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
           final bytes = await file.readAsBytes();
           final image = img.decodeImage(bytes);
           if (image != null) {
-            // Extract metadata from filename
             final fileName = p.basenameWithoutExtension(file.path);
             final parts = fileName.split('_');
             DateTime timestamp = DateTime.now();
@@ -69,7 +67,6 @@ class _HomeScreenState extends State<HomeScreen> {
               if (ms != null) timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
             }
             
-            // Warna dominan rata-rata (fallback)
             final avgColor = 0xFF1B4F72;
             
             photos.add({
@@ -79,9 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
               'avgColor': avgColor,
             });
             total++;
-            
-            // Akurasi sementara (akan diambil dari metadata nanti)
-            totalAccuracy += 10;
+            totalAccuracy += 10; // placeholder
           }
         } catch (e) {
           debugPrint('Error loading photo: $e');
@@ -235,7 +230,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: Stack(
                       children: [
-                        // Decorative circles
                         Positioned(
                           right: -20,
                           top: -20,

@@ -125,7 +125,6 @@ class GpsLockManager {
   GpsLockData? get lockData => _lockData;
   bool get isLocked => _state == GpsLockState.locked && (_lockData?.isValid ?? false);
   int get stationaryProgress {
-    // Menggunakan _requiredStableSeconds yang adaptif
     final maxCount = _requiredStableSeconds.toInt();
     if (maxCount <= 0) return 0;
     return ((_stationaryCount / maxCount) * 100).clamp(0, 100).toInt();
@@ -305,8 +304,7 @@ class GpsLockManager {
     final Sy = Ppred[1][1] + R;
     final mahal2 = (de * de) / Sx + (dn * dn) / Sy;
 
-    // Gunakan NIS chi-squared 2-DOF threshold: 95% -> 5.99, 99% -> 9.21
-    // Kita pakai 9.0 (sekitar 98.9%)
+    // NIS threshold 9.0 (chi-squared 2-DOF ~99%)
     final nisThreshold = 9.0;
     final isOutlier = mahal2 > nisThreshold;
 
@@ -372,7 +370,7 @@ class GpsLockManager {
       }
     }
 
-    // --- Movement detection (dengan threshold lebih rendah dan accuracy gating) ---
+    // --- Movement detection (threshold lebih rendah dan accuracy gating) ---
     final bool isMoving = (((speedMps > 2.2 && movedDistance > 2.5) || movedDistance > 5.0) &&
             _innovationRms > 1.5) &&
         _smoothedAccuracy < 20;
@@ -489,7 +487,7 @@ class GpsLockManager {
     final enoughConsistency = _consistentGoodSamples >= 5;
 
     if (enoughSamples && goodAccuracy && covConverged && velConverged && enoughStableTime && enoughConsistency) {
-      // Validasi varians akhir
+      // Final variance validation
       if (_filteredSamples.length >= 3) {
         final meters = <(double e, double n)>[];
         for (final p in _filteredSamples) {
@@ -498,15 +496,15 @@ class GpsLockManager {
         }
         double sumE = 0, sumN = 0;
         for (final m in meters) {
-          sumE += m.e;
-          sumN += m.n;
+          sumE += m.$1;  // east
+          sumN += m.$2;  // north
         }
         final meanE = sumE / meters.length;
         final meanN = sumN / meters.length;
         double varE = 0, varN = 0;
         for (final m in meters) {
-          varE += (m.e - meanE) * (m.e - meanE);
-          varN += (m.n - meanN) * (m.n - meanN);
+          varE += (m.$1 - meanE) * (m.$1 - meanE);
+          varN += (m.$2 - meanN) * (m.$2 - meanN);
         }
         varE /= meters.length;
         varN /= meters.length;

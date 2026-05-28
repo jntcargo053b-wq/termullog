@@ -203,7 +203,7 @@ class GpsLockManager {
   // --- Health check lengkap (fix #10) ---
   bool _isFilterHealthy() {
     if (_kalman == null) return true;
-    final P = _kalman!._P; // asumsi kita akses private, perlu getter. Untuk sementara kita buat public method di Kalman.
+   // final P = _kalman!._P; // asumsi kita akses private, perlu getter. Untuk sementara kita buat public method di Kalman.
     // Untuk mengakses, kita akan panggil method isHealthy() dari Kalman. Asumsikan sudah ada.
     return _kalman!.isHealthy();
   }

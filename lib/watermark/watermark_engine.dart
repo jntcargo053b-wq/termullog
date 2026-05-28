@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
@@ -65,7 +66,7 @@ class WatermarkEngine {
 
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final ui.Canvas canvas = ui.Canvas(recorder);
-    canvas.drawImage(original, Offset.zero, ui.Paint());
+    canvas.drawImage(original, ui.Offset.zero, ui.Paint());
     canvas.save();
     canvas.translate(left, top);
 
@@ -90,7 +91,7 @@ class WatermarkEngine {
       isHighQuality: true,
       pixelRatio: pixelRatio,
     );
-    painter.paint(canvas, Size(cardWidth, cardHeight));
+    painter.paint(canvas, ui.Size(cardWidth, cardHeight));
 
     canvas.restore();
     final ui.Picture picture = recorder.endRecording();
@@ -115,7 +116,9 @@ class WatermarkEngine {
 
   static Future<ui.Image> _decodeImage(Uint8List bytes) async {
     final Completer<ui.Image> completer = Completer();
-    ui.decodeImageFromList(bytes, (ui.Image image) => completer.complete(image));
+    ui.decodeImageFromList(bytes, (ui.Image image) {
+      completer.complete(image);
+    });
     return completer.future;
   }
 }

@@ -8,11 +8,11 @@ import 'kalman_filter_4d.dart';
 // Enums
 // ============================================================================
 enum GpsLockState {
-  searching,    // no data yet / session just started
-  acquiring,    // collecting samples, building convergence
-  provisional,  // good enough for display, still refining
-  locked,       // fully converged, high confidence
-  stale,        // lock expired
+  searching,
+  acquiring,
+  provisional,
+  locked,
+  stale,
 }
 
 // ============================================================================
@@ -38,7 +38,7 @@ class _AddressCache {
   String weather = '';
   double? cachedLat;
   double? cachedLon;
-  static const double _staleDistanceM = 15.0;
+  static const double _staleDistanceM = 8.0;
 
   bool isValidFor(double lat, double lon) {
     if (address.isEmpty || cachedLat == null || cachedLon == null) return false;
@@ -87,7 +87,6 @@ class GpsLockData {
     this.isProvisional = false,
   });
 
-  // validity extended to 5 minutes
   bool get isValid => DateTime.now().difference(lockedAt) < const Duration(minutes: 5);
 
   GpsLockData copyWith({
@@ -112,7 +111,7 @@ class GpsLockData {
 }
 
 // ============================================================================
-// Warm-start seed (persist last good position)
+// Warm-start seed
 // ============================================================================
 class GpsWarmStartSeed {
   final double latitude;
@@ -171,7 +170,7 @@ class GpsLockManager {
   static const int _innovationWindow = 10;
 
   // Lock parameters
-  static const double _requiredAccuracyMeters = 6.0;
+  static const double _requiredAccuracyMeters = 12.0;
   static const double _maxAllowedAccuracy = 20.0;
   static const int _maxSamples = 20;
   static const double _lockCovarianceThreshold = 20.0;
@@ -179,13 +178,13 @@ class GpsLockManager {
 
   // Movement detection
   static const double _maxMovementMeters = 4.0;
-  static const double _movementSpeedThreshold = 0.8;
-  static const double _movementDistanceThreshold = 0.7;
+  static const double _movementSpeedThreshold = 2.0;
+  static const double _movementDistanceThreshold = 2.5;
   static const double _maxSpeedMps = 60.0;
   static const double _maxRefDistance = 500.0;
 
   // Warmup
-  static const int _warmupSeconds = 3;
+  static const int _warmupSeconds = 1;
   static const double _fastTrackAccuracy = 4.0;
   DateTime? _sessionStart;
   bool _warmupBypassed = false;
@@ -198,7 +197,7 @@ class GpsLockManager {
   final _AddressCache _addressCache = _AddressCache();
 
   // ------------------------------------------------------------------------
-  // Constructor with optional warm start
+  // Constructor
   // ------------------------------------------------------------------------
   GpsLockManager({GpsWarmStartSeed? warmStartSeed}) {
     _sessionStart = DateTime.now();
@@ -267,7 +266,7 @@ class GpsLockManager {
   }
 
   // ------------------------------------------------------------------------
-  // Heading from bearing
+  // Heading
   // ------------------------------------------------------------------------
   double _bearingBetween(double lat1, double lon1, double lat2, double lon2) {
     final dLon = (lon2 - lon1) * pi / 180.0;
@@ -359,7 +358,6 @@ class GpsLockManager {
   // Main processing
   // ------------------------------------------------------------------------
   bool processSample(Position newPos, {Position? lastPositionForBearing}) {
-    // Adaptive warmup
     final bool fastTrack = newPos.accuracy <= _fastTrackAccuracy;
     if (!_warmupBypassed) {
       if (fastTrack) {
@@ -378,22 +376,19 @@ class GpsLockManager {
     if (newPos.accuracy > _maxAllowedAccuracy) return false;
     if (newPos.speed.isFinite && newPos.speed > _maxSpeedMps) return false;
 
-    // Stale detection
     if (_lastTimestamp != null &&
         DateTime.now().difference(_lastTimestamp!).inSeconds > 5) {
       _resetFilter(keepAddressCache: true);
     }
 
-    // Bootstrap ENU reference using median of initial samples
+    // Bootstrap ENU reference menggunakan sample terbaik
     if (_refLat == null) {
       _initialSamples.add(newPos);
       if (_initialSamples.length < _initialSamplesRequired) return false;
 
-      final lats = _initialSamples.map((p) => p.latitude).toList()..sort();
-      final lons = _initialSamples.map((p) => p.longitude).toList()..sort();
-      final mid = lats.length ~/ 2;
-      _refLat = lats[mid];
-      _refLon = lons[mid];
+      _initialSamples.sort((a, b) => a.accuracy.compareTo(b.accuracy));
+      _refLat = _initialSamples.first.latitude;
+      _refLon = _initialSamples.first.longitude;
 
       _kalman = KalmanFilter4D();
       _lastTimestamp = timestamp;
@@ -401,10 +396,9 @@ class GpsLockManager {
       _stableSeconds = 0.0;
       _initialSamples.clear();
 
-      if (kDebugMode) debugPrint('GPS Lock: ENU reference set via median bootstrap');
+      if (kDebugMode) debugPrint('GPS Lock: ENU reference set using best initial accuracy');
     }
 
-    // dt
     final rawDt = timestamp.difference(_lastTimestamp!).inMicroseconds / 1e6;
     final dt = rawDt.isFinite && rawDt > 0 ? rawDt.clamp(0.01, 1.5) : 0.1;
     _lastTimestamp = timestamp;
@@ -412,7 +406,6 @@ class GpsLockManager {
     final local = _toLocal(newPos.latitude, newPos.longitude);
     if (local == null) return false;
 
-    // Kalman predict
     final (predicted, Ppred) = _kalman!.predict(dt);
     if (!_isFilterHealthy()) {
       _kalman = KalmanFilter4D();
@@ -424,15 +417,14 @@ class GpsLockManager {
     final dn = local.north - predicted[1];
     final innovationNorm = sqrt(de * de + dn * dn);
 
-    // Adaptive measurement noise
-    final adaptive = 1.0 + _innovationRms * 0.3;
-    final sigma = (newPos.accuracy * adaptive).clamp(3.0, 25.0);
+    // Adaptive measurement noise (lebih kecil, agresif rendah)
+    final adaptive = 1.0 + (_innovationRms * 0.12);
+    final sigma = (newPos.accuracy * adaptive).clamp(2.0, 12.0);
     final R = sigma * sigma;
     final Sx = Ppred[0][0] + R;
     final Sy = Ppred[1][1] + R;
     final mahal2 = (de * de) / Sx + (dn * dn) / Sy;
 
-    // Softer outlier threshold during early acquisition
     double mahalThreshold;
     if (_state == GpsLockState.locked || _state == GpsLockState.provisional) {
       mahalThreshold = 12.0;
@@ -442,14 +434,43 @@ class GpsLockManager {
       mahalThreshold = 30.0;
     }
 
+    // Soft reject: jika outlier, inflate R dan update
     if (mahal2 > mahalThreshold) {
-      if (kDebugMode) debugPrint('GPS Lock: outlier mahal2=${mahal2.toStringAsFixed(1)}');
-      return false;
+      final softenedR = R * 3.0;
+      final (updatedSoft, PupdSoft) = _kalman!.update(de, dn, softenedR, Ppred);
+      return _processUpdatedState(
+        updatedSoft,
+        PupdSoft,
+        newPos,
+        timestamp,
+        dt,
+        lastPositionForBearing,
+        isOutlier: true,
+      );
     }
-    _updateInnovationRms(innovationNorm);
 
-    // Kalman update
+    _updateInnovationRms(innovationNorm);
     final (updated, Pupd) = _kalman!.update(de, dn, R, Ppred);
+    return _processUpdatedState(
+      updated,
+      Pupd,
+      newPos,
+      timestamp,
+      dt,
+      lastPositionForBearing,
+      isOutlier: false,
+    );
+  }
+
+  bool _processUpdatedState(
+    List<double> updated,
+    List<List<double>> Pupd,
+    Position newPos,
+    DateTime timestamp,
+    double dt,
+    Position? lastPositionForBearing, {
+    bool isOutlier = false,
+  }) {
     if (!_isFilterHealthy()) {
       _kalman = KalmanFilter4D();
       _stableSeconds = 0.0;
@@ -471,13 +492,12 @@ class GpsLockManager {
             movedDistance > 3.0) &&
         _innovationRms > 1.2;
 
-    if (!isMoving && mahal2 < 2.5) {
+    if (!isMoving && (isOutlier ? (movedDistance < 1.0) : true)) {
       _stableSeconds += dt;
     } else {
       _stableSeconds = 0.0;
     }
 
-    // Heading update
     final rawHeading = (newPos.heading.isFinite &&
             newPos.heading >= 0 &&
             newPos.heading <= 360)
@@ -487,9 +507,7 @@ class GpsLockManager {
     if (isMoving) _headingHistory.clear();
     if (isMoving) _filteredSamples.clear();
 
-    // Altitude smoothing
     final smoothedAlt = _smoothAltitude(newPos.altitude);
-
     final smoothedLatLon = _toGlobal(updated[0], updated[1]);
     final smoothedPosition = Position(
       latitude: smoothedLatLon.lat,
@@ -509,8 +527,7 @@ class GpsLockManager {
     _filteredSamples.add(smoothedPosition);
     if (_filteredSamples.length > _maxSamples) _filteredSamples.removeAt(0);
 
-    // ----- State machine -----
-    // Already locked or provisional
+    // State machine
     if (_state == GpsLockState.locked || _state == GpsLockState.provisional) {
       if (isMoving) {
         _state = GpsLockState.acquiring;
@@ -552,7 +569,6 @@ class GpsLockManager {
       return false;
     }
 
-    // Acquiring state
     _state = GpsLockState.acquiring;
 
     final goodAccuracy = newPos.accuracy <= _requiredAccuracyMeters;
@@ -563,7 +579,6 @@ class GpsLockManager {
     final enoughSamples = _filteredSamples.length >= _requiredSamples;
     final enoughStable = _stableSeconds >= _requiredStableSeconds;
 
-    // Provisional lock (early display)
     final provSamples = _filteredSamples.length >= _provisionalSamples;
     final provStable = _stableSeconds >= _provisionalStableSeconds;
     if (!enoughSamples && provSamples && provStable && goodAccuracy && !isMoving &&
@@ -593,10 +608,9 @@ class GpsLockManager {
             'acc=${newPos.accuracy.toStringAsFixed(1)}m '
             'conf=${provConf.toStringAsFixed(0)}%');
       }
-      return true; // trigger geocoding
+      return true;
     }
 
-    // Full lock
     if (enoughSamples && goodAccuracy && covConverged && velConverged && enoughStable) {
       if (_filteredSamples.length >= 3) {
         final locs = _filteredSamples
@@ -617,7 +631,6 @@ class GpsLockManager {
         }
       }
 
-      // Weighted average
       double totalW = 0, wLat = 0, wLon = 0, bestAcc = double.infinity;
       for (final p in _filteredSamples) {
         final acc = p.accuracy.clamp(3.0, 30.0);
@@ -668,7 +681,6 @@ class GpsLockManager {
       return true;
     }
 
-    // ENU re-centering
     if (_refLat != null) {
       final dist = _haversine(_refLat!, _refLon!, newPos.latitude, newPos.longitude);
       if (dist > _maxRefDistance) {
@@ -684,9 +696,6 @@ class GpsLockManager {
     return false;
   }
 
-  // ------------------------------------------------------------------------
-  // Address update with cache
-  // ------------------------------------------------------------------------
   void updateLockAddress(String address, String weather) {
     if (_lockData == null) return;
     final lat = _lockData!.position.latitude;
@@ -702,9 +711,6 @@ class GpsLockManager {
         _addressCache.address.isNotEmpty;
   }
 
-  // ------------------------------------------------------------------------
-  // Warm start snapshot for persistence
-  // ------------------------------------------------------------------------
   GpsWarmStartSeed? get warmStartSnapshot {
     if (_lockData == null || !_lockData!.isValid) return null;
     return GpsWarmStartSeed(
@@ -715,9 +721,6 @@ class GpsLockManager {
     );
   }
 
-  // ------------------------------------------------------------------------
-  // Reset helpers
-  // ------------------------------------------------------------------------
   void _resetFilter({bool keepAddressCache = false}) {
     _state = GpsLockState.searching;
     _stableSeconds = 0.0;
@@ -738,7 +741,6 @@ class GpsLockManager {
 
   void forceUnlock() {
     _lockData = null;
-    _stationaryCount = 0;
     _lastHeading = 0.0;
     _smoothedAltitude = null;
     _warmupBypassed = false;
@@ -747,6 +749,5 @@ class GpsLockManager {
     if (kDebugMode) debugPrint('GPS Lock: force unlocked');
   }
 
-  // Required for _stationaryCount but we don't actually use it for logic
   int _stationaryCount = 0;
 }

@@ -30,6 +30,8 @@ class SettingsCache {
   // ==========================================================================
   // INIT / PRELOAD
   // ==========================================================================
+  /// Load semua setting dari SharedPreferences dan inisialisasi cache.
+  /// Panggil sekali di awal aplikasi atau sebelum membaca setting.
   static Future<void> preload() async {
     _prefs ??= await SharedPreferences.getInstance();
 
@@ -283,6 +285,7 @@ class SettingsCache {
     await preload();
     await _prefs!.clear();
     _invalidateAll();
+    // Reload defaults
     await preload();
   }
 
@@ -317,12 +320,15 @@ class SettingsCache {
   // ==========================================================================
   // WATERMARK POSITION (persistent)
   // ==========================================================================
+  /// Simpan posisi, skala, dan skala font watermark ke SharedPreferences.
   static Future<void> saveWatermarkPosition(WatermarkPosition pos) async {
     await preload();
     final jsonString = jsonEncode(pos.toJson());
     await _prefs!.setString('watermark_position', jsonString);
   }
 
+  /// Muat posisi, skala, dan skala font watermark dari SharedPreferences.
+  /// Kembalikan `WatermarkPosition.initial` jika belum ada atau gagal.
   static Future<WatermarkPosition> loadWatermarkPosition() async {
     await preload();
     final raw = _prefs!.getString('watermark_position');

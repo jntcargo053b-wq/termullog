@@ -1,5 +1,4 @@
-
-// lib/services/location_weather_service.dart
+// lib/services/location_weather_service.dart (final with all fixes)
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
@@ -94,10 +93,10 @@ class LocationWeatherService {
 
   static final http.Client _client = http.Client();
 
-  // Cache alamat dengan radius 20m
+  // Cache alamat dengan radius 5m (fix #1)
   static final Map<String, _AddressCacheEntry> _addressCache = {};
   static const int _addressCacheMaxSize = 100;
-  static const double _addressCacheRadiusMeters = 20.0;
+  static const double _addressCacheRadiusMeters = 5.0;
 
   // Cache weather TTL 10 menit
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
@@ -116,10 +115,6 @@ class LocationWeatherService {
 
   static bool _isClosed = false;
 
-  // ═══════════════════════════════════════════════════════════════
-  // ★ MASUKKAN API KEY LOCATIONIQ ANDA DI SINI ★
-  // Daftar gratis: https://locationiq.com/
-  // ═══════════════════════════════════════════════════════════════
   static const String _locationIqApiKey = 'pk.05a5be327fe64484e26fca823101a387';
 
   static void _emitProgress(String message) {
@@ -133,10 +128,6 @@ class LocationWeatherService {
     _client.close();
     _progressController.close();
   }
-
-  // ============================================================
-  // ★ PLUS CODE DETECTION
-  // ============================================================
 
   static final RegExp _plusCodePattern = RegExp(
     r'(?:^|[\s,])([23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3})(?:[\s,]|$)',
@@ -173,6 +164,15 @@ class LocationWeatherService {
     final lonStr = lon.toStringAsFixed(6);
 
     _emitProgress('📍 Mencari lokasi...');
+
+    // 🔥 Hindari geocode saat GPS masih noise (fix #2)
+    if (position.accuracy > 18) {
+      return LocationWeatherResult(
+        address: '${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}',
+        weather: '',
+        rawAddress: '',
+      );
+    }
 
     final cached = _findNearbyAddressCache(lat, lon);
     if (cached != null) {
@@ -214,19 +214,22 @@ class LocationWeatherService {
   }
 
   // ============================================================
-  // Address Cache Helper
+  // Address Cache Helper (fix #5)
   // ============================================================
 
   static _AddressCacheEntry? _findNearbyAddressCache(double lat, double lon) {
+    _AddressCacheEntry? best;
+    double bestDistance = double.infinity;
+
     for (final entry in _addressCache.values) {
-      final distance =
-          GeoHash.distance(lat, lon, entry.lat, entry.lon);
-      if (distance <= _addressCacheRadiusMeters) {
+      final distance = GeoHash.distance(lat, lon, entry.lat, entry.lon);
+      if (distance <= _addressCacheRadiusMeters && distance < bestDistance) {
+        bestDistance = distance;
         entry.distanceMeters = distance;
-        return entry;
+        best = entry;
       }
     }
-    return null;
+    return best;
   }
 
   static void _trimAddressCache() {
@@ -260,47 +263,41 @@ class LocationWeatherService {
   }
 
   // ============================================================
-  // PARALLEL ADDRESS FETCH
+  // PARALLEL ADDRESS FETCH (fix #4)
   // ============================================================
 
   static Future<String> _fetchAddressParallel(
       double lat, double lon, String latStr, String lonStr) async {
-    final completer = Completer<String>();
-
-    final geocodingFuture = _fetchFromGeocoding(lat, lon);
-    final photonFuture = _fetchFromPhoton(latStr, lonStr);
-
-    geocodingFuture.then((result) {
-      if (!completer.isCompleted && result.isNotEmpty) {
-        completer.complete(result);
+    try {
+      // 🔥 Provider paling akurat dulu (Google Geocoding)
+      final geocoding =
+          await _fetchFromGeocoding(lat, lon).timeout(const Duration(seconds: 3));
+      if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
+        return geocoding;
       }
-    });
-    photonFuture.then((result) {
-      if (!completer.isCompleted && result.isNotEmpty) {
-        completer.complete(result);
+
+      final nominatim =
+          await _fetchFromNominatim(latStr, lonStr);
+      if (nominatim.isNotEmpty) {
+        return nominatim;
       }
-    });
 
-    final timeout = Future.delayed(const Duration(seconds: 4), () => '');
-
-    final result = await Future.any([completer.future, timeout]);
-
-    if (result.isNotEmpty) return result;
-
-    return await _fetchFromNominatim(latStr, lonStr);
+      final photon =
+          await _fetchFromPhoton(latStr, lonStr);
+      return photon;
+    } catch (_) {
+      return '';
+    }
   }
 
   // ============================================================
   // PROVIDER 1: Geocoding Package (Google Maps)
   // ============================================================
 
-  static Future<String> _fetchFromGeocoding(
-      double lat, double lon) async {
+  static Future<String> _fetchFromGeocoding(double lat, double lon) async {
     try {
       final placemarks =
-          await placemarkFromCoordinates(lat, lon)
-              .timeout(const Duration(seconds: 4));
-
+          await placemarkFromCoordinates(lat, lon).timeout(const Duration(seconds: 4));
       if (placemarks.isEmpty) return '';
 
       Placemark? best;
@@ -359,14 +356,12 @@ class LocationWeatherService {
   // PROVIDER 2: Photon
   // ============================================================
 
-  static Future<String> _fetchFromPhoton(
-      String latStr, String lonStr) async {
+  static Future<String> _fetchFromPhoton(String latStr, String lonStr) async {
     try {
       final uri = Uri.parse(
           'https://photon.komoot.io/reverse?lat=$latStr&lon=$lonStr');
       final res =
           await _client.get(uri).timeout(const Duration(milliseconds: 1800));
-
       if (res.statusCode != 200) return '';
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -384,21 +379,17 @@ class LocationWeatherService {
       final state       = _safeStr(props['state']);
 
       final parts = <String>[];
-
       if (name != null && name != street) parts.add(name);
-
       if (street != null) {
         parts.add(housenumber != null
             ? '$street No.$housenumber'
             : street);
       }
-
       if (district != null) parts.add(district);
       if (city != null)     parts.add(city);
       if (state != null && state != city) parts.add(state);
 
       if (parts.isEmpty) return '';
-
       final address = _uniqueParts(parts).join(', ');
       debugPrint('Photon: $address');
       return address;
@@ -414,8 +405,7 @@ class LocationWeatherService {
   // PROVIDER 3: Nominatim
   // ============================================================
 
-  static Future<String> _fetchFromNominatim(
-      String latStr, String lonStr) async {
+  static Future<String> _fetchFromNominatim(String latStr, String lonStr) async {
     final wait = 1000 -
         DateTime.now()
             .difference(_lastNominatimRequest)
@@ -526,8 +516,7 @@ class LocationWeatherService {
     return result;
   }
 
-  static Future<String> _fetchWeatherFromApi(
-      String latStr, String lonStr) async {
+  static Future<String> _fetchWeatherFromApi(String latStr, String lonStr) async {
     try {
       final uri = Uri.parse(
         'https://api.open-meteo.com/v1/forecast'
@@ -536,7 +525,6 @@ class LocationWeatherService {
       );
       final res =
           await _client.get(uri).timeout(const Duration(seconds: 3));
-
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final current =
@@ -579,18 +567,15 @@ class LocationWeatherService {
   // MINI MAP — dengan fallback ganda & LRU sejati
   // ============================================================
 
-  static Future<Uint8List?> fetchOSMStaticMap(
-      double lat, double lon) async {
+  static Future<Uint8List?> fetchOSMStaticMap(double lat, double lon) async {
     final cacheKey =
         '${lat.toStringAsFixed(3)},${lon.toStringAsFixed(3)}';
-
     if (_mapCache.containsKey(cacheKey)) {
       final bytes = _mapCache.remove(cacheKey)!;
       _mapCache[cacheKey] = bytes;
       return bytes;
     }
 
-    // Bangun daftar URL — LocationIQ hanya jika API key diisi
     final urls = <String>[
       'https://staticmap.openstreetmap.de/staticmap.php'
           '?center=$lat,$lon&zoom=16&size=400x250'
@@ -614,9 +599,7 @@ class LocationWeatherService {
         final response = await _client
             .get(Uri.parse(urlString))
             .timeout(const Duration(seconds: 5));
-
-        if (response.statusCode == 200 &&
-            response.bodyBytes.isNotEmpty) {
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
           final bytes = Uint8List.fromList(response.bodyBytes);
           final isPng = bytes.length > 4 &&
               bytes[0] == 0x89 &&
@@ -661,17 +644,14 @@ class LocationWeatherService {
           ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
               .toInt()
               .clamp(0, n - 1);
-
       const subdomains = ['a', 'b', 'c'];
       final sub = subdomains[tileX % 3];
       final url =
           'https://$sub.tile.openstreetmap.org/$zoom/$tileX/$tileY.png';
-
       final response = await _client.get(
         Uri.parse(url),
         headers: {'User-Agent': 'TermulLog/1.0'},
       ).timeout(const Duration(seconds: 5));
-
       if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
         final bytes = Uint8List.fromList(response.bodyBytes);
         if (bytes.length > 4 &&

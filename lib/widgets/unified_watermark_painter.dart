@@ -24,22 +24,10 @@ class UnifiedWatermarkPainter extends CustomPainter {
   final bool isHighQuality;
   final double pixelRatio;
 
-  // Cached formatted strings
-  late final String _formattedDate;
-  late final String _formattedTime;
-
   static final DateFormat _dateFmt = DateFormat('EEE, dd MMM yyyy');
   static final DateFormat _timeFmt = DateFormat('HH:mm:ss');
-
-  // Height cache (reliable)
   static final Map<String, double> _heightCache = {};
   static const int _maxHeightCache = 30;
-
-  // Icon cache
-  static final Map<String, TextPainter> _iconCache = {};
-
-  // TextPainter cache for export only
-  static final Map<String, TextPainter> _textPainterCache = {};
 
   const UnifiedWatermarkPainter({
     required this.timestamp,
@@ -61,10 +49,7 @@ class UnifiedWatermarkPainter extends CustomPainter {
     required this.cardWidth,
     this.isHighQuality = true,
     this.pixelRatio = 1.0,
-  }) {
-    _formattedDate = _dateFmt.format(timestamp);
-    _formattedTime = _timeFmt.format(timestamp);
-  }
+  });
 
   TextStyle _textStyle({
     required double fontSize,
@@ -87,35 +72,20 @@ class UnifiedWatermarkPainter extends CustomPainter {
     );
   }
 
-  TextPainter _createPainter(String text, TextStyle style, double maxWidth, int maxLines, {bool enableCache = false}) {
-    if (enableCache) {
-      final key = '${text.hashCode}_${style.hashCode}_${maxWidth.round()}_$maxLines';
-      if (_textPainterCache.containsKey(key)) return _textPainterCache[key]!;
-      if (_textPainterCache.length > 50) _textPainterCache.clear();
-      final tp = TextPainter(
-        text: TextSpan(text: text, style: style),
-        textDirection: ui.TextDirection.ltr,
-        maxLines: maxLines,
-        ellipsis: '...',
-      );
-      tp.layout(maxWidth: maxWidth);
-      _textPainterCache[key] = tp;
-      return tp;
-    } else {
-      final tp = TextPainter(
-        text: TextSpan(text: text, style: style),
-        textDirection: ui.TextDirection.ltr,
-        maxLines: maxLines,
-        ellipsis: '...',
-      );
-      tp.layout(maxWidth: maxWidth);
-      return tp;
-    }
+  TextPainter _createPainter(String text, TextStyle style, double maxWidth, int maxLines) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: ui.TextDirection.ltr,
+      maxLines: maxLines,
+      ellipsis: '...',
+    );
+    tp.layout(maxWidth: maxWidth);
+    return tp;
   }
 
   double computeHeight() {
     final cacheKey = '${layout.index}_${fontScale.toStringAsFixed(2)}_${cardWidth.round()}_'
-        '${showAddress ? address.length : 0}_${showWeather ? weather.length : 0}_'
+        '${showAddress ? address.hashCode : 0}_${showWeather ? weather.hashCode : 0}_'
         '${showCoordinates}_${showAccuracy}_${fontSize}_${pixelRatio.toStringAsFixed(2)}_${isHighQuality}';
     if (_heightCache.containsKey(cacheKey)) return _heightCache[cacheKey]!;
     if (_heightCache.length > _maxHeightCache) _heightCache.clear();
@@ -126,17 +96,18 @@ class UnifiedWatermarkPainter extends CustomPainter {
     final double padX = 20.0 * layoutScale;
     final double fsMultiplier = fontSize == 'small' ? 0.82 : fontSize == 'large' ? 1.22 : 1.0;
     final double effFontMulti = fsMultiplier * typographyScale;
+
     double cy = 18 * layoutScale;
 
     double measureText(String text, double fontSizePt, int maxLines, {double? maxWidth}) {
       final style = _textStyle(fontSize: fontSizePt, color: Colors.white);
       final actualMaxWidth = maxWidth ?? (cardWidth - padX * 2);
-      final tp = _createPainter(text, style, actualMaxWidth, maxLines, enableCache: isHighQuality);
+      final tp = _createPainter(text, style, actualMaxWidth, maxLines);
       return tp.height;
     }
 
-    cy += measureText(_formattedDate, 14 * effFontMulti, 1) + 8 * layoutScale;
-    cy += measureText(_formattedTime, 29 * effFontMulti, 1) + 8 * layoutScale;
+    cy += measureText(_dateFmt.format(timestamp), 14 * effFontMulti, 1) + 8 * layoutScale;
+    cy += measureText(_timeFmt.format(timestamp), 29 * effFontMulti, 1) + 8 * layoutScale;
     cy += 18 * layoutScale;
 
     if (showCoordinates && hasPosition && lat != null && lon != null) {
@@ -159,9 +130,7 @@ class UnifiedWatermarkPainter extends CustomPainter {
     return height;
   }
 
-  TextPainter _getIconPainter(IconData icon, double size, Color color) {
-    final key = '${icon.codePoint}_${icon.fontFamily}_${size.round()}_${color.value}';
-    if (_iconCache.containsKey(key)) return _iconCache[key]!;
+  void _drawIcon(Canvas canvas, IconData icon, double x, double y, double size, Color color) {
     final tp = TextPainter(
       text: TextSpan(
         text: String.fromCharCode(icon.codePoint),
@@ -170,12 +139,7 @@ class UnifiedWatermarkPainter extends CustomPainter {
       textDirection: ui.TextDirection.ltr,
     );
     tp.layout();
-    _iconCache[key] = tp;
-    return tp;
-  }
-
-  void _drawIcon(Canvas canvas, IconData icon, double x, double y, double size, Color color) {
-    _getIconPainter(icon, size, color).paint(canvas, Offset(x, y));
+    tp.paint(canvas, Offset(x, y));
   }
 
   @override
@@ -227,13 +191,16 @@ class UnifiedWatermarkPainter extends CustomPainter {
     }) {
       final style = _textStyle(fontSize: fontSizePt, color: color, bold: bold, letterSpacing: spacing, withShadow: withShadow);
       final actualMaxWidth = maxWidth ?? (size.width - padX * 2);
-      final tp = _createPainter(text, style, actualMaxWidth, maxLines, enableCache: isHighQuality);
+      final tp = _createPainter(text, style, actualMaxWidth, maxLines);
       tp.paint(canvas, Offset(padX + offsetX, cy));
       cy += tp.height + 8 * layoutScale;
     }
 
-    drawText(_formattedDate, 14 * effFontMulti, Colors.white70, 1, spacing: 0.3);
-    drawText(_formattedTime, 29 * effFontMulti, Colors.white, 1, bold: true, spacing: 0.9, withShadow: isHighQuality);
+    final dateText = _dateFmt.format(timestamp);
+    final timeText = _timeFmt.format(timestamp);
+
+    drawText(dateText, 14 * effFontMulti, Colors.white70, 1, spacing: 0.3);
+    drawText(timeText, 29 * effFontMulti, Colors.white, 1, bold: true, spacing: 0.9, withShadow: isHighQuality);
 
     final linePaint = Paint()
       ..strokeWidth = 1
@@ -268,8 +235,9 @@ class UnifiedWatermarkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant UnifiedWatermarkPainter old) {
-    // Only repaint when second changes or other relevant properties
-    return old.timestamp.second != timestamp.second ||
+    final nowSeconds = timestamp.millisecondsSinceEpoch ~/ 1000;
+    final oldSeconds = old.timestamp.millisecondsSinceEpoch ~/ 1000;
+    return nowSeconds != oldSeconds ||
         old.lat != lat ||
         old.lon != lon ||
         old.acc != acc ||
@@ -284,8 +252,8 @@ class UnifiedWatermarkPainter extends CustomPainter {
         old.fontScale != fontScale ||
         old.cardWidth != cardWidth ||
         old.isHighQuality != isHighQuality ||
+        old.pixelRatio != pixelRatio ||
         old.opacity != opacity ||
         old.showBorder != showBorder;
-    // pixelRatio removed from repaint (rarely changes)
   }
 }

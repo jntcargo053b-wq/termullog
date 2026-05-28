@@ -30,7 +30,6 @@ class WatermarkEngine {
     final int width = original.width;
     final int height = original.height;
 
-    // Card width: ~38% of image width, clamped
     final double cardWidth = (width * 0.38).clamp(220.0, 420.0);
 
     final dummyPainter = UnifiedWatermarkPainter(
@@ -56,7 +55,6 @@ class WatermarkEngine {
     );
     final double cardHeight = dummyPainter.computeHeight();
 
-    // Default position center-bottom (0.5, 0.85) – nanti baca dari SettingsCache
     final double posX = 0.5;
     final double posY = 0.85;
     double left = (width * posX) - (cardWidth / 2);
@@ -103,7 +101,7 @@ class WatermarkEngine {
     final img.Image jpegImg = img.Image.fromBytes(
       width: width,
       height: height,
-      bytes: byteData.buffer.asUint8List(),
+      bytes: byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes),
       numChannels: 4,
     );
     final Uint8List jpegBytes = img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100));

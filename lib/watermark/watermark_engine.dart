@@ -101,15 +101,20 @@ class WatermarkEngine {
     // Convert to JPEG using image package
     final ByteData? byteData = await output.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) throw Exception('Failed to get image bytes');
-    // Convert raw RGBA bytes to img.Image
+    
+    // Get pixel data as Uint8List
     final Uint8List pixels = byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes);
+    // Convert to img.Image using ByteBuffer
     final img.Image jpegImg = img.Image.fromBytes(
       width: width,
       height: height,
-      bytes: pixels,
+      bytes: pixels.buffer,
       numChannels: 4,
     );
-    final Uint8List jpegBytes = img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100));
+    // Encode to JPEG and wrap as Uint8List
+    final Uint8List jpegBytes = Uint8List.fromList(
+      img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100)),
+    );
 
     // Cleanup
     original.dispose();

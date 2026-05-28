@@ -1,12 +1,12 @@
-// lib/services/kalman_filter_4d.dart
 import 'dart:math';
 
 class KalmanFilter4D {
   List<double> _x = [0.0, 0.0, 0.0, 0.0];
   List<List<double>> _P = List.generate(4, (_) => List.filled(4, 0.0));
 
-  static const double _qPos = 0.8;
-  static const double _qVel = 0.8;
+  // Process noise lebih besar agar filter lebih responsif
+  static const double _qPos = 2.5;
+  static const double _qVel = 3.0;
 
   KalmanFilter4D() {
     _resetCovariance();
@@ -149,7 +149,7 @@ class KalmanFilter4D {
     return true;
   }
 
-  // Matrix utilities
+  // ========== Matrix utilities ==========
   List<List<double>> _matMul(List<List<double>> A, List<List<double>> B) {
     final int aRows = A.length, aCols = A[0].length, bCols = B[0].length;
     final result = List.generate(aRows, (_) => List.filled(bCols, 0.0));

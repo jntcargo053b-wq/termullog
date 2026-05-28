@@ -1,10 +1,21 @@
-// lib/services/gps_lock_manager.dart
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 import 'kalman_filter_4d.dart';
 
 enum GpsLockState { searching, acquiring, locked, stale }
+
+class LocalPoint {
+  final double east;
+  final double north;
+  LocalPoint(this.east, this.north);
+}
+
+class GlobalPoint {
+  final double lat;
+  final double lon;
+  GlobalPoint(this.lat, this.lon);
+}
 
 class GpsLockData {
   final Position position;
@@ -91,22 +102,22 @@ class GpsLockManager {
     return 'Poor';
   }
 
-  // --- ENU helpers ---
-  (double east, double north)? _toLocal(double lat, double lon) {
+  // --- ENU helpers (returns LocalPoint/GlobalPoint) ---
+  LocalPoint? _toLocal(double lat, double lon) {
     if (_refLat == null || _refLon == null) return null;
     const double R = 6371000.0;
     final double dLat = (lat - _refLat!) * pi / 180.0;
     final double dLon = (lon - _refLon!) * pi / 180.0;
     final double east = dLon * cos(_refLat! * pi / 180.0) * R;
     final double north = dLat * R;
-    return (east, north);
+    return LocalPoint(east, north);
   }
 
-  (double lat, double lon) _toGlobal(double east, double north) {
+  GlobalPoint _toGlobal(double east, double north) {
     const double R = 6371000.0;
     final double dLat = north / R;
     final double dLon = east / (R * cos(_refLat! * pi / 180.0));
-    return (_refLat! + dLat * 180.0 / pi, _refLon! + dLon * 180.0 / pi);
+    return GlobalPoint(_refLat! + dLat * 180.0 / pi, _refLon! + dLon * 180.0 / pi);
   }
 
   // --- Heading smoothing with circular average and speed gating ---
@@ -139,7 +150,6 @@ class GpsLockManager {
     double sumSq = 0;
     for (final val in _innovationHistory) sumSq += val * val;
     _innovationRms = sqrt(sumSq / _innovationHistory.length);
-    // Prevent RMS from being too low initially
     if (_innovationRms < 0.5) _innovationRms = 0.5;
   }
 
@@ -209,7 +219,7 @@ class GpsLockManager {
     }
 
     // Kalman update
-    final (updated, Pupd) = _kalman!.update((de, dn), R, Ppred);
+    final (updated, Pupd) = _kalman!.update(de, dn, R, Ppred);
     if (!_isFilterHealthy()) { forceUnlock(); return false; }
 
     // Compute speed and movement delta (corrected)

@@ -1,14 +1,24 @@
 import 'dart:math';
 
+/// 4D Kalman filter (position + velocity) with adaptive process noise.
 class KalmanFilter4D {
   List<double> _x = [0.0, 0.0, 0.0, 0.0];
   List<List<double>> _P = List.generate(4, (_) => List.filled(4, 0.0));
 
-  static const double _qPos = 0.8;
-  static const double _qVel = 0.8;
+  // Process noise intensities (m²/s³)
+  double _qPos;
+  double _qVel;
 
-  KalmanFilter4D() {
+  KalmanFilter4D({double qPos = 0.8, double qVel = 0.8})
+      : _qPos = qPos,
+        _qVel = qVel {
     _resetCovariance();
+  }
+
+  /// Adjust process noise coefficients (e.g., for different motion types)
+  void setProcessNoise(double qPos, double qVel) {
+    _qPos = qPos.clamp(0.1, 5.0);
+    _qVel = qVel.clamp(0.1, 5.0);
   }
 
   void _resetCovariance() {
@@ -87,7 +97,7 @@ class KalmanFilter4D {
     ];
 
     final det = S[0][0] * S[1][1] - S[0][1] * S[1][0];
-    if (det.abs() < 1e-12) return (_x, _P); // singular, skip
+    if (det.abs() < 1e-12) return (_x, _P);
 
     final invS = [
       [S[1][1] / det, -S[0][1] / det],
@@ -125,7 +135,7 @@ class KalmanFilter4D {
     return (_x, _P);
   }
 
-  void inflateCovariance([double factor = 6.0]) {
+  void inflateCovariance([double factor = 3.0]) {
     for (int i = 0; i < 4; i++) {
       for (int j = 0; j < 4; j++) {
         _P[i][j] *= factor;

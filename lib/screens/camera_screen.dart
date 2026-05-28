@@ -52,8 +52,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // Geocoding throttling
   double? _lastGeocodeLat;
   double? _lastGeocodeLon;
-  static const double _addressRefreshDistance = 8.0;
-  static const int _geocodeTimeThresholdSeconds = 15;
+  static const double _addressRefreshDistance = 2.0;      // lebih responsif
+  static const int _geocodeTimeThresholdSeconds = 2;      // lebih cepat
   bool _isAddressLoading = false;
   DateTime? _lastGeocodeTime;
 
@@ -74,7 +74,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
 
   static const int _antiShakeDelayMs = 200;
-  static const double _minAccuracyForCapture = 20.0; // meter
+  static const double _minAccuracyForCapture = 20.0;
 
   @override
   void initState() {
@@ -165,14 +165,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
       _controller = controller;
       await controller.initialize().timeout(const Duration(seconds: 20));
-
-      // Race condition guard: jika setelah initialize widget tidak mounted atau controller sudah diganti
       if (!mounted || _controller != controller) {
         await controller.dispose();
         _cameraInitCompleter?.complete();
         return;
       }
-
       await controller.lockCaptureOrientation();
       setState(() => _isCameraReady = true);
       _cameraInitCompleter!.complete();
@@ -340,13 +337,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             }
           });
 
-          final rawPos = _gpsLockManager.rawPosition;
-          if (rawPos != null) {
-            unawaited(_fetchAddressAndWeather(rawPos));
-          }
-          if (justLocked && lockData != null && rawPos != null) {
-            unawaited(_fetchAddressAndWeather(rawPos, forceRefresh: true));
-            _gpsLockManager.updateLockAddress(_address, _weather);
+          // 🔥 Gunakan posisi yang SAMA untuk watermark dan alamat (lock position jika ada)
+          final Position syncPosition = lockData?.position ?? pos;
+
+          // Jangan geocode jika GPS masih noise (akurasi > 15m)
+          if (syncPosition.accuracy <= 15) {
+            await _fetchAddressAndWeather(
+              syncPosition,
+              forceRefresh: justLocked,
+            );
+
+            if (_gpsLockManager.isLocked) {
+              _gpsLockManager.updateLockAddress(_address, _weather);
+            }
           }
         },
         onError: (e) {
@@ -373,7 +376,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
-    // Prioritas: locked position terlebih dahulu, fallback ke live position
     final capturePosition = _bestPosition ?? _currentPosition;
     if (capturePosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -382,7 +384,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return;
     }
 
-    // Cek akurasi minimal
     if (capturePosition.accuracy > _minAccuracyForCapture) {
       final shouldContinue = await showDialog<bool>(
         context: context,
@@ -478,7 +479,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
-    // 🔥 Prioritaskan posisi locked (_bestPosition) untuk tampilan
     final displayPosition = _bestPosition ?? _currentPosition;
 
     return Scaffold(

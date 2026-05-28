@@ -65,10 +65,14 @@ class GpsLockManager {
   final List<Position> _bootstrapSamples = [];
   static const int _bootstrapRequired = 3;
 
-  // 🔥 RAW POSITION TERBARU – untuk geocoding
+  // Raw position terbaru (debug)
   Position? _latestRawPosition;
 
-  // Parameter
+  // Best raw position for geocoding (stable & accurate)
+  Position? _bestGeocodePosition;
+  double _bestGeocodeAccuracy = double.infinity;
+
+  // Parameters
   static const double _requiredAccuracyMeters = 6.0;
   static const double _maxAllowedAccuracy = 35.0;
   static const double _requiredStableSeconds = 4.0;
@@ -89,8 +93,9 @@ class GpsLockManager {
   int get stationaryProgress => ((_stableSeconds / _requiredStableSeconds) * 100).clamp(0, 100).toInt();
   double get confidence => _lockData?.confidence ?? 0.0;
 
-  // 🔥 GETTER UNTUK GEOCODING: gunakan raw position terbaru
-  Position? get geocodePosition => _latestRawPosition ?? _lockData?.position;
+  // 🔥 Geocode position: best stable raw first, then locked position, then latest raw
+  Position? get geocodePosition =>
+      _bestGeocodePosition ?? _lockData?.position ?? _latestRawPosition;
 
   static String getQualityFromAccuracy(double acc) {
     if (acc <= 3) return 'Excellent';
@@ -192,15 +197,26 @@ class GpsLockManager {
       return false;
     }
 
-    // 🔥 Simpan raw position setiap saat (untuk geocoding)
+    // Store latest raw
     _latestRawPosition = newPos;
+
+    // 🔥 Update best geocode position: stable (accuracy ≤10m and stable for at least 1.5s)
+    final bool isBetterAccuracy = newPos.accuracy < _bestGeocodeAccuracy;
+    final bool isStableCandidate = newPos.accuracy <= 10 && _stableSeconds >= 1.5;
+    if (isBetterAccuracy && isStableCandidate) {
+      _bestGeocodeAccuracy = newPos.accuracy;
+      _bestGeocodePosition = newPos;
+      if (kDebugMode) {
+        debugPrint('GPS Lock: best geocode updated acc=${newPos.accuracy.toStringAsFixed(1)}m');
+      }
+    }
 
     final timestamp = newPos.timestamp ?? DateTime.now();
     if (DateTime.now().difference(timestamp).inSeconds > 3) return false;
     if (newPos.accuracy > _maxAllowedAccuracy) return false;
     if (newPos.speed.isFinite && newPos.speed > _maxSpeedMps) return false;
 
-    // Bootstrap ENU median
+    // Bootstrap ENU median (3 samples)
     if (_refLat == null) {
       _bootstrapSamples.add(newPos);
       if (_bootstrapSamples.length < _bootstrapRequired) return false;
@@ -301,7 +317,7 @@ class GpsLockManager {
       isMocked: newPos.isMocked,
     );
 
-    // 🔥 Hybrid position: 70% raw, 30% smoothed – untuk tampilan watermark
+    // Hybrid position: 70% raw, 30% smoothed (best for display)
     final hybridLat = newPos.latitude * 0.7 + smoothedPosition.latitude * 0.3;
     final hybridLon = newPos.longitude * 0.7 + smoothedPosition.longitude * 0.3;
     final hybridPosition = Position(
@@ -335,6 +351,11 @@ class GpsLockManager {
           quality: getQualityFromAccuracy(newPos.accuracy),
           confidence: conf,
         );
+        // Update best geocode if this position is even better
+        if (newPos.accuracy <= _bestGeocodeAccuracy) {
+          _bestGeocodeAccuracy = newPos.accuracy;
+          _bestGeocodePosition = newPos;
+        }
       }
       if (_lockData != null && !_lockData!.isValid) {
         _state = GpsLockState.searching;
@@ -360,6 +381,11 @@ class GpsLockManager {
         confidence: conf,
       );
       _state = GpsLockState.locked;
+      // Update best geocode with locked position
+      if (newPos.accuracy <= _bestGeocodeAccuracy) {
+        _bestGeocodeAccuracy = newPos.accuracy;
+        _bestGeocodePosition = newPos;
+      }
       if (kDebugMode) debugPrint('GPS Lock: LOCKED acc=${newPos.accuracy.toStringAsFixed(1)}m conf=${conf.toStringAsFixed(0)}%');
       return true;
     }
@@ -387,7 +413,11 @@ class GpsLockManager {
     _innovationRms = 1.0;
     _lastHeading = 0.0;
     _bootstrapSamples.clear();
+    _bestGeocodePosition = null;
+    _bestGeocodeAccuracy = double.infinity;
+    _latestRawPosition = null;
     _sessionStart = DateTime.now();
+    if (kDebugMode) debugPrint('GPS Lock: force unlocked');
   }
 }
 

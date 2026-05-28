@@ -56,7 +56,7 @@ class WatermarkEngine {
     );
     final double cardHeight = dummyPainter.computeHeight();
 
-    // Default position center-bottom (0.5, 0.85) – baca dari SettingsCache
+    // Default position center-bottom (0.5, 0.85) – nanti baca dari SettingsCache
     final double posX = 0.5;
     final double posY = 0.85;
     double left = (width * posX) - (cardWidth / 2);
@@ -65,9 +65,9 @@ class WatermarkEngine {
     left = left.clamp(safeMargin, width - cardWidth - safeMargin);
     top = top.clamp(safeMargin, height - cardHeight - safeMargin);
 
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    canvas.drawImage(original, Offset.zero, Paint());
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(recorder);
+    canvas.drawImage(original, Offset.zero, ui.Paint());
     canvas.save();
     canvas.translate(left, top);
 
@@ -95,10 +95,10 @@ class WatermarkEngine {
     painter.paint(canvas, Size(cardWidth, cardHeight));
 
     canvas.restore();
-    final picture = recorder.endRecording();
+    final ui.Picture picture = recorder.endRecording();
     final ui.Image output = await picture.toImage(width, height);
 
-    final byteData = await output.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final ByteData? byteData = await output.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) throw Exception('Failed to get image bytes');
     final img.Image jpegImg = img.Image.fromBytes(
       width: width,
@@ -106,7 +106,7 @@ class WatermarkEngine {
       bytes: byteData.buffer.asUint8List(),
       numChannels: 4,
     );
-    final jpegBytes = img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100));
+    final Uint8List jpegBytes = img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100));
 
     original.dispose();
     output.dispose();
@@ -117,7 +117,7 @@ class WatermarkEngine {
 
   static Future<ui.Image> _decodeImage(Uint8List bytes) async {
     final Completer<ui.Image> completer = Completer();
-    ui.decodeImageFromList(bytes, (image) => completer.complete(image));
+    ui.decodeImageFromList(bytes, (ui.Image image) => completer.complete(image));
     return completer.future;
   }
 }

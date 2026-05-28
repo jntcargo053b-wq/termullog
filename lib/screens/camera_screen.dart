@@ -420,13 +420,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         opacity: _opacity,
         showBorder: _showBorder,
         fontSize: _fontSize,
-        showMiniMap: false,
-        mapSize: 'medium',
-        mapZoomLevel: 16,
-        imageQuality: 90,
-        dateFormat: 'dd MMM yyyy',
-        timeFormat: 'HH:mm:ss',
         fontScale: _watermarkPosition.fontScale,
+        imageQuality: 90,
       ).timeout(const Duration(seconds: 15));
 
       // Save to gallery

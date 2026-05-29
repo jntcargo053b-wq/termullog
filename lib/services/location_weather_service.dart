@@ -1,6 +1,5 @@
 // lib/services/location_weather_service.dart
-// Versi tanpa cache alamat – setiap panggilan fetchFromPosition langsung reverse geocode
-// (Dengan throttle dari AddressResolver, tidak ada cache internal)
+// Final version – prioritas Nominatim (realtime), lalu Geocoding, lalu Photon
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
@@ -63,8 +62,7 @@ class LocationWeatherService {
     final latStr = lat.toStringAsFixed(6);
     final lonStr = lon.toStringAsFixed(6);
 
-    // 🔥 Tidak ada cache alamat – langsung geocode setiap panggilan
-    // Throttle sudah dikelola oleh AddressResolver di camera_screen.dart
+    // Tidak ada cache alamat – throttle sudah di AddressResolver
     final addressFuture = _fetchAddressParallel(lat, lon, latStr, lonStr);
     final weatherFuture = _fetchWeather(lat, lon);
 
@@ -85,18 +83,21 @@ class LocationWeatherService {
     );
   }
 
+  // 🔥 PRIORITAS: Nominatim (realtime, minim cache) -> Geocoding -> Photon
   static Future<String> _fetchAddressParallel(
       double lat, double lon, String latStr, String lonStr) async {
     try {
-      // Provider paling akurat dulu (Google Geocoding)
+      // 1. Nominatim (OpenStreetMap) – lebih realtime
+      final nominatim = await _fetchFromNominatim(latStr, lonStr);
+      if (nominatim.isNotEmpty) return nominatim;
+
+      // 2. Google Geocoding (via geocoding package)
       final geocoding = await _fetchFromGeocoding(lat, lon).timeout(const Duration(seconds: 3));
       if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
         return geocoding;
       }
 
-      final nominatim = await _fetchFromNominatim(latStr, lonStr);
-      if (nominatim.isNotEmpty) return nominatim;
-
+      // 3. Photon (fallback)
       final photon = await _fetchFromPhoton(latStr, lonStr);
       return photon;
     } catch (_) {
@@ -222,9 +223,8 @@ class LocationWeatherService {
   }
 
   static Future<String> _fetchWeather(double lat, double lon) async {
-    // Weather tetap pakai cache sederhana (10 menit) – tidak terkait alamat
+    // Weather dengan cache sederhana (10 menit) – opsional
     final key = '${lat.toStringAsFixed(2)},${lon.toStringAsFixed(2)}';
-    // (Implementasi weather cache opsional, tidak mempengaruhi alamat)
     final weather = await _fetchWeatherFromApi(lat.toStringAsFixed(6), lon.toStringAsFixed(6));
     return weather;
   }

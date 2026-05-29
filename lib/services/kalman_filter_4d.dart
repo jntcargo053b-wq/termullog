@@ -1,10 +1,14 @@
+// lib/services/kalman_filter_4d.dart
 import 'dart:math';
 
+/// 4D Kalman filter (position + velocity) dengan constant velocity model.
+/// State: [east, north, v_east, v_north] dalam meter dan m/s.
+/// Menggunakan Joseph form untuk update covariance (stabil numerik).
 class KalmanFilter4D {
   List<double> _x = [0.0, 0.0, 0.0, 0.0];
   List<List<double>> _P = List.generate(4, (_) => List.filled(4, 0.0));
 
-  // Process noise lebih besar agar filter lebih responsif
+  // Process noise intensities (tuned untuk GPS mobile)
   static const double _qPos = 2.5;
   static const double _qVel = 3.0;
 
@@ -40,6 +44,7 @@ class KalmanFilter4D {
     ];
   }
 
+  // Simetri dan batas bawah untuk stabilitas numerik
   List<List<double>> _enforceSymmetry(List<List<double>> M) {
     final sym = List.generate(4, (i) => List.filled(4, 0.0));
     for (int i = 0; i < 4; i++) {
@@ -56,6 +61,10 @@ class KalmanFilter4D {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Prediction step: update state dan covariance berdasarkan dt.
+  // Mengembalikan (state_pred, cov_pred).
+  // ─────────────────────────────────────────────────────────────────────────
   (List<double>, List<List<double>>) predict(double dt) {
     final F = _getF(dt);
     final Q = _getQ(dt);
@@ -72,13 +81,27 @@ class KalmanFilter4D {
     return (_x, _P);
   }
 
-  (List<double>, List<List<double>>) update(double de, double dn, double R, List<List<double>> Ppred) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Update dengan measurement (east, north) dalam meter dan noise variance R.
+  // Mengembalikan (state_upd, cov_upd).
+  // ─────────────────────────────────────────────────────────────────────────
+  (List<double>, List<List<double>>) update(
+      double measurementEast,
+      double measurementNorth,
+      double R,
+      List<List<double>> Ppred) {
+    // Matriks observasi H (hanya posisi)
     final H = [
       [1.0, 0.0, 0.0, 0.0],
       [0.0, 1.0, 0.0, 0.0],
     ];
-    final z = [de, dn];
+    // Inovasi: z = measurement - H * x_pred
+    final innovation = [
+      measurementEast - _x[0],
+      measurementNorth - _x[1],
+    ];
 
+    // S = H * Ppred * H^T + R*I
     final HP = _matMul(H, Ppred);
     final HPHt = _matMul(HP, _transpose(H));
     final S = [
@@ -86,24 +109,27 @@ class KalmanFilter4D {
       [HPHt[1][0], HPHt[1][1] + R],
     ];
 
+    // Invers S (2x2)
     final det = S[0][0] * S[1][1] - S[0][1] * S[1][0];
-    if (det.abs() < 1e-12) return (_x, _P);
-
+    if (det.abs() < 1e-12) return (_x, _P); // singular, skip
     final invS = [
       [S[1][1] / det, -S[0][1] / det],
       [-S[1][0] / det, S[0][0] / det],
     ];
 
+    // Kalman gain K = Ppred * H^T * inv(S)
     final PHt = _matMul(Ppred, _transpose(H));
-    final K = _matMul(PHt, invS);
+    final K = _matMul(PHt, invS); // 4x2
 
+    // Update state
     final xUpd = List<double>.from(_x);
     for (int i = 0; i < 4; i++) {
       for (int j = 0; j < 2; j++) {
-        xUpd[i] += K[i][j] * z[j];
+        xUpd[i] += K[i][j] * innovation[j];
       }
     }
 
+    // Joseph form: P = (I - K*H) * Ppred * (I - K*H)^T + K*R*K^T
     final I = [
       [1.0, 0.0, 0.0, 0.0],
       [0.0, 1.0, 0.0, 0.0],
@@ -123,6 +149,19 @@ class KalmanFilter4D {
     _applyCovarianceFloor();
 
     return (_x, _P);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Convenience: predict lalu update dengan measurement.
+  // Mengembalikan (state_upd, cov_upd) setelah update.
+  // ─────────────────────────────────────────────────────────────────────────
+  (List<double>, List<List<double>>) predictAndUpdate(
+      double dt,
+      double measurementEast,
+      double measurementNorth,
+      double R) {
+    final (_, Ppred) = predict(dt);
+    return update(measurementEast, measurementNorth, R, Ppred);
   }
 
   void inflateCovariance([double factor = 3.0]) {
@@ -149,7 +188,7 @@ class KalmanFilter4D {
     return true;
   }
 
-  // ========== Matrix utilities ==========
+  // ========== Matrix utilities (tidak berubah) ==========
   List<List<double>> _matMul(List<List<double>> A, List<List<double>> B) {
     final int aRows = A.length, aCols = A[0].length, bCols = B[0].length;
     final result = List.generate(aRows, (_) => List.filled(bCols, 0.0));

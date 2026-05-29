@@ -49,6 +49,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _gpsQuality = 'Searching';
   double _gpsConfidence = 0.0;
 
+  // Geocoding throttle
+  double? _lastGeocodeLat;
+  double? _lastGeocodeLon;
+  DateTime? _lastGeocodeTime;
+  static const double _geocodeMinDistanceMeters = 10.0;
+  static const int _geocodeMinIntervalSeconds = 5;
+
   StreamSubscription<Position>? _positionSub;
   Timer? _clockTimer;
   DateTime _currentTimestamp = DateTime.now();
@@ -223,6 +230,55 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  Future<void> _geocodeIfNeeded(Position rawPos) async {
+    // Throttle berdasarkan jarak dan waktu
+    final now = DateTime.now();
+    bool shouldGeocode = false;
+
+    if (_lastGeocodeLat == null || _lastGeocodeLon == null) {
+      // Belum pernah geocode, lakukan segera
+      shouldGeocode = true;
+    } else {
+      final distance = _haversine(
+        _lastGeocodeLat!, _lastGeocodeLon!,
+        rawPos.latitude, rawPos.longitude,
+      );
+      final timeSince = _lastGeocodeTime == null ? 0 : now.difference(_lastGeocodeTime!).inSeconds;
+      if (distance >= _geocodeMinDistanceMeters || timeSince >= _geocodeMinIntervalSeconds) {
+        shouldGeocode = true;
+      }
+    }
+
+    if (!shouldGeocode) return;
+
+    // Untuk geocode pertama, izinkan akurasi berapa pun (biar cepat muncul)
+    // Setelah itu, hanya geocode jika akurasi ≤ 12m
+    final bool isFirst = _lastGeocodeLat == null;
+    if (!isFirst && rawPos.accuracy > 12) return;
+
+    // Update throttle data sebelum request async (agar tidak ke-trigger dua kali)
+    _lastGeocodeLat = rawPos.latitude;
+    _lastGeocodeLon = rawPos.longitude;
+    _lastGeocodeTime = now;
+
+    try {
+      final result = await LocationWeatherService.fetchFromPosition(rawPos)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted) return;
+
+      setState(() {
+        _address = result.address;
+        _weather = result.weather;
+      });
+
+      if (_gpsLockManager.isLocked) {
+        _gpsLockManager.updateLockAddress(result.address, result.weather);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('GEOCODE ERROR: $e');
+    }
+  }
+
   Future<void> _initLocationStream() async {
     if (_locationStreamActive) return;
     _locationStreamActive = true;
@@ -294,28 +350,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             }
           });
 
-          // Gunakan posisi yang sama untuk alamat (prioritas lock)
-          final Position syncPosition = lockData?.position ?? pos;
-
-          // Hanya geocode jika akurasi cukup baik
-          if (syncPosition.accuracy <= 12) {
-            try {
-              final result = await LocationWeatherService.fetchFromPosition(syncPosition)
-                  .timeout(const Duration(seconds: 6));
-              if (!mounted) return;
-
-              setState(() {
-                _address = result.address;
-                _weather = result.weather;
-              });
-
-              if (_gpsLockManager.isLocked) {
-                _gpsLockManager.updateLockAddress(result.address, result.weather);
-              }
-            } catch (e) {
-              if (kDebugMode) debugPrint('ADDRESS SYNC ERROR: $e');
-            }
-          }
+          // 🔥 Gunakan posisi mentah (raw) untuk geocoding
+          await _geocodeIfNeeded(pos);
         },
         onError: (e) {
           if (kDebugMode) debugPrint('GPS STREAM ERROR: $e');

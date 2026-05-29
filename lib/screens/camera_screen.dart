@@ -134,8 +134,10 @@ class _CameraScreenState extends State<CameraScreen>
       _locationStreamActive = false;
 
     } else if (state == AppLifecycleState.resumed) {
-      // Reset address state — posisi bisa berubah total saat background
+      // Reset address state — posisi bisa berubah total saat background.
+      // WAJIB clear service cache juga agar tidak dapat hit cache dari sesi lama.
       _addressResolver.reset();
+      LocationWeatherService.clearAddressCache();
       _bestPosition = null;
       if (mounted) setState(() => _gpsStatus = 'Searching GPS...');
 
@@ -328,11 +330,11 @@ class _CameraScreenState extends State<CameraScreen>
       _gpsStatus = _buildGpsStatus(acc);
     });
 
-    // ── 4. Pilih posisi terbaik untuk geocode ───────────────────────────────
-    // Gunakan lockData.position jika sudah lock, otherwise _bestPosition.
-    // Ini memastikan alamat selalu mengacu ke posisi dengan akurasi terbaik,
-    // BUKAN ke sample mentah terakhir yang bisa saja lebih buruk.
-    final geocodePos = lockData?.position ?? _bestPosition ?? pos;
+    // ── 4. Pilih posisi untuk geocode — WAJIB rawPosition (GPS murni) ────────
+    // JANGAN pakai lockData.position (hybridPosition = Kalman-smoothed).
+    // hybridPosition bisa bergeser 30–50m dari koordinat GPS asli saat bootstrap.
+    // rawPosition = koordinat langsung dari sensor, tanpa averaging/smoothing.
+    final geocodePos = lockData?.rawPosition ?? _bestPosition ?? pos;
 
     // ── 5. Serahkan ke AddressResolver (dia yang putuskan perlu geocode / tidak)
     _addressResolver.onPositionUpdate(geocodePos, _fetchAddress);

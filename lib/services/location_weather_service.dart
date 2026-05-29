@@ -96,7 +96,7 @@ class LocationWeatherService {
   // Cache alamat dengan radius 5m (fix #1)
   static final Map<String, _AddressCacheEntry> _addressCache = {};
   static const int _addressCacheMaxSize = 100;
-  static const double _addressCacheRadiusMeters = 1.5;
+  static const double _addressCacheRadiusMeters = 5.0;
 
   // Cache weather TTL 10 menit
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};

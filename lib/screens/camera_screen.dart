@@ -40,7 +40,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // posisi yang ditampilkan di UI (bisa dari lock atau raw)
+  Position? _currentPosition;   // posisi yang ditampilkan di UI
   Position? _bestPosition;      // raw GPS terbaik (dengan reset jika bergerak jauh)
   double? _currentAccuracy;
 
@@ -357,8 +357,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
     if (acc > 12) return;
 
-    // Fire-and-forget geocode agar tidak memblokir stream
-    unawaited(_addressResolver.onPositionUpdate(displayPosition, _fetchAddress));
+    // Fire-and-forget geocode (AddressResolver.onPositionUpdate returns void, just call it)
+    _addressResolver.onPositionUpdate(displayPosition, _fetchAddress);
 
     if (kDebugMode) {
       debugPrint(
@@ -466,7 +466,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (success != true) throw Exception('Gagal menyimpan foto ke galeri');
       await file.delete();
 
-      // Reset exposure/focus ke auto di finally
     } catch (e) {
       if (kDebugMode) debugPrint('CAPTURE ERROR: $e');
       if (mounted) {

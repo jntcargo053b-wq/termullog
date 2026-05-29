@@ -41,7 +41,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // posisi raw stream terkini (untuk fallback)
+  Position? _currentPosition;   // posisi raw stream terkini (fallback)
   Position? _bestPosition;      // raw GPS terbaik (akurasi terkecil)
   double? _currentAccuracy;
 
@@ -135,7 +135,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== CAMERA ====================
   Future<void> _initCamera() async {
     if (_isCameraInitializing) {
       await _cameraInitCompleter?.future;
@@ -178,7 +177,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== PERMISSIONS ====================
   Future<void> _checkGalleryPermission() async {
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -217,7 +215,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== CLOCK ====================
   void _startClock() {
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _currentTimestamp = DateTime.now());
@@ -242,7 +239,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return Colors.red;
   }
 
-  // ==================== LOCATION STREAM ====================
   Future<void> _initLocationStream() async {
     if (_locationStreamActive) return;
     _locationStreamActive = true;
@@ -309,9 +305,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GPS SAMPLE PROCESSING ====================
   void _onPositionSample(Position pos) {
-    // Update lock manager
     _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
@@ -332,14 +326,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _gpsStatus = _buildGpsStatus(acc);
     });
 
-    // Jangan geocode jika akurasi masih buruk (>25m)
-    if (acc > 25) return;
+    // Jangan geocode jika akurasi masih buruk (>15m agar lebih responsif)
+    if (acc > 15) return;
 
-    // 🔥 Gunakan raw GPS terbaik (bukan lockData.rawPosition)
+    // Gunakan raw GPS terbaik untuk geocoding
     _addressResolver.onPositionUpdate(currentPos, _fetchAddress);
   }
 
-  // ==================== GEOCODING CALLBACK ====================
   Future<void> _fetchAddress(Position pos) async {
     debugPrint('📍 GEOCODE => lat=${pos.latitude}, lon=${pos.longitude}, acc=${pos.accuracy}m');
     if (mounted) setState(() => _isAddressLoading = true);
@@ -362,7 +355,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== CAPTURE ====================
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
@@ -458,7 +450,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== BUILD ====================
   @override
   Widget build(BuildContext context) {
     final isPreviewReady = _controller != null && _controller!.value.isInitialized;

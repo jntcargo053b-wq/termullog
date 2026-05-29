@@ -1,5 +1,4 @@
 // lib/screens/camera_screen.dart
-// FINAL VERSION – Sinkronisasi penuh: alamat, watermark, akurasi, capture menggunakan posisi yang sama
 import 'dart:async';
 import 'dart:io';
 
@@ -41,7 +40,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // posisi yang ditampilkan di UI
+  Position? _currentPosition;   // posisi yang ditampilkan di UI (bisa dari lock atau raw)
   Position? _bestPosition;      // raw GPS terbaik (dengan reset jika bergerak jauh)
   double? _currentAccuracy;
 
@@ -156,6 +155,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
       _controller = controller;
       await controller.initialize().timeout(const Duration(seconds: 20));
+      // Cek race condition setelah initialize
       if (!mounted || _controller != controller) {
         await controller.dispose();
         _cameraInitCompleter?.complete();
@@ -271,6 +271,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
+      // Gunakan interval 300ms untuk preview lebih smooth
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.bestForNavigation,
@@ -291,12 +292,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ));
 
       _positionSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-        _onPositionSample,
+        (pos) {
+          if (!mounted) return;
+          _onPositionSample(pos);
+        },
         onError: (e) {
           if (kDebugMode) debugPrint('GPS STREAM ERROR: $e');
           _locationStreamActive = false;
         },
-        onDone: () => _locationStreamActive = false,
+        onDone: () {
+          _locationStreamActive = false;
+        },
       );
     } catch (e) {
       if (kDebugMode) debugPrint('LOCATION INIT ERROR: $e');
@@ -306,8 +312,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   void _onPositionSample(Position pos) {
-    final isNewLock = _gpsLockManager.processSample(pos);
-
+    _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
@@ -338,6 +343,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _bestPosition = pos;
     }
 
+    // Posisi yang ditampilkan: prioritaskan lock position jika ada, fallback ke bestPosition atau raw
     final displayPosition = _gpsLockManager.isLocked ? activePosition : (_bestPosition ?? pos);
     final acc = displayPosition.accuracy;
 
@@ -351,7 +357,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
     if (acc > 12) return;
 
-    _addressResolver.onPositionUpdate(displayPosition, _fetchAddress);
+    // Fire-and-forget geocode agar tidak memblokir stream
+    unawaited(_addressResolver.onPositionUpdate(displayPosition, _fetchAddress));
 
     if (kDebugMode) {
       debugPrint(
@@ -459,13 +466,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (success != true) throw Exception('Gagal menyimpan foto ke galeri');
       await file.delete();
 
-      await controller.setExposureMode(ExposureMode.auto);
-      await controller.setFocusMode(FocusMode.auto);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto berhasil disimpan ke Galeri')),
-      );
+      // Reset exposure/focus ke auto di finally
     } catch (e) {
       if (kDebugMode) debugPrint('CAPTURE ERROR: $e');
       if (mounted) {
@@ -474,6 +475,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         );
       }
     } finally {
+      // Pastikan kamera kembali ke mode auto meskipun terjadi error
+      try {
+        await controller.setExposureMode(ExposureMode.auto);
+        await controller.setFocusMode(FocusMode.auto);
+      } catch (_) {}
       if (mounted) setState(() => _isCapturing = false);
     }
   }
@@ -488,6 +494,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
+    // Tampilkan posisi locked jika ada, fallback ke currentPosition
     final displayPosition = _gpsLockManager.lockData?.position ?? _currentPosition;
 
     return Scaffold(
@@ -622,17 +629,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: (_gpsLockManager.lockData?.position != null || _currentPosition != null) ? _takePhoto : null,
+                onTap: (displayPosition != null) ? _takePhoto : null,
                 child: Container(
                   width: 78,
                   height: 78,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: (_gpsLockManager.lockData?.position != null || _currentPosition != null) ? Colors.white : Colors.grey,
+                      color: (displayPosition != null) ? Colors.white : Colors.grey,
                       width: 5,
                     ),
-                    color: (_gpsLockManager.lockData?.position != null || _currentPosition != null) ? Colors.white24 : Colors.grey.withOpacity(0.3),
+                    color: (displayPosition != null) ? Colors.white24 : Colors.grey.withOpacity(0.3),
                   ),
                   child: _isCapturing
                       ? const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: Colors.white))

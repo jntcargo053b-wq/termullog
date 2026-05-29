@@ -1,5 +1,6 @@
 // lib/services/gps_lock_manager.dart
-// FINAL VERSION – dengan rawPosition untuk geocoding + bootstrap akurasi lebih baik
+// FINAL PRODUCTION VERSION – Bootstrap hanya dari sample dengan akurasi ≤25m (5 sampel)
+// rawPosition untuk geocoding, hybrid position untuk display watermark
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
@@ -67,15 +68,15 @@ class GpsLockManager {
   static const int _innovationWindow = 10;
   double? _refLat, _refLon;
 
-  // Bootstrap yang lebih cerdas: minimal 5 sample dengan akurasi ≤25m
+  // Bootstrap cerdas: kumpulkan sample dengan akurasi ≤ 25m hingga 5 sample
   final List<Position> _bootstrapSamples = [];
   static const int _bootstrapRequired = 5;
   static const double _bootstrapMaxAccuracy = 25.0;
-  
+
   Position? _latestRawPosition;
 
-  // Lock parameters – disesuaikan untuk kondisi Indonesia
-  static const double _requiredAccuracyMeters = 12.0;  // dinaikkan dari 6.0
+  // Lock parameters – realistis untuk Indonesia
+  static const double _requiredAccuracyMeters = 12.0;
   static const double _maxAllowedAccuracy = 35.0;
   static const double _requiredStableSeconds = 4.0;
   static const double _maxMovementMeters = 4.0;
@@ -103,7 +104,7 @@ class GpsLockManager {
     return 'Poor';
   }
 
-  // ENU helpers
+  // ─── ENU helpers ──────────────────────────────────────────────────────────
   LocalPoint? _toLocal(double lat, double lon) {
     if (_refLat == null || _refLon == null) return null;
     const R = 6371000.0;
@@ -134,7 +135,7 @@ class GpsLockManager {
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  // Heading
+  // ─── Heading ──────────────────────────────────────────────────────────────
   double _bearingBetween(double lat1, double lon1, double lat2, double lon2) {
     final dLon = (lon2 - lon1) * pi / 180.0;
     final y = sin(dLon) * cos(lat2 * pi / 180.0);
@@ -190,7 +191,7 @@ class GpsLockManager {
 
   bool _isFilterHealthy() => _kalman?.isHealthy() ?? true;
 
-  // ==================== MAIN PROCESS ====================
+  // ─── Main processing ─────────────────────────────────────────────────────
   bool processSample(Position newPos, {Position? lastPositionForBearing}) {
     if (_lastTimestamp != null && DateTime.now().difference(_lastTimestamp!).inSeconds > 5) {
       forceUnlock();
@@ -202,12 +203,12 @@ class GpsLockManager {
     if (newPos.accuracy > _maxAllowedAccuracy) return false;
     if (newPos.speed.isFinite && newPos.speed > _maxSpeedMps) return false;
 
-    // Bootstrap ENU – kumpulkan minimal 5 sample dengan akurasi ≤25m
+    // 🔥 BOOTSTRAP: hanya terima sample dengan akurasi ≤ 25m, kumpulkan 5 sample
     if (_refLat == null) {
       if (newPos.accuracy <= _bootstrapMaxAccuracy) {
         _bootstrapSamples.add(newPos);
         if (_bootstrapSamples.length < _bootstrapRequired) return false;
-        // Hitung median dari sample yang sudah terkumpul
+        // Hitung median dari 5 sample yang sudah terkumpul
         final lats = _bootstrapSamples.map((p) => p.latitude).toList()..sort();
         final lons = _bootstrapSamples.map((p) => p.longitude).toList()..sort();
         _refLat = lats[lats.length ~/ 2];
@@ -215,7 +216,9 @@ class GpsLockManager {
         _kalman = KalmanFilter4D();
         _lastTimestamp = timestamp;
         _bootstrapSamples.clear();
-        if (kDebugMode) debugPrint('GPS Lock: ENU reference set using $_bootstrapRequired good samples');
+        if (kDebugMode) {
+          debugPrint('GPS Lock: ENU reference set using $_bootstrapRequired good samples (acc≤$_bootstrapMaxAccuracy m)');
+        }
       }
       return false;
     }
@@ -289,7 +292,7 @@ class GpsLockManager {
     _updateHeading(rawHeading, speedMps, newPos, lastPositionForBearing);
     if (!isMoving && speedMps < 0.5) _headingHistory.clear();
 
-    // Smoothed position – hanya untuk display watermark
+    // Smoothed position untuk display
     final smoothedLatLon = _toGlobal(updated[0], updated[1]);
     final smoothedPosition = Position(
       latitude: smoothedLatLon.lat,
@@ -306,7 +309,6 @@ class GpsLockManager {
       isMocked: newPos.isMocked,
     );
 
-    // Hybrid 70% raw + 30% smoothed untuk tampilan yang halus
     final hybridLat = newPos.latitude * 0.7 + smoothedPosition.latitude * 0.3;
     final hybridLon = newPos.longitude * 0.7 + smoothedPosition.longitude * 0.3;
     final hybridPosition = Position(
@@ -324,7 +326,7 @@ class GpsLockManager {
       isMocked: newPos.isMocked,
     );
 
-    // State machine
+    // ── STATE MACHINE ─────────────────────────────────────────────────────
     if (_state == GpsLockState.locked) {
       if (isMoving) {
         _state = GpsLockState.acquiring;
@@ -335,10 +337,12 @@ class GpsLockManager {
       }
 
       if (_lockData != null) {
-        // Bandingkan dengan rawPosition untuk deteksi pergerakan akurat
+        // Gunakan rawPosition untuk deteksi pergerakan akurat
         final movedDist = _haversine(
-          _lockData!.rawPosition.latitude, _lockData!.rawPosition.longitude,
-          newPos.latitude, newPos.longitude,
+          _lockData!.rawPosition.latitude,
+          _lockData!.rawPosition.longitude,
+          newPos.latitude,
+          newPos.longitude,
         );
         final accuracyImproved = newPos.accuracy < _lockData!.accuracy - 0.8;
         if (accuracyImproved || movedDist > 2.0) {
@@ -351,7 +355,7 @@ class GpsLockManager {
             confidence: conf,
             lockedAt: DateTime.now(),
           );
-          if (kDebugMode) debugPrint('GPS Lock: position updated');
+          if (kDebugMode) debugPrint('GPS Lock: lock updated');
         }
       }
 
@@ -380,7 +384,9 @@ class GpsLockManager {
         confidence: conf,
       );
       _state = GpsLockState.locked;
-      if (kDebugMode) debugPrint('GPS Lock: LOCKED acc=${newPos.accuracy.toStringAsFixed(1)}m conf=${conf.toStringAsFixed(0)}%');
+      if (kDebugMode) {
+        debugPrint('GPS Lock: LOCKED acc=${newPos.accuracy.toStringAsFixed(1)}m conf=${conf.toStringAsFixed(0)}%');
+      }
       return true;
     }
 

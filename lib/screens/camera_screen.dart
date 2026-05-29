@@ -40,8 +40,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // posisi yang ditampilkan di UI
-  Position? _bestPosition;      // raw GPS terbaik (dengan reset jika bergerak jauh)
+  Position? _currentPosition;
   double? _currentAccuracy;
 
   // Address
@@ -127,7 +126,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _locationStreamActive = false;
     } else if (state == AppLifecycleState.resumed) {
       _addressResolver.reset();
-      _bestPosition = null;
       if (mounted) setState(() => _gpsStatus = 'Searching GPS...');
       await _initCamera();
       _initLocationStream();
@@ -155,7 +153,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
       _controller = controller;
       await controller.initialize().timeout(const Duration(seconds: 20));
-      // Cek race condition setelah initialize
       if (!mounted || _controller != controller) {
         await controller.dispose();
         _cameraInitCompleter?.complete();
@@ -271,7 +268,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Gunakan interval 300ms untuk preview lebih smooth
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.bestForNavigation,
@@ -292,17 +288,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ));
 
       _positionSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-        (pos) {
-          if (!mounted) return;
-          _onPositionSample(pos);
-        },
+        _onPositionSample,
         onError: (e) {
           if (kDebugMode) debugPrint('GPS STREAM ERROR: $e');
           _locationStreamActive = false;
         },
-        onDone: () {
-          _locationStreamActive = false;
-        },
+        onDone: () => _locationStreamActive = false,
       );
     } catch (e) {
       if (kDebugMode) debugPrint('LOCATION INIT ERROR: $e');
@@ -312,61 +303,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   void _onPositionSample(Position pos) {
-    _gpsLockManager.processSample(pos);
+    final isNewLock = _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
     final activePosition = lockData?.position ?? pos;
-
-    // Reset best position jika berpindah jauh (>15m)
-    if (_bestPosition != null) {
-      final distance = Geolocator.distanceBetween(
-        _bestPosition!.latitude,
-        _bestPosition!.longitude,
-        pos.latitude,
-        pos.longitude,
-      );
-      if (distance > 15) {
-        _bestPosition = null;
-      }
-    }
-
-    // Simpan best GPS hanya jika lokasi masih dekat dan akurasi lebih baik
-    if (_bestPosition == null ||
-        (pos.accuracy < _bestPosition!.accuracy &&
-            Geolocator.distanceBetween(
-                  _bestPosition!.latitude,
-                  _bestPosition!.longitude,
-                  pos.latitude,
-                  pos.longitude,
-                ) < 10)) {
-      _bestPosition = pos;
-    }
-
-    // Posisi yang ditampilkan: prioritaskan lock position jika ada, fallback ke bestPosition atau raw
-    final displayPosition = _gpsLockManager.isLocked ? activePosition : (_bestPosition ?? pos);
-    final acc = displayPosition.accuracy;
+    final acc = activePosition.accuracy;
 
     setState(() {
-      _currentPosition = displayPosition;
+      _currentPosition = activePosition;
       _isGpsLocked = _gpsLockManager.isLocked;
       _gpsLockProgress = progress;
       _currentAccuracy = acc;
       _gpsStatus = _buildGpsStatus(acc);
     });
 
-    if (acc > 12) return;
+    // 🔥 KRUSIAL: Geocode jika akurasi ≤ 50m (bukan ≤12m)
+    if (acc <= 50.0) {
+      _addressResolver.onPositionUpdate(activePosition, _fetchAddress);
+    }
 
-    // Fire-and-forget geocode (AddressResolver.onPositionUpdate returns void, just call it)
-    _addressResolver.onPositionUpdate(displayPosition, _fetchAddress);
+    if (isNewLock && lockData != null) {
+      _addressResolver.forceRefresh(lockData.position, _fetchAddress);
+    }
 
     if (kDebugMode) {
-      debugPrint(
-        'GPS => lat=${displayPosition.latitude}, '
-        'lon=${displayPosition.longitude}, '
-        'acc=${displayPosition.accuracy.toStringAsFixed(1)}m '
-        'locked=$_isGpsLocked',
-      );
+      debugPrint('📍 GPS: lat=${activePosition.latitude}, lon=${activePosition.longitude}, acc=${acc.toStringAsFixed(1)}m, locked=$_isGpsLocked');
     }
   }
 
@@ -466,6 +428,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (success != true) throw Exception('Gagal menyimpan foto ke galeri');
       await file.delete();
 
+      await controller.setExposureMode(ExposureMode.auto);
+      await controller.setFocusMode(FocusMode.auto);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto berhasil disimpan ke Galeri')),
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('CAPTURE ERROR: $e');
       if (mounted) {
@@ -474,7 +443,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         );
       }
     } finally {
-      // Pastikan kamera kembali ke mode auto meskipun terjadi error
       try {
         await controller.setExposureMode(ExposureMode.auto);
         await controller.setFocusMode(FocusMode.auto);
@@ -493,7 +461,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
-    // Tampilkan posisi locked jika ada, fallback ke currentPosition
     final displayPosition = _gpsLockManager.lockData?.position ?? _currentPosition;
 
     return Scaffold(

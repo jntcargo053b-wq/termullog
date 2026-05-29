@@ -49,14 +49,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _gpsQuality = 'Searching';
   double _gpsConfidence = 0.0;
 
-  // Geocoding throttling - lebih responsif
-  double? _lastGeocodeLat;
-  double? _lastGeocodeLon;
-  static const double _addressRefreshDistance = 1.5;   // meter
-  static const int _geocodeTimeThresholdSeconds = 1;   // detik
-  bool _isAddressLoading = false;
-  DateTime? _lastGeocodeTime;
-
   StreamSubscription<Position>? _positionSub;
   Timer? _clockTimer;
   DateTime _currentTimestamp = DateTime.now();
@@ -231,40 +223,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  Future<void> _fetchAddressAndWeather(Position pos, {bool forceRefresh = false}) async {
-    // Throttle based on distance and time (untuk panggilan dari luar lock)
-    if (!forceRefresh) {
-      if (_isAddressLoading) return;
-      if (_lastGeocodeLat != null && _lastGeocodeLon != null) {
-        final distance = _haversine(_lastGeocodeLat!, _lastGeocodeLon!, pos.latitude, pos.longitude);
-        if (distance < _addressRefreshDistance) return;
-      }
-      if (_lastGeocodeTime != null && DateTime.now().difference(_lastGeocodeTime!).inSeconds < _geocodeTimeThresholdSeconds) return;
-    }
-    if (mounted) setState(() => _isAddressLoading = true);
-    _lastGeocodeTime = DateTime.now();
-    try {
-      final result = await LocationWeatherService.fetchFromPosition(pos).timeout(const Duration(seconds: 12));
-      if (mounted) {
-        setState(() {
-          _address = result.address;
-          _weather = result.weather;
-          _isAddressLoading = false;
-        });
-        _lastGeocodeLat = pos.latitude;
-        _lastGeocodeLon = pos.longitude;
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('GEOCODE ERROR: $e');
-      if (mounted) {
-        setState(() {
-          _address = '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}';
-          _isAddressLoading = false;
-        });
-      }
-    }
-  }
-
   Future<void> _initLocationStream() async {
     if (_locationStreamActive) return;
     _locationStreamActive = true;
@@ -336,26 +294,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             }
           });
 
-          // 🔥 Gunakan posisi yang SAMA untuk alamat (lock position jika ada)
+          // Gunakan posisi yang sama untuk alamat (prioritas lock)
           final Position syncPosition = lockData?.position ?? pos;
 
-          // Jangan geocode jika GPS masih noise
-          if (syncPosition.accuracy <= 15) {
+          // Hanya geocode jika akurasi cukup baik
+          if (syncPosition.accuracy <= 12) {
             try {
-              // 🔥 Ambil alamat berdasarkan posisi GPS yang sama (sinkron, await)
               final result = await LocationWeatherService.fetchFromPosition(syncPosition)
                   .timeout(const Duration(seconds: 6));
-
               if (!mounted) return;
 
-              // 🔥 Update UI dengan hasil terbaru
               setState(() {
                 _address = result.address;
                 _weather = result.weather;
-                _isAddressLoading = false;
               });
 
-              // 🔥 Simpan alamat yang benar ke lock manager
               if (_gpsLockManager.isLocked) {
                 _gpsLockManager.updateLockAddress(result.address, result.weather);
               }
@@ -507,7 +460,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               lat: displayPosition.latitude,
               lon: displayPosition.longitude,
               acc: displayPosition.accuracy,
-              address: _isAddressLoading ? 'Memperbarui alamat...' : _address,
+              address: _address,
               weather: _weather,
               showWeather: _showWeather,
               showAccuracy: _showAccuracy,
@@ -577,26 +530,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                     Icon(Icons.gps_fixed, size: 12, color: _getAccuracyColor(_currentAccuracy!)),
                     const SizedBox(width: 4),
                     Text('±${_currentAccuracy!.toStringAsFixed(0)}m', style: TextStyle(color: _getAccuracyColor(_currentAccuracy!), fontSize: 10)),
-                  ],
-                ),
-              ),
-            ),
-          if (_isGpsLocked && _isAddressLoading)
-            Positioned(
-              top: 50,
-              left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation<Color>(Colors.orange))),
-                    SizedBox(width: 6),
-                    Text('Memperbarui alamat', style: TextStyle(color: Colors.orange, fontSize: 10)),
                   ],
                 ),
               ),

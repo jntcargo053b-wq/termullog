@@ -1,4 +1,5 @@
 // lib/services/gps_lock_manager.dart
+// Final version – threshold lock 25m, sigma clamp 3-50m, bootstrap konsisten
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
@@ -66,17 +67,16 @@ class GpsLockManager {
   static const int _innovationWindow = 10;
   double? _refLat, _refLon;
 
-  // Bootstrap yang lebih cerdas: kumpulkan sample dengan akurasi ≤ 25m hingga 5 sample
   final List<Position> _bootstrapSamples = [];
   static const int _bootstrapRequired = 5;
   static const double _bootstrapMaxAccuracy = 25.0;
-  static const double _bootstrapMaxSpreadMeters = 10.0; // spread maksimal 10m
+  static const double _bootstrapMaxSpreadMeters = 10.0;
 
   Position? _latestRawPosition;
-  Position? _lastProcessedPosition; // untuk perhitungan heading berbasis bearing
+  Position? _lastProcessedPosition;
 
-  // Parameter yang disesuaikan
-  static const double _requiredAccuracyMeters = 12.0;
+  // 🔥 Parameter disesuaikan agar konsisten dengan bootstrap (25m)
+  static const double _requiredAccuracyMeters = 25.0;   // dinaikkan dari 12.0
   static const double _maxAllowedAccuracy = 35.0;
   static const double _requiredStableSeconds = 4.0;
   static const double _maxMovementMeters = 4.0;
@@ -84,11 +84,7 @@ class GpsLockManager {
   static const double _movementDistanceThreshold = 1.2;
   static const double _maxSpeedMps = 60.0;
 
-  // Tidak perlu _sessionStart karena tidak dipakai – dihapus
-
-  GpsLockManager() {
-    // kosong
-  }
+  GpsLockManager();
 
   GpsLockState get state => _state;
   GpsLockData? get lockData => _lockData;
@@ -104,7 +100,7 @@ class GpsLockManager {
     return 'Poor';
   }
 
-  // ─── ENU helpers ──────────────────────────────────────────────────────────
+  // ENU helpers
   LocalPoint? _toLocal(double lat, double lon) {
     if (_refLat == null || _refLon == null) return null;
     const R = 6371000.0;
@@ -135,7 +131,6 @@ class GpsLockManager {
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  // ─── Heading (dengan bearing dari posisi terakhir) ──────────────────────────
   double _bearingBetween(double lat1, double lon1, double lat2, double lon2) {
     final dLon = (lon2 - lon1) * pi / 180.0;
     final y = sin(dLon) * cos(lat2 * pi / 180.0);
@@ -145,7 +140,6 @@ class GpsLockManager {
   }
 
   void _updateHeading(double rawHeading, double speedMps, Position newPos) {
-    // Gunakan posisi terakhir yang tersimpan untuk menghitung bearing
     if (_lastProcessedPosition != null && speedMps > 1.0) {
       final bearing = _bearingBetween(
         _lastProcessedPosition!.latitude, _lastProcessedPosition!.longitude,
@@ -195,7 +189,6 @@ class GpsLockManager {
 
   bool _isFilterHealthy() => _kalman?.isHealthy() ?? true;
 
-  // ─── Bootstrap spread helper ──────────────────────────────────────────────
   double _bootstrapSpread() {
     if (_bootstrapSamples.length < 2) return 0.0;
     double minLat = double.infinity, maxLat = -double.infinity;
@@ -209,9 +202,14 @@ class GpsLockManager {
     return _haversine(minLat, minLon, maxLat, maxLon);
   }
 
-  // ─── Main processing ──────────────────────────────────────────────────────
+  // Helper measurement noise dengan clamp 3-50m
+  double _measurementVariance(Position pos) {
+    final adaptive = 1.0 + (_innovationRms * 0.05);
+    final sigma = (pos.accuracy * adaptive).clamp(3.0, 50.0);
+    return sigma * sigma;
+  }
+
   bool processSample(Position newPos) {
-    // 1. Validasi awal
     final timestamp = newPos.timestamp ?? DateTime.now();
     if (DateTime.now().difference(timestamp).inSeconds > 3) return false;
     if (newPos.accuracy > _maxAllowedAccuracy) return false;
@@ -219,19 +217,16 @@ class GpsLockManager {
 
     _latestRawPosition = newPos;
 
-    // 2. Bootstrap ENU dengan validasi spread
+    // Bootstrap ENU
     if (_refLat == null) {
       if (newPos.accuracy <= _bootstrapMaxAccuracy) {
         _bootstrapSamples.add(newPos);
-        // Cek spread hanya jika sudah punya minimal 2 sample
         if (_bootstrapSamples.length >= 2 && _bootstrapSpread() > _bootstrapMaxSpreadMeters) {
-          // Terlalu tersebar, buang sample tertua (geser window)
           _bootstrapSamples.removeAt(0);
           return false;
         }
         if (_bootstrapSamples.length < _bootstrapRequired) return false;
 
-        // Hitung median dari sample yang sudah terkumpul
         final lats = _bootstrapSamples.map((p) => p.latitude).toList()..sort();
         final lons = _bootstrapSamples.map((p) => p.longitude).toList()..sort();
         _refLat = lats[lats.length ~/ 2];
@@ -239,20 +234,17 @@ class GpsLockManager {
         _kalman = KalmanFilter4D();
         _lastTimestamp = timestamp;
         _bootstrapSamples.clear();
-        if (kDebugMode) debugPrint('GPS Lock: ENU reference set using $_bootstrapRequired good samples (spread ≤${_bootstrapMaxSpreadMeters}m)');
+        if (kDebugMode) debugPrint('GPS Lock: ENU reference set');
       }
-      return false; // masih bootstrap
+      return false;
     }
-    // Tidak perlu guard kedua (_refLat == null) karena sudah pasti tidak null
 
-    // 3. Stale detection: soft dulu, hard jika terlalu lama
+    // Stale detection
     final gapSeconds = _lastTimestamp == null ? 0 : DateTime.now().difference(_lastTimestamp!).inSeconds;
     if (gapSeconds > 5) {
       if (gapSeconds <= 15) {
-        // Soft reset: inflasi kovarians
         _kalman?.inflateCovariance(2.0);
       } else {
-        // Hard reset jika gap > 15 detik
         forceUnlock();
         return false;
       }
@@ -265,37 +257,9 @@ class GpsLockManager {
     final local = _toLocal(newPos.latitude, newPos.longitude);
     if (local == null) return false;
 
-    // 4. Kalman predict
-    final (predicted, Ppred) = _kalman!.predict(dt);
-    if (!_isFilterHealthy()) {
-      _kalman = KalmanFilter4D();
-      _lastFilteredEast = null;
-      _lastFilteredNorth = null;
-      _stableSeconds = 0.0;
-      return false;
-    }
-
-    final de = local.east - predicted[0];
-    final dn = local.north - predicted[1];
-    final innovationNorm = sqrt(de * de + dn * dn);
-
-    // Measurement noise (adaptive)
-    final adaptive = 1.0 + (_innovationRms * 0.05);
-    final sigma = (newPos.accuracy * adaptive).clamp(1.5, 8.0);
-    final R = sigma * sigma;
-    final Sx = Ppred[0][0] + R;
-    final Sy = Ppred[1][1] + R;
-    final mahal2 = (de * de) / Sx + (dn * dn) / Sy;
-
-    // Outlier threshold lebih ketat (9.21, p=0.01)
-    if (mahal2 > 9.21) {
-      if (kDebugMode) debugPrint('GPS Lock: outlier mahal2=${mahal2.toStringAsFixed(1)}');
-      return false;
-    }
-    _updateInnovationRms(innovationNorm);
-
-    // 5. Kalman update
-    final (updated, Pupd) = _kalman!.update(de, dn, R, Ppred);
+    // Kalman predict & update
+    final R = _measurementVariance(newPos);
+    final (updated, Pupd) = _kalman!.predictAndUpdate(dt, local.east, local.north, R);
     if (!_isFilterHealthy()) {
       _kalman = KalmanFilter4D();
       _lastFilteredEast = null;
@@ -318,42 +282,26 @@ class GpsLockManager {
             movedDistance > 3.0) &&
         _innovationRms > 1.2;
 
-    // Update stableSeconds (decay simetris: turun dt setiap saat tidak stabil)
-    if (!isMoving && mahal2 < 2.5) {
+    // Update stable seconds
+    if (!isMoving && _innovationRms < 2.5) {
       _stableSeconds += dt;
     } else {
       _stableSeconds = max(0.0, _stableSeconds - dt);
     }
 
-    // Heading update (gunakan _lastProcessedPosition untuk bearing)
+    // Heading
     final rawHeading = (newPos.heading.isFinite && newPos.heading >= 0 && newPos.heading <= 360)
         ? newPos.heading
         : _lastHeading;
     _updateHeading(rawHeading, speedMps, newPos);
     if (!isMoving && speedMps < 0.5) _headingHistory.clear();
 
-    // 6. Smoothed position (hanya untuk display)
+    // Hybrid position (adaptif)
     final smoothedLatLon = _toGlobal(updated[0], updated[1]);
-    final smoothedPosition = Position(
-      latitude: smoothedLatLon.lat,
-      longitude: smoothedLatLon.lon,
-      accuracy: newPos.accuracy,
-      altitude: newPos.altitude,
-      heading: _lastHeading,
-      speed: speedMps,
-      speedAccuracy: newPos.speedAccuracy,
-      timestamp: timestamp,
-      altitudeAccuracy: newPos.altitudeAccuracy,
-      headingAccuracy: _getHeadingAccuracy(),
-      floor: newPos.floor,
-      isMocked: newPos.isMocked,
-    );
-
-    // Hybrid position adaptif berdasarkan akurasi GPS
-    final kalmanWeight = (newPos.accuracy / 15.0).clamp(0.1, 0.6);
+    final kalmanWeight = (newPos.accuracy / 30.0).clamp(0.1, 0.7);
     final rawWeight = 1.0 - kalmanWeight;
-    final hybridLat = newPos.latitude * rawWeight + smoothedPosition.latitude * kalmanWeight;
-    final hybridLon = newPos.longitude * rawWeight + smoothedPosition.longitude * kalmanWeight;
+    final hybridLat = newPos.latitude * rawWeight + smoothedLatLon.lat * kalmanWeight;
+    final hybridLon = newPos.longitude * rawWeight + smoothedLatLon.lon * kalmanWeight;
     final hybridPosition = Position(
       latitude: hybridLat,
       longitude: hybridLon,
@@ -368,22 +316,17 @@ class GpsLockManager {
       floor: newPos.floor,
       isMocked: newPos.isMocked,
     );
-
-    // Update posisi terakhir untuk perhitungan bearing di iterasi berikutnya
     _lastProcessedPosition = hybridPosition;
 
-    // 7. State machine
+    // State machine
     if (_state == GpsLockState.locked) {
       if (isMoving) {
         _state = GpsLockState.acquiring;
         _kalman!.inflateCovariance(3.0);
         _stableSeconds = 0.0;
-        if (kDebugMode) debugPrint('GPS Lock: movement detected, re-acquiring');
         return false;
       }
-
       if (_lockData != null) {
-        // Gunakan movedDistance yang sudah dihitung dari ENU (bukan haversine ulang)
         final accuracyImproved = newPos.accuracy < _lockData!.accuracy - 0.8;
         if (accuracyImproved || movedDistance > 2.0) {
           final conf = _computeConfidence(Pupd[0][0], Pupd[1][1], _innovationRms);
@@ -398,7 +341,6 @@ class GpsLockManager {
           if (kDebugMode) debugPrint('GPS Lock: lock updated');
         }
       }
-
       if (_lockData != null && !_lockData!.isValid) {
         _state = GpsLockState.searching;
         _lockData = null;

@@ -1,4 +1,5 @@
 // lib/screens/camera_screen.dart
+// Final Production Version – Geocode menggunakan raw GPS terbaik, throttle responsif, indikator loading
 import 'dart:async';
 import 'dart:io';
 
@@ -40,8 +41,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;
-  Position? _bestPosition;
+  Position? _currentPosition;   // posisi raw stream terkini (untuk fallback)
+  Position? _bestPosition;      // raw GPS terbaik (akurasi terkecil)
   double? _currentAccuracy;
 
   // Address
@@ -134,6 +135,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== CAMERA ====================
   Future<void> _initCamera() async {
     if (_isCameraInitializing) {
       await _cameraInitCompleter?.future;
@@ -176,6 +178,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== PERMISSIONS ====================
   Future<void> _checkGalleryPermission() async {
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -214,6 +217,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== CLOCK ====================
+  void _startClock() {
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _currentTimestamp = DateTime.now());
+    });
+  }
+
+  Future<void> _saveWatermarkPosition(WatermarkPosition pos) async {
+    await SettingsCache.saveWatermarkPosition(pos);
+  }
+
+  String _buildGpsStatus(double acc) {
+    if (acc <= 10) return 'GPS Locked';
+    if (acc <= 25) return 'GPS Improving';
+    if (acc <= 40) return 'GPS Searching';
+    return 'Searching GPS...';
+  }
+
+  Color _getAccuracyColor(double acc) {
+    if (acc <= 5) return Colors.green;
+    if (acc <= 10) return Colors.lightGreen;
+    if (acc <= 20) return Colors.orange;
+    return Colors.red;
+  }
+
+  // ==================== LOCATION STREAM ====================
   Future<void> _initLocationStream() async {
     if (_locationStreamActive) return;
     _locationStreamActive = true;
@@ -265,10 +294,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   distanceFilter: 0,
                 ));
 
-      _positionSub = Geolocator.getPositionStream(
-        locationSettings: locationSettings,
-      ).listen(
-        (pos) => _onPositionSample(pos),
+      _positionSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+        _onPositionSample,
         onError: (e) {
           if (kDebugMode) debugPrint('GPS STREAM ERROR: $e');
           _locationStreamActive = false;
@@ -282,32 +309,39 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== GPS SAMPLE PROCESSING ====================
   void _onPositionSample(Position pos) {
-    // 1. Update GPS lock manager
+    // Update lock manager
     _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
-    // 2. Simpan best position berdasarkan akurasi mentah
+    // Simpan raw GPS terbaik (akurasi terkecil)
     if (_bestPosition == null || pos.accuracy < _bestPosition!.accuracy) {
       _bestPosition = pos;
     }
 
-    // 3. Update UI GPS
-    final acc = lockData?.accuracy ?? pos.accuracy;
+    final currentPos = _bestPosition ?? pos;
+    final acc = currentPos.accuracy;
+
     setState(() {
-      _currentPosition = lockData?.position ?? pos;
+      _currentPosition = lockData?.position ?? currentPos;
       _isGpsLocked = _gpsLockManager.isLocked;
       _gpsLockProgress = progress;
       _currentAccuracy = acc;
       _gpsStatus = _buildGpsStatus(acc);
     });
 
-    // 4. 🔥 Gunakan raw position (pos) untuk geocoding, bukan hybrid position
-    _addressResolver.onPositionUpdate(pos, _fetchAddress);
+    // Jangan geocode jika akurasi masih buruk (>25m)
+    if (acc > 25) return;
+
+    // 🔥 Gunakan raw GPS terbaik (bukan lockData.rawPosition)
+    _addressResolver.onPositionUpdate(currentPos, _fetchAddress);
   }
 
+  // ==================== GEOCODING CALLBACK ====================
   Future<void> _fetchAddress(Position pos) async {
+    debugPrint('📍 GEOCODE => lat=${pos.latitude}, lon=${pos.longitude}, acc=${pos.accuracy}m');
     if (mounted) setState(() => _isAddressLoading = true);
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos)
@@ -318,32 +352,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _weather = result.weather;
         _isAddressLoading = false;
       });
+      debugPrint('📍 ADDRESS => ${result.address}');
       if (_gpsLockManager.isLocked) {
         _gpsLockManager.updateLockAddress(result.address, result.weather);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('FETCH ADDRESS ERROR: $e');
+      debugPrint('❌ GEOCODE ERROR: $e');
       if (mounted) setState(() => _isAddressLoading = false);
     }
   }
 
-  String _buildGpsStatus(double acc) {
-    if (acc <= 10) return 'GPS Locked';
-    if (acc <= 25) return 'GPS Improving';
-    if (acc <= 40) return 'GPS Searching';
-    return 'Searching GPS...';
-  }
-
-  void _startClock() {
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _currentTimestamp = DateTime.now());
-    });
-  }
-
-  Future<void> _saveWatermarkPosition(WatermarkPosition pos) async {
-    await SettingsCache.saveWatermarkPosition(pos);
-  }
-
+  // ==================== CAPTURE ====================
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
@@ -370,7 +389,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (shouldContinue != true) return;
     }
 
-    await Future.delayed(const Duration(milliseconds: _antiShakeDelayMs));
+    await Future.delayed(Duration(milliseconds: _antiShakeDelayMs));
 
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
@@ -439,6 +458,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== BUILD ====================
   @override
   Widget build(BuildContext context) {
     final isPreviewReady = _controller != null && _controller!.value.isInitialized;
@@ -605,12 +625,5 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         ],
       ),
     );
-  }
-
-  Color _getAccuracyColor(double acc) {
-    if (acc <= 5) return Colors.green;
-    if (acc <= 10) return Colors.lightGreen;
-    if (acc <= 20) return Colors.orange;
-    return Colors.red;
   }
 }

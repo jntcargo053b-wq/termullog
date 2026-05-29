@@ -1,4 +1,6 @@
 // lib/screens/camera_screen.dart
+// FINAL VERSION – Geocoding menggunakan raw GPS (bukan hybrid position)
+// Threshold capture disamakan dengan lock (25m)
 import 'dart:async';
 import 'dart:io';
 
@@ -40,7 +42,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;
+  Position? _currentPosition;   // posisi untuk watermark (hybrid)
   double? _currentAccuracy;
 
   // Address
@@ -67,7 +69,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   WatermarkPosition _watermarkPosition = WatermarkPosition.initial;
 
   static const int _antiShakeDelayMs = 200;
-  static const double _minAccuracyForCapture = 20.0;
+  static const double _minAccuracyForCapture = 25.0;  // disamakan dengan lock threshold
 
   @override
   void initState() {
@@ -302,39 +304,44 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== GPS SAMPLE PROCESSING (FIX) ====================
   void _onPositionSample(Position pos) {
     final isNewLock = _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
-    final activePosition = lockData?.position ?? pos;
-    final acc = activePosition.accuracy;
+    // Pemisahan: display position (hybrid/smoothed) vs geocode position (raw GPS)
+    final displayPosition = lockData?.position ?? pos;   // untuk watermark & UI
+    final geocodePosition = lockData?.rawPosition ?? pos; // untuk reverse geocoding
+    final acc = geocodePosition.accuracy;                // akurasi dari raw
 
     setState(() {
-      _currentPosition = activePosition;
+      _currentPosition = displayPosition;
       _isGpsLocked = _gpsLockManager.isLocked;
       _gpsLockProgress = progress;
       _currentAccuracy = acc;
       _gpsStatus = _buildGpsStatus(acc);
     });
 
-    // 🔥 KRUSIAL: Geocode jika akurasi ≤ 50m (bukan ≤12m)
+    // 🔥 Geocoding selalu pakai raw position (koordinat GPS murni)
     if (acc <= 50.0) {
-      _addressResolver.onPositionUpdate(activePosition, _fetchAddress);
+      _addressResolver.onPositionUpdate(geocodePosition, _fetchAddress);
     }
 
+    // Jika lock baru terjadi, paksa refresh dengan raw position
     if (isNewLock && lockData != null) {
-      _addressResolver.forceRefresh(lockData.position, _fetchAddress);
+      _addressResolver.forceRefresh(lockData.rawPosition, _fetchAddress);
     }
 
     if (kDebugMode) {
-      debugPrint('📍 GPS: lat=${activePosition.latitude}, lon=${activePosition.longitude}, acc=${acc.toStringAsFixed(1)}m, locked=$_isGpsLocked');
+      debugPrint('📍 GPS: raw=(${geocodePosition.latitude.toStringAsFixed(6)}, ${geocodePosition.longitude.toStringAsFixed(6)}) acc=${acc.toStringAsFixed(1)}m locked=$_isGpsLocked');
     }
   }
 
   Future<void> _fetchAddress(Position pos) async {
     if (mounted) setState(() => _isAddressLoading = true);
     try {
+      debugPrint('🌐 Geocoding RAW: lat=${pos.latitude}, lon=${pos.longitude}, acc=${pos.accuracy}m');
       final result = await LocationWeatherService.fetchFromPosition(pos)
           .timeout(const Duration(seconds: 6));
       if (!mounted) return;
@@ -343,11 +350,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _weather = result.weather;
         _isAddressLoading = false;
       });
+      debugPrint('📍 ADDRESS: ${result.address}');
       if (_gpsLockManager.isLocked) {
         _gpsLockManager.updateLockAddress(result.address, result.weather);
       }
     } catch (e) {
-      debugPrint('FETCH ADDRESS ERROR: $e');
+      debugPrint('❌ Geocode error: $e');
       if (mounted) setState(() => _isAddressLoading = false);
     }
   }
@@ -355,7 +363,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
-    final capturePosition = _gpsLockManager.lockData?.position ?? _currentPosition;
+    final capturePosition = _gpsLockManager.lockData?.rawPosition ?? _currentPosition;
     if (capturePosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Menunggu sinyal GPS...')),
@@ -363,6 +371,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return;
     }
 
+    // Threshold capture disamakan dengan lock threshold (25m)
     if (capturePosition.accuracy > _minAccuracyForCapture) {
       final shouldContinue = await showDialog<bool>(
         context: context,

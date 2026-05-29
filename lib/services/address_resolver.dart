@@ -1,5 +1,6 @@
 // lib/services/address_resolver.dart
 import 'dart:async';
+import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 
@@ -11,11 +12,11 @@ class AddressResolver {
   Timer? _debounceTimer;
   bool _pending = false;
 
-  // Parameter throttle yang lebih responsif
-  static const double _minDistanceMeters = 5.0;      // turun dari 15
-  static const int _minIntervalSeconds = 5;          // tetap
-  static const double _accuracyImprovementThreshold = 5.0; // turun dari 10
-  static const int _debounceMilliseconds = 1500;      // tetap
+  // Parameter throttle yang responsif
+  static const double _minDistanceMeters = 5.0;      // 5 meter
+  static const int _minIntervalSeconds = 5;          // 5 detik
+  static const double _accuracyImprovementThreshold = 5.0; // 5 meter
+  static const int _debounceMilliseconds = 1500;      // 1.5 detik
 
   void reset() {
     _lastLat = null;
@@ -77,7 +78,8 @@ class AddressResolver {
     final dLat = (lat2 - lat1) * pi / 180.0;
     final dLon = (lon2 - lon1) * pi / 180.0;
     final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) * sin(dLon / 2) * sin(dLon / 2);
+        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) *
+            sin(dLon / 2) * sin(dLon / 2);
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 

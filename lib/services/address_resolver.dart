@@ -1,4 +1,5 @@
 // lib/services/address_resolver.dart
+// PERBAIKAN: throttle berbasis rawPosition, debounce lebih responsif
 import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
@@ -12,11 +13,17 @@ class AddressResolver {
   Timer? _debounceTimer;
   bool _pending = false;
 
-  // Threshold yang masuk akal untuk Indonesia
-  static const double _minDistanceMeters = 8.0;   // 8 meter
-  static const int _minIntervalSeconds = 15;       // 15 detik
-  static const double _accuracyImprovementThreshold = 5.0; // 5 meter
-  static const int _debounceMilliseconds = 1500;   // 1.5 detik
+  // ── Threshold ──────────────────────────────────────────────────────────
+  // Geocode ulang hanya jika:
+  //   • Pindah ≥ 15m dari koordinat geocode terakhir, ATAU
+  //   • Sudah > 30 detik sejak geocode terakhir, ATAU
+  //   • Akurasi membaik ≥ 8m (misal dari 30m → 20m)
+  //
+  // Timemark menggunakan ~15m / 30s / 8m — cocok untuk kondisi diam/parkir.
+  static const double _minDistanceMeters = 15.0;
+  static const int _minIntervalSeconds = 30;
+  static const double _accuracyImprovementThreshold = 8.0;
+  static const int _debounceMilliseconds = 800; // lebih cepat dari 1500ms
 
   void reset() {
     _lastLat = null;
@@ -28,6 +35,8 @@ class AddressResolver {
     _pending = false;
   }
 
+  /// Dipanggil setiap ada sample GPS baru.
+  /// [pos] HARUS rawPosition (bukan hybrid) agar throttle berbasis posisi fisik.
   void onPositionUpdate(Position pos, Future<void> Function(Position) onGeocode) {
     if (_pending) return;
 
@@ -45,24 +54,29 @@ class AddressResolver {
       final accuracyImproved = _lastAccuracy != null &&
           pos.accuracy < (_lastAccuracy! - _accuracyImprovementThreshold);
 
-      if (distance >= _minDistanceMeters ||
+      shouldGeocode = distance >= _minDistanceMeters ||
           timeSinceLast >= _minIntervalSeconds ||
-          accuracyImproved) {
-        shouldGeocode = true;
+          accuracyImproved;
+
+      if (kDebugMode && shouldGeocode) {
+        debugPrint(
+          'AddressResolver: trigger geocode — '
+          'dist=${distance.toStringAsFixed(1)}m '
+          'time=${timeSinceLast}s '
+          'accImprove=$accuracyImproved',
+        );
       }
     }
 
     if (!shouldGeocode) return;
 
-    // Catat waktu sekarang (sebelum debounce) agar throttle presisi
     _lastTime = now;
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(Duration(milliseconds: _debounceMilliseconds), () async {
+    _debounceTimer = Timer(const Duration(milliseconds: _debounceMilliseconds), () async {
       _pending = true;
       _lastLat = pos.latitude;
       _lastLon = pos.longitude;
       _lastAccuracy = pos.accuracy;
-      // _lastTime sudah di-set, jangan di-set ulang
       _debounceTimer = null;
 
       try {
@@ -75,23 +89,25 @@ class AddressResolver {
     });
   }
 
-  // Force immediate geocode, bypass throttle dan pending guard
+  /// Force geocode langsung — bypass throttle dan pending.
+  /// Selalu dipanggil dengan rawPosition saat GPS baru locked.
   void forceRefresh(Position pos, Future<void> Function(Position) onGeocode) {
-    // Batalkan debounce yang mungkin tertunda
     _debounceTimer?.cancel();
     _debounceTimer = null;
-    // Reset state agar tidak terhalang oleh pending atau throttle
     _pending = false;
-    _lastLat = null;
-    _lastLon = null;
-    _lastAccuracy = null;
-    _lastTime = null;
-    // Panggil langsung tanpa debounce
-    _pending = true;
     _lastLat = pos.latitude;
     _lastLon = pos.longitude;
     _lastAccuracy = pos.accuracy;
     _lastTime = DateTime.now();
+    _pending = true;
+
+    if (kDebugMode) {
+      debugPrint(
+        'AddressResolver: forceRefresh rawPos='
+        '(${pos.latitude.toStringAsFixed(7)}, ${pos.longitude.toStringAsFixed(7)})',
+      );
+    }
+
     onGeocode(pos).then((_) {
       _pending = false;
     }).catchError((e) {

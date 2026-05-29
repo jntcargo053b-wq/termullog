@@ -49,11 +49,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _gpsQuality = 'Searching';
   double _gpsConfidence = 0.0;
 
-  // Geocoding throttling
+  // Geocoding throttling - lebih responsif
   double? _lastGeocodeLat;
   double? _lastGeocodeLon;
-  static const double _addressRefreshDistance = 2.0;      // lebih responsif
-  static const int _geocodeTimeThresholdSeconds = 2;      // lebih cepat
+  static const double _addressRefreshDistance = 1.5;   // meter
+  static const int _geocodeTimeThresholdSeconds = 1;   // detik
   bool _isAddressLoading = false;
   DateTime? _lastGeocodeTime;
 
@@ -139,8 +139,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } else if (state == AppLifecycleState.resumed) {
       await _initCamera();
       _initLocationStream();
-      final rawPos = _gpsLockManager.rawPosition;
-      if (rawPos != null) unawaited(_fetchAddressAndWeather(rawPos, forceRefresh: true));
     }
   }
 
@@ -234,6 +232,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _fetchAddressAndWeather(Position pos, {bool forceRefresh = false}) async {
+    // Throttle based on distance and time (untuk panggilan dari luar lock)
     if (!forceRefresh) {
       if (_isAddressLoading) return;
       if (_lastGeocodeLat != null && _lastGeocodeLon != null) {
@@ -337,18 +336,31 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             }
           });
 
-          // 🔥 Gunakan posisi yang SAMA untuk watermark dan alamat (lock position jika ada)
+          // 🔥 Gunakan posisi yang SAMA untuk alamat (lock position jika ada)
           final Position syncPosition = lockData?.position ?? pos;
 
-          // Jangan geocode jika GPS masih noise (akurasi > 15m)
+          // Jangan geocode jika GPS masih noise
           if (syncPosition.accuracy <= 15) {
-            await _fetchAddressAndWeather(
-              syncPosition,
-              forceRefresh: justLocked,
-            );
+            try {
+              // 🔥 Ambil alamat berdasarkan posisi GPS yang sama (sinkron, await)
+              final result = await LocationWeatherService.fetchFromPosition(syncPosition)
+                  .timeout(const Duration(seconds: 6));
 
-            if (_gpsLockManager.isLocked) {
-              _gpsLockManager.updateLockAddress(_address, _weather);
+              if (!mounted) return;
+
+              // 🔥 Update UI dengan hasil terbaru
+              setState(() {
+                _address = result.address;
+                _weather = result.weather;
+                _isAddressLoading = false;
+              });
+
+              // 🔥 Simpan alamat yang benar ke lock manager
+              if (_gpsLockManager.isLocked) {
+                _gpsLockManager.updateLockAddress(result.address, result.weather);
+              }
+            } catch (e) {
+              if (kDebugMode) debugPrint('ADDRESS SYNC ERROR: $e');
             }
           }
         },

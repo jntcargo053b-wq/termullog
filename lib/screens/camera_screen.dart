@@ -1,7 +1,6 @@
 // lib/screens/camera_screen.dart
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -11,7 +10,6 @@ import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/watermark_position.dart';
 import '../services/location_weather_service.dart';
@@ -20,6 +18,7 @@ import '../watermark/watermark_engine.dart';
 import '../core/constants.dart';
 import '../widgets/draggable_watermark_overlay.dart';
 import '../services/gps_lock_manager.dart';
+import '../services/address_resolver.dart'; // ← tambah import
 
 class CameraScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -29,39 +28,40 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
-  // Camera
+class _CameraScreenState extends State<CameraScreen>
+    with WidgetsBindingObserver {
+  // ─── Camera ───────────────────────────────────────────────────────────────
   CameraController? _controller;
   bool _isCameraReady = false;
   bool _isCapturing = false;
   bool _isCameraInitializing = false;
   Completer<void>? _cameraInitCompleter;
 
-  // GPS
+  // ─── GPS ──────────────────────────────────────────────────────────────────
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;
-  Position? _bestPosition;
+  Position? _currentPosition;   // posisi raw stream terkini
+  Position? _bestPosition;      // posisi dengan akurasi terbaik yang pernah diterima
+  double? _currentAccuracy;
+
+  // ─── Address ──────────────────────────────────────────────────────────────
+  // Dikelola sepenuhnya oleh AddressResolver.
+  // GPS stream hanya memanggil _addressResolver.onPositionUpdate().
+  final AddressResolver _addressResolver = AddressResolver();
   String _address = 'Mencari lokasi...';
   String _weather = '';
-  double? _currentAccuracy;
-  String _gpsQuality = 'Searching';
-  double _gpsConfidence = 0.0;
 
-  // Geocoding throttle
-  double? _lastGeocodeLat;
-  double? _lastGeocodeLon;
-  DateTime? _lastGeocodeTime;
-  static const double _geocodeMinDistanceMeters = 10.0;
-  static const int _geocodeMinIntervalSeconds = 5;
+  // GPS status label untuk UI — membantu user tahu address belum final
+  String _gpsStatus = 'Searching GPS...';
 
+  // ─── Stream & clock ───────────────────────────────────────────────────────
   StreamSubscription<Position>? _positionSub;
   Timer? _clockTimer;
   DateTime _currentTimestamp = DateTime.now();
   bool _locationStreamActive = false;
 
-  // Watermark settings
+  // ─── Watermark settings ───────────────────────────────────────────────────
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -75,14 +75,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   static const int _antiShakeDelayMs = 200;
   static const double _minAccuracyForCapture = 20.0;
 
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadSettingsAndPosition();
+    _loadSettingsAndInit();
   }
 
-  Future<void> _loadSettingsAndPosition() async {
+  Future<void> _loadSettingsAndInit() async {
     await SettingsCache.preload();
     _showWeather = await SettingsCache.showWeather;
     _showAccuracy = await SettingsCache.showAccuracy;
@@ -94,14 +96,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
     _currentLayout = await SettingsCache.layout;
     _watermarkPosition = await SettingsCache.loadWatermarkPosition();
-    _initialize();
-  }
 
-  Future<void> _saveWatermarkPosition(WatermarkPosition pos) async {
-    await SettingsCache.saveWatermarkPosition(pos);
-  }
-
-  Future<void> _initialize() async {
     await _checkGalleryPermission();
     await _initCamera();
     await _checkAndRequestHighAccuracyMode();
@@ -117,6 +112,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _positionSub = null;
     _controller?.dispose();
     _controller = null;
+    _addressResolver.dispose();
     _locationStreamActive = false;
     _isCameraInitializing = false;
     super.dispose();
@@ -125,6 +121,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (_isCameraInitializing) return;
+
     if (state == AppLifecycleState.inactive) {
       final controller = _controller;
       if (controller != null && controller.value.isInitialized) {
@@ -135,11 +132,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       await _positionSub?.cancel();
       _positionSub = null;
       _locationStreamActive = false;
+
     } else if (state == AppLifecycleState.resumed) {
+      // Reset address state — posisi bisa berubah total saat background
+      _addressResolver.reset();
+      _bestPosition = null;
+      if (mounted) setState(() => _gpsStatus = 'Searching GPS...');
+
       await _initCamera();
       _initLocationStream();
     }
   }
+
+  // ─── Camera ───────────────────────────────────────────────────────────────
 
   Future<void> _initCamera() async {
     if (_isCameraInitializing) {
@@ -183,6 +188,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ─── Permissions ──────────────────────────────────────────────────────────
+
   Future<void> _checkGalleryPermission() async {
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
@@ -190,14 +197,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         final status = await Permission.photos.request();
         if (!status.isGranted && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Izin akses foto diperlukan untuk menyimpan gambar.')),
+            const SnackBar(content: Text('Izin akses foto diperlukan.')),
           );
         }
       } else {
         final status = await Permission.storage.request();
         if (!status.isGranted && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Izin penyimpanan diperlukan untuk menyimpan gambar.')),
+            const SnackBar(content: Text('Izin penyimpanan diperlukan.')),
           );
         }
       }
@@ -213,7 +220,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           final status = await Permission.location.request();
           if (!status.isGranted && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Izin lokasi diperlukan untuk akurasi GPS yang tinggi')),
+              const SnackBar(content: Text('Izin lokasi diperlukan untuk akurasi GPS tinggi.')),
             );
           }
         }
@@ -221,63 +228,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  double _haversine(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371000.0;
-    final dLat = (lat2 - lat1) * pi / 180.0;
-    final dLon = (lon2 - lon1) * pi / 180.0;
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) * sin(dLon / 2) * sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
-  }
-
-  Future<void> _geocodeIfNeeded(Position rawPos) async {
-    // Throttle berdasarkan jarak dan waktu
-    final now = DateTime.now();
-    bool shouldGeocode = false;
-
-    if (_lastGeocodeLat == null || _lastGeocodeLon == null) {
-      // Belum pernah geocode, lakukan segera
-      shouldGeocode = true;
-    } else {
-      final distance = _haversine(
-        _lastGeocodeLat!, _lastGeocodeLon!,
-        rawPos.latitude, rawPos.longitude,
-      );
-      final timeSince = _lastGeocodeTime == null ? 0 : now.difference(_lastGeocodeTime!).inSeconds;
-      if (distance >= _geocodeMinDistanceMeters || timeSince >= _geocodeMinIntervalSeconds) {
-        shouldGeocode = true;
-      }
-    }
-
-    if (!shouldGeocode) return;
-
-    // Untuk geocode pertama, izinkan akurasi berapa pun (biar cepat muncul)
-    // Setelah itu, hanya geocode jika akurasi ≤ 12m
-    final bool isFirst = _lastGeocodeLat == null;
-    if (!isFirst && rawPos.accuracy > 12) return;
-
-    // Update throttle data sebelum request async (agar tidak ke-trigger dua kali)
-    _lastGeocodeLat = rawPos.latitude;
-    _lastGeocodeLon = rawPos.longitude;
-    _lastGeocodeTime = now;
-
-    try {
-      final result = await LocationWeatherService.fetchFromPosition(rawPos)
-          .timeout(const Duration(seconds: 6));
-      if (!mounted) return;
-
-      setState(() {
-        _address = result.address;
-        _weather = result.weather;
-      });
-
-      if (_gpsLockManager.isLocked) {
-        _gpsLockManager.updateLockAddress(result.address, result.weather);
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('GEOCODE ERROR: $e');
-    }
-  }
+  // ─── Location stream ──────────────────────────────────────────────────────
 
   Future<void> _initLocationStream() async {
     if (_locationStreamActive) return;
@@ -291,6 +242,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         if (mounted) setState(() {
           _address = 'GPS tidak aktif';
           _isGpsLocked = false;
+          _gpsStatus = 'GPS tidak aktif';
         });
         _locationStreamActive = false;
         return;
@@ -300,15 +252,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
         if (mounted) setState(() {
           _address = 'Izin lokasi ditolak';
           _isGpsLocked = false;
+          _gpsStatus = 'Izin ditolak';
         });
         _locationStreamActive = false;
         return;
       }
 
+      // bestForNavigation + distanceFilter:0 → terima semua sample,
+      // keputusan geocode ada di AddressResolver
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.bestForNavigation,
@@ -328,44 +284,88 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   distanceFilter: 0,
                 ));
 
-      _positionSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-        (pos) async {
+      _positionSub = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(
+        (pos) {
           if (!mounted) return;
-
-          final justLocked = _gpsLockManager.processSample(pos);
-          final lockData = _gpsLockManager.lockData;
-          final progress = _gpsLockManager.stationaryProgress;
-
-          setState(() {
-            _currentPosition = lockData?.position ?? pos;
-            _isGpsLocked = _gpsLockManager.isLocked;
-            _gpsLockProgress = progress;
-            if (lockData != null) {
-              _bestPosition = lockData.position;
-              _currentAccuracy = lockData.accuracy;
-              _gpsQuality = lockData.quality;
-              _gpsConfidence = lockData.confidence;
-            } else {
-              _currentAccuracy = pos.accuracy;
-            }
-          });
-
-          // 🔥 Gunakan posisi mentah (raw) untuk geocoding
-          await _geocodeIfNeeded(pos);
+          _onPositionSample(pos);
         },
         onError: (e) {
           if (kDebugMode) debugPrint('GPS STREAM ERROR: $e');
           _locationStreamActive = false;
         },
-        onDone: () {
-          _locationStreamActive = false;
-        },
+        onDone: () => _locationStreamActive = false,
       );
     } catch (e) {
-      if (kDebugMode) debugPrint('LOCATION ERROR: $e');
+      if (kDebugMode) debugPrint('LOCATION INIT ERROR: $e');
       if (mounted) setState(() => _address = 'Gagal memuat lokasi');
       _locationStreamActive = false;
     }
+  }
+
+  /// Satu-satunya tempat pemrosesan sample GPS.
+  /// GPS update (position, accuracy, lock) dipisah dari address update.
+  void _onPositionSample(Position pos) {
+    // ── 1. Update GPS lock manager ──────────────────────────────────────────
+    _gpsLockManager.processSample(pos);
+    final lockData = _gpsLockManager.lockData;
+    final progress = _gpsLockManager.stationaryProgress;
+
+    // ── 2. Update best position ─────────────────────────────────────────────
+    // Sebelum lock: simpan sample terbaik yang pernah diterima
+    if (_bestPosition == null || pos.accuracy < _bestPosition!.accuracy) {
+      _bestPosition = pos;
+    }
+
+    // ── 3. Update UI state GPS ──────────────────────────────────────────────
+    final acc = lockData?.accuracy ?? pos.accuracy;
+    setState(() {
+      _currentPosition = lockData?.position ?? pos;
+      _isGpsLocked = _gpsLockManager.isLocked;
+      _gpsLockProgress = progress;
+      _currentAccuracy = acc;
+      _gpsStatus = _buildGpsStatus(acc);
+    });
+
+    // ── 4. Pilih posisi terbaik untuk geocode ───────────────────────────────
+    // Gunakan lockData.position jika sudah lock, otherwise _bestPosition.
+    // Ini memastikan alamat selalu mengacu ke posisi dengan akurasi terbaik,
+    // BUKAN ke sample mentah terakhir yang bisa saja lebih buruk.
+    final geocodePos = lockData?.position ?? _bestPosition ?? pos;
+
+    // ── 5. Serahkan ke AddressResolver (dia yang putuskan perlu geocode / tidak)
+    _addressResolver.onPositionUpdate(geocodePos, _fetchAddress);
+  }
+
+  /// Callback yang dipanggil AddressResolver saat memutuskan perlu geocode.
+  Future<void> _fetchAddress(Position pos) async {
+    try {
+      final result = await LocationWeatherService.fetchFromPosition(pos)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted) return;
+
+      setState(() {
+        _address = result.address;
+        _weather = result.weather;
+      });
+
+      if (_gpsLockManager.isLocked) {
+        _gpsLockManager.updateLockAddress(result.address, result.weather);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('FETCH ADDRESS ERROR: $e');
+      rethrow; // biarkan AddressResolver tahu geocode gagal → tidak commit state
+    }
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  String _buildGpsStatus(double acc) {
+    if (acc <= 10) return 'GPS Locked';
+    if (acc <= 25) return 'GPS Improving';
+    if (acc <= 40) return 'GPS Searching';
+    return 'Searching GPS...';
   }
 
   void _startClock() {
@@ -373,6 +373,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (mounted) setState(() => _currentTimestamp = DateTime.now());
     });
   }
+
+  Future<void> _saveWatermarkPosition(WatermarkPosition pos) async {
+    await SettingsCache.saveWatermarkPosition(pos);
+  }
+
+  // ─── Capture ──────────────────────────────────────────────────────────────
 
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
@@ -390,17 +396,26 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Akurasi GPS Rendah'),
-          content: Text('Akurasi GPS saat ini ${capturePosition.accuracy.toStringAsFixed(0)}m.\nTetap ambil foto?'),
+          content: Text(
+            'Akurasi GPS saat ini ${capturePosition.accuracy.toStringAsFixed(0)}m.\n'
+            'Tetap ambil foto?',
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Tetap Ambil')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Tetap Ambil'),
+            ),
           ],
         ),
       );
       if (shouldContinue != true) return;
     }
 
-    await Future.delayed(Duration(milliseconds: _antiShakeDelayMs));
+    await Future.delayed(const Duration(milliseconds: _antiShakeDelayMs));
 
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
@@ -411,16 +426,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       await controller.setExposureMode(ExposureMode.locked);
       await controller.setFocusMode(FocusMode.locked);
 
-      final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 8));
+      final XFile rawFile =
+          await controller.takePicture().timeout(const Duration(seconds: 8));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
       final captureAddress = (_address.isNotEmpty &&
-              _address != 'Mencari lokasi...' &&
-              _address != 'GPS tidak aktif' &&
-              _address != 'Izin lokasi ditolak' &&
-              _address != 'Gagal memuat lokasi')
+              !_address.startsWith('Mencari') &&
+              !_address.startsWith('GPS') &&
+              !_address.startsWith('Izin') &&
+              !_address.startsWith('Gagal'))
           ? _address
-          : '${capturePosition.latitude.toStringAsFixed(6)}, ${capturePosition.longitude.toStringAsFixed(6)}';
+          : '${capturePosition.latitude.toStringAsFixed(6)}, '
+            '${capturePosition.longitude.toStringAsFixed(6)}';
 
       final watermarkBytes = await WatermarkEngine.process(
         imageBytes: rawBytes,
@@ -446,7 +463,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
       final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(watermarkBytes);
-      final success = await GallerySaver.saveImage(file.path, albumName: 'Timestamp Camera');
+      final success =
+          await GallerySaver.saveImage(file.path, albumName: 'Timestamp Camera');
       if (success != true) throw Exception('Gagal menyimpan foto ke galeri');
       await file.delete();
 
@@ -470,9 +488,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ─── Build ────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final isPreviewReady = _controller != null && _controller!.value.isInitialized;
+    final isPreviewReady =
+        _controller != null && _controller!.value.isInitialized;
     if (!_isCameraReady || !isPreviewReady) {
       return const Scaffold(
         backgroundColor: Colors.black,
@@ -488,6 +509,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         fit: StackFit.expand,
         children: [
           CameraPreview(_controller!),
+
+          // ── Watermark overlay ─────────────────────────────────────────────
           if (displayPosition != null)
             DraggableWatermarkOverlay(
               previewSize: MediaQuery.of(context).size,
@@ -512,20 +535,31 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 _saveWatermarkPosition(pos);
               },
             ),
+
+          // ── GPS searching indicator ───────────────────────────────────────
           if (!_isGpsLocked && displayPosition == null)
             Positioned(
               top: 50,
               left: 16,
               right: 16,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.black87,
                   borderRadius: BorderRadius.circular(30),
                 ),
                 child: Row(
                   children: [
-                    const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan))),
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.cyan),
+                      ),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -535,13 +569,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                             _gpsLockProgress > 0
                                 ? 'Mengunci posisi... $_gpsLockProgress%'
                                 : 'Mencari sinyal GPS...',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
                           ),
                           if (_gpsLockProgress > 0)
                             LinearProgressIndicator(
                               value: _gpsLockProgress / 100,
                               backgroundColor: Colors.grey[800],
-                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.cyan),
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Colors.cyan),
                             ),
                         ],
                       ),
@@ -550,12 +586,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             ),
+
+          // ── GPS accuracy badge + status ───────────────────────────────────
           if (_currentAccuracy != null && displayPosition != null)
             Positioned(
               top: 50,
               right: 16,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(16),
@@ -563,32 +602,70 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.gps_fixed, size: 12, color: _getAccuracyColor(_currentAccuracy!)),
+                    Icon(
+                      Icons.gps_fixed,
+                      size: 12,
+                      color: _getAccuracyColor(_currentAccuracy!),
+                    ),
                     const SizedBox(width: 4),
-                    Text('±${_currentAccuracy!.toStringAsFixed(0)}m', style: TextStyle(color: _getAccuracyColor(_currentAccuracy!), fontSize: 10)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '±${_currentAccuracy!.toStringAsFixed(0)}m',
+                          style: TextStyle(
+                            color: _getAccuracyColor(_currentAccuracy!),
+                            fontSize: 10,
+                          ),
+                        ),
+                        // Status label — user tahu address belum final
+                        Text(
+                          _gpsStatus,
+                          style: TextStyle(
+                            color: _getAccuracyColor(_currentAccuracy!)
+                                .withOpacity(0.8),
+                            fontSize: 8,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ),
+
+          // ── Shutter button ────────────────────────────────────────────────
           Positioned(
             bottom: 40,
             left: 0,
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: (_bestPosition != null || _currentPosition != null) ? _takePhoto : null,
+                onTap: (_bestPosition != null || _currentPosition != null)
+                    ? _takePhoto
+                    : null,
                 child: Container(
                   width: 78,
                   height: 78,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: (_bestPosition != null || _currentPosition != null) ? Colors.white : Colors.grey,
+                      color: (_bestPosition != null || _currentPosition != null)
+                          ? Colors.white
+                          : Colors.grey,
                       width: 5,
                     ),
-                    color: (_bestPosition != null || _currentPosition != null) ? Colors.white24 : Colors.grey.withOpacity(0.3),
+                    color: (_bestPosition != null || _currentPosition != null)
+                        ? Colors.white24
+                        : Colors.grey.withOpacity(0.3),
                   ),
-                  child: _isCapturing ? const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: Colors.white)) : null,
+                  child: _isCapturing
+                      ? const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: CircularProgressIndicator(color: Colors.white),
+                        )
+                      : null,
                 ),
               ),
             ),

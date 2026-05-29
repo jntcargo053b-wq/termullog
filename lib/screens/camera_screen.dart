@@ -1,5 +1,5 @@
 // lib/screens/camera_screen.dart
-// Final Production Version – Geocode menggunakan raw GPS terbaik, throttle responsif, indikator loading
+// FINAL VERSION – Sinkronisasi penuh: alamat, watermark, akurasi, capture menggunakan posisi yang sama
 import 'dart:async';
 import 'dart:io';
 
@@ -41,8 +41,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // posisi raw stream terkini (fallback)
-  Position? _bestPosition;      // raw GPS terbaik (akurasi terkecil)
+  Position? _currentPosition;   // posisi yang ditampilkan di UI
+  Position? _bestPosition;      // raw GPS terbaik (dengan reset jika bergerak jauh)
   double? _currentAccuracy;
 
   // Address
@@ -306,35 +306,64 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   void _onPositionSample(Position pos) {
-    _gpsLockManager.processSample(pos);
+    final isNewLock = _gpsLockManager.processSample(pos);
+
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
-    // Simpan raw GPS terbaik (akurasi terkecil)
-    if (_bestPosition == null || pos.accuracy < _bestPosition!.accuracy) {
+    final activePosition = lockData?.position ?? pos;
+
+    // Reset best position jika berpindah jauh (>15m)
+    if (_bestPosition != null) {
+      final distance = Geolocator.distanceBetween(
+        _bestPosition!.latitude,
+        _bestPosition!.longitude,
+        pos.latitude,
+        pos.longitude,
+      );
+      if (distance > 15) {
+        _bestPosition = null;
+      }
+    }
+
+    // Simpan best GPS hanya jika lokasi masih dekat dan akurasi lebih baik
+    if (_bestPosition == null ||
+        (pos.accuracy < _bestPosition!.accuracy &&
+            Geolocator.distanceBetween(
+                  _bestPosition!.latitude,
+                  _bestPosition!.longitude,
+                  pos.latitude,
+                  pos.longitude,
+                ) < 10)) {
       _bestPosition = pos;
     }
 
-    final currentPos = _bestPosition ?? pos;
-    final acc = currentPos.accuracy;
+    final displayPosition = _gpsLockManager.isLocked ? activePosition : (_bestPosition ?? pos);
+    final acc = displayPosition.accuracy;
 
     setState(() {
-      _currentPosition = lockData?.position ?? currentPos;
+      _currentPosition = displayPosition;
       _isGpsLocked = _gpsLockManager.isLocked;
       _gpsLockProgress = progress;
       _currentAccuracy = acc;
       _gpsStatus = _buildGpsStatus(acc);
     });
 
-    // Jangan geocode jika akurasi masih buruk (>15m agar lebih responsif)
-    if (acc > 15) return;
+    if (acc > 12) return;
 
-    // Gunakan raw GPS terbaik untuk geocoding
-    _addressResolver.onPositionUpdate(currentPos, _fetchAddress);
+    _addressResolver.onPositionUpdate(displayPosition, _fetchAddress);
+
+    if (kDebugMode) {
+      debugPrint(
+        'GPS => lat=${displayPosition.latitude}, '
+        'lon=${displayPosition.longitude}, '
+        'acc=${displayPosition.accuracy.toStringAsFixed(1)}m '
+        'locked=$_isGpsLocked',
+      );
+    }
   }
 
   Future<void> _fetchAddress(Position pos) async {
-    debugPrint('📍 GEOCODE => lat=${pos.latitude}, lon=${pos.longitude}, acc=${pos.accuracy}m');
     if (mounted) setState(() => _isAddressLoading = true);
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos)
@@ -345,12 +374,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _weather = result.weather;
         _isAddressLoading = false;
       });
-      debugPrint('📍 ADDRESS => ${result.address}');
       if (_gpsLockManager.isLocked) {
         _gpsLockManager.updateLockAddress(result.address, result.weather);
       }
     } catch (e) {
-      debugPrint('❌ GEOCODE ERROR: $e');
+      debugPrint('FETCH ADDRESS ERROR: $e');
       if (mounted) setState(() => _isAddressLoading = false);
     }
   }
@@ -358,7 +386,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
-    final capturePosition = _bestPosition ?? _currentPosition;
+    final capturePosition = _gpsLockManager.lockData?.position ?? _currentPosition;
     if (capturePosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Menunggu sinyal GPS...')),
@@ -460,7 +488,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
-    final displayPosition = _bestPosition ?? _currentPosition;
+    final displayPosition = _gpsLockManager.lockData?.position ?? _currentPosition;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -594,17 +622,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: (_bestPosition != null || _currentPosition != null) ? _takePhoto : null,
+                onTap: (_gpsLockManager.lockData?.position != null || _currentPosition != null) ? _takePhoto : null,
                 child: Container(
                   width: 78,
                   height: 78,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: (_bestPosition != null || _currentPosition != null) ? Colors.white : Colors.grey,
+                      color: (_gpsLockManager.lockData?.position != null || _currentPosition != null) ? Colors.white : Colors.grey,
                       width: 5,
                     ),
-                    color: (_bestPosition != null || _currentPosition != null) ? Colors.white24 : Colors.grey.withOpacity(0.3),
+                    color: (_gpsLockManager.lockData?.position != null || _currentPosition != null) ? Colors.white24 : Colors.grey.withOpacity(0.3),
                   ),
                   child: _isCapturing
                       ? const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: Colors.white))

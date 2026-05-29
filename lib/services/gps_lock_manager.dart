@@ -64,11 +64,9 @@ class GpsLockManager {
 
   final List<Position> _bootstrapSamples = [];
   static const int _bootstrapRequired = 3;
-
-  // Raw position terbaru (untuk keperluan lain)
   Position? _latestRawPosition;
 
-  // Parameter
+  // Parameters (tuned)
   static const double _requiredAccuracyMeters = 6.0;
   static const double _maxAllowedAccuracy = 35.0;
   static const double _requiredStableSeconds = 4.0;
@@ -88,8 +86,6 @@ class GpsLockManager {
   bool get isLocked => _state == GpsLockState.locked && (_lockData?.isValid ?? false);
   int get stationaryProgress => ((_stableSeconds / _requiredStableSeconds) * 100).clamp(0, 100).toInt();
   double get confidence => _lockData?.confidence ?? 0.0;
-
-  // 🔥 Sederhana: posisi raw terbaru untuk geocoding (tanpa best selection)
   Position? get rawPosition => _latestRawPosition;
 
   static String getQualityFromAccuracy(double acc) {
@@ -99,7 +95,6 @@ class GpsLockManager {
     return 'Poor';
   }
 
-  // ENU helpers (sama seperti sebelumnya)
   LocalPoint? _toLocal(double lat, double lon) {
     if (_refLat == null || _refLon == null) return null;
     const R = 6371000.0;
@@ -186,15 +181,11 @@ class GpsLockManager {
   }
 
   bool processSample(Position newPos, {Position? lastPositionForBearing}) {
-    // Stale detection
     if (_lastTimestamp != null && DateTime.now().difference(_lastTimestamp!).inSeconds > 5) {
       forceUnlock();
       return false;
     }
-
-    // Simpan raw position terbaru
     _latestRawPosition = newPos;
-
     final timestamp = newPos.timestamp ?? DateTime.now();
     if (DateTime.now().difference(timestamp).inSeconds > 3) return false;
     if (newPos.accuracy > _maxAllowedAccuracy) return false;
@@ -281,9 +272,7 @@ class GpsLockManager {
         ? newPos.heading
         : _lastHeading;
     _updateHeading(rawHeading, speedMps, newPos, lastPositionForBearing);
-    if (!isMoving && speedMps < 0.5) {
-      _headingHistory.clear();
-    }
+    if (!isMoving && speedMps < 0.5) _headingHistory.clear();
 
     final smoothedLatLon = _toGlobal(updated[0], updated[1]);
     final smoothedPosition = Position(
@@ -301,7 +290,6 @@ class GpsLockManager {
       isMocked: newPos.isMocked,
     );
 
-    // Hybrid position (70% raw, 30% smoothed)
     final hybridLat = newPos.latitude * 0.7 + smoothedPosition.latitude * 0.3;
     final hybridLon = newPos.longitude * 0.7 + smoothedPosition.longitude * 0.3;
     final hybridPosition = Position(
@@ -319,23 +307,38 @@ class GpsLockManager {
       isMocked: newPos.isMocked,
     );
 
-    // State machine
+    // ---------- STATE MACHINE ----------
     if (_state == GpsLockState.locked) {
       if (isMoving) {
         _state = GpsLockState.acquiring;
         _kalman!.inflateCovariance(3.0);
         _stableSeconds = 0.0;
+        if (kDebugMode) debugPrint('GPS Lock: movement detected, re-acquiring');
         return false;
       }
-      if (_lockData != null && newPos.accuracy < _lockData!.accuracy - 1.5) {
-        final conf = _computeConfidence(Pupd[0][0], Pupd[1][1], _innovationRms);
-        _lockData = _lockData!.copyWith(
-          position: hybridPosition,
-          accuracy: newPos.accuracy,
-          quality: getQualityFromAccuracy(newPos.accuracy),
-          confidence: conf,
+
+      // 🔥 FIX 1: Update lock position if moved > 2 meters OR accuracy improves
+      if (_lockData != null) {
+        final movedDist = _haversine(
+          _lockData!.position.latitude,
+          _lockData!.position.longitude,
+          hybridPosition.latitude,
+          hybridPosition.longitude,
         );
+        final accuracyImproved = newPos.accuracy < _lockData!.accuracy - 0.8;
+        if (accuracyImproved || movedDist > 2.0) {
+          final conf = _computeConfidence(Pupd[0][0], Pupd[1][1], _innovationRms);
+          _lockData = _lockData!.copyWith(
+            position: hybridPosition,
+            accuracy: newPos.accuracy,
+            quality: getQualityFromAccuracy(newPos.accuracy),
+            confidence: conf,
+            lockedAt: DateTime.now(),
+          );
+          if (kDebugMode) debugPrint('GPS Lock: position updated (moved=${movedDist.toStringAsFixed(1)}m)');
+        }
       }
+
       if (_lockData != null && !_lockData!.isValid) {
         _state = GpsLockState.searching;
         _lockData = null;
@@ -389,7 +392,6 @@ class GpsLockManager {
     _bootstrapSamples.clear();
     _latestRawPosition = null;
     _sessionStart = DateTime.now();
-    if (kDebugMode) debugPrint('GPS Lock: force unlocked');
   }
 }
 

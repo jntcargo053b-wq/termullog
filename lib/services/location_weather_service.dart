@@ -1,5 +1,4 @@
 // lib/services/location_weather_service.dart
-// Final version – prioritas Nominatim (realtime), lalu Geocoding, lalu Photon
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
@@ -83,21 +82,21 @@ class LocationWeatherService {
     );
   }
 
-  // 🔥 PRIORITAS: Nominatim (realtime, minim cache) -> Geocoding -> Photon
+  // 🔥 PRIORITAS: Google Geocoding (nama jalan lengkap) -> Nominatim -> Photon
   static Future<String> _fetchAddressParallel(
       double lat, double lon, String latStr, String lonStr) async {
     try {
-      // 1. Nominatim (OpenStreetMap) – lebih realtime
-      final nominatim = await _fetchFromNominatim(latStr, lonStr);
-      if (nominatim.isNotEmpty) return nominatim;
-
-      // 2. Google Geocoding (via geocoding package)
+      // 1. Google Geocoding (via geocoding package) – paling detail
       final geocoding = await _fetchFromGeocoding(lat, lon).timeout(const Duration(seconds: 3));
       if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
         return geocoding;
       }
 
-      // 3. Photon (fallback)
+      // 2. Nominatim (OpenStreetMap) – cadangan
+      final nominatim = await _fetchFromNominatim(latStr, lonStr);
+      if (nominatim.isNotEmpty) return nominatim;
+
+      // 3. Photon (fallback terakhir)
       final photon = await _fetchFromPhoton(latStr, lonStr);
       return photon;
     } catch (_) {
@@ -223,8 +222,6 @@ class LocationWeatherService {
   }
 
   static Future<String> _fetchWeather(double lat, double lon) async {
-    // Weather dengan cache sederhana (10 menit) – opsional
-    final key = '${lat.toStringAsFixed(2)},${lon.toStringAsFixed(2)}';
     final weather = await _fetchWeatherFromApi(lat.toStringAsFixed(6), lon.toStringAsFixed(6));
     return weather;
   }

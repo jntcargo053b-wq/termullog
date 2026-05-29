@@ -2,7 +2,6 @@
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -22,9 +21,10 @@ class LocationWeatherResult {
 class LocationWeatherService {
   LocationWeatherService._();
 
-  static final http.Client _client = http.Client();
+  static http.Client _client = http.Client();
   static bool _isClosed = false;
-  static const String _locationIqApiKey = 'pk.05a5be327fe64484e26fca823101a387';
+
+  // API key tidak dipakai, dihapus. Jika nanti butuh, pakai environment.
 
   static void close() {
     if (_isClosed) return;
@@ -32,6 +32,9 @@ class LocationWeatherService {
     _client.close();
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Regex untuk menghapus Plus Code
+  // ─────────────────────────────────────────────────────────────────────────
   static final RegExp _plusCodePattern = RegExp(
     r'(?:^|[\s,])([23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3})(?:[\s,]|$)',
     caseSensitive: false,
@@ -55,17 +58,21 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Main entry point
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<LocationWeatherResult> fetchFromPosition(Position position) async {
     final lat = position.latitude;
     final lon = position.longitude;
     final latStr = lat.toStringAsFixed(6);
     final lonStr = lon.toStringAsFixed(6);
 
-    // Tidak ada cache alamat – throttle sudah di AddressResolver
-    final addressFuture = _fetchAddressParallel(lat, lon, latStr, lonStr);
-    final weatherFuture = _fetchWeather(lat, lon);
+    // Tidak ada cache alamat – throttle di AddressResolver
+    final addressFuture = _fetchAddressWithFallback(lat, lon, latStr, lonStr);
+    final weatherFuture = _fetchWeatherFromApi(latStr, lonStr);
 
-    final results = await Future.wait([addressFuture, weatherFuture]);
+    // Typed Future.wait
+    final results = await Future.wait<String>([addressFuture, weatherFuture]);
     String finalAddress = results[0];
     String weather = results[1];
 
@@ -82,31 +89,46 @@ class LocationWeatherService {
     );
   }
 
-  // 🔥 PRIORITAS: Google Geocoding (nama jalan lengkap) -> Nominatim -> Photon
-  static Future<String> _fetchAddressParallel(
+  // ─────────────────────────────────────────────────────────────────────────
+  // Sequential fallback (nama diubah dari *Parallel)
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
+    if (_isClosed) return '';
+
+    // 1. Google Geocoding – inner timeout 2s (lebih kecil dari outer)
     try {
-      // 1. Google Geocoding (via geocoding package) – paling detail
-      final geocoding = await _fetchFromGeocoding(lat, lon).timeout(const Duration(seconds: 3));
+      final geocoding = await _fetchFromGeocoding(lat, lon)
+          .timeout(const Duration(seconds: 2));
       if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
         return geocoding;
       }
+    } catch (_) {}
 
-      // 2. Nominatim (OpenStreetMap) – cadangan
+    // 2. Nominatim
+    try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) return nominatim;
+    } catch (_) {}
 
-      // 3. Photon (fallback terakhir)
+    // 3. Photon (fallback)
+    try {
       final photon = await _fetchFromPhoton(latStr, lonStr);
-      return photon;
-    } catch (_) {
-      return '';
-    }
+      if (photon.isNotEmpty) return photon;
+    } catch (_) {}
+
+    return '';
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Provider 1: Google Geocoding (via geocoding package)
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchFromGeocoding(double lat, double lon) async {
+    if (_isClosed) return '';
+
     try {
-      final placemarks = await placemarkFromCoordinates(lat, lon).timeout(const Duration(seconds: 4));
+      final placemarks = await placemarkFromCoordinates(lat, lon)
+          .timeout(const Duration(seconds: 2));
       if (placemarks.isEmpty) return '';
 
       Placemark? best;
@@ -130,49 +152,28 @@ class LocationWeatherService {
       if (p.locality?.isNotEmpty == true && !_isPlusCode(p.locality)) parts.add(p.locality!);
       if (p.administrativeArea?.isNotEmpty == true && p.administrativeArea != p.locality && !_isPlusCode(p.administrativeArea)) parts.add(p.administrativeArea!);
 
-      if (parts.isEmpty) return '';
-      return _uniqueParts(parts).join(', ');
+      return parts.isEmpty ? '' : _uniqueParts(parts).join(', ');
     } catch (e) {
       return '';
     }
   }
 
-  static Future<String> _fetchFromPhoton(String latStr, String lonStr) async {
-    try {
-      final uri = Uri.parse('https://photon.komoot.io/reverse?lat=$latStr&lon=$lonStr');
-      final res = await _client.get(uri).timeout(const Duration(milliseconds: 1800));
-      if (res.statusCode != 200) return '';
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final features = data['features'] as List?;
-      if (features == null || features.isEmpty) return '';
-
-      final props = features[0]['properties'] as Map<String, dynamic>? ?? {};
-      final name = _safeStr(props['name']);
-      final housenumber = _safeStr(props['housenumber']);
-      final street = _safeStr(props['street']);
-      final district = _safeStr(props['district']);
-      final city = _safeStr(props['city']);
-      final state = _safeStr(props['state']);
-
-      final parts = <String>[];
-      if (name != null && name != street) parts.add(name);
-      if (street != null) parts.add(housenumber != null ? '$street No.$housenumber' : street);
-      if (district != null) parts.add(district);
-      if (city != null) parts.add(city);
-      if (state != null && state != city) parts.add(state);
-      if (parts.isEmpty) return '';
-      return _uniqueParts(parts).join(', ');
-    } catch (e) {
-      return '';
-    }
-  }
-
-  static DateTime _lastNominatimRequest = DateTime.now().subtract(const Duration(seconds: 2));
+  // ─────────────────────────────────────────────────────────────────────────
+  // Provider 2: Nominatim (OpenStreetMap) – dengan retry fix
+  // ─────────────────────────────────────────────────────────────────────────
+  static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _nominatimMinInterval = Duration(seconds: 1);
 
   static Future<String> _fetchFromNominatim(String latStr, String lonStr) async {
-    final wait = 1000 - DateTime.now().difference(_lastNominatimRequest).inMilliseconds;
-    if (wait > 0) await Future.delayed(Duration(milliseconds: wait));
+    if (_isClosed) return '';
+
+    // Rate limit sederhana (1 detik antar request)
+    final now = DateTime.now();
+    final timeSinceLast = now.difference(_lastNominatimRequest);
+    if (timeSinceLast < _nominatimMinInterval) {
+      await Future.delayed(_nominatimMinInterval - timeSinceLast);
+    }
+    _lastNominatimRequest = DateTime.now();
 
     for (int attempt = 0; attempt < 2; attempt++) {
       try {
@@ -185,10 +186,14 @@ class LocationWeatherService {
           uri,
           headers: {'User-Agent': 'TermulLog/1.0', 'Accept-Language': 'id,en;q=0.8'},
         ).timeout(const Duration(seconds: 5));
-        _lastNominatimRequest = DateTime.now();
         if (res.statusCode == 429) {
-          await Future.delayed(const Duration(seconds: 2));
-          continue;
+          // Rate limited, tunggu dan coba lagi
+          if (attempt == 0) {
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          } else {
+            return '';
+          }
         }
         if (res.statusCode != 200) return '';
 
@@ -215,18 +220,54 @@ class LocationWeatherService {
         }
         return '';
       } catch (e) {
+        if (attempt == 0) continue;
         return '';
       }
     }
     return '';
   }
 
-  static Future<String> _fetchWeather(double lat, double lon) async {
-    final weather = await _fetchWeatherFromApi(lat.toStringAsFixed(6), lon.toStringAsFixed(6));
-    return weather;
+  // ─────────────────────────────────────────────────────────────────────────
+  // Provider 3: Photon (fallback)
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<String> _fetchFromPhoton(String latStr, String lonStr) async {
+    if (_isClosed) return '';
+
+    try {
+      final uri = Uri.parse('https://photon.komoot.io/reverse?lat=$latStr&lon=$lonStr');
+      final res = await _client.get(uri).timeout(const Duration(seconds: 3));
+      if (res.statusCode != 200) return '';
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final features = data['features'] as List?;
+      if (features == null || features.isEmpty) return '';
+
+      final props = features[0]['properties'] as Map<String, dynamic>? ?? {};
+      final name = _safeStr(props['name']);
+      final housenumber = _safeStr(props['housenumber']);
+      final street = _safeStr(props['street']);
+      final district = _safeStr(props['district']);
+      final city = _safeStr(props['city']);
+      final state = _safeStr(props['state']);
+
+      final parts = <String>[];
+      if (name != null && name != street) parts.add(name);
+      if (street != null) parts.add(housenumber != null ? '$street No.$housenumber' : street);
+      if (district != null) parts.add(district);
+      if (city != null) parts.add(city);
+      if (state != null && state != city) parts.add(state);
+      return parts.isEmpty ? '' : _uniqueParts(parts).join(', ');
+    } catch (e) {
+      return '';
+    }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Weather API
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchWeatherFromApi(String latStr, String lonStr) async {
+    if (_isClosed) return '';
+
     try {
       final uri = Uri.parse(
         'https://api.open-meteo.com/v1/forecast'
@@ -247,21 +288,24 @@ class LocationWeatherService {
     return '';
   }
 
+  // WMO code mapping yang lebih akurat
   static String _wmoDesc(int c) {
     if (c == 0) return '☀️ Cerah';
     if (c <= 3) return '⛅ Berawan';
+    if (c <= 29) return '🌫️ Kabut/Debu';
     if (c <= 49) return '🌫️ Berkabut';
-    if (c <= 59) return '🌦️ Gerimis';
+    if (c <= 57) return '🌦️ Gerimis';
     if (c <= 67) return '🌧️ Hujan';
     if (c <= 77) return '❄️ Salju';
     if (c <= 82) return '🌧️ Hujan Lebat';
     if (c <= 86) return '🌨️ Badai Salju';
-    if (c <= 94) return '🌨️ Hujan Es';
-    if (c <= 95) return '⚡ Badai Petir';
-    if (c <= 99) return '⛈️ Badai Petir Hujan Es';
+    if (c <= 99) return '⚡ Badai Petir';
     return '🌡️';
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────────────────
   static String _formatDMS(double coord, bool isLat) {
     final degrees = coord.abs().floor();
     final minutes = ((coord.abs() - degrees) * 60).floor();

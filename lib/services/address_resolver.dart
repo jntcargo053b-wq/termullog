@@ -1,11 +1,4 @@
 // lib/services/address_resolver.dart
-// PERBAIKAN LENGKAP:
-// 1. Antrikan posisi saat pending (tidak membuang sample GPS berkualitas tinggi)
-// 2. Threshold jarak 5m (dari 15m) – responsif untuk perubahan posisi
-// 3. Threshold peningkatan akurasi 3m (dari 8m) – mendeteksi perbaikan GPS bertahap
-// 4. Interval waktu minimum 10 detik (opsional, bisa diatur)
-// 5. Force refresh dengan pembatalan antrian
-
 import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
@@ -18,15 +11,13 @@ class AddressResolver {
   DateTime? _lastTime;
   Timer? _debounceTimer;
   bool _pending = false;
-
-  // 🔥 Antrikan posisi terbaru saat sedang geocode
   Position? _queuedPosition;
 
-  // Threshold yang lebih kecil untuk aplikasi timestamp presisi tinggi
-  static const double _minDistanceMeters = 5.0;      // dari 15.0
-  static const int _minIntervalSeconds = 10;         // dari 30 (lebih responsif)
-  static const double _accuracyImprovementThreshold = 3.0; // dari 8.0
-  static const int _debounceMilliseconds = 800;      // tetap untuk menghindari spam
+  static const double _minDistanceMeters = 5.0;
+  static const int _minIntervalSeconds = 10;
+  static const double _accuracyImprovementThreshold = 3.0;
+  static const double _drasticAccuracyImprovement = 10.0; // baru: jika turun >10m, force refresh
+  static const int _debounceMilliseconds = 800;
 
   void reset() {
     _lastLat = null;
@@ -39,14 +30,11 @@ class AddressResolver {
     _queuedPosition = null;
   }
 
-  /// Dipanggil setiap ada sample GPS baru.
-  /// [pos] HARUS rawPosition (bukan hybrid) agar throttle berbasis posisi fisik.
   void onPositionUpdate(Position pos, Future<void> Function(Position) onGeocode) {
-    // Jika sedang geocode, simpan posisi terbaru untuk diproses nanti
     if (_pending) {
       _queuedPosition = pos;
       if (kDebugMode) {
-        debugPrint('AddressResolver: pending, queue pos (acc=${pos.accuracy.toStringAsFixed(1)}m)');
+        debugPrint('AddressResolver: pending, queue acc=${pos.accuracy.toStringAsFixed(1)}m');
       }
       return;
     }
@@ -64,15 +52,18 @@ class AddressResolver {
       final timeSinceLast = _lastTime == null ? 0 : now.difference(_lastTime!).inSeconds;
       final accuracyImproved = _lastAccuracy != null &&
           pos.accuracy < (_lastAccuracy! - _accuracyImprovementThreshold);
+      final drasticImprovement = _lastAccuracy != null &&
+          (_lastAccuracy! - pos.accuracy) >= _drasticAccuracyImprovement;
 
       shouldGeocode = distance >= _minDistanceMeters ||
           timeSinceLast >= _minIntervalSeconds ||
-          accuracyImproved;
+          accuracyImproved ||
+          drasticImprovement;
 
       if (kDebugMode && shouldGeocode) {
         debugPrint(
           'AddressResolver: trigger — dist=${distance.toStringAsFixed(1)}m '
-          'time=${timeSinceLast}s accImprove=$accuracyImproved '
+          'time=${timeSinceLast}s accImprove=$accuracyImproved drastic=$drasticImprovement '
           '(lastAcc=${_lastAccuracy?.toStringAsFixed(1)}m nowAcc=${pos.accuracy.toStringAsFixed(1)}m)',
         );
       }
@@ -95,28 +86,20 @@ class AddressResolver {
         if (kDebugMode) debugPrint('AddressResolver: geocode failed - $e');
       } finally {
         _pending = false;
-
-        // 🔥 Proses antrian jika ada
         if (_queuedPosition != null) {
           final queued = _queuedPosition!;
           _queuedPosition = null;
-          if (kDebugMode) {
-            debugPrint('AddressResolver: processing queued position acc=${queued.accuracy.toStringAsFixed(1)}m');
-          }
-          // Panggil ulang onPositionUpdate dengan posisi yang diantri
           onPositionUpdate(queued, onGeocode);
         }
       }
     });
   }
 
-  /// Force geocode langsung — bypass throttle dan pending.
-  /// Digunakan saat GPS baru lock untuk mendapatkan alamat segera.
   void forceRefresh(Position pos, Future<void> Function(Position) onGeocode) {
     _debounceTimer?.cancel();
     _debounceTimer = null;
-    _pending = false;       // Batalkan antrian juga
-    _queuedPosition = null; // Kosongkan antrian
+    _pending = false;
+    _queuedPosition = null;
     _lastLat = pos.latitude;
     _lastLon = pos.longitude;
     _lastAccuracy = pos.accuracy;
@@ -124,10 +107,7 @@ class AddressResolver {
     _pending = true;
 
     if (kDebugMode) {
-      debugPrint(
-        'AddressResolver: forceRefresh raw (${pos.latitude.toStringAsFixed(7)}, '
-        '${pos.longitude.toStringAsFixed(7)}) acc=${pos.accuracy.toStringAsFixed(1)}m',
-      );
+      debugPrint('AddressResolver: forceRefresh acc=${pos.accuracy.toStringAsFixed(1)}m');
     }
 
     onGeocode(pos).then((_) {
@@ -138,7 +118,6 @@ class AddressResolver {
     });
   }
 
-  /// Menghitung jarak haversine antara dua koordinat (dalam meter)
   double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371000.0;
     final dLat = (lat2 - lat1) * pi / 180.0;

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:geocoding/geocoding.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LocationWeatherResult {
   final String address;
@@ -24,6 +25,19 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
+  // Cache geocoding (in-memory)
+  static final Map<String, String> _addressCache = {};
+  static String _cachedWeather = '';
+  static DateTime _weatherExpiry = DateTime.now();
+  static const Duration _weatherCacheDuration = Duration(minutes: 10);
+  
+  // Cache key dari koordinat (resolusi 3 desimal ~ 111 meter)
+  static String _cacheKey(String latStr, String lonStr) {
+    final latKey = latStr.substring(0, latStr.indexOf('.') + 4);
+    final lonKey = lonStr.substring(0, lonStr.indexOf('.') + 4);
+    return '$latKey,$lonKey';
+  }
+
   static void close() {
     if (_isClosed) return;
     _isClosed = true;
@@ -36,6 +50,9 @@ class LocationWeatherService {
     _isClosed = false;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Regex untuk menghapus Plus Code
+  // ─────────────────────────────────────────────────────────────────────────
   static final RegExp _plusCodePattern = RegExp(
     r'(?:^|[\s,])([23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3})(?:[\s,]|$)',
     caseSensitive: false,
@@ -59,38 +76,93 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Main entry point dengan cache
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<LocationWeatherResult> fetchFromPosition(Position position) async {
     final lat = position.latitude;
     final lon = position.longitude;
     final latStr = lat.toStringAsFixed(7);
     final lonStr = lon.toStringAsFixed(7);
 
-    final addressFuture = _fetchAddressWithFallback(lat, lon, latStr, lonStr);
-    final weatherFuture = _fetchWeatherFromApi(latStr, lonStr);
+    // Cek cache geocoding
+    final cacheKey = _cacheKey(latStr, lonStr);
+    String? cachedAddress = _addressCache[cacheKey];
+    String address;
+    if (cachedAddress != null) {
+      address = cachedAddress;
+      if (kDebugMode) debugPrint('Geocode: cache hit → $address');
+    } else {
+      address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
+      if (address.isNotEmpty) {
+        _addressCache[cacheKey] = address;
+        // Simpan ke SharedPreferences untuk persistensi
+        await _saveAddressToPrefs(cacheKey, address);
+      }
+    }
 
-    final results = await Future.wait<String>([addressFuture, weatherFuture]);
-    String finalAddress = results[0];
-    String weather = results[1];
+    // Cek cache weather
+    String weather;
+    if (_weatherExpiry.isAfter(DateTime.now())) {
+      weather = _cachedWeather;
+      if (kDebugMode) debugPrint('Weather: cache hit → $weather');
+    } else {
+      weather = await _fetchWeatherFromApi(latStr, lonStr);
+      _cachedWeather = weather;
+      _weatherExpiry = DateTime.now().add(_weatherCacheDuration);
+    }
 
-    if (finalAddress.isEmpty) {
+    if (address.isEmpty) {
       final dmsLat = _formatDMS(lat, true);
       final dmsLon = _formatDMS(lon, false);
-      finalAddress = 'GPS: $dmsLat, $dmsLon';
+      address = 'GPS: $dmsLat, $dmsLon';
     }
 
     return LocationWeatherResult(
-      address: finalAddress,
+      address: address,
       weather: weather,
-      rawAddress: finalAddress,
+      rawAddress: address,
     );
   }
 
+  static Future<void> _saveAddressToPrefs(String key, String address) async {
+    final prefs = await SharedPreferences.getInstance();
+    final map = prefs.getString('address_cache') ?? '';
+    Map<String, String> cacheMap = {};
+    if (map.isNotEmpty) {
+      try {
+        cacheMap = Map<String, String>.from(jsonDecode(map));
+      } catch (_) {}
+    }
+    cacheMap[key] = address;
+    // Batasi ukuran cache (misal 20 entri)
+    if (cacheMap.length > 20) {
+      final keys = cacheMap.keys.toList();
+      cacheMap.remove(keys.first);
+    }
+    await prefs.setString('address_cache', jsonEncode(cacheMap));
+  }
+
+  static Future<void> loadPersistedCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final map = prefs.getString('address_cache');
+    if (map != null && map.isNotEmpty) {
+      try {
+        final cacheMap = Map<String, String>.from(jsonDecode(map));
+        _addressCache.addAll(cacheMap);
+        if (kDebugMode) debugPrint('Loaded ${_addressCache.length} cached addresses');
+      } catch (_) {}
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // FALLBACK CHAIN: Nominatim → Photon → Android Geocoder
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim (prioritas utama)
+    // 1. Nominatim
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -112,7 +184,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Photon gagal → $e');
     }
 
-    // 3. Android Geocoder (fallback terakhir)
+    // 3. Android Geocoder
     try {
       final geocoding = await _fetchFromGeocoding(lat, lon);
       if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
@@ -126,6 +198,9 @@ class LocationWeatherService {
     return '';
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Nominatim (sama seperti sebelumnya)
+  // ─────────────────────────────────────────────────────────────────────────
   static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _nominatimMinInterval = Duration(seconds: 1);
 

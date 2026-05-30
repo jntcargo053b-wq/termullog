@@ -1,4 +1,3 @@
-// lib/services/location_weather_service.dart
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
@@ -25,17 +24,21 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
-  // Cache geocoding (in-memory)
+  // Cache geocoding in-memory dengan LRU dan batas 100 entri
   static final Map<String, String> _addressCache = {};
-  static String _cachedWeather = '';
-  static DateTime _weatherExpiry = DateTime.now();
+  static const int _maxAddressCacheSize = 100;
+  static final List<String> _addressCacheOrder = [];
+
+  // Weather cache per lokasi (key = koordinat 4 desimal)
+  static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
-  
-  // Cache key dari koordinat (resolusi 3 desimal ~ 111 meter)
-  static String _cacheKey(String latStr, String lonStr) {
-    final latKey = latStr.substring(0, latStr.indexOf('.') + 4);
-    final lonKey = lonStr.substring(0, lonStr.indexOf('.') + 4);
-    return '$latKey,$lonKey';
+
+  // 🔥 PERUBAHAN: disableCache default false untuk production
+  static bool _disableCache = false; // set ke true hanya untuk debugging sementara
+
+  // 🔥 Cache key dengan 4 desimal (≈11 meter)
+  static String _cacheKey(double lat, double lon) {
+    return '${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}';
   }
 
   static void close() {
@@ -50,9 +53,6 @@ class LocationWeatherService {
     _isClosed = false;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Regex untuk menghapus Plus Code
-  // ─────────────────────────────────────────────────────────────────────────
   static final RegExp _plusCodePattern = RegExp(
     r'(?:^|[\s,])([23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3})(?:[\s,]|$)',
     caseSensitive: false,
@@ -76,40 +76,52 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Main entry point dengan cache
-  // ─────────────────────────────────────────────────────────────────────────
   static Future<LocationWeatherResult> fetchFromPosition(Position position) async {
     final lat = position.latitude;
     final lon = position.longitude;
     final latStr = lat.toStringAsFixed(7);
     final lonStr = lon.toStringAsFixed(7);
 
-    // Cek cache geocoding
-    final cacheKey = _cacheKey(latStr, lonStr);
-    String? cachedAddress = _addressCache[cacheKey];
     String address;
-    if (cachedAddress != null) {
-      address = cachedAddress;
-      if (kDebugMode) debugPrint('Geocode: cache hit → $address');
-    } else {
+    if (_disableCache) {
       address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
-      if (address.isNotEmpty) {
-        _addressCache[cacheKey] = address;
-        // Simpan ke SharedPreferences untuk persistensi
-        await _saveAddressToPrefs(cacheKey, address);
+      if (kDebugMode) debugPrint('Geocode: cache BYPASSED');
+    } else {
+      final cacheKey = _cacheKey(lat, lon);
+      final cachedAddress = _addressCache[cacheKey];
+      if (cachedAddress != null) {
+        address = cachedAddress;
+        // LRU: pindahkan ke akhir
+        _addressCacheOrder.remove(cacheKey);
+        _addressCacheOrder.add(cacheKey);
+        if (kDebugMode) debugPrint('Geocode: cache hit (4 desimal) → $address');
+      } else {
+        address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
+        if (address.isNotEmpty) {
+          // Batasi ukuran cache in-memory
+          while (_addressCacheOrder.length >= _maxAddressCacheSize) {
+            final oldest = _addressCacheOrder.removeAt(0);
+            _addressCache.remove(oldest);
+          }
+          _addressCache[cacheKey] = address;
+          _addressCacheOrder.add(cacheKey);
+          await _saveAddressToPrefs(cacheKey, address);
+        }
       }
     }
 
-    // Cek cache weather
+    // Weather cache dengan key lokasi
+    final weatherKey = _cacheKey(lat, lon);
     String weather;
-    if (_weatherExpiry.isAfter(DateTime.now())) {
-      weather = _cachedWeather;
-      if (kDebugMode) debugPrint('Weather: cache hit → $weather');
+    final now = DateTime.now();
+    final cachedWeather = _weatherCache[weatherKey];
+    if (cachedWeather != null && now.isBefore(cachedWeather.expiry)) {
+      weather = cachedWeather.weather;
+      if (kDebugMode) debugPrint('Weather: cache hit for $weatherKey → $weather');
     } else {
       weather = await _fetchWeatherFromApi(latStr, lonStr);
-      _cachedWeather = weather;
-      _weatherExpiry = DateTime.now().add(_weatherCacheDuration);
+      _weatherCache[weatherKey] = _WeatherCacheEntry(weather, now.add(_weatherCacheDuration));
+      if (kDebugMode) debugPrint('Weather: fetched for $weatherKey → $weather');
     }
 
     if (address.isEmpty) {
@@ -135,7 +147,7 @@ class LocationWeatherService {
       } catch (_) {}
     }
     cacheMap[key] = address;
-    // Batasi ukuran cache (misal 20 entri)
+    // Batasi shared preferences cache hingga 20 entri
     if (cacheMap.length > 20) {
       final keys = cacheMap.keys.toList();
       cacheMap.remove(keys.first);
@@ -150,19 +162,19 @@ class LocationWeatherService {
       try {
         final cacheMap = Map<String, String>.from(jsonDecode(map));
         _addressCache.addAll(cacheMap);
+        _addressCacheOrder.addAll(cacheMap.keys);
         if (kDebugMode) debugPrint('Loaded ${_addressCache.length} cached addresses');
       } catch (_) {}
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // FALLBACK CHAIN: Nominatim → Photon → Android Geocoder
-  // ─────────────────────────────────────────────────────────────────────────
+  // ==================== FALLBACK CHAIN ====================
+  // URUTAN: Nominatim (online) → Photon (online) → Android Geocoder (offline)
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim
+    // 1. Nominatim (OpenStreetMap) - online, akurat
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -173,7 +185,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Nominatim gagal → $e');
     }
 
-    // 2. Photon
+    // 2. Photon (online fallback)
     try {
       final photon = await _fetchFromPhoton(latStr, lonStr);
       if (photon.isNotEmpty) {
@@ -184,12 +196,12 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Photon gagal → $e');
     }
 
-    // 3. Android Geocoder
+    // 3. Android Geocoder (offline) - last resort
     try {
-      final geocoding = await _fetchFromGeocoding(lat, lon);
-      if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
-        if (kDebugMode) debugPrint('Geocode: Android Geocoder OK → $geocoding');
-        return geocoding;
+      final android = await _fetchFromAndroidGeocoder(lat, lon);
+      if (android.isNotEmpty && !android.contains('Unnamed Road')) {
+        if (kDebugMode) debugPrint('Geocode: Android Geocoder OK → $android');
+        return android;
       }
     } catch (e) {
       if (kDebugMode) debugPrint('Geocode: Android Geocoder gagal → $e');
@@ -198,15 +210,12 @@ class LocationWeatherService {
     return '';
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Nominatim (sama seperti sebelumnya)
-  // ─────────────────────────────────────────────────────────────────────────
+  // ==================== IMPLEMENTASI PROVIDER ====================
   static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _nominatimMinInterval = Duration(seconds: 1);
 
   static Future<String> _fetchFromNominatim(String latStr, String lonStr) async {
     if (_isClosed) return '';
-
     final now = DateTime.now();
     final timeSinceLast = now.difference(_lastNominatimRequest);
     if (timeSinceLast < _nominatimMinInterval) {
@@ -228,7 +237,6 @@ class LocationWeatherService {
             'Accept-Language': 'id,en;q=0.8',
           },
         ).timeout(const Duration(seconds: 6));
-
         if (res.statusCode == 429) {
           if (attempt == 0) {
             await Future.delayed(const Duration(seconds: 2));
@@ -251,7 +259,6 @@ class LocationWeatherService {
             ?? _safeStr(addr['service'])
             ?? _safeStr(addr['track']);
         final housenum = _safeStr(addr['house_number']);
-
         final suburb = _safeStr(addr['suburb'])
             ?? _safeStr(addr['neighbourhood'])
             ?? _safeStr(addr['quarter']);
@@ -324,47 +331,27 @@ class LocationWeatherService {
     }
   }
 
-  static Future<String> _fetchFromGeocoding(double lat, double lon) async {
+  // Android Geocoder (offline) - HANYA fallback terakhir, tidak duplikasi
+  static Future<String> _fetchFromAndroidGeocoder(double lat, double lon) async {
     if (_isClosed) return '';
     try {
       final placemarks = await placemarkFromCoordinates(lat, lon, localeIdentifier: 'id_ID')
-          .timeout(const Duration(seconds: 6));
+          .timeout(const Duration(seconds: 5));
       if (placemarks.isEmpty) return '';
-      Placemark? best;
-      for (final p in placemarks) {
-        final hasStreet = (p.street?.isNotEmpty == true && !_isPlusCode(p.street)) ||
-            (p.thoroughfare?.isNotEmpty == true && !_isPlusCode(p.thoroughfare));
-        if (hasStreet) {
-          best = p;
-          break;
-        }
-      }
-      final p = best ?? placemarks.first;
+      final p = placemarks.first;
       final parts = <String>[];
-      String? road;
       if (p.thoroughfare?.isNotEmpty == true && !_isPlusCode(p.thoroughfare)) {
-        road = p.thoroughfare;
+        parts.add(p.thoroughfare!);
       } else if (p.street?.isNotEmpty == true && !_isPlusCode(p.street)) {
-        road = p.street;
-      }
-      if (road != null) parts.add(road);
-      if (p.subThoroughfare?.isNotEmpty == true && parts.isNotEmpty) {
-        parts[parts.length - 1] = '${parts.last} No.${p.subThoroughfare}';
+        parts.add(p.street!);
       }
       if (p.subLocality?.isNotEmpty == true && !_isPlusCode(p.subLocality)) {
         parts.add(p.subLocality!);
       }
-      if (p.subAdministrativeArea?.isNotEmpty == true &&
-          !_isPlusCode(p.subAdministrativeArea) &&
-          p.subAdministrativeArea != p.subLocality) {
-        parts.add(p.subAdministrativeArea!);
-      }
       if (p.locality?.isNotEmpty == true && !_isPlusCode(p.locality)) {
         parts.add(p.locality!);
       }
-      if (p.administrativeArea?.isNotEmpty == true &&
-          !_isPlusCode(p.administrativeArea) &&
-          p.administrativeArea != p.locality) {
+      if (p.administrativeArea?.isNotEmpty == true && !_isPlusCode(p.administrativeArea)) {
         parts.add(p.administrativeArea!);
       }
       return parts.isEmpty ? '' : _uniqueParts(parts).join(', ');
@@ -422,4 +409,10 @@ class LocationWeatherService {
     final s = v.toString().trim();
     return s.isEmpty ? null : s;
   }
+}
+
+class _WeatherCacheEntry {
+  final String weather;
+  final DateTime expiry;
+  _WeatherCacheEntry(this.weather, this.expiry);
 }

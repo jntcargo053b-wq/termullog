@@ -1,9 +1,9 @@
 // lib/services/location_weather_service.dart
-// PERBAIKAN FINAL:
-// - Radius nearby cache turun menjadi 8m (agar tidak terlalu lengket)
-// - Nearby cache memiliki expiry 2 menit
-// - Urutan fallback: Nominatim → Photon → Android Geocoder (Android jadi last resort)
-// - Testing mode: _disableCache dapat diset true untuk debugging
+// FINAL dengan perbaikan:
+// - exact cache key 5 desimal (presisi ~1.1 meter)
+// - nearby cache mencari jarak terdekat (bukan first hit)
+// - radius 8 meter, expiry 2 menit
+// - fallback order: Nominatim -> Photon -> Android Geocoder
 
 import 'dart:collection';
 import 'dart:convert';
@@ -30,7 +30,6 @@ class CachedAddress {
   final double lon;
   final String address;
   final DateTime timestamp;
-
   CachedAddress({
     required this.lat,
     required this.lon,
@@ -45,26 +44,27 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
-  // Cache geocoding in-memory (exact coordinate, 4 desimal)
+  // Exact coordinate cache (5 decimal places = ~1.1 meter)
   static final Map<String, String> _addressCache = {};
   static const int _maxAddressCacheSize = 100;
   static final List<String> _addressCacheOrder = [];
 
-  // ADDRESS STABILITY CACHE (berbasis jarak, radius 8m, expiry 2 menit)
-  static const double _addressCacheRadiusMeters = 8.0;       // turun dari 15m
+  // Nearby cache (radius based, cari jarak terdekat)
+  static const double _addressCacheRadiusMeters = 8.0;
   static const Duration _addressCacheDuration = Duration(minutes: 2);
   static final Map<String, CachedAddress> _nearbyCache = {};
   static const int _maxNearbyCacheSize = 50;
 
-  // Weather cache per lokasi (10 menit)
+  // Weather cache per location
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
 
-  // Testing mode: set ke true untuk bypass semua cache
-  static bool _disableCache = false;   // false untuk production
+  // Testing mode
+  static bool _disableCache = false; // false for production
 
+  // 🔥 Exact cache key dengan 5 desimal (presisi 1.1 meter)
   static String _cacheKey(double lat, double lon) {
-    return '${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}';
+    return '${lat.toStringAsFixed(5)},${lon.toStringAsFixed(5)}';
   }
 
   static void close() {
@@ -102,27 +102,34 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
-  // Helper: cari nearby cache dengan expiry
+  // 🔥 Cari nearby cache dengan memilih yang PALING DEKAT (bukan first hit)
   static String? _findNearbyAddressCache(double lat, double lon) {
     final now = DateTime.now();
+    CachedAddress? best;
+    double bestDistance = double.infinity;
+
     for (final item in _nearbyCache.values) {
-      // Lewati jika sudah expired
+      // Lewati jika expired
       if (now.difference(item.timestamp) > _addressCacheDuration) {
         continue;
       }
       final distance = Geolocator.distanceBetween(lat, lon, item.lat, item.lon);
-      if (distance <= _addressCacheRadiusMeters) {
-        if (kDebugMode) {
-          debugPrint('Geocode: nearby cache hit (${distance.toStringAsFixed(1)}m) → ${item.address}');
-        }
-        return item.address;
+      if (distance <= _addressCacheRadiusMeters && distance < bestDistance) {
+        bestDistance = distance;
+        best = item;
       }
+    }
+
+    if (best != null) {
+      if (kDebugMode) {
+        debugPrint('Geocode: nearby cache best hit (${bestDistance.toStringAsFixed(1)}m) → ${best.address}');
+      }
+      return best.address;
     }
     return null;
   }
 
   static void _addToNearbyCache(double lat, double lon, String address) {
-    // Batasi ukuran cache
     if (_nearbyCache.length >= _maxNearbyCacheSize) {
       final oldestKey = _nearbyCache.keys.first;
       _nearbyCache.remove(oldestKey);
@@ -155,30 +162,29 @@ class LocationWeatherService {
       _weatherCache[weatherKey] = _WeatherCacheEntry(weather, now.add(_weatherCacheDuration));
     }
 
-    // Address dengan prioritas: nearby cache -> exact cache -> fallback
     String address;
     if (_disableCache) {
       address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
       if (kDebugMode) debugPrint('Geocode: cache BYPASSED');
     } else {
+      // Cek nearby cache
       final nearby = _findNearbyAddressCache(lat, lon);
       if (nearby != null) {
         address = nearby;
         return LocationWeatherResult(address: address, weather: weather, rawAddress: address);
       }
 
+      // Cek exact cache dengan key 5 desimal
       final cacheKey = _cacheKey(lat, lon);
       final cachedAddress = _addressCache[cacheKey];
       if (cachedAddress != null) {
         address = cachedAddress;
-        // LRU
         _addressCacheOrder.remove(cacheKey);
         _addressCacheOrder.add(cacheKey);
-        if (kDebugMode) debugPrint('Geocode: exact cache hit (4 desimal) → $address');
+        if (kDebugMode) debugPrint('Geocode: exact cache hit (5 desimal) → $address');
       } else {
         address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
         if (address.isNotEmpty) {
-          // Batasi ukuran exact cache
           while (_addressCacheOrder.length >= _maxAddressCacheSize) {
             final oldest = _addressCacheOrder.removeAt(0);
             _addressCache.remove(oldest);
@@ -186,7 +192,6 @@ class LocationWeatherService {
           _addressCache[cacheKey] = address;
           _addressCacheOrder.add(cacheKey);
           await _saveAddressToPrefs(cacheKey, address);
-          // Simpan ke nearby cache
           _addToNearbyCache(lat, lon, address);
         }
       }
@@ -235,12 +240,12 @@ class LocationWeatherService {
     }
   }
 
-  // ==================== FALLBACK CHAIN (Nominatim → Photon → Android) ====================
+  // ==================== FALLBACK CHAIN ====================
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim (OpenStreetMap) – paling presisi untuk titik GPS
+    // 1. Nominatim (presisi)
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -248,10 +253,10 @@ class LocationWeatherService {
         return nominatim;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('Geocode: Nominatim gagal → $e');
+      if (kDebugMode) debugPrint('Geocode: Nominatim error → $e');
     }
 
-    // 2. Photon (fallback cepat)
+    // 2. Photon
     try {
       final photon = await _fetchFromPhoton(latStr, lonStr);
       if (photon.isNotEmpty) {
@@ -259,10 +264,10 @@ class LocationWeatherService {
         return photon;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('Geocode: Photon gagal → $e');
+      if (kDebugMode) debugPrint('Geocode: Photon error → $e');
     }
 
-    // 3. Android Geocoder (offline) – last resort, karena kadang snap-to-road
+    // 3. Android Geocoder (last resort)
     try {
       final android = await _fetchFromAndroidGeocoder(lat, lon);
       if (android.isNotEmpty && !android.contains('Unnamed Road')) {
@@ -270,13 +275,13 @@ class LocationWeatherService {
         return android;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('Geocode: Android Geocoder gagal → $e');
+      if (kDebugMode) debugPrint('Geocode: Android Geocoder error → $e');
     }
 
     return '';
   }
 
-  // ==================== IMPLEMENTASI PROVIDER ====================
+  // ==================== PROVIDER IMPLEMENTATIONS ====================
   static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _nominatimMinInterval = Duration(seconds: 1);
 

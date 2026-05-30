@@ -36,9 +36,6 @@ class LocationWeatherService {
     _isClosed = false;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Regex untuk menghapus Plus Code
-  // ─────────────────────────────────────────────────────────────────────────
   static final RegExp _plusCodePattern = RegExp(
     r'(?:^|[\s,])([23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3})(?:[\s,]|$)',
     caseSensitive: false,
@@ -62,9 +59,6 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Main entry point
-  // ─────────────────────────────────────────────────────────────────────────
   static Future<LocationWeatherResult> fetchFromPosition(Position position) async {
     final lat = position.latitude;
     final lon = position.longitude;
@@ -91,14 +85,12 @@ class LocationWeatherService {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // FALLBACK CHAIN: Nominatim → Photon → Android Geocoder (urutan dibalik!)
-  // ─────────────────────────────────────────────────────────────────────────
+  // FALLBACK CHAIN: Nominatim → Photon → Android Geocoder
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim (OpenStreetMap) – paling akurat & cepat update
+    // 1. Nominatim (prioritas utama)
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -109,7 +101,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Nominatim gagal → $e');
     }
 
-    // 2. Photon (fallback cepat)
+    // 2. Photon
     try {
       final photon = await _fetchFromPhoton(latStr, lonStr);
       if (photon.isNotEmpty) {
@@ -120,7 +112,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Photon gagal → $e');
     }
 
-    // 3. Android Geocoder (terakhir, karena cache & akurasi rendah)
+    // 3. Android Geocoder (fallback terakhir)
     try {
       final geocoding = await _fetchFromGeocoding(lat, lon);
       if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
@@ -134,9 +126,6 @@ class LocationWeatherService {
     return '';
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Provider 1: Nominatim (OpenStreetMap) – PRIORITAS UTAMA
-  // ─────────────────────────────────────────────────────────────────────────
   static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _nominatimMinInterval = Duration(seconds: 1);
 
@@ -229,27 +218,18 @@ class LocationWeatherService {
     return '';
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Provider 2: Photon (fallback)
-  // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchFromPhoton(String latStr, String lonStr) async {
     if (_isClosed) return '';
-
     try {
-      final uri = Uri.parse(
-          'https://photon.komoot.io/reverse?lat=$latStr&lon=$lonStr&lang=id');
+      final uri = Uri.parse('https://photon.komoot.io/reverse?lat=$latStr&lon=$lonStr&lang=id');
       final res = await _client.get(
         uri,
-        headers: {
-          'User-Agent': 'TermulLog/1.0 (termullog@example.com)',
-        },
+        headers: {'User-Agent': 'TermulLog/1.0 (termullog@example.com)'},
       ).timeout(const Duration(seconds: 5));
       if (res.statusCode != 200) return '';
-
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final features = data['features'] as List?;
       if (features == null || features.isEmpty) return '';
-
       final props = features[0]['properties'] as Map<String, dynamic>? ?? {};
       final name = _safeStr(props['name']);
       final housenumber = _safeStr(props['housenumber']);
@@ -257,7 +237,6 @@ class LocationWeatherService {
       final district = _safeStr(props['district']);
       final city = _safeStr(props['city']);
       final state = _safeStr(props['state']);
-
       final parts = <String>[];
       if (name != null && name != street) parts.add(name);
       if (street != null) parts.add(housenumber != null ? '$street No.$housenumber' : street);
@@ -270,21 +249,12 @@ class LocationWeatherService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Provider 3: Android Geocoder (HANYA fallback terakhir)
-  // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchFromGeocoding(double lat, double lon) async {
     if (_isClosed) return '';
-
     try {
-      final placemarks = await placemarkFromCoordinates(
-        lat,
-        lon,
-        localeIdentifier: 'id_ID',
-      ).timeout(const Duration(seconds: 6));
-
+      final placemarks = await placemarkFromCoordinates(lat, lon, localeIdentifier: 'id_ID')
+          .timeout(const Duration(seconds: 6));
       if (placemarks.isEmpty) return '';
-
       Placemark? best;
       for (final p in placemarks) {
         final hasStreet = (p.street?.isNotEmpty == true && !_isPlusCode(p.street)) ||
@@ -295,7 +265,6 @@ class LocationWeatherService {
         }
       }
       final p = best ?? placemarks.first;
-
       final parts = <String>[];
       String? road;
       if (p.thoroughfare?.isNotEmpty == true && !_isPlusCode(p.thoroughfare)) {
@@ -329,12 +298,8 @@ class LocationWeatherService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Weather API (Open-Meteo)
-  // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchWeatherFromApi(String latStr, String lonStr) async {
     if (_isClosed) return '🌡️ --°C';
-
     try {
       final uri = Uri.parse(
         'https://api.open-meteo.com/v1/forecast'
@@ -369,9 +334,6 @@ class LocationWeatherService {
     return '🌡️';
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Helpers
-  // ─────────────────────────────────────────────────────────────────────────
   static String _formatDMS(double coord, bool isLat) {
     final degrees = coord.abs().floor();
     final minutes = ((coord.abs() - degrees) * 60).floor();

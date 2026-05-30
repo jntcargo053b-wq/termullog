@@ -6,12 +6,13 @@ import 'package:geolocator/geolocator.dart';
 enum GpsLockState { searching, bootstrapping, locked }
 
 class LockData {
-  final Position position;      // hybrid smoothed (Kalman)
-  final Position rawPosition;   // raw terbaru
+  final Position position;      // hybrid (smoothed) untuk tampilan peta
+  final Position rawPosition;   // raw GPS untuk watermark & geocoding
   final double accuracy;
   final String quality;
   final double confidence;
   final DateTime lockedAt;
+  final bool isFallbackLock;    // true jika lock tercapai dengan threshold longgar (22m)
 
   LockData({
     required this.position,
@@ -20,6 +21,7 @@ class LockData {
     required this.quality,
     required this.confidence,
     required this.lockedAt,
+    this.isFallbackLock = false,
   });
 
   LockData copyWith({
@@ -29,6 +31,7 @@ class LockData {
     String? quality,
     double? confidence,
     DateTime? lockedAt,
+    bool? isFallbackLock,
   }) {
     return LockData(
       position: position ?? this.position,
@@ -37,30 +40,8 @@ class LockData {
       quality: quality ?? this.quality,
       confidence: confidence ?? this.confidence,
       lockedAt: lockedAt ?? this.lockedAt,
+      isFallbackLock: isFallbackLock ?? this.isFallbackLock,
     );
-  }
-}
-
-// Adaptive Kalman filter for latitude/longitude
-class AdaptiveKalman {
-  double _x = 0.0;       // state
-  double _p = 1.0;       // estimation error covariance
-  double _q = 0.1;       // process noise (diubah berdasarkan speed)
-  double _r = 25.0;      // measurement noise (dari accuracy)
-  
-  double update(double z, double accuracy, double speed) {
-    _r = accuracy * accuracy;
-    // Adapt process noise: diam => kecil, bergerak => besar
-    _q = (speed < 0.5) ? 0.01 : 0.5;
-    double k = _p / (_p + _r);
-    _x = _x + k * (z - _x);
-    _p = (1 - k) * _p + _q;
-    return _x;
-  }
-  
-  void reset(double initial) {
-    _x = initial;
-    _p = 1.0;
   }
 }
 
@@ -69,14 +50,24 @@ class GpsLockManager {
   LockData? _lockData;
   Position? _bestFix;
 
-  // Adaptive Kalman filters
-  final AdaptiveKalman _kalmanLat = AdaptiveKalman();
-  final AdaptiveKalman _kalmanLon = AdaptiveKalman();
+  // Parameter tetap
+  static const double _baseAccuracyThreshold = 15.0;   // target awal
+  static const double _fallbackAccuracyThreshold = 22.0; // maksimal setelah timeout
+  static const double _maxAllowedAccuracy = 22.0;       // discard sample > 22m
+  static const int _medianWindowSize = 6;
+  static const double _stationaryTimeoutSeconds = 4.0;
 
-  static const double _bootstrapMaxAccuracy = 15.0;
-  static const double _requiredStableSeconds = 2.0;
-  static const double _maxAllowedAccuracy = 20.0;
-  static const int _medianWindowSize = 5;
+  // Adaptive stable seconds
+  static const double _fastLockAccuracy = 10.0;
+  static const double _slowLockAccuracy = 15.0;
+  static const double _minStableSeconds = 3.0;
+  static const double _maxStableSeconds = 7.0;
+
+  // Fallback progressive: setelah 10s -> 18m, setelah 15s -> 22m
+  static const double _timeout1 = 10.0;   // detik
+  static const double _timeout2 = 15.0;   // detik
+  static const double _threshold1 = 18.0;
+  static const double _threshold2 = 22.0;
 
   List<Position> _bootstrapSamples = [];
   DateTime? _bootstrapStart;
@@ -84,21 +75,39 @@ class GpsLockManager {
 
   DateTime? _lastMovementTime;
   double _stationaryProgress = 0.0;
-  static const double _stationaryTimeoutSeconds = 3.0;
 
   bool get isLocked => _state == GpsLockState.locked;
   LockData? get lockData => _lockData;
   double get stationaryProgress => _stationaryProgress;
   Position? get bestFix => _bestFix;
 
+  /// Menghitung threshold akurasi yang berlaku saat ini (progressive)
+  double get _effectiveAccuracyThreshold {
+    if (_bootstrapStart == null) return _baseAccuracyThreshold;
+    final waited = DateTime.now().difference(_bootstrapStart!).inSeconds.toDouble();
+    if (waited >= _timeout2) return _threshold2;      // 22m
+    if (waited >= _timeout1) return _threshold1;      // 18m
+    return _baseAccuracyThreshold;                   // 15m
+  }
+
+  /// Durasi stabil yang dibutuhkan (adaptive based on accuracy)
+  double _requiredStableSeconds(double avgAccuracy) {
+    if (avgAccuracy <= _fastLockAccuracy) return _minStableSeconds;
+    if (avgAccuracy >= _slowLockAccuracy) return _maxStableSeconds;
+    final t = (avgAccuracy - _fastLockAccuracy) / (_slowLockAccuracy - _fastLockAccuracy);
+    return _minStableSeconds + t * (_maxStableSeconds - _minStableSeconds);
+  }
+
   bool processSample(Position newPos) {
+    // Update best fix
     if (_bestFix == null || newPos.accuracy < _bestFix!.accuracy) {
       _bestFix = newPos;
       if (kDebugMode) debugPrint('GpsLockManager: New best fix acc=${newPos.accuracy.toStringAsFixed(1)}m');
     }
 
+    // Filter awal: discard jika akurasi melebihi batas maksimal
     if (newPos.accuracy > _maxAllowedAccuracy) {
-      if (kDebugMode) debugPrint('GpsLockManager: discard acc=${newPos.accuracy.toStringAsFixed(1)}m');
+      if (kDebugMode) debugPrint('GpsLockManager: discard acc=${newPos.accuracy.toStringAsFixed(1)}m > $_maxAllowedAccuracy');
       return false;
     }
 
@@ -113,16 +122,14 @@ class GpsLockManager {
   }
 
   bool _handleSearching(Position newPos) {
-    if (newPos.accuracy <= _bootstrapMaxAccuracy) {
+    // Mulai bootstrap jika akurasi <= threshold yang berlaku
+    if (newPos.accuracy <= _effectiveAccuracyThreshold) {
       _state = GpsLockState.bootstrapping;
       _bootstrapSamples = [newPos];
       _bootstrapStart = DateTime.now();
       _recentAccuracies = [newPos.accuracy];
-      // Init Kalman dengan posisi awal
-      _kalmanLat.reset(newPos.latitude);
-      _kalmanLon.reset(newPos.longitude);
       if (kDebugMode) {
-        debugPrint('GpsLockManager: bootstrapping started with acc=${newPos.accuracy.toStringAsFixed(1)}m');
+        debugPrint('GpsLockManager: bootstrapping started with acc=${newPos.accuracy.toStringAsFixed(1)}m, threshold=${_effectiveAccuracyThreshold.toStringAsFixed(1)}m');
       }
     }
     return false;
@@ -137,23 +144,23 @@ class GpsLockManager {
 
     final now = DateTime.now();
     final duration = now.difference(_bootstrapStart!).inSeconds.toDouble();
+
     double medianAcc = _computeMedian(_recentAccuracies);
-    bool stable = medianAcc <= _bootstrapMaxAccuracy && duration >= _requiredStableSeconds;
+    double avgAcc = _bootstrapSamples.fold(0.0, (sum, p) => sum + p.accuracy) / _bootstrapSamples.length;
+
+    double requiredSeconds = _requiredStableSeconds(avgAcc);
+    double currentThreshold = _effectiveAccuracyThreshold;
+
+    bool stable = medianAcc <= currentThreshold && duration >= requiredSeconds;
 
     if (stable) {
-      double avgLat = 0, avgLon = 0, avgAcc = 0;
+      double avgLat = 0, avgLon = 0;
       for (var p in _bootstrapSamples) {
         avgLat += p.latitude;
         avgLon += p.longitude;
-        avgAcc += p.accuracy;
       }
       avgLat /= _bootstrapSamples.length;
       avgLon /= _bootstrapSamples.length;
-      avgAcc /= _bootstrapSamples.length;
-
-      // Reset Kalman dengan rata-rata bootstrap
-      _kalmanLat.reset(avgLat);
-      _kalmanLon.reset(avgLon);
 
       final hybridPos = Position(
         latitude: avgLat,
@@ -168,6 +175,7 @@ class GpsLockManager {
         headingAccuracy: newPos.headingAccuracy,
       );
 
+      final bool isFallback = currentThreshold > _baseAccuracyThreshold;
       _lockData = LockData(
         position: hybridPos,
         rawPosition: hybridPos,
@@ -175,13 +183,16 @@ class GpsLockManager {
         quality: _getQualityFromAccuracy(avgAcc),
         confidence: _computeConfidence(avgAcc),
         lockedAt: DateTime.now(),
+        isFallbackLock: isFallback,
       );
       _state = GpsLockState.locked;
       _lastMovementTime = DateTime.now();
       _stationaryProgress = 0.0;
 
       if (kDebugMode) {
-        debugPrint('GpsLockManager: LOCKED with median acc=${medianAcc.toStringAsFixed(1)}m');
+        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, '
+            'median=${medianAcc.toStringAsFixed(1)}m, avg=${avgAcc.toStringAsFixed(1)}m, '
+            'fallback=$isFallback');
       }
       return true;
     }
@@ -196,31 +207,33 @@ class GpsLockManager {
       newPos.latitude, newPos.longitude,
     );
     final accuracyImproved = newPos.accuracy < (_lockData!.accuracy - 1.0);
-    final speed = newPos.speed ?? 0.0;
 
-    // Terapkan Adaptive Kalman Filter
-    final filteredLat = _kalmanLat.update(newPos.latitude, newPos.accuracy, speed);
-    final filteredLon = _kalmanLon.update(newPos.longitude, newPos.accuracy, speed);
-
-    final hybridPosition = Position(
-      latitude: filteredLat,
-      longitude: filteredLon,
-      accuracy: newPos.accuracy,
-      altitude: newPos.altitude,
-      heading: newPos.heading,
-      speed: newPos.speed,
-      speedAccuracy: newPos.speedAccuracy,
-      timestamp: DateTime.now(),
-      altitudeAccuracy: newPos.altitudeAccuracy,
-      headingAccuracy: newPos.headingAccuracy,
-    );
-
-    // Selalu update raw
+    // Selalu update raw position
     LockData newLockData = _lockData!.copyWith(rawPosition: newPos);
+
+    // Hybrid filter sederhana untuk tampilan peta
+    Position newHybrid;
+    if (movedDistance < 2.0) {
+      const double alpha = 0.3;
+      newHybrid = Position(
+        latitude: _lockData!.position.latitude * (1 - alpha) + newPos.latitude * alpha,
+        longitude: _lockData!.position.longitude * (1 - alpha) + newPos.longitude * alpha,
+        accuracy: newPos.accuracy,
+        altitude: newPos.altitude,
+        heading: newPos.heading,
+        speed: newPos.speed,
+        speedAccuracy: newPos.speedAccuracy,
+        timestamp: DateTime.now(),
+        altitudeAccuracy: newPos.altitudeAccuracy,
+        headingAccuracy: newPos.headingAccuracy,
+      );
+    } else {
+      newHybrid = newPos;
+    }
 
     if (accuracyImproved || movedDistance > 2.0) {
       newLockData = newLockData.copyWith(
-        position: hybridPosition,
+        position: newHybrid,
         accuracy: newPos.accuracy,
         quality: _getQualityFromAccuracy(newPos.accuracy),
         confidence: _computeConfidence(newPos.accuracy),
@@ -262,18 +275,17 @@ class GpsLockManager {
   }
 
   double _computeConfidence(double accuracy) {
-    if (accuracy <= 5) return 0.98;
-    if (accuracy <= 10) return 0.95;
-    if (accuracy <= 15) return 0.90;
-    if (accuracy <= 25) return 0.80;
-    if (accuracy <= 40) return 0.60;
-    return 0.40;
+    if (accuracy <= 8) return 0.98;
+    if (accuracy <= 12) return 0.95;
+    if (accuracy <= 18) return 0.90;
+    if (accuracy <= 28) return 0.80;
+    return 0.60;
   }
 
   String _getQualityFromAccuracy(double acc) {
-    if (acc <= 8) return 'excellent';
-    if (acc <= 15) return 'good';
-    if (acc <= 25) return 'fair';
+    if (acc <= 10) return 'excellent';
+    if (acc <= 18) return 'good';
+    if (acc <= 28) return 'fair';
     return 'poor';
   }
 
@@ -296,7 +308,5 @@ class GpsLockManager {
     _recentAccuracies = [];
     _lastMovementTime = null;
     _stationaryProgress = 0.0;
-    _kalmanLat.reset(0.0);
-    _kalmanLon.reset(0.0);
   }
 }

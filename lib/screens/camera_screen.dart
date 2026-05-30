@@ -45,6 +45,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   // GPS
   final GpsLockManager _gpsLockManager = GpsLockManager();
+  final AddressResolver _addressResolver = AddressResolver();  // 🔥 DITAMBAHKAN
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
   Position? _currentPosition;   // hybrid untuk watermark (sudah Kalman)

@@ -10,6 +10,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/camera_registry.dart';
 import 'services/settings_cache.dart';
+import 'services/location_weather_service.dart'; // 🔥 Tambahkan import
 import 'ui/app.dart';
 
 void main() async {
@@ -26,6 +27,9 @@ void main() async {
 
   // Load pengaturan dari SharedPreferences (cache)
   await SettingsCache.preload();
+
+  // 🔥 Muat cache geocoding yang tersimpan (agar alamat tidak perlu request ulang)
+  await LocationWeatherService.loadPersistedCache();
 
   // Init kamera global
   try {

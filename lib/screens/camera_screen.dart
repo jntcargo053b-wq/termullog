@@ -294,8 +294,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         onError: (e) {
           if (kDebugMode) debugPrint('GPS STREAM ERROR: $e');
           _locationStreamActive = false;
+          _positionSub?.cancel();
+          _positionSub = null;
         },
-        onDone: () => _locationStreamActive = false,
+        onDone: () {
+          _locationStreamActive = false;
+          _positionSub = null;
+        },
       );
     } catch (e) {
       if (kDebugMode) debugPrint('LOCATION INIT ERROR: $e');
@@ -343,7 +348,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       debugPrint('🌐 Geocoding RAW: lat=${pos.latitude}, lon=${pos.longitude}, acc=${pos.accuracy}m');
       final result = await LocationWeatherService.fetchFromPosition(pos)
-          .timeout(const Duration(seconds: 6));
+          .timeout(const Duration(seconds: 12));
       if (!mounted) return;
       setState(() {
         _address = result.address;
@@ -351,9 +356,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _isAddressLoading = false;
       });
       debugPrint('📍 ADDRESS: ${result.address}');
-      if (_gpsLockManager.isLocked) {
-        _gpsLockManager.updateLockAddress(result.address, result.weather);
-      }
+      // updateLockAddress tidak ada, jadi dihapus
     } catch (e) {
       debugPrint('❌ Geocode error: $e');
       if (mounted) setState(() => _isAddressLoading = false);

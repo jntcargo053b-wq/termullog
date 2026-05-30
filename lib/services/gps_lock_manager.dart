@@ -6,7 +6,7 @@ import 'package:geolocator/geolocator.dart';
 enum GpsLockState { searching, bootstrapping, locked }
 
 class LockData {
-  final Position position;      // hybrid smoothed
+  final Position position;      // hybrid smoothed (Kalman)
   final Position rawPosition;   // raw terbaru
   final double accuracy;
   final String quality;
@@ -41,24 +41,47 @@ class LockData {
   }
 }
 
+// Adaptive Kalman filter for latitude/longitude
+class AdaptiveKalman {
+  double _x = 0.0;       // state
+  double _p = 1.0;       // estimation error covariance
+  double _q = 0.1;       // process noise (diubah berdasarkan speed)
+  double _r = 25.0;      // measurement noise (dari accuracy)
+  
+  double update(double z, double accuracy, double speed) {
+    _r = accuracy * accuracy;
+    // Adapt process noise: diam => kecil, bergerak => besar
+    _q = (speed < 0.5) ? 0.01 : 0.5;
+    double k = _p / (_p + _r);
+    _x = _x + k * (z - _x);
+    _p = (1 - k) * _p + _q;
+    return _x;
+  }
+  
+  void reset(double initial) {
+    _x = initial;
+    _p = 1.0;
+  }
+}
+
 class GpsLockManager {
   GpsLockState _state = GpsLockState.searching;
   LockData? _lockData;
-  Position? _bestFix;  // best position ever seen (lowest accuracy)
+  Position? _bestFix;
 
-  // Konfigurasi
+  // Adaptive Kalman filters
+  final AdaptiveKalman _kalmanLat = AdaptiveKalman();
+  final AdaptiveKalman _kalmanLon = AdaptiveKalman();
+
   static const double _bootstrapMaxAccuracy = 15.0;
   static const double _requiredStableSeconds = 2.0;
   static const double _maxAllowedAccuracy = 20.0;
-  static const int _medianWindowSize = 5;  // untuk lock
+  static const int _medianWindowSize = 5;
 
   List<Position> _bootstrapSamples = [];
   DateTime? _bootstrapStart;
-
-  // Median-based lock
   List<double> _recentAccuracies = [];
 
-  // Stationary progress
   DateTime? _lastMovementTime;
   double _stationaryProgress = 0.0;
   static const double _stationaryTimeoutSeconds = 3.0;
@@ -68,14 +91,10 @@ class GpsLockManager {
   double get stationaryProgress => _stationaryProgress;
   Position? get bestFix => _bestFix;
 
-  /// Process raw GPS sample. Return true jika terjadi transisi ke locked.
   bool processSample(Position newPos) {
-    // Update best fix
     if (_bestFix == null || newPos.accuracy < _bestFix!.accuracy) {
       _bestFix = newPos;
-      if (kDebugMode) {
-        debugPrint('GpsLockManager: New best fix acc=${newPos.accuracy.toStringAsFixed(1)}m');
-      }
+      if (kDebugMode) debugPrint('GpsLockManager: New best fix acc=${newPos.accuracy.toStringAsFixed(1)}m');
     }
 
     if (newPos.accuracy > _maxAllowedAccuracy) {
@@ -99,6 +118,9 @@ class GpsLockManager {
       _bootstrapSamples = [newPos];
       _bootstrapStart = DateTime.now();
       _recentAccuracies = [newPos.accuracy];
+      // Init Kalman dengan posisi awal
+      _kalmanLat.reset(newPos.latitude);
+      _kalmanLon.reset(newPos.longitude);
       if (kDebugMode) {
         debugPrint('GpsLockManager: bootstrapping started with acc=${newPos.accuracy.toStringAsFixed(1)}m');
       }
@@ -115,8 +137,6 @@ class GpsLockManager {
 
     final now = DateTime.now();
     final duration = now.difference(_bootstrapStart!).inSeconds.toDouble();
-
-    // Hitung median akurasi dari window
     double medianAcc = _computeMedian(_recentAccuracies);
     bool stable = medianAcc <= _bootstrapMaxAccuracy && duration >= _requiredStableSeconds;
 
@@ -130,6 +150,10 @@ class GpsLockManager {
       avgLat /= _bootstrapSamples.length;
       avgLon /= _bootstrapSamples.length;
       avgAcc /= _bootstrapSamples.length;
+
+      // Reset Kalman dengan rata-rata bootstrap
+      _kalmanLat.reset(avgLat);
+      _kalmanLon.reset(avgLon);
 
       final hybridPos = Position(
         latitude: avgLat,
@@ -172,33 +196,31 @@ class GpsLockManager {
       newPos.latitude, newPos.longitude,
     );
     final accuracyImproved = newPos.accuracy < (_lockData!.accuracy - 1.0);
+    final speed = newPos.speed ?? 0.0;
 
-    // Update raw always
+    // Terapkan Adaptive Kalman Filter
+    final filteredLat = _kalmanLat.update(newPos.latitude, newPos.accuracy, speed);
+    final filteredLon = _kalmanLon.update(newPos.longitude, newPos.accuracy, speed);
+
+    final hybridPosition = Position(
+      latitude: filteredLat,
+      longitude: filteredLon,
+      accuracy: newPos.accuracy,
+      altitude: newPos.altitude,
+      heading: newPos.heading,
+      speed: newPos.speed,
+      speedAccuracy: newPos.speedAccuracy,
+      timestamp: DateTime.now(),
+      altitudeAccuracy: newPos.altitudeAccuracy,
+      headingAccuracy: newPos.headingAccuracy,
+    );
+
+    // Selalu update raw
     LockData newLockData = _lockData!.copyWith(rawPosition: newPos);
-
-    // Hybrid filter
-    Position newHybrid;
-    if (movedDistance < 2.0) {
-      const double alpha = 0.3;
-      newHybrid = Position(
-        latitude: _lockData!.position.latitude * (1 - alpha) + newPos.latitude * alpha,
-        longitude: _lockData!.position.longitude * (1 - alpha) + newPos.longitude * alpha,
-        accuracy: newPos.accuracy,
-        altitude: newPos.altitude,
-        heading: newPos.heading,
-        speed: newPos.speed,
-        speedAccuracy: newPos.speedAccuracy,
-        timestamp: DateTime.now(),
-        altitudeAccuracy: newPos.altitudeAccuracy,
-        headingAccuracy: newPos.headingAccuracy,
-      );
-    } else {
-      newHybrid = newPos;
-    }
 
     if (accuracyImproved || movedDistance > 2.0) {
       newLockData = newLockData.copyWith(
-        position: newHybrid,
+        position: hybridPosition,
         accuracy: newPos.accuracy,
         quality: _getQualityFromAccuracy(newPos.accuracy),
         confidence: _computeConfidence(newPos.accuracy),
@@ -274,5 +296,7 @@ class GpsLockManager {
     _recentAccuracies = [];
     _lastMovementTime = null;
     _stationaryProgress = 0.0;
+    _kalmanLat.reset(0.0);
+    _kalmanLon.reset(0.0);
   }
 }

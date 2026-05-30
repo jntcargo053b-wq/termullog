@@ -1,5 +1,11 @@
 // lib/services/address_resolver.dart
-// PERBAIKAN: throttle berbasis rawPosition, debounce lebih responsif
+// PERBAIKAN LENGKAP:
+// 1. Antrikan posisi saat pending
+// 2. Threshold jarak 5m (dari 15m)
+// 3. Threshold peningkatan akurasi 3m (dari 8m)
+// 4. (Tidak perlu di sini, tapi dipastikan di caller)
+// 5. Sudah siap untuk forceRefresh dari luar
+
 import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
@@ -12,18 +18,15 @@ class AddressResolver {
   DateTime? _lastTime;
   Timer? _debounceTimer;
   bool _pending = false;
+  
+  // 🔥 PERBAIKAN 1: Antrikan posisi terbaru saat pending
+  Position? _queuedPosition;
 
-  // ── Threshold ──────────────────────────────────────────────────────────
-  // Geocode ulang hanya jika:
-  //   • Pindah ≥ 15m dari koordinat geocode terakhir, ATAU
-  //   • Sudah > 30 detik sejak geocode terakhir, ATAU
-  //   • Akurasi membaik ≥ 8m (misal dari 30m → 20m)
-  //
-  // Timemark menggunakan ~15m / 30s / 8m — cocok untuk kondisi diam/parkir.
-  static const double _minDistanceMeters = 15.0;
+  // 🔥 PERBAIKAN 2 & 3: Threshold lebih kecil
+  static const double _minDistanceMeters = 5.0;      // dari 15.0
   static const int _minIntervalSeconds = 30;
-  static const double _accuracyImprovementThreshold = 8.0;
-  static const int _debounceMilliseconds = 800; // lebih cepat dari 1500ms
+  static const double _accuracyImprovementThreshold = 3.0; // dari 8.0
+  static const int _debounceMilliseconds = 800;
 
   void reset() {
     _lastLat = null;
@@ -33,12 +36,18 @@ class AddressResolver {
     _debounceTimer?.cancel();
     _debounceTimer = null;
     _pending = false;
+    _queuedPosition = null;
   }
 
-  /// Dipanggil setiap ada sample GPS baru.
-  /// [pos] HARUS rawPosition (bukan hybrid) agar throttle berbasis posisi fisik.
   void onPositionUpdate(Position pos, Future<void> Function(Position) onGeocode) {
-    if (_pending) return;
+    // 🔥 PERBAIKAN 1: Jika sedang geocode, simpan posisi terbaru
+    if (_pending) {
+      _queuedPosition = pos;
+      if (kDebugMode) {
+        debugPrint('AddressResolver: pending, queue pos (acc=${pos.accuracy.toStringAsFixed(1)}m)');
+      }
+      return;
+    }
 
     final now = DateTime.now();
     bool shouldGeocode = false;
@@ -60,10 +69,9 @@ class AddressResolver {
 
       if (kDebugMode && shouldGeocode) {
         debugPrint(
-          'AddressResolver: trigger geocode — '
-          'dist=${distance.toStringAsFixed(1)}m '
-          'time=${timeSinceLast}s '
-          'accImprove=$accuracyImproved',
+          'AddressResolver: trigger — dist=${distance.toStringAsFixed(1)}m '
+          'time=${timeSinceLast}s accImprove=$accuracyImproved '
+          '(lastAcc=${_lastAccuracy?.toStringAsFixed(1)}m nowAcc=${pos.accuracy.toStringAsFixed(1)}m)',
         );
       }
     }
@@ -85,16 +93,26 @@ class AddressResolver {
         if (kDebugMode) debugPrint('AddressResolver: geocode failed - $e');
       } finally {
         _pending = false;
+        
+        // 🔥 PERBAIKAN 1: Proses antrian jika ada
+        if (_queuedPosition != null) {
+          final queued = _queuedPosition!;
+          _queuedPosition = null;
+          if (kDebugMode) {
+            debugPrint('AddressResolver: processing queued position acc=${queued.accuracy.toStringAsFixed(1)}m');
+          }
+          // Panggil ulang onPositionUpdate dengan posisi yang diantri
+          onPositionUpdate(queued, onGeocode);
+        }
       }
     });
   }
 
-  /// Force geocode langsung — bypass throttle dan pending.
-  /// Selalu dipanggil dengan rawPosition saat GPS baru locked.
   void forceRefresh(Position pos, Future<void> Function(Position) onGeocode) {
     _debounceTimer?.cancel();
     _debounceTimer = null;
-    _pending = false;
+    _pending = false;       // Batalin antrian juga
+    _queuedPosition = null; // Kosongkan antrian
     _lastLat = pos.latitude;
     _lastLon = pos.longitude;
     _lastAccuracy = pos.accuracy;
@@ -103,8 +121,8 @@ class AddressResolver {
 
     if (kDebugMode) {
       debugPrint(
-        'AddressResolver: forceRefresh rawPos='
-        '(${pos.latitude.toStringAsFixed(7)}, ${pos.longitude.toStringAsFixed(7)})',
+        'AddressResolver: forceRefresh raw (${pos.latitude.toStringAsFixed(7)}, '
+        '${pos.longitude.toStringAsFixed(7)}) acc=${pos.accuracy.toStringAsFixed(1)}m',
       );
     }
 
@@ -130,5 +148,6 @@ class AddressResolver {
     _debounceTimer?.cancel();
     _debounceTimer = null;
     _pending = false;
+    _queuedPosition = null;
   }
 }

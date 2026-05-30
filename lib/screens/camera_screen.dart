@@ -1,6 +1,7 @@
 // lib/screens/camera_screen.dart
 // FINAL VERSION – Geocoding menggunakan raw GPS (bukan hybrid position)
 // Threshold capture disamakan dengan lock (25m)
+// Menggunakan Nominatim sebagai prioritas utama geocoding
 import 'dart:async';
 import 'dart:io';
 
@@ -323,12 +324,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     setState(() {
       _currentPosition = displayPosition;
       _isGpsLocked = _gpsLockManager.isLocked;
-      _gpsLockProgress = progress;
+      _gpsLockProgress = (progress * 100).toInt();
       _currentAccuracy = acc;
       _gpsStatus = _buildGpsStatus(acc);
     });
 
-    // 🔥 Geocoding selalu pakai raw position (koordinat GPS murni)
+    // Geocoding selalu pakai raw position (koordinat GPS murni)
     if (acc <= 50.0) {
       _addressResolver.onPositionUpdate(geocodePosition, _fetchAddress);
     }
@@ -356,7 +357,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _isAddressLoading = false;
       });
       debugPrint('📍 ADDRESS: ${result.address}');
-      // updateLockAddress tidak ada, jadi dihapus
     } catch (e) {
       debugPrint('❌ Geocode error: $e');
       if (mounted) setState(() => _isAddressLoading = false);

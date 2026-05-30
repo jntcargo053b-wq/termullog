@@ -24,15 +24,12 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
-  /// Menutup service dan membebaskan resource HTTP.
-  /// Setelah dipanggil, panggil [reopen] jika ingin menggunakan service lagi.
   static void close() {
     if (_isClosed) return;
     _isClosed = true;
     _client.close();
   }
 
-  /// Membuka kembali service setelah ditutup dengan [close].
   static void reopen() {
     if (!_isClosed) return;
     _client = http.Client();
@@ -66,12 +63,12 @@ class LocationWeatherService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Main entry point — selalu terima koordinat RAW GPS (bukan hybrid/Kalman)
+  // Main entry point
   // ─────────────────────────────────────────────────────────────────────────
   static Future<LocationWeatherResult> fetchFromPosition(Position position) async {
     final lat = position.latitude;
     final lon = position.longitude;
-    final latStr = lat.toStringAsFixed(7); // 7 desimal ≈ presisi 1cm
+    final latStr = lat.toStringAsFixed(7);
     final lonStr = lon.toStringAsFixed(7);
 
     final addressFuture = _fetchAddressWithFallback(lat, lon, latStr, lonStr);
@@ -95,27 +92,13 @@ class LocationWeatherService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Fallback chain: Google → Nominatim → Photon
+  // FALLBACK CHAIN: Nominatim → Photon → Android Geocoder (urutan dibalik!)
   // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Google Geocoding dengan locale id_ID eksplisit, timeout cukup
-    try {
-      String geocoding = await _fetchFromGeocoding(lat, lon)
-          .timeout(const Duration(seconds: 6));
-      // Bersihkan Plus Code jika masih tersisa
-      geocoding = _stripPlusCode(geocoding);
-      if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
-        if (kDebugMode) debugPrint('Geocode: Google OK → $geocoding');
-        return geocoding;
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('Geocode: Google gagal → $e');
-    }
-
-    // 2. Nominatim
+    // 1. Nominatim (OpenStreetMap) – paling akurat & cepat update
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -126,7 +109,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Nominatim gagal → $e');
     }
 
-    // 3. Photon (fallback)
+    // 2. Photon (fallback cepat)
     try {
       final photon = await _fetchFromPhoton(latStr, lonStr);
       if (photon.isNotEmpty) {
@@ -137,93 +120,22 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Photon gagal → $e');
     }
 
+    // 3. Android Geocoder (terakhir, karena cache & akurasi rendah)
+    try {
+      final geocoding = await _fetchFromGeocoding(lat, lon);
+      if (geocoding.isNotEmpty && !geocoding.contains('Unnamed Road')) {
+        if (kDebugMode) debugPrint('Geocode: Android Geocoder OK → $geocoding');
+        return geocoding;
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('Geocode: Android Geocoder gagal → $e');
+    }
+
     return '';
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Provider 1: Google Geocoding (via geocoding package)
-  // PERBAIKAN: locale eksplisit 'id_ID', timeout 6s, ambil thoroughfare dulu
-  // CATATAN: Untuk Android, pastikan ada API key di AndroidManifest.xml:
-  //   <meta-data android:name="com.google.android.geo.API_KEY"
-  //              android:value="YOUR_API_KEY"/>
-  // ─────────────────────────────────────────────────────────────────────────
-  static Future<String> _fetchFromGeocoding(double lat, double lon) async {
-    if (_isClosed) return '';
-
-    try {
-      // localeIdentifier='id_ID' → nama jalan lokal, bukan transliterasi Inggris
-      final placemarks = await placemarkFromCoordinates(
-        lat,
-        lon,
-        localeIdentifier: 'id_ID',
-      ).timeout(const Duration(seconds: 6));
-
-      if (placemarks.isEmpty) return '';
-
-      // Pilih placemark terbaik: yang punya street/thoroughfare nyata (bukan Plus Code)
-      Placemark? best;
-      for (final p in placemarks) {
-        final hasStreet = (p.street?.isNotEmpty == true && !_isPlusCode(p.street)) ||
-            (p.thoroughfare?.isNotEmpty == true && !_isPlusCode(p.thoroughfare));
-        if (hasStreet) {
-          best = p;
-          break;
-        }
-      }
-      final p = best ?? placemarks.first;
-
-      final parts = <String>[];
-
-      // Prioritas: thoroughfare (nama jalan resmi) > street
-      String? road;
-      if (p.thoroughfare?.isNotEmpty == true && !_isPlusCode(p.thoroughfare)) {
-        road = p.thoroughfare;
-      } else if (p.street?.isNotEmpty == true && !_isPlusCode(p.street)) {
-        road = p.street;
-      }
-      if (road != null) parts.add(road);
-
-      // subThoroughfare = nomor jalan (misal "No.12")
-      if (p.subThoroughfare?.isNotEmpty == true) {
-        // Ganti elemen road terakhir dengan tambahan nomor
-        if (parts.isNotEmpty) {
-          parts[parts.length - 1] = '${parts.last} No.${p.subThoroughfare}';
-        }
-      }
-
-      // Kelurahan/desa (subLocality)
-      if (p.subLocality?.isNotEmpty == true && !_isPlusCode(p.subLocality)) {
-        parts.add(p.subLocality!);
-      }
-
-      // Kecamatan (subAdministrativeArea)
-      if (p.subAdministrativeArea?.isNotEmpty == true &&
-          !_isPlusCode(p.subAdministrativeArea) &&
-          p.subAdministrativeArea != p.subLocality) {
-        parts.add(p.subAdministrativeArea!);
-      }
-
-      // Kota/Kabupaten (locality)
-      if (p.locality?.isNotEmpty == true && !_isPlusCode(p.locality)) {
-        parts.add(p.locality!);
-      }
-
-      // Provinsi hanya jika berbeda dari kota
-      if (p.administrativeArea?.isNotEmpty == true &&
-          !_isPlusCode(p.administrativeArea) &&
-          p.administrativeArea != p.locality) {
-        parts.add(p.administrativeArea!);
-      }
-
-      return parts.isEmpty ? '' : _uniqueParts(parts).join(', ');
-    } catch (e) {
-      return '';
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Provider 2: Nominatim (OpenStreetMap)
-  // PERBAIKAN: zoom=18, featuretype=house untuk akurasi maksimal
+  // Provider 1: Nominatim (OpenStreetMap) – PRIORITAS UTAMA
   // ─────────────────────────────────────────────────────────────────────────
   static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _nominatimMinInterval = Duration(seconds: 1);
@@ -267,7 +179,6 @@ class LocationWeatherService {
         final addr = data['address'] as Map<String, dynamic>?;
         if (addr == null) return '';
 
-        // Road/jalan — lebih banyak fallback untuk jalan kecil
         final road = _safeStr(addr['road'])
             ?? _safeStr(addr['residential'])
             ?? _safeStr(addr['pedestrian'])
@@ -277,7 +188,6 @@ class LocationWeatherService {
             ?? _safeStr(addr['track']);
         final housenum = _safeStr(addr['house_number']);
 
-        // Area (dari terkecil ke terbesar)
         final suburb = _safeStr(addr['suburb'])
             ?? _safeStr(addr['neighbourhood'])
             ?? _safeStr(addr['quarter']);
@@ -303,14 +213,12 @@ class LocationWeatherService {
 
         if (parts.isNotEmpty) return _uniqueParts(parts).join(', ');
 
-        // Fallback ke display_name dipotong
         final display = data['display_name'] as String?;
         if (display != null && display.isNotEmpty) {
           return _stripPlusCode(display.split(',').take(4).join(', '));
         }
         return '';
       } catch (e) {
-        // Tambahkan jeda sebelum retry untuk menghindari banjir request pada error non-429
         if (attempt == 0) {
           await Future.delayed(const Duration(milliseconds: 500));
           continue;
@@ -322,7 +230,7 @@ class LocationWeatherService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Provider 3: Photon (fallback)
+  // Provider 2: Photon (fallback)
   // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchFromPhoton(String latStr, String lonStr) async {
     if (_isClosed) return '';
@@ -363,10 +271,69 @@ class LocationWeatherService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Weather API
+  // Provider 3: Android Geocoder (HANYA fallback terakhir)
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<String> _fetchFromGeocoding(double lat, double lon) async {
+    if (_isClosed) return '';
+
+    try {
+      final placemarks = await placemarkFromCoordinates(
+        lat,
+        lon,
+        localeIdentifier: 'id_ID',
+      ).timeout(const Duration(seconds: 6));
+
+      if (placemarks.isEmpty) return '';
+
+      Placemark? best;
+      for (final p in placemarks) {
+        final hasStreet = (p.street?.isNotEmpty == true && !_isPlusCode(p.street)) ||
+            (p.thoroughfare?.isNotEmpty == true && !_isPlusCode(p.thoroughfare));
+        if (hasStreet) {
+          best = p;
+          break;
+        }
+      }
+      final p = best ?? placemarks.first;
+
+      final parts = <String>[];
+      String? road;
+      if (p.thoroughfare?.isNotEmpty == true && !_isPlusCode(p.thoroughfare)) {
+        road = p.thoroughfare;
+      } else if (p.street?.isNotEmpty == true && !_isPlusCode(p.street)) {
+        road = p.street;
+      }
+      if (road != null) parts.add(road);
+      if (p.subThoroughfare?.isNotEmpty == true && parts.isNotEmpty) {
+        parts[parts.length - 1] = '${parts.last} No.${p.subThoroughfare}';
+      }
+      if (p.subLocality?.isNotEmpty == true && !_isPlusCode(p.subLocality)) {
+        parts.add(p.subLocality!);
+      }
+      if (p.subAdministrativeArea?.isNotEmpty == true &&
+          !_isPlusCode(p.subAdministrativeArea) &&
+          p.subAdministrativeArea != p.subLocality) {
+        parts.add(p.subAdministrativeArea!);
+      }
+      if (p.locality?.isNotEmpty == true && !_isPlusCode(p.locality)) {
+        parts.add(p.locality!);
+      }
+      if (p.administrativeArea?.isNotEmpty == true &&
+          !_isPlusCode(p.administrativeArea) &&
+          p.administrativeArea != p.locality) {
+        parts.add(p.administrativeArea!);
+      }
+      return parts.isEmpty ? '' : _uniqueParts(parts).join(', ');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Weather API (Open-Meteo)
   // ─────────────────────────────────────────────────────────────────────────
   static Future<String> _fetchWeatherFromApi(String latStr, String lonStr) async {
-    if (_isClosed) return '🌡️ --°C'; // Default jika service ditutup
+    if (_isClosed) return '🌡️ --°C';
 
     try {
       final uri = Uri.parse(
@@ -384,10 +351,8 @@ class LocationWeatherService {
           return '${_wmoDesc(code)} $temp°C';
         }
       }
-    } catch (e) {
-      // Abaikan error, gunakan default di bawah
-    }
-    return '🌡️ --°C'; // Default jika gagal mengambil cuaca
+    } catch (e) {}
+    return '🌡️ --°C';
   }
 
   static String _wmoDesc(int c) {

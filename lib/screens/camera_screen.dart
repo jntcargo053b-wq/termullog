@@ -1,4 +1,10 @@
 // lib/screens/camera_screen.dart
+// FINAL VERSION dengan:
+// - Cache geocoding & weather
+// - Last known location
+// - Force refresh alamat ketika akurasi membaik ≥5m
+// - Adaptive Kalman filter (di GpsLockManager)
+// - Nominatim sebagai prioritas utama geocoding
 import 'dart:async';
 import 'dart:io';
 
@@ -41,17 +47,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final GpsLockManager _gpsLockManager = GpsLockManager();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // hybrid untuk watermark
+  Position? _currentPosition;   // hybrid untuk watermark (sudah Kalman)
   double? _currentAccuracy;
   double _gpsConfidence = 0.0;
 
-  // Address cache
-  String _cachedAddress = '';
-  String _cachedWeather = '';
-  DateTime? _cachedAddressTime;
-
-  // Address
-  final AddressResolver _addressResolver = AddressResolver();
+  // Address (dengan cache)
   String _address = 'Mencari lokasi...';
   String _weather = '';
   String _gpsStatus = 'Searching GPS...';
@@ -96,43 +96,36 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _currentLayout = await SettingsCache.layout;
     _watermarkPosition = await SettingsCache.loadWatermarkPosition();
 
-    // Load cached address
-    await _loadCachedAddress();
+    // Load persisted address cache dari shared preferences
+    await LocationWeatherService.loadPersistedCache();
+
+    // Tampilkan last known location (jika ada) sebagai sementara
+    await _loadLastKnownAndCache();
 
     await _checkGalleryPermission();
     await _initCamera();
     await _checkAndRequestHighAccuracyMode();
-    await _initLocationWithFirstFix(); // <-- getCurrentPosition pertama
+    await _initLocationWithFirstFix();
     _startClock();
   }
 
-  Future<void> _loadCachedAddress() async {
-    final prefs = await SharedPreferences.getInstance();
-    final cachedLat = prefs.getDouble('last_lat');
-    final cachedLon = prefs.getDouble('last_lon');
-    final cachedAddr = prefs.getString('last_address');
-    final cachedWeather = prefs.getString('last_weather');
-    final cachedTime = prefs.getInt('last_address_time');
-    if (cachedAddr != null && cachedWeather != null && cachedTime != null) {
-      _cachedAddress = cachedAddr;
-      _cachedWeather = cachedWeather;
-      _cachedAddressTime = DateTime.fromMillisecondsSinceEpoch(cachedTime);
-      setState(() {
-        _address = _cachedAddress;
-        _weather = _cachedWeather;
-      });
-      if (kDebugMode) debugPrint('Loaded cached address: $_cachedAddress');
-    }
-  }
-
-  Future<void> _saveCachedAddress(String address, String weather) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('last_address', address);
-    await prefs.setString('last_weather', weather);
-    await prefs.setInt('last_address_time', DateTime.now().millisecondsSinceEpoch);
-    if (_gpsLockManager.bestFix != null) {
-      await prefs.setDouble('last_lat', _gpsLockManager.bestFix!.latitude);
-      await prefs.setDouble('last_lon', _gpsLockManager.bestFix!.longitude);
+  Future<void> _loadLastKnownAndCache() async {
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null && mounted) {
+        setState(() {
+          _currentPosition = lastKnown;
+          _currentAccuracy = lastKnown.accuracy;
+          _gpsStatus = _buildGpsStatus(lastKnown.accuracy, 0.0);
+          // Gunakan address dari cache jika ada (tidak perlu geocode ulang)
+          // Cache sudah dimuat sebelumnya, tapi kita bisa tampilkan address terakhir jika ada
+        });
+        if (kDebugMode) {
+          debugPrint('Last known location: ${lastKnown.latitude}, ${lastKnown.longitude} acc=${lastKnown.accuracy}m');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('Last known location error: $e');
     }
   }
 
@@ -283,7 +276,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initLocationWithFirstFix() async {
-    // Ambil posisi awal sebelum stream
+    // Ambil posisi awal (first fix) sebelum stream
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -314,8 +307,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } catch (e) {
       if (kDebugMode) debugPrint('First fix error: $e');
     }
-
-    // Kemudian mulai stream
+    // Setelah itu mulai stream
     _initLocationStream();
   }
 
@@ -390,15 +382,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
+  // ==================== GPS SAMPLE PROCESSING ====================
+  // Menggunakan raw position untuk geocoding, hybrid (Kalman) untuk watermark.
   void _onPositionSample(Position pos) {
     final isNewLock = _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
+    // displayPosition sudah melewati Kalman filter (hybrid)
     final displayPosition = lockData?.position ?? pos;
+    // raw untuk geocoding (belum difilter)
     final geocodePosition = lockData?.rawPosition ?? pos;
     final acc = geocodePosition.accuracy;
-    final confidence = lockData?.confidence ?? _gpsLockManager.lockData?.confidence ?? 0.0;
+    final confidence = lockData?.confidence ?? 0.0;
 
     setState(() {
       _currentPosition = displayPosition;
@@ -409,20 +405,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _gpsStatus = _buildGpsStatus(acc, confidence);
     });
 
-    // Geocoding hanya jika ada perbaikan signifikan atau lock baru
+    // Geocoding menggunakan raw position, dengan threshold akurasi ≤ 50m
     if (acc <= 50.0) {
       _addressResolver.onPositionUpdate(geocodePosition, _fetchAddress);
     }
 
+    // Jika baru lock, paksa refresh alamat
     if (isNewLock && lockData != null) {
       _addressResolver.forceRefresh(lockData.rawPosition, _fetchAddress);
     }
 
     if (kDebugMode) {
-      debugPrint('📍 GPS: acc=${acc.toStringAsFixed(1)}m conf=${confidence.toStringAsFixed(2)} locked=$_isGpsLocked');
+      debugPrint('📍 GPS: rawAcc=${acc.toStringAsFixed(1)}m conf=${confidence.toStringAsFixed(2)} locked=$_isGpsLocked');
     }
   }
 
+  // AddressResolver akan memanggil method ini dengan posisi raw terbaru
   Future<void> _fetchAddress(Position pos) async {
     if (mounted) setState(() => _isAddressLoading = true);
     try {
@@ -435,7 +433,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _weather = result.weather;
         _isAddressLoading = false;
       });
-      await _saveCachedAddress(result.address, result.weather);
       debugPrint('📍 ADDRESS: ${result.address}');
     } catch (e) {
       debugPrint('❌ Geocode error: $e');
@@ -446,7 +443,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
-    // Gunakan best fix jika ada, fallback ke raw position
+    // Gunakan best fix jika ada, fallback ke raw position atau hybrid
     final capturePosition = _gpsLockManager.bestFix ?? _gpsLockManager.lockData?.rawPosition ?? _currentPosition;
     if (capturePosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -470,7 +467,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (shouldContinue != true) return;
     }
 
-    await Future.delayed(Duration(milliseconds: _antiShakeDelayMs));
+    await Future.delayed(const Duration(milliseconds: _antiShakeDelayMs));
 
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
@@ -484,6 +481,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 8));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
+      // Pilih address untuk watermark (jika belum dapat, gunakan koordinat)
       final captureAddress = (_address.isNotEmpty &&
               !_address.startsWith('Mencari') &&
               !_address.startsWith('GPS') &&

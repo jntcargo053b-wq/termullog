@@ -1,4 +1,3 @@
-// lib/services/gps_lock_manager.dart
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,13 +5,13 @@ import 'package:geolocator/geolocator.dart';
 enum GpsLockState { searching, bootstrapping, locked }
 
 class LockData {
-  final Position position;      // hybrid (smoothed) untuk tampilan peta
-  final Position rawPosition;   // raw GPS untuk watermark & geocoding
+  final Position position;
+  final Position rawPosition;
   final double accuracy;
   final String quality;
   final double confidence;
   final DateTime lockedAt;
-  final bool isFallbackLock;    // true jika lock tercapai dengan threshold longgar (22m)
+  final bool isFallbackLock;
 
   LockData({
     required this.position,
@@ -50,22 +49,19 @@ class GpsLockManager {
   LockData? _lockData;
   Position? _bestFix;
 
-  // Parameter tetap
-  static const double _baseAccuracyThreshold = 15.0;   // target awal
-  static const double _fallbackAccuracyThreshold = 22.0; // maksimal setelah timeout
-  static const double _maxAllowedAccuracy = 22.0;       // discard sample > 22m
+  static const double _baseAccuracyThreshold = 15.0;
+  static const double _fallbackAccuracyThreshold = 22.0;
+  static const double _maxAllowedAccuracy = 22.0;
   static const int _medianWindowSize = 6;
   static const double _stationaryTimeoutSeconds = 4.0;
 
-  // Adaptive stable seconds
   static const double _fastLockAccuracy = 10.0;
   static const double _slowLockAccuracy = 15.0;
   static const double _minStableSeconds = 3.0;
   static const double _maxStableSeconds = 7.0;
 
-  // Fallback progressive: setelah 10s -> 18m, setelah 15s -> 22m
-  static const double _timeout1 = 10.0;   // detik
-  static const double _timeout2 = 15.0;   // detik
+  static const double _timeout1 = 10.0;
+  static const double _timeout2 = 15.0;
   static const double _threshold1 = 18.0;
   static const double _threshold2 = 22.0;
 
@@ -81,16 +77,14 @@ class GpsLockManager {
   double get stationaryProgress => _stationaryProgress;
   Position? get bestFix => _bestFix;
 
-  /// Menghitung threshold akurasi yang berlaku saat ini (progressive)
   double get _effectiveAccuracyThreshold {
     if (_bootstrapStart == null) return _baseAccuracyThreshold;
     final waited = DateTime.now().difference(_bootstrapStart!).inSeconds.toDouble();
-    if (waited >= _timeout2) return _threshold2;      // 22m
-    if (waited >= _timeout1) return _threshold1;      // 18m
-    return _baseAccuracyThreshold;                   // 15m
+    if (waited >= _timeout2) return _threshold2;
+    if (waited >= _timeout1) return _threshold1;
+    return _baseAccuracyThreshold;
   }
 
-  /// Durasi stabil yang dibutuhkan (adaptive based on accuracy)
   double _requiredStableSeconds(double avgAccuracy) {
     if (avgAccuracy <= _fastLockAccuracy) return _minStableSeconds;
     if (avgAccuracy >= _slowLockAccuracy) return _maxStableSeconds;
@@ -99,13 +93,11 @@ class GpsLockManager {
   }
 
   bool processSample(Position newPos) {
-    // Update best fix
     if (_bestFix == null || newPos.accuracy < _bestFix!.accuracy) {
       _bestFix = newPos;
       if (kDebugMode) debugPrint('GpsLockManager: New best fix acc=${newPos.accuracy.toStringAsFixed(1)}m');
     }
 
-    // Filter awal: discard jika akurasi melebihi batas maksimal
     if (newPos.accuracy > _maxAllowedAccuracy) {
       if (kDebugMode) debugPrint('GpsLockManager: discard acc=${newPos.accuracy.toStringAsFixed(1)}m > $_maxAllowedAccuracy');
       return false;
@@ -122,7 +114,6 @@ class GpsLockManager {
   }
 
   bool _handleSearching(Position newPos) {
-    // Mulai bootstrap jika akurasi <= threshold yang berlaku
     if (newPos.accuracy <= _effectiveAccuracyThreshold) {
       _state = GpsLockState.bootstrapping;
       _bootstrapSamples = [newPos];
@@ -147,7 +138,6 @@ class GpsLockManager {
 
     double medianAcc = _computeMedian(_recentAccuracies);
     double avgAcc = _bootstrapSamples.fold(0.0, (sum, p) => sum + p.accuracy) / _bootstrapSamples.length;
-
     double requiredSeconds = _requiredStableSeconds(avgAcc);
     double currentThreshold = _effectiveAccuracyThreshold;
 
@@ -190,9 +180,7 @@ class GpsLockManager {
       _stationaryProgress = 0.0;
 
       if (kDebugMode) {
-        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, '
-            'median=${medianAcc.toStringAsFixed(1)}m, avg=${avgAcc.toStringAsFixed(1)}m, '
-            'fallback=$isFallback');
+        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, median=${medianAcc.toStringAsFixed(1)}m, avg=${avgAcc.toStringAsFixed(1)}m, fallback=$isFallback');
       }
       return true;
     }
@@ -208,10 +196,8 @@ class GpsLockManager {
     );
     final accuracyImproved = newPos.accuracy < (_lockData!.accuracy - 1.0);
 
-    // Selalu update raw position
     LockData newLockData = _lockData!.copyWith(rawPosition: newPos);
 
-    // Hybrid filter sederhana untuk tampilan peta
     Position newHybrid;
     if (movedDistance < 2.0) {
       const double alpha = 0.3;
@@ -249,7 +235,6 @@ class GpsLockManager {
     }
     _lockData = newLockData;
 
-    // Stationary progress
     final now = DateTime.now();
     if (movedDistance < 1.0) {
       if (_lastMovementTime != null) {

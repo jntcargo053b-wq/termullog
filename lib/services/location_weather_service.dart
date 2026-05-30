@@ -60,7 +60,7 @@ class LocationWeatherService {
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
 
   // Testing mode
-  static bool _disableCache = false; // false for production
+  static bool _disableCache = true; // false for production
 
   // 🔥 Exact cache key dengan 5 desimal (presisi 1.1 meter)
   static String _cacheKey(double lat, double lon) {

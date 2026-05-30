@@ -1,10 +1,9 @@
 // lib/screens/camera_screen.dart
-// FINAL VERSION dengan:
-// - Cache geocoding & weather
-// - Last known location
-// - Force refresh alamat ketika akurasi membaik ≥5m
-// - Adaptive Kalman filter (di GpsLockManager)
-// - Nominatim sebagai prioritas utama geocoding
+// FINAL VERSION – Untuk aplikasi logistik/timestamp
+// - GPS Lock: progressive fallback (15m → 18m → 22m), adaptive stable seconds
+// - Watermark & geocoding: rawPosition
+// - Tampilan peta: smoothed position (hybrid)
+// - Indikator fallback lock (warna badge kuning)
 import 'dart:async';
 import 'dart:io';
 
@@ -45,12 +44,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   // GPS
   final GpsLockManager _gpsLockManager = GpsLockManager();
-  final AddressResolver _addressResolver = AddressResolver();  // 🔥 DITAMBAHKAN
+  final AddressResolver _addressResolver = AddressResolver();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // hybrid untuk watermark (sudah Kalman)
+  Position? _currentPosition;   // posisi hybrid (smoothed) untuk tampilan overlay/peta
   double? _currentAccuracy;
   double _gpsConfidence = 0.0;
+  bool _isFallbackLock = false;   // indikator lock dengan akurasi longgar (22m)
 
   // Address (dengan cache)
   String _address = 'Mencari lokasi...';
@@ -97,10 +97,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _currentLayout = await SettingsCache.layout;
     _watermarkPosition = await SettingsCache.loadWatermarkPosition();
 
-    // Load persisted address cache dari shared preferences
+    // Load persisted address cache
     await LocationWeatherService.loadPersistedCache();
 
-    // Tampilkan last known location (jika ada) sebagai sementara
+    // Tampilkan last known location (sementara)
     await _loadLastKnownAndCache();
 
     await _checkGalleryPermission();
@@ -118,8 +118,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           _currentPosition = lastKnown;
           _currentAccuracy = lastKnown.accuracy;
           _gpsStatus = _buildGpsStatus(lastKnown.accuracy, 0.0);
-          // Gunakan address dari cache jika ada (tidak perlu geocode ulang)
-          // Cache sudah dimuat sebelumnya, tapi kita bisa tampilkan address terakhir jika ada
         });
         if (kDebugMode) {
           debugPrint('Last known location: ${lastKnown.latitude}, ${lastKnown.longitude} acc=${lastKnown.accuracy}m');
@@ -258,7 +256,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _buildGpsStatus(double acc, double confidence) {
     if (acc <= 8) return 'GPS Ready';
     if (acc <= 15) return 'GPS Stabilizing';
-    if (acc <= 25) return 'GPS Improving';
+    if (acc <= 22) return 'GPS Improving';
     return 'GPS Searching';
   }
 
@@ -269,7 +267,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return 'Poor';
   }
 
-  Color _getAccuracyColor(double acc) {
+  Color _getAccuracyColor(double acc, {bool isFallback = false}) {
+    if (isFallback) return Colors.orange;    // fallback lock: warna kuning
     if (acc <= 5) return Colors.green;
     if (acc <= 10) return Colors.lightGreen;
     if (acc <= 20) return Colors.orange;
@@ -277,7 +276,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initLocationWithFirstFix() async {
-    // Ambil posisi awal (first fix) sebelum stream
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -308,7 +306,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } catch (e) {
       if (kDebugMode) debugPrint('First fix error: $e');
     }
-    // Setelah itu mulai stream
     _initLocationStream();
   }
 
@@ -384,44 +381,45 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   // ==================== GPS SAMPLE PROCESSING ====================
-  // Menggunakan raw position untuk geocoding, hybrid (Kalman) untuk watermark.
   void _onPositionSample(Position pos) {
     final isNewLock = _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
-    // displayPosition sudah melewati Kalman filter (hybrid)
-    final displayPosition = lockData?.position ?? pos;
-    // raw untuk geocoding (belum difilter)
-    final geocodePosition = lockData?.rawPosition ?? pos;
-    final acc = geocodePosition.accuracy;
+    // Pemisahan: raw untuk watermark/geocoding, smoothed untuk tampilan overlay
+    final watermarkPosition = lockData?.rawPosition ?? pos;      // mentah
+    final geocodePosition = lockData?.rawPosition ?? pos;        // mentah
+    final mapDisplayPosition = lockData?.position ?? pos;        // halus
+
+    final acc = watermarkPosition.accuracy;
     final confidence = lockData?.confidence ?? 0.0;
+    final isFallback = lockData?.isFallbackLock ?? false;
 
     setState(() {
-      _currentPosition = displayPosition;
+      _currentPosition = mapDisplayPosition;   // overlay pakai smoothed agar tidak terlalu getar
       _isGpsLocked = _gpsLockManager.isLocked;
       _gpsLockProgress = (progress * 100).toInt();
       _currentAccuracy = acc;
       _gpsConfidence = confidence;
+      _isFallbackLock = isFallback;
       _gpsStatus = _buildGpsStatus(acc, confidence);
     });
 
-    // Geocoding menggunakan raw position, dengan threshold akurasi ≤ 50m
+    // Geocoding menggunakan raw position
     if (acc <= 50.0) {
       _addressResolver.onPositionUpdate(geocodePosition, _fetchAddress);
     }
 
-    // Jika baru lock, paksa refresh alamat
+    // Jika baru lock, paksa refresh dengan raw position
     if (isNewLock && lockData != null) {
       _addressResolver.forceRefresh(lockData.rawPosition, _fetchAddress);
     }
 
     if (kDebugMode) {
-      debugPrint('📍 GPS: rawAcc=${acc.toStringAsFixed(1)}m conf=${confidence.toStringAsFixed(2)} locked=$_isGpsLocked');
+      debugPrint('📍 RAW: acc=${acc.toStringAsFixed(1)}m | SMOOTHED: ${mapDisplayPosition.accuracy.toStringAsFixed(1)}m | fallback=$isFallback');
     }
   }
 
-  // AddressResolver akan memanggil method ini dengan posisi raw terbaru
   Future<void> _fetchAddress(Position pos) async {
     if (mounted) setState(() => _isAddressLoading = true);
     try {
@@ -444,8 +442,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
-    // Gunakan best fix jika ada, fallback ke raw position atau hybrid
-    final capturePosition = _gpsLockManager.bestFix ?? _gpsLockManager.lockData?.rawPosition ?? _currentPosition;
+    // Gunakan rawPosition terbaru dari lockData atau best fix
+    final capturePosition = _gpsLockManager.lockData?.rawPosition ?? _gpsLockManager.bestFix ?? _currentPosition;
     if (capturePosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Menunggu sinyal GPS...')),
@@ -482,7 +480,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 8));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
-      // Pilih address untuk watermark (jika belum dapat, gunakan koordinat)
       final captureAddress = (_address.isNotEmpty &&
               !_address.startsWith('Mencari') &&
               !_address.startsWith('GPS') &&
@@ -659,7 +656,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.gps_fixed, size: 12, color: _getAccuracyColor(_currentAccuracy!)),
+                    Icon(Icons.gps_fixed, size: 12, color: _getAccuracyColor(_currentAccuracy!, isFallback: _isFallbackLock)),
                     const SizedBox(width: 4),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -667,15 +664,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                       children: [
                         Text(
                           '±${_currentAccuracy!.toStringAsFixed(0)}m',
-                          style: TextStyle(color: _getAccuracyColor(_currentAccuracy!), fontSize: 10),
+                          style: TextStyle(color: _getAccuracyColor(_currentAccuracy!, isFallback: _isFallbackLock), fontSize: 10),
                         ),
                         Text(
                           _gpsStatus,
-                          style: TextStyle(color: _getAccuracyColor(_currentAccuracy!).withOpacity(0.8), fontSize: 8),
+                          style: TextStyle(color: _getAccuracyColor(_currentAccuracy!, isFallback: _isFallbackLock).withOpacity(0.8), fontSize: 8),
                         ),
                         if (_gpsConfidence > 0)
                           Text(
-                            '🛰 ${_buildConfidenceText(_gpsConfidence)}',
+                            '🛰 ${_buildConfidenceText(_gpsConfidence)}${_isFallbackLock ? ' (fallback)' : ''}',
                             style: const TextStyle(color: Colors.white70, fontSize: 8),
                           ),
                       ],

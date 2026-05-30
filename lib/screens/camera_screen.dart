@@ -1,9 +1,9 @@
 // lib/screens/camera_screen.dart
-// FINAL VERSION – Untuk aplikasi logistik/timestamp
-// - GPS Lock: progressive fallback (15m → 18m → 22m), adaptive stable seconds
-// - Watermark & geocoding: rawPosition
-// - Tampilan peta: smoothed position (hybrid)
-// - Indikator fallback lock (warna badge kuning)
+// FINAL – Perbaikan bug arsitektur:
+// - Alamat & watermark menggunakan rawPosition, UI preview menggunakan smoothed position
+// - Threshold geocoding diperketat menjadi 22m (bukan 50m)
+// - forceRefresh menggunakan rawPosition
+// - Capture photo menggunakan rawPosition
 import 'dart:async';
 import 'dart:io';
 
@@ -47,10 +47,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final AddressResolver _addressResolver = AddressResolver();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _currentPosition;   // posisi hybrid (smoothed) untuk tampilan overlay/peta
-  double? _currentAccuracy;
+  Position? _displayPosition;   // smoothed position untuk UI preview (peta, overlay)
+  double? _currentAccuracy;     // akurasi dari raw position (untuk indikator)
   double _gpsConfidence = 0.0;
-  bool _isFallbackLock = false;   // indikator lock dengan akurasi longgar (22m)
+  bool _isFallbackLock = false;
 
   // Address (dengan cache)
   String _address = 'Mencari lokasi...';
@@ -76,6 +76,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   static const int _antiShakeDelayMs = 200;
   static const double _minAccuracyForCapture = 25.0;
+  static const double _geocodeAccuracyThreshold = 22.0; // diperketat dari 50m
 
   @override
   void initState() {
@@ -97,10 +98,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _currentLayout = await SettingsCache.layout;
     _watermarkPosition = await SettingsCache.loadWatermarkPosition();
 
-    // Load persisted address cache
     await LocationWeatherService.loadPersistedCache();
-
-    // Tampilkan last known location (sementara)
     await _loadLastKnownAndCache();
 
     await _checkGalleryPermission();
@@ -115,13 +113,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null && mounted) {
         setState(() {
-          _currentPosition = lastKnown;
+          _displayPosition = lastKnown;
           _currentAccuracy = lastKnown.accuracy;
           _gpsStatus = _buildGpsStatus(lastKnown.accuracy, 0.0);
         });
-        if (kDebugMode) {
-          debugPrint('Last known location: ${lastKnown.latitude}, ${lastKnown.longitude} acc=${lastKnown.accuracy}m');
-        }
       }
     } catch (e) {
       if (kDebugMode) debugPrint('Last known location error: $e');
@@ -268,7 +263,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Color _getAccuracyColor(double acc, {bool isFallback = false}) {
-    if (isFallback) return Colors.orange;    // fallback lock: warna kuning
+    if (isFallback) return Colors.orange;
     if (acc <= 5) return Colors.green;
     if (acc <= 10) return Colors.lightGreen;
     if (acc <= 20) return Colors.orange;
@@ -380,43 +375,42 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GPS SAMPLE PROCESSING ====================
+  // ==================== PERBAIKAN UTAMA ====================
   void _onPositionSample(Position pos) {
     final isNewLock = _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
-    // Pemisahan: raw untuk watermark/geocoding, smoothed untuk tampilan overlay
-    final watermarkPosition = lockData?.rawPosition ?? pos;      // mentah
-    final geocodePosition = lockData?.rawPosition ?? pos;        // mentah
-    final mapDisplayPosition = lockData?.position ?? pos;        // halus
+    // Pemisahan: display (smoothed) untuk UI, raw untuk geocode & watermark
+    final displayPosition = lockData?.position ?? pos;
+    final rawPosition = lockData?.rawPosition ?? pos;
 
-    final acc = watermarkPosition.accuracy;
+    final acc = rawPosition.accuracy;
     final confidence = lockData?.confidence ?? 0.0;
     final isFallback = lockData?.isFallbackLock ?? false;
 
     setState(() {
-      _currentPosition = mapDisplayPosition;   // overlay pakai smoothed agar tidak terlalu getar
-      _isGpsLocked = _gpsLockManager.isLocked;
-      _gpsLockProgress = (progress * 100).toInt();
-      _currentAccuracy = acc;
+      _displayPosition = displayPosition;        // untuk overlay & peta
+      _currentAccuracy = acc;                    // indikator akurasi
       _gpsConfidence = confidence;
       _isFallbackLock = isFallback;
+      _isGpsLocked = _gpsLockManager.isLocked;
+      _gpsLockProgress = (progress * 100).toInt();
       _gpsStatus = _buildGpsStatus(acc, confidence);
     });
 
-    // Geocoding menggunakan raw position
-    if (acc <= 50.0) {
-      _addressResolver.onPositionUpdate(geocodePosition, _fetchAddress);
+    // 🔥 Geocode hanya menggunakan rawPosition dan threshold akurasi 22m
+    if (acc <= _geocodeAccuracyThreshold) {
+      _addressResolver.onPositionUpdate(rawPosition, _fetchAddress);
     }
 
-    // Jika baru lock, paksa refresh dengan raw position
+    // 🔥 Force refresh saat lock baru juga pakai rawPosition
     if (isNewLock && lockData != null) {
       _addressResolver.forceRefresh(lockData.rawPosition, _fetchAddress);
     }
 
     if (kDebugMode) {
-      debugPrint('📍 RAW: acc=${acc.toStringAsFixed(1)}m | SMOOTHED: ${mapDisplayPosition.accuracy.toStringAsFixed(1)}m | fallback=$isFallback');
+      debugPrint('📍 RAW: acc=${acc.toStringAsFixed(1)}m | SMOOTHED: ${displayPosition.accuracy.toStringAsFixed(1)}m | fallback=$isFallback');
     }
   }
 
@@ -442,8 +436,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
-    // Gunakan rawPosition terbaru dari lockData atau best fix
-    final capturePosition = _gpsLockManager.lockData?.rawPosition ?? _gpsLockManager.bestFix ?? _currentPosition;
+    // 🔥 Capture menggunakan rawPosition terbaru (bukan smoothed)
+    final capturePosition = _gpsLockManager.lockData?.rawPosition ?? _gpsLockManager.bestFix ?? _displayPosition;
     if (capturePosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Menunggu sinyal GPS...')),
@@ -549,7 +543,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
-    final displayPosition = _gpsLockManager.lockData?.position ?? _currentPosition;
+    final overlayPosition = _displayPosition; // smoothed untuk tampilan watermark overlay
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -558,14 +552,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         children: [
           CameraPreview(_controller!),
 
-          if (displayPosition != null)
+          if (overlayPosition != null)
             DraggableWatermarkOverlay(
               previewSize: MediaQuery.of(context).size,
               timestamp: _currentTimestamp,
               hasPosition: true,
-              lat: displayPosition.latitude,
-              lon: displayPosition.longitude,
-              acc: displayPosition.accuracy,
+              lat: overlayPosition.latitude,
+              lon: overlayPosition.longitude,
+              acc: overlayPosition.accuracy,
               address: _address,
               weather: _weather,
               showWeather: _showWeather,
@@ -604,7 +598,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
 
-          if (!_isGpsLocked && displayPosition == null)
+          if (!_isGpsLocked && overlayPosition == null)
             Positioned(
               top: 50,
               left: 16,
@@ -643,7 +637,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
 
-          if (_currentAccuracy != null && displayPosition != null)
+          if (_currentAccuracy != null && overlayPosition != null)
             Positioned(
               top: 50,
               right: 16,
@@ -688,17 +682,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: (displayPosition != null) ? _takePhoto : null,
+                onTap: (overlayPosition != null) ? _takePhoto : null,
                 child: Container(
                   width: 78,
                   height: 78,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: (displayPosition != null) ? Colors.white : Colors.grey,
+                      color: (overlayPosition != null) ? Colors.white : Colors.grey,
                       width: 5,
                     ),
-                    color: (displayPosition != null) ? Colors.white24 : Colors.grey.withOpacity(0.3),
+                    color: (overlayPosition != null) ? Colors.white24 : Colors.grey.withOpacity(0.3),
                   ),
                   child: _isCapturing
                       ? const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: Colors.white))

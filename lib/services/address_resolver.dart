@@ -1,4 +1,3 @@
-// lib/services/address_resolver.dart
 import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
@@ -16,7 +15,7 @@ class AddressResolver {
   static const double _minDistanceMeters = 5.0;
   static const int _minIntervalSeconds = 10;
   static const double _accuracyImprovementThreshold = 3.0;
-  static const double _drasticAccuracyImprovement = 5.0; // 🔥 5m instead of 10m
+  static const double _drasticAccuracyImprovement = 5.0;
   static const int _debounceMilliseconds = 800;
 
   void reset() {

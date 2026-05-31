@@ -1,7 +1,7 @@
 // lib/screens/history_screen.dart
+// FINAL PRODUCTION – Riwayat foto dari folder dokumen permanen
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -17,18 +17,56 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   List<Map<String, dynamic>> _photos = [];
   bool _isLoading = true;
+  final ScrollController _scrollController = ScrollController();
+  static const int _pageSize = 30;
+  int _currentPage = 0;
+  bool _hasMore = true;
 
   @override
   void initState() {
     super.initState();
-    _loadAllPhotos();
+    _loadAllPhotos(initial: true);
+    _scrollController.addListener(_onScroll);
   }
 
-  Future<void> _loadAllPhotos() async {
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoading && _hasMore) {
+        _loadAllPhotos();
+      }
+    }
+  }
+
+  Future<Directory> _getHistoryDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final historyDir = Directory('${appDir.path}/history');
+    if (!await historyDir.exists()) {
+      await historyDir.create(recursive: true);
+    }
+    return historyDir;
+  }
+
+  Future<void> _loadAllPhotos({bool initial = false}) async {
+    if (initial) {
+      setState(() {
+        _isLoading = true;
+        _photos = [];
+        _currentPage = 0;
+        _hasMore = true;
+      });
+    } else if (_isLoading) return;
+
     setState(() => _isLoading = true);
     try {
-      final dir = await getTemporaryDirectory();
-      final files = dir.listSync()
+      final historyDir = await _getHistoryDirectory();
+      var files = historyDir.listSync()
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('termullog_'))
           .where((f) => f.path.endsWith('.jpg'))
@@ -36,17 +74,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
       files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
 
-      final List<Map<String, dynamic>> photos = [];
-      for (var file in files) {
+      final start = _currentPage * _pageSize;
+      final end = (start + _pageSize).clamp(0, files.length);
+      if (start >= files.length) {
+        if (mounted) setState(() => _hasMore = false);
+        return;
+      }
+
+      final pageFiles = files.sublist(start, end);
+      final List<Map<String, dynamic>> newPhotos = [];
+
+      for (var file in pageFiles) {
         if (await file.exists()) {
           final fileName = p.basenameWithoutExtension(file.path);
           final parts = fileName.split('_');
-          DateTime timestamp = DateTime.now();
+          DateTime timestamp;
           if (parts.length > 1) {
             final ms = int.tryParse(parts[1]);
-            if (ms != null) timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
+            if (ms != null) {
+              timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
+            } else {
+              timestamp = file.lastModifiedSync();
+            }
+          } else {
+            timestamp = file.lastModifiedSync();
           }
-          photos.add({
+          newPhotos.add({
             'path': file.path,
             'timestamp': timestamp,
           });
@@ -55,16 +108,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
       if (mounted) {
         setState(() {
-          _photos = photos;
+          if (initial) {
+            _photos = newPhotos;
+          } else {
+            _photos.addAll(newPhotos);
+          }
+          _currentPage++;
+          _hasMore = end < files.length;
           _isLoading = false;
         });
+      } else {
+        setState(() => _isLoading = false);
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _deletePhoto(String path) async {
+  Future<void> _deletePhoto(String path, int index) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -84,7 +145,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
       try {
         final file = File(path);
         if (await file.exists()) await file.delete();
-        _loadAllPhotos();
+        if (mounted) {
+          setState(() {
+            _photos.removeAt(index);
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Foto dihapus')),
+          );
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -113,13 +181,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
     );
     if (confirmed == true) {
-      for (final photo in _photos) {
-        try {
-          final file = File(photo['path'] as String);
-          if (await file.exists()) await file.delete();
-        } catch (_) {}
+      try {
+        final historyDir = await _getHistoryDirectory();
+        final files = historyDir.listSync()
+            .whereType<File>()
+            .where((f) => p.basename(f.path).startsWith('termullog_'))
+            .where((f) => f.path.endsWith('.jpg'));
+        for (final file in files) {
+          await file.delete();
+        }
+        _loadAllPhotos(initial: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Semua foto dihapus')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menghapus: $e')),
+        );
       }
-      _loadAllPhotos();
     }
   }
 
@@ -130,7 +209,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
         text: 'Foto GPS dari TermulLog',
       );
     } catch (e) {
-      debugPrint('Share error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal berbagi: $e')),
+        );
+      }
     }
   }
 
@@ -151,13 +234,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.refresh),
-              onPressed: _loadAllPhotos,
+              onPressed: () => _loadAllPhotos(initial: true),
               tooltip: 'Muat Ulang',
             ),
           ],
         ],
       ),
-      body: _isLoading
+      body: _isLoading && _photos.isEmpty
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF00B8D4)))
           : _photos.isEmpty
               ? Center(
@@ -169,7 +252,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       const Text('Belum ada foto', style: TextStyle(color: Colors.grey)),
                       const SizedBox(height: 8),
                       const Text(
-                        'Foto yang belum disimpan ke galeri\nakan muncul di sini',
+                        'Foto yang diambil akan tersimpan di sini',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
@@ -177,9 +260,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                 )
               : ListView.builder(
-                  itemCount: _photos.length,
+                  controller: _scrollController,
+                  itemCount: _photos.length + (_hasMore ? 1 : 0),
                   padding: const EdgeInsets.all(16),
                   itemBuilder: (context, index) {
+                    if (index == _photos.length) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(child: CircularProgressIndicator(color: Color(0xFF00B8D4))),
+                      );
+                    }
                     final photo = _photos[index];
                     final timestamp = photo['timestamp'] as DateTime;
                     final path = photo['path'] as String;
@@ -225,7 +315,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                              onPressed: () => _deletePhoto(path),
+                              onPressed: () => _deletePhoto(path, index),
                             ),
                           ],
                         ),
@@ -235,7 +325,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             MaterialPageRoute(
                               builder: (_) => _HistoryPhotoDetailScreen(imagePath: path),
                             ),
-                          ).then((_) => _loadAllPhotos());
+                          ).then((_) => _loadAllPhotos(initial: true));
                         },
                       ),
                     );

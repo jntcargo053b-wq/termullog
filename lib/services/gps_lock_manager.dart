@@ -1,5 +1,6 @@
-// lib/services/gps_lock_manager.dart
-// Final – simplified lock logic with unlock when moving >6m.
+// ============================================================================
+// 2. lib/services/gps_lock_manager.dart
+// ============================================================================
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -49,13 +50,13 @@ class LockData {
 class GpsLockManager {
   GpsLockState _state = GpsLockState.searching;
   LockData? _lockData;
-  Position? _bestFix;
+  Position? _bestFix; // all-time best accuracy sample
 
-  // Lock parameters
-  static const int _samplesBeforeLock = 8;
-  static const double _lockAccuracyThreshold = 20.0;
-  static const double _moveThreshold = 3.0;           // for low-pass filter activation
-  static const double _unlockThreshold = 6.0;         // if moved >6m, unlock and re-bootstrap
+  // Parameter optimal untuk timestamp/logistik
+  static const int _samplesBeforeLock = 6;            // 6 sample cukup
+  static const double _lockAccuracyThreshold = 15.0;  // lock saat akurasi ≤15m
+  static const double _moveThreshold = 2.0;           // untuk low-pass filter (2m)
+  static const double _unlockThreshold = 10.0;        // bergerak >10m → unlock
 
   // Bootstrapping storage
   final List<Position> _bootstrapSamples = [];
@@ -72,7 +73,6 @@ class GpsLockManager {
   Position? get bestFix => _bestFix;
 
   bool processSample(Position newPos) {
-    // Update global best fix (all-time)
     if (_bestFix == null || newPos.accuracy < _bestFix!.accuracy) {
       _bestFix = newPos;
       if (kDebugMode) debugPrint('GpsLockManager: New best fix acc=${newPos.accuracy.toStringAsFixed(1)}m');
@@ -102,10 +102,8 @@ class GpsLockManager {
   }
 
   bool _handleBootstrapping(Position newPos) {
-    // Only collect samples that meet accuracy threshold
     if (newPos.accuracy <= _lockAccuracyThreshold) {
       _bootstrapSamples.add(newPos);
-      // Update best sample during bootstrapping
       if (_bestDuringBootstrap == null || newPos.accuracy < _bestDuringBootstrap!.accuracy) {
         _bestDuringBootstrap = newPos;
       }
@@ -114,9 +112,7 @@ class GpsLockManager {
       }
     }
 
-    // Lock when we have enough samples
     if (_bootstrapSamples.length >= _samplesBeforeLock) {
-      // Compute average position (simple arithmetic mean) for hybrid display
       double avgLat = 0, avgLon = 0, avgAcc = 0;
       for (var p in _bootstrapSamples) {
         avgLat += p.latitude;
@@ -164,33 +160,31 @@ class GpsLockManager {
   bool _handleLocked(Position newPos) {
     if (_lockData == null) return false;
 
-    // Calculate movement distance from last raw position (best so far)
     final movedDistance = _haversine(
       _lockData!.rawPosition.latitude, _lockData!.rawPosition.longitude,
       newPos.latitude, newPos.longitude,
     );
 
-    // 🔥 UNLOCK LOGIC: if moved significantly, reset to searching
+    // UNLOCK jika bergerak terlalu jauh dari posisi lock
     if (movedDistance > _unlockThreshold) {
       if (kDebugMode) {
         debugPrint('GpsLockManager: UNLOCKED - moved ${movedDistance.toStringAsFixed(1)}m > $_unlockThreshold');
       }
       reset();
-      // after reset, process this sample again to start new bootstrap if applicable
       return processSample(newPos);
     }
 
-    // Update raw position if new sample has better accuracy
+    // Update raw position jika sample lebih akurat
     Position updatedRaw = _lockData!.rawPosition;
     if (newPos.accuracy < _lockData!.rawPosition.accuracy) {
       updatedRaw = newPos;
       if (kDebugMode) debugPrint('GpsLockManager: raw updated to better acc=${newPos.accuracy.toStringAsFixed(1)}m');
     }
 
-    // Hybrid display: low-pass only when moving less than _moveThreshold
-    final bool isMovingSlowly = movedDistance < _moveThreshold;
+    // Hybrid display: low-pass hanya jika bergerak lambat (<_moveThreshold)
+    final bool movingSlowly = movedDistance < _moveThreshold;
     Position hybridPos;
-    if (isMovingSlowly) {
+    if (movingSlowly) {
       const double alpha = 0.3;
       hybridPos = Position(
         latitude: _lockData!.position.latitude * (1 - alpha) + newPos.latitude * alpha,
@@ -205,11 +199,9 @@ class GpsLockManager {
         headingAccuracy: newPos.headingAccuracy,
       );
     } else {
-      // When moving faster, use raw position directly for display (no lag)
       hybridPos = newPos;
     }
 
-    // Update LockData
     _lockData = _lockData!.copyWith(
       rawPosition: updatedRaw,
       position: hybridPos,
@@ -232,7 +224,7 @@ class GpsLockManager {
     }
 
     if (kDebugMode) {
-      debugPrint('GpsLockManager: locked update rawAcc=${updatedRaw.accuracy.toStringAsFixed(1)}m moved=${movedDistance.toStringAsFixed(1)}m stationary=${(_stationaryProgress*100).toInt()}% isMovingSlowly=$isMovingSlowly');
+      debugPrint('GpsLockManager: locked update rawAcc=${updatedRaw.accuracy.toStringAsFixed(1)}m moved=${movedDistance.toStringAsFixed(1)}m stationary=${(_stationaryProgress*100).toInt()}%');
     }
     return false;
   }
@@ -265,7 +257,7 @@ class GpsLockManager {
   void reset() {
     _state = GpsLockState.searching;
     _lockData = null;
-    // DO NOT clear _bestFix (keep all-time best)
+    // Do NOT clear _bestFix (keep all-time best)
     _bootstrapSamples.clear();
     _bestDuringBootstrap = null;
     _lastMovementTime = null;

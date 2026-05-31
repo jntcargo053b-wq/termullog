@@ -1,4 +1,5 @@
 // lib/watermark/watermark_engine.dart
+// FINAL – perbaikan bug Image.fromBytes (bytes: pixels)
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -32,7 +33,11 @@ class WatermarkEngine {
     final int width = original.width;
     final int height = original.height;
 
-    final double cardWidth = (width * 0.38).clamp(220.0, 420.0);
+    // Hitung pixelRatio dari resolusi foto relatif terhadap referensi 1080p.
+    final double shortSide = width < height ? width.toDouble() : height.toDouble();
+    final double computedPixelRatio = (shortSide / 1080.0).clamp(1.0, 4.0);
+
+    final double cardWidth = (width * 0.38).clamp(220.0, 560.0);
 
     final dummyPainter = UnifiedWatermarkPainter(
       timestamp: timestamp,
@@ -53,7 +58,7 @@ class WatermarkEngine {
       fontScale: fontScale,
       cardWidth: cardWidth,
       isHighQuality: true,
-      pixelRatio: pixelRatio,
+      pixelRatio: computedPixelRatio,
     );
     final double cardHeight = dummyPainter.computeHeight();
 
@@ -90,7 +95,7 @@ class WatermarkEngine {
       fontScale: fontScale,
       cardWidth: cardWidth,
       isHighQuality: true,
-      pixelRatio: pixelRatio,
+      pixelRatio: computedPixelRatio,
     );
     painter.paint(canvas, ui.Size(cardWidth, cardHeight));
 
@@ -101,17 +106,15 @@ class WatermarkEngine {
     // Convert to JPEG using image package
     final ByteData? byteData = await output.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) throw Exception('Failed to get image bytes');
-    
-    // Get pixel data as Uint8List
+
     final Uint8List pixels = byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes);
-    // Convert to img.Image using ByteBuffer
+    // 🔥 Perbaikan: gunakan pixels langsung, bukan pixels.buffer
     final img.Image jpegImg = img.Image.fromBytes(
       width: width,
       height: height,
-      bytes: pixels.buffer,
+      bytes: pixels,      // ← perbaikan kritis
       numChannels: 4,
     );
-    // Encode to JPEG and wrap as Uint8List
     final Uint8List jpegBytes = Uint8List.fromList(
       img.encodeJpg(jpegImg, quality: imageQuality.clamp(50, 100)),
     );

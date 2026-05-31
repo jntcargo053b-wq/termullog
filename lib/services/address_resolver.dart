@@ -1,4 +1,6 @@
-// lib/services/address_resolver.dart
+// ============================================================================
+// 1. lib/services/address_resolver.dart
+// ============================================================================
 import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
@@ -12,9 +14,10 @@ class AddressResolver {
   bool _pending = false;
   Position? _queuedPosition;
 
-  static const double _minDistanceMeters = 20.0;
-  static const double _accuracyImprovementThreshold = 8.0;
-  static const int _debounceMilliseconds = 800;
+  // Parameter optimal untuk timestamp/logistik
+  static const double _minDistanceMeters = 8.0;               // bergerak 8m → geocode ulang
+  static const double _accuracyImprovementThreshold = 3.0;    // akurasi membaik 3m → geocode ulang
+  static const int _debounceMilliseconds = 600;               // 600ms debounce
 
   void reset() {
     _lastLat = null;
@@ -41,10 +44,7 @@ class AddressResolver {
       shouldGeocode = true;
       if (kDebugMode) debugPrint('AddressResolver: first geocode');
     } else {
-      final distance = _haversine(
-        _lastLat!, _lastLon!,
-        pos.latitude, pos.longitude,
-      );
+      final distance = _haversine(_lastLat!, _lastLon!, pos.latitude, pos.longitude);
       final accuracyImproved = _lastAccuracy != null &&
           pos.accuracy < (_lastAccuracy! - _accuracyImprovementThreshold);
 
@@ -53,8 +53,7 @@ class AddressResolver {
       if (kDebugMode && shouldGeocode) {
         debugPrint(
           'AddressResolver: trigger — dist=${distance.toStringAsFixed(1)}m '
-          'accImprove=$accuracyImproved '
-          '(lastAcc=${_lastAccuracy?.toStringAsFixed(1)}m nowAcc=${pos.accuracy.toStringAsFixed(1)}m)',
+          'accImprove=$accuracyImproved (lastAcc=${_lastAccuracy?.toStringAsFixed(1)}m nowAcc=${pos.accuracy.toStringAsFixed(1)}m)',
         );
       }
     }

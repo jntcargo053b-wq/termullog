@@ -1,21 +1,21 @@
 // lib/screens/home_screen.dart
+// FINAL PRODUCTION – Sinkron dengan history (folder dokumen permanen)
+// - Baca foto dari ApplicationDocumentsDirectory/history
+// - Tidak decode image (hemat RAM)
+// - Thumbnail menggunakan Image.file langsung dengan cacheWidth
+// - Hapus dependency image package
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import 'package:image/image.dart' as img;
 import 'package:share_plus/share_plus.dart';
 
 import '../core/camera_registry.dart';
-import 'camera_screen.dart'; // ✅ import CameraScreen
+import 'camera_screen.dart';
 import 'settings_screen.dart';
 import 'history_screen.dart';
-
-// ============================================================
-// HOME SCREEN
-// ============================================================
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,78 +27,75 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _recentPhotos = [];
   bool _isLoading = true;
-  
-  // Statistics
   int _totalPhotos = 0;
   double _avgAccuracy = 0;
-  
+
   @override
   void initState() {
     super.initState();
     _loadRecentPhotos();
   }
-  
+
+  Future<Directory> _getHistoryDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final historyDir = Directory('${appDir.path}/history');
+    if (!await historyDir.exists()) {
+      await historyDir.create(recursive: true);
+    }
+    return historyDir;
+  }
+
   Future<void> _loadRecentPhotos() async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
+
     try {
-      final dir = await getTemporaryDirectory();
-      final files = dir.listSync()
+      final historyDir = await _getHistoryDirectory();
+      final files = historyDir
+          .listSync()
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('termullog_'))
           .where((f) => f.path.endsWith('.jpg'))
           .toList();
-      
+
       files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-      
+
       final List<Map<String, dynamic>> photos = [];
-      int total = 0;
-      double totalAccuracy = 0;
-      
-      for (var file in files.take(20)) {
+      for (final file in files.take(20)) {
         try {
-          final bytes = await file.readAsBytes();
-          final image = img.decodeImage(bytes);
-          if (image != null) {
-            final fileName = p.basenameWithoutExtension(file.path);
-            final parts = fileName.split('_');
-            DateTime timestamp = DateTime.now();
-            if (parts.length > 1) {
-              final ms = int.tryParse(parts[1]);
-              if (ms != null) timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
-            }
-            
-            final avgColor = 0xFF1B4F72;
-            
-            photos.add({
-              'path': file.path,
-              'timestamp': timestamp,
-              'thumbnail': bytes,
-              'avgColor': avgColor,
-            });
-            total++;
-            totalAccuracy += 10; // placeholder
+          if (!await file.exists()) continue;
+          final fileName = p.basenameWithoutExtension(file.path);
+          final parts = fileName.split('_');
+          DateTime timestamp = file.lastModifiedSync();
+          if (parts.length > 1) {
+            final ms = int.tryParse(parts[1]);
+            if (ms != null) timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
           }
+          photos.add({
+            'path': file.path,
+            'timestamp': timestamp,
+          });
         } catch (e) {
-          debugPrint('Error loading photo: $e');
+          debugPrint('Photo load error: $e');
         }
       }
-      
+
+      if (!mounted) return;
       setState(() {
         _recentPhotos = photos;
-        _totalPhotos = total;
-        _avgAccuracy = total > 0 ? totalAccuracy / total : 0;
+        _totalPhotos = files.length;
+        _avgAccuracy = 0; // placeholder, tidak ada metadata akurasi
         _isLoading = false;
       });
     } catch (e) {
       debugPrint('Load photos error: $e');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
-  
+
   Future<void> _refreshPhotos() async {
     await _loadRecentPhotos();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -159,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            
+
             // Stats Cards
             SliverToBoxAdapter(
               child: Container(
@@ -179,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: _StatCard(
                         icon: Icons.gps_fixed,
                         title: 'Rata-rata Akurasi',
-                        value: '${_avgAccuracy.toStringAsFixed(0)}m',
+                        value: _avgAccuracy > 0 ? '${_avgAccuracy.toStringAsFixed(0)}m' : '--',
                         color: const Color(0xFF00B8D4),
                       ),
                     ),
@@ -187,8 +184,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            
-            // Camera Button Hero
+
+            // Camera Button
             SliverToBoxAdapter(
               child: Container(
                 margin: const EdgeInsets.all(16),
@@ -289,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            
+
             // Recent Photos Header
             SliverToBoxAdapter(
               child: Padding(
@@ -322,7 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            
+
             // Recent Photos Grid
             if (_isLoading)
               const SliverFillRemaining(
@@ -387,14 +384,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-            
+
             const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
           ],
         ),
       ),
     );
   }
-  
+
   void _viewPhotoDetail(String path) {
     Navigator.push(
       context,
@@ -408,20 +405,19 @@ class _HomeScreenState extends State<HomeScreen> {
 // ============================================================
 // Stat Card Widget
 // ============================================================
-
 class _StatCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String value;
   final Color color;
-  
+
   const _StatCard({
     required this.icon,
     required this.title,
     required this.value,
     required this.color,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -473,30 +469,29 @@ class _StatCard extends StatelessWidget {
 // ============================================================
 // Photo Card Widget
 // ============================================================
-
 class _PhotoCard extends StatelessWidget {
   final Map<String, dynamic> photo;
   final VoidCallback onTap;
-  
+
   const _PhotoCard({
     required this.photo,
     required this.onTap,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     final timestamp = photo['timestamp'] as DateTime;
     final isToday = timestamp.day == DateTime.now().day &&
-                    timestamp.month == DateTime.now().month &&
-                    timestamp.year == DateTime.now().year;
-    
+        timestamp.month == DateTime.now().month &&
+        timestamp.year == DateTime.now().year;
+
     String timeStr;
     if (isToday) {
       timeStr = 'Hari ini ${DateFormat('HH:mm').format(timestamp)}';
     } else {
       timeStr = DateFormat('dd/MM/yy HH:mm').format(timestamp);
     }
-    
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -507,14 +502,16 @@ class _PhotoCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thumbnail
+            // Thumbnail – langsung dari file, resize hemat memori
             ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: Image.memory(
-                photo['thumbnail'],
+              child: Image.file(
+                File(photo['path']),
                 height: 140,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                cacheWidth: 400,
+                filterQuality: FilterQuality.low,
                 errorBuilder: (_, __, ___) => Container(
                   height: 140,
                   color: Colors.grey.shade800,
@@ -522,8 +519,6 @@ class _PhotoCard extends StatelessWidget {
                 ),
               ),
             ),
-            
-            // Info
             Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -569,25 +564,24 @@ class _PhotoCard extends StatelessWidget {
 // ============================================================
 // Photo Detail Screen (Lightbox)
 // ============================================================
-
 class _PhotoDetailScreen extends StatefulWidget {
   final String imagePath;
-  
+
   const _PhotoDetailScreen({required this.imagePath});
-  
+
   @override
   State<_PhotoDetailScreen> createState() => _PhotoDetailScreenState();
 }
 
 class _PhotoDetailScreenState extends State<_PhotoDetailScreen> {
   final TransformationController _transformController = TransformationController();
-  
+
   @override
   void dispose() {
     _transformController.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

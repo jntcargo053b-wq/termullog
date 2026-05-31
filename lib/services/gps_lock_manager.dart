@@ -1,6 +1,4 @@
 // lib/services/gps_lock_manager.dart
-// Perbaikan: filter sample dengan akurasi <= _baseAccuracyThreshold (15m) untuk hitung posisi lock
-
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -136,37 +134,39 @@ class GpsLockManager {
       _recentAccuracies.removeAt(0);
     }
 
+    // 🔥 Hitung samplesToUse terlebih dahulu agar bisa dipakai untuk requiredSeconds
+    final goodSamples = _bootstrapSamples
+        .where((p) => p.accuracy <= _baseAccuracyThreshold)
+        .toList();
+    final samplesToUse = goodSamples.isNotEmpty ? goodSamples : _bootstrapSamples;
+
+    double avgAccForLock = 0;
+    for (var p in samplesToUse) {
+      avgAccForLock += p.accuracy;
+    }
+    avgAccForLock /= samplesToUse.length;
+
     final now = DateTime.now();
     final duration = now.difference(_bootstrapStart!).inSeconds.toDouble();
-
     double medianAcc = _computeMedian(_recentAccuracies);
-    double avgAccAll = _bootstrapSamples.fold(0.0, (sum, p) => sum + p.accuracy) / _bootstrapSamples.length;
-    double requiredSeconds = _requiredStableSeconds(avgAccAll);
+    double requiredSeconds = _requiredStableSeconds(avgAccForLock); // ✅ pakai avg dari samplesToUse
     double currentThreshold = _effectiveAccuracyThreshold;
 
     bool stable = medianAcc <= currentThreshold && duration >= requiredSeconds;
 
     if (stable) {
-      // 🔥 PERBAIKAN: Hanya gunakan sample dengan akurasi ≤ _baseAccuracyThreshold (15m)
-      final goodSamples = _bootstrapSamples
-          .where((p) => p.accuracy <= _baseAccuracyThreshold)
-          .toList();
-      final samplesToUse = goodSamples.isNotEmpty ? goodSamples : _bootstrapSamples;
-
-      double avgLat = 0, avgLon = 0, avgAcc = 0;
+      double avgLat = 0, avgLon = 0;
       for (var p in samplesToUse) {
         avgLat += p.latitude;
         avgLon += p.longitude;
-        avgAcc += p.accuracy;
       }
       avgLat /= samplesToUse.length;
       avgLon /= samplesToUse.length;
-      avgAcc /= samplesToUse.length;
 
       final hybridPos = Position(
         latitude: avgLat,
         longitude: avgLon,
-        accuracy: avgAcc,
+        accuracy: avgAccForLock,
         altitude: newPos.altitude,
         heading: newPos.heading,
         speed: newPos.speed,
@@ -179,10 +179,10 @@ class GpsLockManager {
       final bool isFallback = currentThreshold > _baseAccuracyThreshold;
       _lockData = LockData(
         position: hybridPos,
-        rawPosition: hybridPos, // rawPosition awal sama dengan hybrid (bisa di-update kemudian)
-        accuracy: avgAcc,
-        quality: _getQualityFromAccuracy(avgAcc),
-        confidence: _computeConfidence(avgAcc),
+        rawPosition: newPos,   // ✅ raw position terbaru (bukan hybrid)
+        accuracy: avgAccForLock,
+        quality: _getQualityFromAccuracy(avgAccForLock),
+        confidence: _computeConfidence(avgAccForLock),
         lockedAt: DateTime.now(),
         isFallbackLock: isFallback,
       );
@@ -191,7 +191,7 @@ class GpsLockManager {
       _stationaryProgress = 0.0;
 
       if (kDebugMode) {
-        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, median=${medianAcc.toStringAsFixed(1)}m, avgLock=${avgAcc.toStringAsFixed(1)}m, fallback=$isFallback, samplesUsed=${samplesToUse.length}');
+        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, median=${medianAcc.toStringAsFixed(1)}m, avgLock=${avgAccForLock.toStringAsFixed(1)}m, fallback=$isFallback, samplesUsed=${samplesToUse.length}');
       }
       return true;
     }
@@ -207,7 +207,6 @@ class GpsLockManager {
     );
     final accuracyImproved = newPos.accuracy < (_lockData!.accuracy - 1.0);
 
-    // Selalu update rawPosition
     LockData newLockData = _lockData!.copyWith(rawPosition: newPos);
 
     Position newHybrid;

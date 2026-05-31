@@ -1,5 +1,10 @@
 // lib/services/location_weather_service.dart
-// FINAL: cache dengan cleanup expired entries, fallback Nominatim -> Photon -> Android Geocoder
+// FINAL VERSION - Semua perbaikan:
+// - Cache diaktifkan (_disableCache = false)
+// - Nearby cache duration 10 menit (agar tidak mudah expired saat sesi foto lapangan)
+// - Nearby cache radius 12 meter (konsisten dengan AddressResolver threshold 20m)
+// - Nominatim: reject jika hasil snap-to-road > 30 meter
+// - Cleanup expired nearby cache entries setiap lookup
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
@@ -44,9 +49,9 @@ class LocationWeatherService {
   static const int _maxAddressCacheSize = 100;
   static final List<String> _addressCacheOrder = [];
 
-  // Nearby cache (radius based, cari jarak terdekat, expiry 2 menit)
-  static const double _addressCacheRadiusMeters = 8.0;
-  static const Duration _addressCacheDuration = Duration(minutes: 2);
+  // Nearby cache (radius based, cari jarak terdekat)
+  static const double _addressCacheRadiusMeters = 12.0;   // naik dari 8m, konsisten dengan AddressResolver
+  static const Duration _addressCacheDuration = Duration(minutes: 10); // naik dari 2 menit
   static final Map<String, CachedAddress> _nearbyCache = {};
   static const int _maxNearbyCacheSize = 50;
 
@@ -54,7 +59,7 @@ class LocationWeatherService {
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
 
-  static bool _disableCache = false; // false untuk production
+  static bool _disableCache = false; // ← sudah false (cache aktif)
 
   static String _cacheKey(double lat, double lon) {
     return '${lat.toStringAsFixed(5)},${lon.toStringAsFixed(5)}';
@@ -95,7 +100,7 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
-  // 🔥 Nearby cache dengan cleanup entry expired
+  // Helper: cari nearby cache + cleanup expired entries
   static String? _findNearbyAddressCache(double lat, double lon) {
     final now = DateTime.now();
     final expiredKeys = <String>[];
@@ -114,7 +119,7 @@ class LocationWeatherService {
       }
     }
 
-    // Hapus entry expired setelah iterasi (hindari ConcurrentModificationError)
+    // Hapus entry expired
     for (final key in expiredKeys) {
       _nearbyCache.remove(key);
     }
@@ -129,9 +134,8 @@ class LocationWeatherService {
   }
 
   static void _addToNearbyCache(double lat, double lon, String address) {
-    // Batasi ukuran cache
+    // Batasi ukuran cache (hapus yang paling lama jika penuh)
     if (_nearbyCache.length >= _maxNearbyCacheSize) {
-      // Hapus yang paling lama
       final oldestKey = _nearbyCache.keys.first;
       _nearbyCache.remove(oldestKey);
     }
@@ -323,6 +327,22 @@ class LocationWeatherService {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final addr = data['address'] as Map<String, dynamic>?;
         if (addr == null) return '';
+
+        // 🔥 Filter snap distance > 30 meter
+        final double? resultLat = data['lat'] != null ? double.tryParse(data['lat'].toString()) : null;
+        final double? resultLon = data['lon'] != null ? double.tryParse(data['lon'].toString()) : null;
+        if (resultLat != null && resultLon != null) {
+          final distance = Geolocator.distanceBetween(
+            double.parse(latStr), double.parse(lonStr),
+            resultLat, resultLon,
+          );
+          if (distance > 30.0) {
+            if (kDebugMode) {
+              debugPrint('Nominatim: result too far (${distance.toStringAsFixed(0)}m), rejecting');
+            }
+            return '';
+          }
+        }
 
         final road = _safeStr(addr['road'])
             ?? _safeStr(addr['residential'])

@@ -1,4 +1,7 @@
 // lib/screens/preview_screen.dart
+// FINAL PRODUCTION – folder history sinkron dengan HomeScreen & HistoryScreen
+// Menyimpan ke ApplicationDocumentsDirectory/history (bukan termullog_history)
+// Watermark processing, mini map, save ke galeri, share
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
@@ -12,10 +15,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
-import '../core/constants.dart';
-import '../watermark/watermark_params.dart';
 import '../watermark/watermark_engine.dart';
 
 enum SaveStatus { idle, saving, saved, error }
@@ -102,7 +104,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   Future<Directory> _getHistoryDirectory() async {
     final appDir = await getApplicationDocumentsDirectory();
-    final historyDir = Directory('${appDir.path}/termullog_history');
+    final historyDir = Directory('${appDir.path}/history'); // sinkron dengan Home & History
     if (!await historyDir.exists()) {
       await historyDir.create(recursive: true);
     }
@@ -161,8 +163,7 @@ class _PreviewScreenState extends State<PreviewScreen>
           }
         } catch (_) {
           if (address.isEmpty) {
-            address =
-                'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
+            address = 'GPS: ${widget.latitude!.toStringAsFixed(5)}, ${widget.longitude!.toStringAsFixed(5)}';
           }
         }
       } else if (address.isEmpty && !hasPosition) {
@@ -171,7 +172,6 @@ class _PreviewScreenState extends State<PreviewScreen>
 
       // ── 3. LOAD SETTINGS ──────────────────────────────────────────
       _processingStep.value = 'Memuat pengaturan...';
-      SettingsCache.invalidate();
       await SettingsCache.preload();
 
       final layout = await SettingsCache.layout;
@@ -188,50 +188,34 @@ class _PreviewScreenState extends State<PreviewScreen>
       final imageQuality = await SettingsCache.imageQuality;
       final dateFormat = await SettingsCache.dateFormat;
       final timeFormat = await SettingsCache.timeFormat;
-      // Konversi double ke string: small (<13), normal (14-19), large (>20)
       final fontSizeStr = fontSizeDouble <= 13
           ? 'small'
           : fontSizeDouble >= 20
               ? 'large'
               : 'normal';
 
-      debugPrint(
-          '🔥 PREVIEW: layout = ${layout.displayName}, index = ${layout.index}');
-
       // ── 4. FETCH MINI MAP ─────────────────────────────────────────
       Uint8List? mapBytes;
-
       if (showMiniMap && hasPosition) {
-        if (mounted) setState(() => _isMiniMapLoading = true);
+        _isMiniMapLoading = true;
         _processingStep.value = 'Mengunduh peta mini...';
-
+        if (mounted) setState(() {});
         try {
           mapBytes = await LocationWeatherService.fetchMapWithRetry(
             widget.latitude!,
             widget.longitude!,
           ).timeout(const Duration(seconds: 8));
-        } catch (_) {
-          mapBytes = null;
-        }
-
-        if (mapBytes == null) {
-          try {
-            mapBytes = await _fetchOsmTileBytes(
-              widget.latitude!,
-              widget.longitude!,
-              zoom: mapZoomLevel,
-            ).timeout(const Duration(seconds: 8));
-          } catch (_) {
-            mapBytes = null;
+          if (mapBytes == null || mapBytes.isEmpty) {
+            _miniMapError = 'Gagal mengunduh peta';
+          } else {
+            _miniMapError = null;
           }
-        }
-
-        if (mounted) {
-          setState(() {
-            _isMiniMapLoading = false;
-            _miniMapError =
-                (mapBytes == null || mapBytes.isEmpty) ? 'Gagal mengunduh peta' : null;
-          });
+        } catch (e) {
+          mapBytes = null;
+          _miniMapError = 'Gagal mengunduh peta';
+        } finally {
+          _isMiniMapLoading = false;
+          if (mounted) setState(() {});
         }
       }
 
@@ -256,20 +240,19 @@ class _PreviewScreenState extends State<PreviewScreen>
         showCoordinates: showCoordinates,
         opacity: opacity,
         showBorder: showBorder,
-        fontSize: fontSizeStr, // ← sekarang String
+        fontSize: fontSizeStr,
         imageQuality: imageQuality,
         dateFormat: dateFormat,
         timeFormat: timeFormat,
       );
 
-      // ── 6. PROCESS WATERMARK (MAIN THREAD FLUTTER CANVAS) ──────────
+      // ── 6. PROCESS WATERMARK ──────────────────────────────────────
       final processedBytes = await WatermarkEngine.applyFromMapAsync(params.toMap());
 
-      // ── 7. SAVE TO APP DIRECTORY ──────────────────────────────────
+      // ── 7. SAVE TO PERMANENT HISTORY ──────────────────────────────
       _processingStep.value = 'Menyimpan file...';
       final historyDir = await _getHistoryDirectory();
-      final permanentFile =
-          File('${historyDir.path}/${_uniqueFileName(timestamp)}');
+      final permanentFile = File('${historyDir.path}/${_uniqueFileName(timestamp)}');
       await permanentFile.writeAsBytes(processedBytes);
 
       if (mounted) {
@@ -291,43 +274,6 @@ class _PreviewScreenState extends State<PreviewScreen>
           _isProcessing = false;
         });
       }
-    }
-  }
-
-  // ── OSM TILE FALLBACK ─────────────────────────────────────────────
-  static Future<Uint8List?> _fetchOsmTileBytes(
-    double lat,
-    double lng, {
-    int zoom = 15,
-  }) async {
-    final n = pow(2, zoom).toInt();
-    final tileX = ((lng + 180) / 360 * n).toInt().clamp(0, n - 1);
-    final latRad = lat * pi / 180;
-    final tileY =
-        ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * n)
-            .toInt()
-            .clamp(0, n - 1);
-
-    const subdomains = ['a', 'b', 'c'];
-    final sub = subdomains[tileX % 3];
-    final url = 'https://$sub.tile.openstreetmap.org/$zoom/$tileX/$tileY.png';
-
-    final client = HttpClient()
-      ..userAgent = 'TermulLogApp/1.0 (flutter)'
-      ..connectionTimeout = const Duration(seconds: 8);
-    try {
-      final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close();
-      if (response.statusCode != 200) return null;
-      final chunks = <List<int>>[];
-      await for (final chunk in response) {
-        chunks.add(chunk);
-      }
-      return Uint8List.fromList(chunks.expand((e) => e).toList());
-    } catch (_) {
-      return null;
-    } finally {
-      client.close(force: true);
     }
   }
 
@@ -738,7 +684,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 }
 
-// ── Reusable widgets ──────────────────────────────────────────────────────
+// Reusable widgets
 class _ActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget icon;

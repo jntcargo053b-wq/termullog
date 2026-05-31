@@ -12,8 +12,7 @@ class AddressResolver {
   bool _pending = false;
   Position? _queuedPosition;
 
-  // 🔥 Naikkan jarak minimum menjadi 15m (atau 20m) agar tidak terlalu sensitif
-  static const double _minDistanceMeters = 15.0;
+  static const double _minDistanceMeters = 20.0;
   static const double _accuracyImprovementThreshold = 8.0;
   static const int _debounceMilliseconds = 800;
 
@@ -31,9 +30,7 @@ class AddressResolver {
     if (_pending) {
       if (_queuedPosition == null || pos.accuracy < _queuedPosition!.accuracy) {
         _queuedPosition = pos;
-      }
-      if (kDebugMode) {
-        debugPrint('AddressResolver: pending, queue acc=${pos.accuracy.toStringAsFixed(1)}m');
+        if (kDebugMode) debugPrint('AddressResolver: pending, update queue acc=${pos.accuracy.toStringAsFixed(1)}m');
       }
       return;
     }
@@ -64,7 +61,6 @@ class AddressResolver {
 
     if (!shouldGeocode) return;
 
-    // Catat posisi SEBELUM debounce
     _lastLat = pos.latitude;
     _lastLon = pos.longitude;
     _lastAccuracy = pos.accuracy;
@@ -73,7 +69,6 @@ class AddressResolver {
     _debounceTimer = Timer(const Duration(milliseconds: _debounceMilliseconds), () async {
       _pending = true;
       _debounceTimer = null;
-
       try {
         await onGeocode(pos);
       } catch (e) {

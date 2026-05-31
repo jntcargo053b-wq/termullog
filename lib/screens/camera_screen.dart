@@ -1,9 +1,4 @@
 // lib/screens/camera_screen.dart
-// FINAL VERSION – Aplikasi Timestamp / Logistik
-// - Geocoding menggunakan rawPosition (sample terbaik)
-// - Force refresh saat lock baru
-// - Anti race condition _geoRequestId
-// - Overlay watermark menampilkan akurasi rawPosition
 import 'dart:async';
 import 'dart:io';
 
@@ -35,24 +30,21 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
-  // Camera
   CameraController? _controller;
   bool _isCameraReady = false;
   bool _isCapturing = false;
   bool _isCameraInitializing = false;
   Completer<void>? _cameraInitCompleter;
 
-  // GPS
   final GpsLockManager _gpsLockManager = GpsLockManager();
   final AddressResolver _addressResolver = AddressResolver();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _displayPosition;   // smoothed position (weighted average) untuk overlay
+  Position? _displayPosition;
   double? _currentAccuracy;
   double _gpsConfidence = 0.0;
   bool _isFallbackLock = false;
 
-  // Address
   String _address = 'Mencari lokasi...';
   String _weather = '';
   String _gpsStatus = 'Searching GPS...';
@@ -63,7 +55,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   DateTime _currentTimestamp = DateTime.now();
   bool _locationStreamActive = false;
 
-  // Watermark settings
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -551,7 +542,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               hasPosition: true,
               lat: overlayPosition.latitude,
               lon: overlayPosition.longitude,
-              acc: _currentAccuracy ?? overlayPosition.accuracy, // 🔥 gunakan akurasi raw
+              acc: _currentAccuracy ?? overlayPosition.accuracy,
               address: _address,
               weather: _weather,
               showWeather: _showWeather,

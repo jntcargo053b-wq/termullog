@@ -6,8 +6,8 @@ import 'package:geolocator/geolocator.dart';
 enum GpsLockState { searching, bootstrapping, locked }
 
 class LockData {
-  final Position position;
-  final Position rawPosition;
+  final Position position;      // hybrid (weighted) untuk tampilan
+  final Position rawPosition;   // sample terbaik (akurasi tertinggi) untuk geocoding & watermark
   final double accuracy;
   final String quality;
   final double confidence;
@@ -134,55 +134,59 @@ class GpsLockManager {
       _recentAccuracies.removeAt(0);
     }
 
-    // 🔥 Hitung samplesToUse terlebih dahulu agar bisa dipakai untuk requiredSeconds
+    // Filter sample dengan akurasi ≤ _baseAccuracyThreshold (15m)
     final goodSamples = _bootstrapSamples
         .where((p) => p.accuracy <= _baseAccuracyThreshold)
         .toList();
     final samplesToUse = goodSamples.isNotEmpty ? goodSamples : _bootstrapSamples;
 
-    double avgAccForLock = 0;
+    // Hitung weighted average untuk hybrid position (bobot = 1/σ²)
+    double weightSum = 0, wLat = 0, wLon = 0, wAcc = 0;
     for (var p in samplesToUse) {
-      avgAccForLock += p.accuracy;
+      final w = 1.0 / (p.accuracy * p.accuracy);
+      wLat += p.latitude * w;
+      wLon += p.longitude * w;
+      wAcc += p.accuracy * w;
+      weightSum += w;
     }
-    avgAccForLock /= samplesToUse.length;
+    final avgLat = wLat / weightSum;
+    final avgLon = wLon / weightSum;
+    final avgAcc = wAcc / weightSum;
+
+    // Cari sample terbaik (akurasi terkecil) untuk rawPosition
+    final bestSample = samplesToUse.reduce(
+      (a, b) => a.accuracy < b.accuracy ? a : b
+    );
 
     final now = DateTime.now();
     final duration = now.difference(_bootstrapStart!).inSeconds.toDouble();
     double medianAcc = _computeMedian(_recentAccuracies);
-    double requiredSeconds = _requiredStableSeconds(avgAccForLock); // ✅ pakai avg dari samplesToUse
+    double requiredSeconds = _requiredStableSeconds(avgAcc);
     double currentThreshold = _effectiveAccuracyThreshold;
 
     bool stable = medianAcc <= currentThreshold && duration >= requiredSeconds;
 
     if (stable) {
-      double avgLat = 0, avgLon = 0;
-      for (var p in samplesToUse) {
-        avgLat += p.latitude;
-        avgLon += p.longitude;
-      }
-      avgLat /= samplesToUse.length;
-      avgLon /= samplesToUse.length;
-
       final hybridPos = Position(
         latitude: avgLat,
         longitude: avgLon,
-        accuracy: avgAccForLock,
-        altitude: newPos.altitude,
-        heading: newPos.heading,
-        speed: newPos.speed,
-        speedAccuracy: newPos.speedAccuracy,
+        accuracy: avgAcc,
+        altitude: bestSample.altitude,
+        heading: bestSample.heading,
+        speed: bestSample.speed,
+        speedAccuracy: bestSample.speedAccuracy,
         timestamp: DateTime.now(),
-        altitudeAccuracy: newPos.altitudeAccuracy,
-        headingAccuracy: newPos.headingAccuracy,
+        altitudeAccuracy: bestSample.altitudeAccuracy,
+        headingAccuracy: bestSample.headingAccuracy,
       );
 
       final bool isFallback = currentThreshold > _baseAccuracyThreshold;
       _lockData = LockData(
         position: hybridPos,
-        rawPosition: newPos,   // ✅ raw position terbaru (bukan hybrid)
-        accuracy: avgAccForLock,
-        quality: _getQualityFromAccuracy(avgAccForLock),
-        confidence: _computeConfidence(avgAccForLock),
+        rawPosition: bestSample,  // ← pakai sample terbaik
+        accuracy: avgAcc,
+        quality: _getQualityFromAccuracy(avgAcc),
+        confidence: _computeConfidence(avgAcc),
         lockedAt: DateTime.now(),
         isFallbackLock: isFallback,
       );
@@ -191,7 +195,7 @@ class GpsLockManager {
       _stationaryProgress = 0.0;
 
       if (kDebugMode) {
-        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, median=${medianAcc.toStringAsFixed(1)}m, avgLock=${avgAccForLock.toStringAsFixed(1)}m, fallback=$isFallback, samplesUsed=${samplesToUse.length}');
+        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, median=${medianAcc.toStringAsFixed(1)}m, weightedAvg=${avgAcc.toStringAsFixed(1)}m, bestSampleAcc=${bestSample.accuracy.toStringAsFixed(1)}m, fallback=$isFallback');
       }
       return true;
     }
@@ -207,8 +211,16 @@ class GpsLockManager {
     );
     final accuracyImproved = newPos.accuracy < (_lockData!.accuracy - 1.0);
 
-    LockData newLockData = _lockData!.copyWith(rawPosition: newPos);
+    // Selalu update rawPosition dengan sample terbaru yang lebih akurat
+    Position newRaw = newPos;
+    if (_lockData!.rawPosition.accuracy < newPos.accuracy) {
+      newRaw = _lockData!.rawPosition; // pertahankan yang terbaik jika tidak lebih baik
+    } else {
+      newRaw = newPos;
+    }
+    LockData newLockData = _lockData!.copyWith(rawPosition: newRaw);
 
+    // Hybrid filter sederhana untuk tampilan
     Position newHybrid;
     if (movedDistance < 2.0) {
       const double alpha = 0.3;
@@ -237,7 +249,7 @@ class GpsLockManager {
         lockedAt: DateTime.now(),
       );
       if (kDebugMode) {
-        debugPrint('GpsLockManager: UPDATE hybrid+raw acc=${newPos.accuracy.toStringAsFixed(1)}m');
+        debugPrint('GpsLockManager: UPDATE hybrid+raw acc=${newPos.accuracy.toStringAsFixed(1)}m, bestRaw=${newRaw.accuracy.toStringAsFixed(1)}m');
       }
     } else {
       if (kDebugMode) {

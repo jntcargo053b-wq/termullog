@@ -1,6 +1,8 @@
 // lib/services/gps_lock_manager.dart
-// Final – perbaikan validasi koordinat prevRaw dengan AND (bukan OR)
-// untuk mencegah kondisi parsial (satu sumbu 0, satu tidak).
+// FINAL – perbaikan lock menggunakan sample terbaik dalam window acquiring
+// - _stationaryCount hanya di-increment untuk sample dengan accuracy <= threshold
+// - Tidak menggunakan _bestFix global untuk lock
+// - Update rawPosition setelah lock jika akurasi membaik
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -52,12 +54,13 @@ class LockData {
 class GpsLockManager {
   GpsLockState _state = GpsLockState.searching;
   LockData? _lockData;
-  Position? _bestFix;              // all-time best accuracy
+  Position? _bestFix;              // all-time best accuracy (fallback display saja)
+  final List<Position> _acquiringSamples = []; // sample akurat dalam fase acquiring saat ini
   int _stationaryCount = 0;
   double _stationaryProgress = 0.0;
   bool _isMovingFlag = false;
-  double _prevRawLat = 0.0, _prevRawLon = 0.0; // posisi raw sebelumnya
-  double _lastRawLat = 0.0, _lastRawLon = 0.0; // posisi raw terbaru
+  double _prevRawLat = 0.0, _prevRawLon = 0.0;
+  double _lastRawLat = 0.0, _lastRawLon = 0.0;
   DateTime? _lastMovementTime;
 
   // Parameter lock untuk aplikasi timestamp/logistik (stabil)
@@ -183,31 +186,41 @@ class GpsLockManager {
       final dist = _haversine(_prevRawLat, _prevRawLon, newPos.latitude, newPos.longitude);
       if (dist > _moveThreshold) {
         _stationaryCount = 0;
+        _acquiringSamples.clear(); // buang sample lama – lokasi sudah berpindah
         _state = GpsLockState.acquiring;
         return false;
       }
     }
 
-    _stationaryCount++;
+    // Hanya kumpulkan sample yang akurat dan increment stationaryCount jika sample memenuhi threshold
+    if (newPos.accuracy <= _lockAccuracyThreshold) {
+      _acquiringSamples.add(newPos);
+      _stationaryCount++;
+    }
     _state = GpsLockState.acquiring;
 
     final readyToLock = _stationaryCount >= _samplesBeforeLock &&
         newPos.accuracy <= _lockAccuracyThreshold;
 
     if (readyToLock) {
+      // Gunakan sample terbaik dalam window acquiring ini, bukan _bestFix global
+      final bestInWindow = _acquiringSamples.isNotEmpty
+          ? _acquiringSamples.reduce((a, b) => a.accuracy < b.accuracy ? a : b)
+          : newPos;
+      _acquiringSamples.clear();
       _lockData = LockData(
-        position: newPos,
-        rawPosition: _bestFix ?? newPos,
-        accuracy: newPos.accuracy,
-        quality: _getQualityFromAccuracy(newPos.accuracy),
-        confidence: _computeConfidence(newPos.accuracy),
+        position: bestInWindow,
+        rawPosition: bestInWindow,
+        accuracy: bestInWindow.accuracy,
+        quality: _getQualityFromAccuracy(bestInWindow.accuracy),
+        confidence: _computeConfidence(bestInWindow.accuracy),
         lockedAt: DateTime.now(),
         isFallbackLock: false,
       );
       _state = GpsLockState.locked;
       _stationaryProgress = 1.0;
       if (kDebugMode) {
-        debugPrint('GpsLockManager: LOCKED acc=${newPos.accuracy.toStringAsFixed(1)}m bestFix=${(_bestFix ?? newPos).accuracy.toStringAsFixed(1)}m');
+        debugPrint('GpsLockManager: LOCKED bestInWindow=${bestInWindow.accuracy.toStringAsFixed(1)}m');
       }
       return true;
     }
@@ -221,11 +234,12 @@ class GpsLockManager {
     if (_state != GpsLockState.locked) return;
     _state = GpsLockState.acquiring;
     _stationaryCount = 0;
+    _acquiringSamples.clear();
     _lockData = null;
     _isMovingFlag = false;
     _stationaryProgress = 0.0;
     _lastMovementTime = null;
-    if (kDebugMode) debugPrint('GpsLockManager: softUnlock (lock released, bestFix retained)');
+    if (kDebugMode) debugPrint('GpsLockManager: softUnlock');
   }
 
   // Reset total (hanya untuk inisialisasi atau error)
@@ -233,6 +247,7 @@ class GpsLockManager {
     _state = GpsLockState.searching;
     _lockData = null;
     _bestFix = null;
+    _acquiringSamples.clear();
     _stationaryCount = 0;
     _isMovingFlag = false;
     _stationaryProgress = 0.0;

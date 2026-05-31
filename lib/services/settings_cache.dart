@@ -1,3 +1,4 @@
+```dart
 // lib/services/settings_cache.dart
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +8,7 @@ import '../models/watermark_position.dart';
 class SettingsCache {
   static SharedPreferences? _prefs;
 
-  // Cache variables (semua properti)
+  // Cache variables
   static bool? _showMiniMap;
   static String? _mapSize;
   static int? _mapZoomLevel;
@@ -27,11 +28,32 @@ class SettingsCache {
   static bool? _useHighAccuracy;
   static bool? _autoSave;
 
+  // Daftar semua key yang digunakan oleh SettingsCache (untuk reset aman)
+  static const List<String> _settingKeys = [
+    'showMiniMap',
+    'mapSize',
+    'mapZoomLevel',
+    'showAddress',
+    'showCoordinates',
+    'opacity',
+    'showBorder',
+    'fontSize',
+    'layout',
+    'showWeather',
+    'showAccuracy',
+    'dateFormat',
+    'timeFormat',
+    'themeMode',
+    'imageQuality',
+    'keepScreenOn',
+    'useHighAccuracy',
+    'autoSave',
+    'watermark_position',
+  ];
+
   // ==========================================================================
   // INIT / PRELOAD
   // ==========================================================================
-  /// Load semua setting dari SharedPreferences dan inisialisasi cache.
-  /// Panggil sekali di awal aplikasi atau sebelum membaca setting.
   static Future<void> preload() async {
     _prefs ??= await SharedPreferences.getInstance();
 
@@ -127,8 +149,9 @@ class SettingsCache {
   }
   static Future<void> setMapZoomLevel(int value) async {
     await preload();
-    _mapZoomLevel = value;
-    await _prefs!.setInt('mapZoomLevel', value);
+    final safeZoom = value.clamp(10, 21);
+    _mapZoomLevel = safeZoom;
+    await _prefs!.setInt('mapZoomLevel', safeZoom);
   }
 
   // ==========================================================================
@@ -163,8 +186,9 @@ class SettingsCache {
   }
   static Future<void> setOpacity(double value) async {
     await preload();
-    _opacity = value;
-    await _prefs!.setDouble('opacity', value);
+    final safeValue = value.clamp(0.1, 1.0);
+    _opacity = safeValue;
+    await _prefs!.setDouble('opacity', safeValue);
   }
 
   static Future<bool> get showBorder async {
@@ -186,8 +210,9 @@ class SettingsCache {
   }
   static Future<void> setFontSize(double value) async {
     await preload();
-    _fontSize = value;
-    await _prefs!.setDouble('fontSize', value);
+    final safeValue = value.clamp(10.0, 32.0);
+    _fontSize = safeValue;
+    await _prefs!.setDouble('fontSize', safeValue);
   }
 
   // ==========================================================================
@@ -279,13 +304,14 @@ class SettingsCache {
   }
 
   // ==========================================================================
-  // RESET ALL SETTINGS
+  // RESET ALL SETTINGS (SAFE)
   // ==========================================================================
   static Future<void> resetAllSettings() async {
     await preload();
-    await _prefs!.clear();
+    for (final key in _settingKeys) {
+      await _prefs!.remove(key);
+    }
     _invalidateAll();
-    // Reload defaults
     await preload();
   }
 
@@ -315,20 +341,22 @@ class SettingsCache {
   // ==========================================================================
   static void invalidate() {
     _invalidateAll();
+    _prefs = null; // force reload on next preload
   }
 
   // ==========================================================================
-  // WATERMARK POSITION (persistent)
+  // WATERMARK POSITION (persistent with safe try-catch)
   // ==========================================================================
-  /// Simpan posisi, skala, dan skala font watermark ke SharedPreferences.
   static Future<void> saveWatermarkPosition(WatermarkPosition pos) async {
-    await preload();
-    final jsonString = jsonEncode(pos.toJson());
-    await _prefs!.setString('watermark_position', jsonString);
+    try {
+      await preload();
+      final jsonString = jsonEncode(pos.toJson());
+      await _prefs!.setString('watermark_position', jsonString);
+    } catch (_) {
+      // silent fail – not critical
+    }
   }
 
-  /// Muat posisi, skala, dan skala font watermark dari SharedPreferences.
-  /// Kembalikan `WatermarkPosition.initial` jika belum ada atau gagal.
   static Future<WatermarkPosition> loadWatermarkPosition() async {
     await preload();
     final raw = _prefs!.getString('watermark_position');
@@ -341,3 +369,4 @@ class SettingsCache {
     }
   }
 }
+```

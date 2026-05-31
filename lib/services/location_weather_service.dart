@@ -1,10 +1,4 @@
 // lib/services/location_weather_service.dart
-// FINAL VERSION - Semua perbaikan:
-// - Cache diaktifkan (_disableCache = false)
-// - Nearby cache duration 10 menit (agar tidak mudah expired saat sesi foto lapangan)
-// - Nearby cache radius 12 meter (konsisten dengan AddressResolver threshold 20m)
-// - Nominatim: reject jika hasil snap-to-road > 30 meter
-// - Cleanup expired nearby cache entries setiap lookup
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
@@ -44,22 +38,22 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
-  // Exact coordinate cache (5 desimal ~1.1 meter)
+  // Exact coordinate cache (5 desimal)
   static final Map<String, String> _addressCache = {};
   static const int _maxAddressCacheSize = 100;
   static final List<String> _addressCacheOrder = [];
 
-  // Nearby cache (radius based, cari jarak terdekat)
-  static const double _addressCacheRadiusMeters = 12.0;   // naik dari 8m, konsisten dengan AddressResolver
-  static const Duration _addressCacheDuration = Duration(minutes: 10); // naik dari 2 menit
+  // Nearby cache
+  static const double _addressCacheRadiusMeters = 12.0;
+  static const Duration _addressCacheDuration = Duration(minutes: 10);
   static final Map<String, CachedAddress> _nearbyCache = {};
   static const int _maxNearbyCacheSize = 50;
 
-  // Weather cache per location (10 menit)
+  // Weather cache
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
 
-  static bool _disableCache = false; // ← sudah false (cache aktif)
+  static bool _disableCache = false;
 
   static String _cacheKey(double lat, double lon) {
     return '${lat.toStringAsFixed(5)},${lon.toStringAsFixed(5)}';
@@ -100,7 +94,6 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
-  // Helper: cari nearby cache + cleanup expired entries
   static String? _findNearbyAddressCache(double lat, double lon) {
     final now = DateTime.now();
     final expiredKeys = <String>[];
@@ -119,22 +112,18 @@ class LocationWeatherService {
       }
     }
 
-    // Hapus entry expired
     for (final key in expiredKeys) {
       _nearbyCache.remove(key);
     }
 
     if (best != null) {
-      if (kDebugMode) {
-        debugPrint('Geocode: nearby cache best hit (${bestDistance.toStringAsFixed(1)}m) → ${best.address}');
-      }
+      if (kDebugMode) debugPrint('Geocode: nearby cache best hit (${bestDistance.toStringAsFixed(1)}m) → ${best.address}');
       return best.address;
     }
     return null;
   }
 
   static void _addToNearbyCache(double lat, double lon, String address) {
-    // Batasi ukuran cache (hapus yang paling lama jika penuh)
     if (_nearbyCache.length >= _maxNearbyCacheSize) {
       final oldestKey = _nearbyCache.keys.first;
       _nearbyCache.remove(oldestKey);
@@ -154,7 +143,7 @@ class LocationWeatherService {
     final latStr = lat.toStringAsFixed(7);
     final lonStr = lon.toStringAsFixed(7);
 
-    // Weather cache (berdasarkan lokasi, key 5 desimal)
+    // Weather cache
     final weatherKey = _cacheKey(lat, lon);
     String weather;
     final now = DateTime.now();
@@ -172,14 +161,12 @@ class LocationWeatherService {
       address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
       if (kDebugMode) debugPrint('Geocode: cache BYPASSED');
     } else {
-      // Cek nearby cache dulu
       final nearby = _findNearbyAddressCache(lat, lon);
       if (nearby != null) {
         address = nearby;
         return LocationWeatherResult(address: address, weather: weather, rawAddress: address);
       }
 
-      // Cek exact cache (5 desimal)
       final cacheKey = _cacheKey(lat, lon);
       final cachedAddress = _addressCache[cacheKey];
       if (cachedAddress != null) {
@@ -190,7 +177,6 @@ class LocationWeatherService {
       } else {
         address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
         if (address.isNotEmpty) {
-          // Batasi ukuran exact cache (LRU)
           while (_addressCacheOrder.length >= _maxAddressCacheSize) {
             final oldest = _addressCacheOrder.removeAt(0);
             _addressCache.remove(oldest);
@@ -246,12 +232,11 @@ class LocationWeatherService {
     }
   }
 
-  // ==================== FALLBACK CHAIN (Nominatim -> Photon -> Android Geocoder) ====================
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim (paling presisi)
+    // 1. Nominatim
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -273,7 +258,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Photon error → $e');
     }
 
-    // 3. Android Geocoder (last resort)
+    // 3. Android Geocoder
     try {
       final android = await _fetchFromAndroidGeocoder(lat, lon);
       if (android.isNotEmpty && !android.contains('Unnamed Road')) {
@@ -287,7 +272,6 @@ class LocationWeatherService {
     return '';
   }
 
-  // ==================== PROVIDER IMPLEMENTATIONS ====================
   static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _nominatimMinInterval = Duration(seconds: 1);
 
@@ -328,7 +312,7 @@ class LocationWeatherService {
         final addr = data['address'] as Map<String, dynamic>?;
         if (addr == null) return '';
 
-        // 🔥 Filter snap distance > 30 meter
+        // Filter snap distance
         final double? resultLat = data['lat'] != null ? double.tryParse(data['lat'].toString()) : null;
         final double? resultLon = data['lon'] != null ? double.tryParse(data['lon'].toString()) : null;
         if (resultLat != null && resultLon != null) {
@@ -337,9 +321,7 @@ class LocationWeatherService {
             resultLat, resultLon,
           );
           if (distance > 30.0) {
-            if (kDebugMode) {
-              debugPrint('Nominatim: result too far (${distance.toStringAsFixed(0)}m), rejecting');
-            }
+            if (kDebugMode) debugPrint('Nominatim: result too far (${distance.toStringAsFixed(0)}m), rejecting');
             return '';
           }
         }

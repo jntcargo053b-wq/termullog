@@ -1,4 +1,6 @@
 // lib/services/gps_lock_manager.dart
+// Perbaikan: filter sample dengan akurasi <= _baseAccuracyThreshold (15m) untuk hitung posisi lock
+
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,8 +8,8 @@ import 'package:geolocator/geolocator.dart';
 enum GpsLockState { searching, bootstrapping, locked }
 
 class LockData {
-  final Position position;      // smoothed untuk tampilan
-  final Position rawPosition;   // raw untuk geocode & watermark
+  final Position position;
+  final Position rawPosition;
   final double accuracy;
   final String quality;
   final double confidence;
@@ -127,7 +129,6 @@ class GpsLockManager {
     return false;
   }
 
-  // 🔥 PERBAIKAN: Hanya gunakan sample dengan akurasi ≤ 15m untuk hitung posisi lock
   bool _handleBootstrapping(Position newPos) {
     _bootstrapSamples.add(newPos);
     _recentAccuracies.add(newPos.accuracy);
@@ -139,33 +140,33 @@ class GpsLockManager {
     final duration = now.difference(_bootstrapStart!).inSeconds.toDouble();
 
     double medianAcc = _computeMedian(_recentAccuracies);
-    double avgAcc = _bootstrapSamples.fold(0.0, (sum, p) => sum + p.accuracy) / _bootstrapSamples.length;
-    double requiredSeconds = _requiredStableSeconds(avgAcc);
+    double avgAccAll = _bootstrapSamples.fold(0.0, (sum, p) => sum + p.accuracy) / _bootstrapSamples.length;
+    double requiredSeconds = _requiredStableSeconds(avgAccAll);
     double currentThreshold = _effectiveAccuracyThreshold;
 
     bool stable = medianAcc <= currentThreshold && duration >= requiredSeconds;
 
     if (stable) {
-      // Filter: hanya gunakan sample dengan akurasi ≤ _baseAccuracyThreshold (15m)
+      // 🔥 PERBAIKAN: Hanya gunakan sample dengan akurasi ≤ _baseAccuracyThreshold (15m)
       final goodSamples = _bootstrapSamples
           .where((p) => p.accuracy <= _baseAccuracyThreshold)
           .toList();
       final samplesToUse = goodSamples.isNotEmpty ? goodSamples : _bootstrapSamples;
 
-      double avgLat = 0, avgLon = 0, avgAccLock = 0;
+      double avgLat = 0, avgLon = 0, avgAcc = 0;
       for (var p in samplesToUse) {
         avgLat += p.latitude;
         avgLon += p.longitude;
-        avgAccLock += p.accuracy;
+        avgAcc += p.accuracy;
       }
       avgLat /= samplesToUse.length;
       avgLon /= samplesToUse.length;
-      avgAccLock /= samplesToUse.length;
+      avgAcc /= samplesToUse.length;
 
       final hybridPos = Position(
         latitude: avgLat,
         longitude: avgLon,
-        accuracy: avgAccLock,
+        accuracy: avgAcc,
         altitude: newPos.altitude,
         heading: newPos.heading,
         speed: newPos.speed,
@@ -178,10 +179,10 @@ class GpsLockManager {
       final bool isFallback = currentThreshold > _baseAccuracyThreshold;
       _lockData = LockData(
         position: hybridPos,
-        rawPosition: hybridPos,
-        accuracy: avgAccLock,
-        quality: _getQualityFromAccuracy(avgAccLock),
-        confidence: _computeConfidence(avgAccLock),
+        rawPosition: hybridPos, // rawPosition awal sama dengan hybrid (bisa di-update kemudian)
+        accuracy: avgAcc,
+        quality: _getQualityFromAccuracy(avgAcc),
+        confidence: _computeConfidence(avgAcc),
         lockedAt: DateTime.now(),
         isFallbackLock: isFallback,
       );
@@ -190,7 +191,7 @@ class GpsLockManager {
       _stationaryProgress = 0.0;
 
       if (kDebugMode) {
-        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, median=${medianAcc.toStringAsFixed(1)}m, avgLock=${avgAccLock.toStringAsFixed(1)}m, fallback=$isFallback, samplesUsed=${samplesToUse.length}');
+        debugPrint('GpsLockManager: LOCKED after ${duration.toStringAsFixed(1)}s, median=${medianAcc.toStringAsFixed(1)}m, avgLock=${avgAcc.toStringAsFixed(1)}m, fallback=$isFallback, samplesUsed=${samplesToUse.length}');
       }
       return true;
     }
@@ -206,6 +207,7 @@ class GpsLockManager {
     );
     final accuracyImproved = newPos.accuracy < (_lockData!.accuracy - 1.0);
 
+    // Selalu update rawPosition
     LockData newLockData = _lockData!.copyWith(rawPosition: newPos);
 
     Position newHybrid;

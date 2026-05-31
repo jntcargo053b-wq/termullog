@@ -1,6 +1,6 @@
 // lib/services/gps_lock_manager.dart
-// Final – kompatibel dengan camera_screen v4
-// Fitur: stationary progress, adaptive interval, isMoving detection
+// Final – perbaikan validasi koordinat prevRaw dengan AND (bukan OR)
+// untuk mencegah kondisi parsial (satu sumbu 0, satu tidak).
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -9,14 +9,13 @@ enum GpsLockState { searching, acquiring, locked }
 
 class LockData {
   final Position position;      // smoothed / filtered (untuk display)
-  final Position rawPosition;   // raw terbaik (untuk geocoding & watermark)
+  final Position rawPosition;   // raw terbaik selama lock (untuk referensi)
   final double accuracy;
   final String quality;
   final double confidence;
   final DateTime lockedAt;
   final bool isFallbackLock;
 
-  // stability = confidence, untuk UI camera_screen
   double get stability => confidence;
 
   LockData({
@@ -53,20 +52,23 @@ class LockData {
 class GpsLockManager {
   GpsLockState _state = GpsLockState.searching;
   LockData? _lockData;
-  Position? _bestFix;
+  Position? _bestFix;              // all-time best accuracy
   int _stationaryCount = 0;
-  DateTime? _lastMovementTime;
   double _stationaryProgress = 0.0;
   bool _isMovingFlag = false;
-  double _lastRawLat = 0.0, _lastRawLon = 0.0;
-  static const double _moveThreshold = 3.0;
-  static const double _stationaryTimeoutSeconds = 4.0;
+  double _prevRawLat = 0.0, _prevRawLon = 0.0; // posisi raw sebelumnya
+  double _lastRawLat = 0.0, _lastRawLon = 0.0; // posisi raw terbaru
+  DateTime? _lastMovementTime;
 
-  // Parameter lock
+  // Parameter lock untuk aplikasi timestamp/logistik (stabil)
   static const int _samplesBeforeLock = 8;
   static const double _lockAccuracyThreshold = 20.0;
+  static const double _moveThreshold = 5.0;            // 5m deteksi gerakan
+  static const double _unlockDriftThreshold = 12.0;    // 12m drift baru unlock
+  static const double _unlockAccuracyRequired = 15.0;  // dan akurasi ≤15m
+  static const double _stationaryTimeoutSeconds = 4.0;
 
-  // Adaptive interval (ms)
+  // Interval adaptif (ms)
   static const int _intervalSearching = 2500;
   static const int _intervalAcquiring = 1200;
   static const int _intervalLockedStationary = 1500;
@@ -97,6 +99,9 @@ class GpsLockManager {
     }
   }
 
+  // --------------------------------------------------------------
+  // Proses setiap sample GPS (dipanggil dari stream)
+  // --------------------------------------------------------------
   bool processSample(Position newPos) {
     // Update all‑time best fix
     if (_bestFix == null || newPos.accuracy < _bestFix!.accuracy) {
@@ -104,66 +109,78 @@ class GpsLockManager {
       if (kDebugMode) debugPrint('GpsLockManager: bestFix acc=${newPos.accuracy.toStringAsFixed(1)}m');
     }
 
-    // Movement detection (gunakan raw position terbaru)
-    final moved = _haversine(_lastRawLat, _lastRawLon, newPos.latitude, newPos.longitude);
-    if (_lastRawLat != 0.0 && moved > _moveThreshold) {
-      _isMovingFlag = true;
-      _lastMovementTime = DateTime.now();
-      _stationaryProgress = 0.0;
-    } else {
-      // Update stationary progress jika tidak bergerak
-      if (_isMovingFlag) {
-        // baru berhenti, reset hitungan stationary
-        _isMovingFlag = false;
+    // Deteksi pergerakan menggunakan previous raw position (hanya jika kedua sumbu tersedia)
+    if (_prevRawLat != 0.0 && _prevRawLon != 0.0) {
+      final moved = _haversine(_prevRawLat, _prevRawLon, newPos.latitude, newPos.longitude);
+      if (moved > _moveThreshold) {
+        _isMovingFlag = true;
         _lastMovementTime = DateTime.now();
-      } else if (_lastMovementTime != null) {
-        final stationaryDuration = DateTime.now().difference(_lastMovementTime!).inSeconds.toDouble();
-        _stationaryProgress = (stationaryDuration / _stationaryTimeoutSeconds).clamp(0.0, 1.0);
+        _stationaryProgress = 0.0;
+        _stationaryCount = 0;
+      } else {
+        if (_isMovingFlag) {
+          _isMovingFlag = false;
+          _lastMovementTime = DateTime.now();
+        } else if (_lastMovementTime != null) {
+          final stationaryDuration = DateTime.now().difference(_lastMovementTime!).inSeconds.toDouble();
+          _stationaryProgress = (stationaryDuration / _stationaryTimeoutSeconds).clamp(0.0, 1.0);
+        }
       }
     }
+
+    // Simpan previous sebelum update last
+    _prevRawLat = _lastRawLat;
+    _prevRawLon = _lastRawLon;
     _lastRawLat = newPos.latitude;
     _lastRawLon = newPos.longitude;
 
-    // Jika sudah locked, update data dan cek apakah perlu unlock
-    if (_state == GpsLockState.locked) {
-      if (_lockData != null) {
-        final distFromLock = _haversine(
-          _lockData!.rawPosition.latitude, _lockData!.rawPosition.longitude,
-          newPos.latitude, newPos.longitude,
-        );
-        // Unlock jika bergerak terlalu jauh dari posisi lock
-        if (distFromLock > _moveThreshold * 2.5) {
-          _unlock();
-          if (kDebugMode) debugPrint('GpsLockManager: UNLOCKED — moved ${distFromLock.toStringAsFixed(1)}m');
-          // Setelah unlock, lanjutkan ke proses acquiring
-          return _handleAcquiring(newPos);
-        }
-        // Update rawPosition jika akurasi membaik cukup
-        if (newPos.accuracy < (_lockData!.accuracy - 2.0)) {
-          _lockData = _lockData!.copyWith(
-            position: newPos,
-            rawPosition: newPos,
-            accuracy: newPos.accuracy,
-            quality: _getQualityFromAccuracy(newPos.accuracy),
-            confidence: _computeConfidence(newPos.accuracy),
-          );
-          if (kDebugMode) debugPrint('GpsLockManager: improved acc=${newPos.accuracy.toStringAsFixed(1)}m');
-        }
-      }
-      return false;
-    }
+    // Proses berdasarkan state
+    final result = (_state == GpsLockState.locked)
+        ? _handleLocked(newPos)
+        : _handleAcquiring(newPos);
 
-    // Belum locked: hitung stationary count
-    return _handleAcquiring(newPos);
+    return result;
   }
 
-  bool _handleAcquiring(Position newPos) {
-    // Cek apakah bergerak dari sample terbaik sebelumnya
-    if (_bestFix != null && _bestFix != newPos) {
-      final dist = _haversine(
-        _bestFix!.latitude, _bestFix!.longitude,
-        newPos.latitude, newPos.longitude,
+  // --------------------------------------------------------------
+  // Handler saat sudah locked
+  // --------------------------------------------------------------
+  bool _handleLocked(Position newPos) {
+    if (_lockData == null) return false;
+
+    final distFromLock = _haversine(
+      _lockData!.rawPosition.latitude, _lockData!.rawPosition.longitude,
+      newPos.latitude, newPos.longitude,
+    );
+
+    // Hard unlock jika drift signifikan dengan akurasi bagus
+    if (distFromLock > _unlockDriftThreshold && newPos.accuracy <= _unlockAccuracyRequired) {
+      softUnlock();
+      if (kDebugMode) debugPrint('GpsLockManager: HARD UNLOCK (drift ${distFromLock.toStringAsFixed(1)}m)');
+      return _handleAcquiring(newPos);
+    }
+
+    // Update raw position jika akurasi membaik
+    if (newPos.accuracy < (_lockData!.accuracy - 2.0)) {
+      _lockData = _lockData!.copyWith(
+        position: newPos,
+        rawPosition: newPos,
+        accuracy: newPos.accuracy,
+        quality: _getQualityFromAccuracy(newPos.accuracy),
+        confidence: _computeConfidence(newPos.accuracy),
       );
+      if (kDebugMode) debugPrint('GpsLockManager: improved acc=${newPos.accuracy.toStringAsFixed(1)}m');
+    }
+    return false;
+  }
+
+  // --------------------------------------------------------------
+  // Handler untuk searching atau acquiring
+  // --------------------------------------------------------------
+  bool _handleAcquiring(Position newPos) {
+    // Deteksi gerakan menggunakan previous raw position (hanya jika kedua sumbu tersedia)
+    if (_prevRawLat != 0.0 && _prevRawLon != 0.0) {
+      final dist = _haversine(_prevRawLat, _prevRawLon, newPos.latitude, newPos.longitude);
       if (dist > _moveThreshold) {
         _stationaryCount = 0;
         _state = GpsLockState.acquiring;
@@ -197,24 +214,38 @@ class GpsLockManager {
     return false;
   }
 
-  void _unlock() {
+  // --------------------------------------------------------------
+  // Soft unlock – hanya lepas lock, tidak menghapus bestFix / raw history
+  // --------------------------------------------------------------
+  void softUnlock() {
+    if (_state != GpsLockState.locked) return;
     _state = GpsLockState.acquiring;
     _stationaryCount = 0;
     _lockData = null;
+    _isMovingFlag = false;
+    _stationaryProgress = 0.0;
+    _lastMovementTime = null;
+    if (kDebugMode) debugPrint('GpsLockManager: softUnlock (lock released, bestFix retained)');
   }
 
+  // Reset total (hanya untuk inisialisasi atau error)
   void reset() {
     _state = GpsLockState.searching;
     _lockData = null;
     _bestFix = null;
     _stationaryCount = 0;
     _isMovingFlag = false;
-    _lastMovementTime = null;
     _stationaryProgress = 0.0;
+    _lastMovementTime = null;
+    _prevRawLat = 0.0;
+    _prevRawLon = 0.0;
     _lastRawLat = 0.0;
     _lastRawLon = 0.0;
   }
 
+  // --------------------------------------------------------------
+  // Helper functions
+  // --------------------------------------------------------------
   double _computeConfidence(double accuracy) {
     if (accuracy <= 8) return 0.98;
     if (accuracy <= 12) return 0.95;

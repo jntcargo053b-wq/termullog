@@ -5,6 +5,7 @@
 // - Anti race condition dengan requestId
 // - Threshold geocoding = 22.0
 // - Interval GPS stream = 700ms
+// - Overlay accuracy menggunakan raw position (bukan hybrid)
 import 'dart:async';
 import 'dart:io';
 
@@ -49,7 +50,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
   Position? _displayPosition;   // smoothed position untuk overlay/peta (weighted average)
-  double? _currentAccuracy;
+  double? _currentAccuracy;     // akurasi dari rawPosition (sample terbaik)
   double _gpsConfidence = 0.0;
   bool _isFallbackLock = false;
 
@@ -388,7 +389,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
     setState(() {
       _displayPosition = displayPosition;
-      _currentAccuracy = acc;
+      _currentAccuracy = acc;               // simpan akurasi raw untuk overlay
       _gpsConfidence = confidence;
       _isFallbackLock = isFallback;
       _isGpsLocked = _gpsLockManager.isLocked;
@@ -396,12 +397,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _gpsStatus = _buildGpsStatus(acc, confidence);
     });
 
-    // 🔥 Geocode hanya jika sudah locked dan akurasi memenuhi threshold
+    // Geocode hanya jika sudah locked dan akurasi memenuhi threshold
     if (_gpsLockManager.isLocked && acc <= _geocodeAccuracyThreshold) {
       _addressResolver.onPositionUpdate(rawPosition, _fetchAddress);
     }
 
-    // 🔥 Force refresh saat lock baru, juga pakai rawPosition
+    // Force refresh saat lock baru, juga pakai rawPosition
     if (isNewLock && lockData != null) {
       _addressResolver.forceRefresh(lockData.rawPosition, _fetchAddress);
     }
@@ -560,7 +561,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               hasPosition: true,
               lat: overlayPosition.latitude,
               lon: overlayPosition.longitude,
-              acc: overlayPosition.accuracy,
+              acc: _currentAccuracy ?? overlayPosition.accuracy, // 🔥 fix: gunakan akurasi raw
               address: _address,
               weather: _weather,
               showWeather: _showWeather,

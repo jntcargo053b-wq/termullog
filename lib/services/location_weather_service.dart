@@ -1,4 +1,6 @@
 // lib/services/location_weather_service.dart
+// Final – tanpa filter snap distance (karena centroid OSM wajar >30m dari titik GPS)
+// Cache aktif, radius 12m, durasi 10 menit, cleanup expired entry.
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
@@ -38,22 +40,22 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
-  // Exact coordinate cache (5 desimal)
+  // Exact coordinate cache (5 decimal places)
   static final Map<String, String> _addressCache = {};
   static const int _maxAddressCacheSize = 100;
   static final List<String> _addressCacheOrder = [];
 
-  // Nearby cache
+  // Nearby cache (radius 12m, expiry 10 menit)
   static const double _addressCacheRadiusMeters = 12.0;
   static const Duration _addressCacheDuration = Duration(minutes: 10);
   static final Map<String, CachedAddress> _nearbyCache = {};
   static const int _maxNearbyCacheSize = 50;
 
-  // Weather cache
+  // Weather cache (10 menit, per koordinat 5 desimal)
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
 
-  static bool _disableCache = false;
+  static bool _disableCache = false; // false for production
 
   static String _cacheKey(double lat, double lon) {
     return '${lat.toStringAsFixed(5)},${lon.toStringAsFixed(5)}';
@@ -232,11 +234,12 @@ class LocationWeatherService {
     }
   }
 
+  // FALLBACK CHAIN: Nominatim -> Photon -> Android Geocoder
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim
+    // 1. Nominatim (OpenStreetMap)
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -247,7 +250,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Nominatim error → $e');
     }
 
-    // 2. Photon
+    // 2. Photon (fallback cepat)
     try {
       final photon = await _fetchFromPhoton(latStr, lonStr);
       if (photon.isNotEmpty) {
@@ -258,7 +261,7 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Photon error → $e');
     }
 
-    // 3. Android Geocoder
+    // 3. Android Geocoder (offline last resort)
     try {
       final android = await _fetchFromAndroidGeocoder(lat, lon);
       if (android.isNotEmpty && !android.contains('Unnamed Road')) {
@@ -272,6 +275,7 @@ class LocationWeatherService {
     return '';
   }
 
+  // ==================== PROVIDER IMPLEMENTATIONS ====================
   static DateTime _lastNominatimRequest = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _nominatimMinInterval = Duration(seconds: 1);
 
@@ -312,19 +316,8 @@ class LocationWeatherService {
         final addr = data['address'] as Map<String, dynamic>?;
         if (addr == null) return '';
 
-        // Filter snap distance
-        final double? resultLat = data['lat'] != null ? double.tryParse(data['lat'].toString()) : null;
-        final double? resultLon = data['lon'] != null ? double.tryParse(data['lon'].toString()) : null;
-        if (resultLat != null && resultLon != null) {
-          final distance = Geolocator.distanceBetween(
-            double.parse(latStr), double.parse(lonStr),
-            resultLat, resultLon,
-          );
-          if (distance > 30.0) {
-            if (kDebugMode) debugPrint('Nominatim: result too far (${distance.toStringAsFixed(0)}m), rejecting');
-            return '';
-          }
-        }
+        // 🔥 TIDAK ADA filter snap distance (centroid wajar >30m dari titik GPS)
+        // Langsung parse alamat seperti biasa.
 
         final road = _safeStr(addr['road'])
             ?? _safeStr(addr['residential'])

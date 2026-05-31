@@ -1,9 +1,6 @@
-```dart
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION v13 – menggunakan GpsLockManager final dengan acquiring samples window
-// - Menyimpan foto ke galeri dan history permanen (prefix termullog_)
-// - Overlay smoothing, throttle rebuild, stale geocode protection
-// - Capture priority: realtime jika dekat dengan lock raw, fallback ke best position
+// FINAL PRODUCTION v12 – Menyimpan foto ke galeri dan juga ke history permanen
+// Prefix file: termullog_timestamp.jpg
 import 'dart:async';
 import 'dart:io';
 
@@ -25,6 +22,7 @@ import '../core/constants.dart';
 import '../widgets/draggable_watermark_overlay.dart';
 import '../services/gps_lock_manager.dart';
 import '../services/address_resolver.dart';
+import '../ui/app.dart';
 
 class CameraScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -34,7 +32,7 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
+class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver, RouteAware {
   // Camera
   CameraController? _controller;
   bool _isCameraReady = false;
@@ -94,7 +92,39 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _loadSettingsAndPosition();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      appRouteObserver.subscribe(this, ModalRoute.of(context)!);
       _initialize();
+    });
+  }
+
+  // Dipanggil saat screen ini kembali ke foreground setelah settings (atau screen lain) di-pop
+  @override
+  void didPopNext() {
+    _reloadSettings();
+  }
+
+  Future<void> _reloadSettings() async {
+    await SettingsCache.preload();
+    if (!mounted) return;
+    final showWeather     = await SettingsCache.showWeather;
+    final showAccuracy    = await SettingsCache.showAccuracy;
+    final showAddress     = await SettingsCache.showAddress;
+    final showCoordinates = await SettingsCache.showCoordinates;
+    final opacity         = await SettingsCache.opacity;
+    final showBorder      = await SettingsCache.showBorder;
+    final fontSizeDouble  = await SettingsCache.fontSize;
+    final fontSize        = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
+    final layout          = await SettingsCache.layout;
+    if (!mounted) return;
+    setState(() {
+      _showWeather     = showWeather;
+      _showAccuracy    = showAccuracy;
+      _showAddress     = showAddress;
+      _showCoordinates = showCoordinates;
+      _opacity         = opacity;
+      _showBorder      = showBorder;
+      _fontSize        = fontSize;
+      _currentLayout   = layout;
     });
   }
 
@@ -122,6 +152,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     _positionSub?.cancel();
@@ -473,7 +504,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     }
 
-    // Geocode – serahkan semua throttling ke AddressResolver, skip saat isNewLock karena sudah ditangani di bawah
+    // Geocode – serahkan semua throttling ke AddressResolver.
+    // Skip saat isNewLock: geocode eksplisit di bawah sudah menangani.
     final shouldGeocodeNow = (_gpsLockManager.isLocked || acc <= 25.0) && !isNewLock;
     if (shouldGeocodeNow) {
       _addressResolver.onPositionUpdate(pos, _fetchAddressWithResolver);
@@ -489,6 +521,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           _address = address;
           _weather = weather.isNotEmpty ? weather : '🌡️ --°C';
         });
+        // Sync AddressResolver agar tidak trigger geocode ulang untuk posisi ini
+        _addressResolver.reset();
       }).catchError((_) {
         if (lockRequestId != _geoRequestId) return;
         if (!mounted) return;
@@ -631,7 +665,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         }
       } catch (_) {}
 
-      // Gunakan alamat yang sudah di-cache oleh AddressResolver
+      // Gunakan alamat yang sudah di-cache oleh AddressResolver — akurat dan tidak menambah latensi
       final String captureAddress = _address.isNotEmpty ? _address : '${capturePosition.latitude.toStringAsFixed(6)}, ${capturePosition.longitude.toStringAsFixed(6)}';
       if (kDebugMode) debugPrint('📸 CAPTURE ADDRESS: $captureAddress');
 
@@ -880,4 +914,3 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 }
-```

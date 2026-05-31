@@ -1,9 +1,5 @@
 // lib/screens/home_screen.dart
-// FINAL PRODUCTION – Sinkron dengan history (folder dokumen permanen)
-// - Baca foto dari ApplicationDocumentsDirectory/history
-// - Tidak decode image (hemat RAM)
-// - Thumbnail menggunakan Image.file langsung dengan cacheWidth
-// - Hapus dependency image package
+// FINAL PRODUCTION – baca folder history yang sama, thumbnail efisien, tidak decode penuh
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
@@ -83,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _recentPhotos = photos;
         _totalPhotos = files.length;
-        _avgAccuracy = 0; // placeholder, tidak ada metadata akurasi
+        _avgAccuracy = 0; // placeholder, bisa diabaikan
         _isLoading = false;
       });
     } catch (e) {
@@ -103,7 +99,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // Header
             SliverToBoxAdapter(
               child: Container(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -156,8 +151,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
-            // Stats Cards
             SliverToBoxAdapter(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -184,8 +177,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
-            // Camera Button
             SliverToBoxAdapter(
               child: Container(
                 margin: const EdgeInsets.all(16),
@@ -286,8 +277,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
-            // Recent Photos Header
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
@@ -319,8 +308,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
-            // Recent Photos Grid
             if (_isLoading)
               const SliverFillRemaining(
                 child: Center(
@@ -384,7 +371,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-
             const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
           ],
         ),
@@ -402,9 +388,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ============================================================
-// Stat Card Widget
-// ============================================================
 class _StatCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -466,9 +449,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ============================================================
-// Photo Card Widget
-// ============================================================
 class _PhotoCard extends StatelessWidget {
   final Map<String, dynamic> photo;
   final VoidCallback onTap;
@@ -502,7 +482,6 @@ class _PhotoCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thumbnail – langsung dari file, resize hemat memori
             ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               child: Image.file(
@@ -561,9 +540,6 @@ class _PhotoCard extends StatelessWidget {
   }
 }
 
-// ============================================================
-// Photo Detail Screen (Lightbox)
-// ============================================================
 class _PhotoDetailScreen extends StatefulWidget {
   final String imagePath;
 

@@ -1,12 +1,6 @@
-```dart
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION v11 – Merged dengan semua patch:
-// - rawFile.delete() aman (try-catch + exists check)
-// - _bestPosition update logic (reset jika pindah >80m)
-// - mounted check setelah showDialog
-// - shouldRebuild accuracy threshold >1.0 (bukan perbedaan desimal)
-// - canCapture lebih longgar (realtime position atau overlay dengan kondisi lock/akurasi)
-// - Semua perbaikan sebelumnya dipertahankan
+// FINAL PRODUCTION v12 – Menyimpan foto ke galeri dan juga ke history permanen
+// Prefix file: termullog_timestamp.jpg
 import 'dart:async';
 import 'dart:io';
 
@@ -656,7 +650,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final XFile rawFile = await controller.takePicture().timeout(const Duration(seconds: 8));
       final rawBytes = await File(rawFile.path).readAsBytes();
 
-      // Hapus file sementara dengan aman
+      // Hapus file sementara kamera dengan aman
       try {
         final tempFile = File(rawFile.path);
         if (await tempFile.exists()) {
@@ -697,13 +691,34 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         imageQuality: 90,
       ).timeout(const Duration(seconds: 15));
 
-      final dir = await getTemporaryDirectory();
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(watermarkBytes);
-      final success = await GallerySaver.saveImage(file.path, albumName: 'Timestamp Camera');
+      // Simpan ke temporary file dengan prefix termullog_ untuk history
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'termullog_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final tempFileHistory = File('${tempDir.path}/$fileName');
+      await tempFileHistory.writeAsBytes(watermarkBytes);
+
+      // Simpan ke galeri
+      final success = await GallerySaver.saveImage(
+        tempFileHistory.path,
+        albumName: 'Timestamp Camera',
+      );
       if (success != true) throw Exception('Gagal menyimpan foto ke galeri');
-      await file.delete();
+
+      // Simpan ke history permanen di application documents
+      final appDir = await getApplicationDocumentsDirectory();
+      final historyDir = Directory('${appDir.path}/history');
+      if (!await historyDir.exists()) {
+        await historyDir.create(recursive: true);
+      }
+      final historyFile = File('${historyDir.path}/$fileName');
+      await historyFile.writeAsBytes(watermarkBytes);
+
+      // Hapus temporary file
+      try {
+        if (await tempFileHistory.exists()) {
+          await tempFileHistory.delete();
+        }
+      } catch (_) {}
 
       try { await controller.setExposureMode(ExposureMode.auto); } catch (_) {}
       try { await controller.setFocusMode(FocusMode.auto); } catch (_) {}
@@ -901,4 +916,3 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 }
-```

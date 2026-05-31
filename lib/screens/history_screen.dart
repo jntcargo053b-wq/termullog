@@ -1,5 +1,6 @@
 // lib/screens/history_screen.dart
-// FINAL PRODUCTION – Riwayat foto dari folder dokumen permanen
+// FINAL PRODUCTION – baca dari folder history (ApplicationDocumentsDirectory/history)
+// Sinkron dengan camera dan preview
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';

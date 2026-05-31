@@ -1,6 +1,9 @@
+```dart
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION v12 – Menyimpan foto ke galeri dan juga ke history permanen
-// Prefix file: termullog_timestamp.jpg
+// FINAL PRODUCTION v13 – menggunakan GpsLockManager final dengan acquiring samples window
+// - Menyimpan foto ke galeri dan history permanen (prefix termullog_)
+// - Overlay smoothing, throttle rebuild, stale geocode protection
+// - Capture priority: realtime jika dekat dengan lock raw, fallback ke best position
 import 'dart:async';
 import 'dart:io';
 
@@ -78,12 +81,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   static const int _antiShakeDelayMs = 200;
   static const double _minAccuracyForCapture = 25.0;
-  static const double _geocodeMinDistanceMeters = 15.0;
-  static const int _geocodeMinIntervalSeconds = 10;
 
-  // Geocode throttling & stale protection
-  DateTime _lastGeocodeTime = DateTime.now().subtract(const Duration(seconds: 10));
-  Position? _lastGeocodePosition;
+  // Geocode request ID untuk stale protection
   int _geoRequestId = 0;
 
   Position? _lastDisplayPosition; // untuk smoothing
@@ -385,30 +384,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
   }
 
-  bool _shouldGeocode(Position rawPos) {
-    final now = DateTime.now();
-    if (_lastGeocodePosition == null) {
-      _lastGeocodePosition = rawPos;
-      _lastGeocodeTime = now;
-      return true;
-    }
-    final distance = Geolocator.distanceBetween(
-      _lastGeocodePosition!.latitude, _lastGeocodePosition!.longitude,
-      rawPos.latitude, rawPos.longitude,
-    );
-    if (distance >= _geocodeMinDistanceMeters) {
-      _lastGeocodePosition = rawPos;
-      _lastGeocodeTime = now;
-      return true;
-    }
-    if (now.difference(_lastGeocodeTime).inSeconds >= _geocodeMinIntervalSeconds) {
-      _lastGeocodePosition = rawPos;
-      _lastGeocodeTime = now;
-      return true;
-    }
-    return false;
-  }
-
   Future<(String, String)> _fetchAddressAndWeather(Position pos) async {
     try {
       final result = await LocationWeatherService.fetchFromPosition(pos)
@@ -498,8 +473,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     }
 
-    // Geocode
-    final shouldGeocodeNow = (_gpsLockManager.isLocked || acc <= 25.0) && _shouldGeocode(pos);
+    // Geocode – serahkan semua throttling ke AddressResolver, skip saat isNewLock karena sudah ditangani di bawah
+    final shouldGeocodeNow = (_gpsLockManager.isLocked || acc <= 25.0) && !isNewLock;
     if (shouldGeocodeNow) {
       _addressResolver.onPositionUpdate(pos, _fetchAddressWithResolver);
     }
@@ -522,8 +497,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           _weather = '🌡️ --°C';
         });
       });
-      _lastGeocodePosition = pos;
-      _lastGeocodeTime = DateTime.now();
     }
 
     // Loading state
@@ -557,7 +530,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           latest.latitude, latest.longitude,
           pos.latitude, pos.longitude,
         );
-        if (distance > 40.0) {
+        if (distance > 20.0) {
           if (kDebugMode) debugPrint('🚫 Ignore stale geocode result (dist ${distance.toStringAsFixed(0)}m)');
           setState(() => _isAddressLoading = false);
           return;
@@ -658,18 +631,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         }
       } catch (_) {}
 
-      // Fresh geocode untuk alamat foto
-      String captureAddress = _address;
-      try {
-        final freshResult = await LocationWeatherService.fetchFromPosition(capturePosition)
-            .timeout(const Duration(seconds: 3));
-        if (freshResult.address.isNotEmpty) {
-          captureAddress = freshResult.address;
-          if (kDebugMode) debugPrint('📸 FRESH ADDRESS: $captureAddress');
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('Fresh geocode failed: $e, fallback to cached address');
-      }
+      // Gunakan alamat yang sudah di-cache oleh AddressResolver
+      final String captureAddress = _address.isNotEmpty ? _address : '${capturePosition.latitude.toStringAsFixed(6)}, ${capturePosition.longitude.toStringAsFixed(6)}';
+      if (kDebugMode) debugPrint('📸 CAPTURE ADDRESS: $captureAddress');
 
       final watermarkBytes = await WatermarkEngine.process(
         imageBytes: rawBytes,
@@ -916,3 +880,4 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 }
+```

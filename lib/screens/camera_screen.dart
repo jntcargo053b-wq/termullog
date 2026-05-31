@@ -1,4 +1,9 @@
 // lib/screens/camera_screen.dart
+// Final version – optimal parameters for timestamp/logistics app
+// - Geocoding threshold 12.0m
+// - Anti race condition with _geoRequestId
+// - Geocoding uses rawPosition (best sample from GpsLockManager)
+// - Weather default fallback
 import 'dart:async';
 import 'dart:io';
 
@@ -67,7 +72,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   static const int _antiShakeDelayMs = 200;
   static const double _minAccuracyForCapture = 25.0;
-  static const double _geocodeAccuracyThreshold = 22.0;
+  static const double _geocodeAccuracyThreshold = 12.0;  // optimal for logistics
   int _geoRequestId = 0;
 
   @override
@@ -225,8 +230,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   String _buildGpsStatus(double acc, double confidence) {
     if (acc <= 8) return 'GPS Ready';
-    if (acc <= 15) return 'GPS Stabilizing';
-    if (acc <= 22) return 'GPS Improving';
+    if (acc <= 12) return 'GPS Stabilizing';
+    if (acc <= 20) return 'GPS Improving';
     return 'GPS Searching';
   }
 
@@ -396,7 +401,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _fetchAddress(Position pos) async {
     final requestId = ++_geoRequestId;
-
     if (mounted) setState(() => _isAddressLoading = true);
     try {
       debugPrint('🌐 GEOCODE REQUEST #$requestId: lat=${pos.latitude}, lon=${pos.longitude}, acc=${pos.accuracy}m');
@@ -406,7 +410,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (!mounted) return;
       setState(() {
         _address = result.address;
-        _weather = result.weather;
+        // Ensure weather always has a value
+        _weather = result.weather.isNotEmpty ? result.weather : '🌡️ --°C';
         _isAddressLoading = false;
       });
       debugPrint('📍 ADDRESS RESULT #$requestId: ${result.address}');

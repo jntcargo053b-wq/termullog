@@ -1,11 +1,9 @@
 // lib/screens/camera_screen.dart
 // FINAL VERSION – Aplikasi Timestamp / Logistik
-// - GPS lock dengan weighted average + best sample untuk rawPosition
-// - Geocoding hanya menggunakan rawPosition (sample terbaik)
-// - Anti race condition dengan requestId
-// - Threshold geocoding = 22.0
-// - Interval GPS stream = 700ms
-// - Overlay accuracy menggunakan raw position (bukan hybrid)
+// - Geocoding menggunakan rawPosition (sample terbaik)
+// - Force refresh saat lock baru
+// - Anti race condition _geoRequestId
+// - Overlay watermark menampilkan akurasi rawPosition
 import 'dart:async';
 import 'dart:io';
 
@@ -49,8 +47,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final AddressResolver _addressResolver = AddressResolver();
   bool _isGpsLocked = false;
   int _gpsLockProgress = 0;
-  Position? _displayPosition;   // smoothed position untuk overlay/peta (weighted average)
-  double? _currentAccuracy;     // akurasi dari rawPosition (sample terbaik)
+  Position? _displayPosition;   // smoothed position (weighted average) untuk overlay
+  double? _currentAccuracy;
   double _gpsConfidence = 0.0;
   bool _isFallbackLock = false;
 
@@ -78,8 +76,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   static const int _antiShakeDelayMs = 200;
   static const double _minAccuracyForCapture = 25.0;
-  static const double _geocodeAccuracyThreshold = 22.0;   // threshold untuk trigger geocode
-  int _geoRequestId = 0;   // anti race condition
+  static const double _geocodeAccuracyThreshold = 22.0;
+  int _geoRequestId = 0;
 
   @override
   void initState() {
@@ -105,7 +103,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     await _checkGalleryPermission();
     await _initCamera();
     await _checkAndRequestHighAccuracyMode();
-    await _initLocationWithFirstFix();  // tidak geocode di sini
+    await _initLocationWithFirstFix();
     _startClock();
   }
 
@@ -257,7 +255,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initLocationWithFirstFix() async {
-    // Tujuan: hanya memperoleh izin dan memulai stream, TIDAK melakukan geocode
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -279,7 +276,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // First fix hanya untuk preview UI, tidak untuk geocode
       try {
         final firstFix = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.bestForNavigation,
@@ -373,14 +369,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  // ==================== GPS SAMPLE PROCESSING (FINAL) ====================
   void _onPositionSample(Position pos) {
     final isNewLock = _gpsLockManager.processSample(pos);
     final lockData = _gpsLockManager.lockData;
     final progress = _gpsLockManager.stationaryProgress;
 
-    // displayPosition = weighted average (hybrid) untuk overlay
-    // rawPosition = sample terbaik (akurasi tertinggi) untuk geocoding & watermark
     final displayPosition = lockData?.position ?? pos;
     final rawPosition = lockData?.rawPosition ?? pos;
     final acc = rawPosition.accuracy;
@@ -389,7 +382,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
     setState(() {
       _displayPosition = displayPosition;
-      _currentAccuracy = acc;               // simpan akurasi raw untuk overlay
+      _currentAccuracy = acc;
       _gpsConfidence = confidence;
       _isFallbackLock = isFallback;
       _isGpsLocked = _gpsLockManager.isLocked;
@@ -397,12 +390,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _gpsStatus = _buildGpsStatus(acc, confidence);
     });
 
-    // Geocode hanya jika sudah locked dan akurasi memenuhi threshold
     if (_gpsLockManager.isLocked && acc <= _geocodeAccuracyThreshold) {
       _addressResolver.onPositionUpdate(rawPosition, _fetchAddress);
     }
 
-    // Force refresh saat lock baru, juga pakai rawPosition
     if (isNewLock && lockData != null) {
       _addressResolver.forceRefresh(lockData.rawPosition, _fetchAddress);
     }
@@ -438,7 +429,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _takePhoto() async {
     if (_isCapturing) return;
 
-    // Gunakan rawPosition terbaik yang tersedia (dari lockData atau bestFix)
     final capturePosition = _gpsLockManager.lockData?.rawPosition ?? _gpsLockManager.bestFix ?? _displayPosition;
     if (capturePosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -561,7 +551,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               hasPosition: true,
               lat: overlayPosition.latitude,
               lon: overlayPosition.longitude,
-              acc: _currentAccuracy ?? overlayPosition.accuracy, // 🔥 fix: gunakan akurasi raw
+              acc: _currentAccuracy ?? overlayPosition.accuracy, // 🔥 gunakan akurasi raw
               address: _address,
               weather: _weather,
               showWeather: _showWeather,

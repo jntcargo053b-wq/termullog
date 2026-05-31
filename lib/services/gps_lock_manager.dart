@@ -6,7 +6,7 @@ import 'package:geolocator/geolocator.dart';
 enum GpsLockState { searching, bootstrapping, locked }
 
 class LockData {
-  final Position position;      // hybrid (weighted) untuk tampilan
+  final Position position;      // hybrid (weighted average) untuk display
   final Position rawPosition;   // sample terbaik (akurasi tertinggi) untuk geocoding & watermark
   final double accuracy;
   final String quality;
@@ -51,12 +51,11 @@ class GpsLockManager {
   Position? _bestFix;
 
   static const double _baseAccuracyThreshold = 15.0;
-  static const double _fallbackAccuracyThreshold = 22.0;
   static const double _maxAllowedAccuracy = 22.0;
   static const int _medianWindowSize = 6;
   static const double _stationaryTimeoutSeconds = 4.0;
 
-  static const double _fastLockAccuracy = 10.0;
+  static const double _fastLockAccuracy = 12.0;
   static const double _slowLockAccuracy = 15.0;
   static const double _minStableSeconds = 3.0;
   static const double _maxStableSeconds = 7.0;
@@ -134,7 +133,7 @@ class GpsLockManager {
       _recentAccuracies.removeAt(0);
     }
 
-    // Filter sample dengan akurasi ≤ _baseAccuracyThreshold (15m)
+    // Filter sample dengan akurasi baik (≤ base threshold)
     final goodSamples = _bootstrapSamples
         .where((p) => p.accuracy <= _baseAccuracyThreshold)
         .toList();
@@ -183,7 +182,7 @@ class GpsLockManager {
       final bool isFallback = currentThreshold > _baseAccuracyThreshold;
       _lockData = LockData(
         position: hybridPos,
-        rawPosition: bestSample,  // ← pakai sample terbaik
+        rawPosition: bestSample,
         accuracy: avgAcc,
         quality: _getQualityFromAccuracy(avgAcc),
         confidence: _computeConfidence(avgAcc),
@@ -211,16 +210,14 @@ class GpsLockManager {
     );
     final accuracyImproved = newPos.accuracy < (_lockData!.accuracy - 1.0);
 
-    // Selalu update rawPosition dengan sample terbaru yang lebih akurat
-    Position newRaw = newPos;
-    if (_lockData!.rawPosition.accuracy < newPos.accuracy) {
-      newRaw = _lockData!.rawPosition; // pertahankan yang terbaik jika tidak lebih baik
-    } else {
+    // Update rawPosition jika sample baru lebih akurat
+    Position newRaw = _lockData!.rawPosition;
+    if (newPos.accuracy < _lockData!.rawPosition.accuracy) {
       newRaw = newPos;
     }
     LockData newLockData = _lockData!.copyWith(rawPosition: newRaw);
 
-    // Hybrid filter sederhana untuk tampilan
+    // Hybrid filter untuk tampilan (low-pass)
     Position newHybrid;
     if (movedDistance < 2.0) {
       const double alpha = 0.3;
@@ -249,7 +246,7 @@ class GpsLockManager {
         lockedAt: DateTime.now(),
       );
       if (kDebugMode) {
-        debugPrint('GpsLockManager: UPDATE hybrid+raw acc=${newPos.accuracy.toStringAsFixed(1)}m, bestRaw=${newRaw.accuracy.toStringAsFixed(1)}m');
+        debugPrint('GpsLockManager: UPDATE hybrid+raw acc=${newPos.accuracy.toStringAsFixed(1)}m');
       }
     } else {
       if (kDebugMode) {

@@ -1,10 +1,5 @@
 // lib/services/location_weather_service.dart
-// FINAL dengan perbaikan:
-// - exact cache key 5 desimal (presisi ~1.1 meter)
-// - nearby cache mencari jarak terdekat (bukan first hit)
-// - radius 8 meter, expiry 2 menit
-// - fallback order: Nominatim -> Photon -> Android Geocoder
-
+// FINAL: cache dengan cleanup expired entries, fallback Nominatim -> Photon -> Android Geocoder
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
@@ -44,25 +39,23 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
-  // Exact coordinate cache (5 decimal places = ~1.1 meter)
+  // Exact coordinate cache (5 desimal ~1.1 meter)
   static final Map<String, String> _addressCache = {};
   static const int _maxAddressCacheSize = 100;
   static final List<String> _addressCacheOrder = [];
 
-  // Nearby cache (radius based, cari jarak terdekat)
+  // Nearby cache (radius based, cari jarak terdekat, expiry 2 menit)
   static const double _addressCacheRadiusMeters = 8.0;
   static const Duration _addressCacheDuration = Duration(minutes: 2);
   static final Map<String, CachedAddress> _nearbyCache = {};
   static const int _maxNearbyCacheSize = 50;
 
-  // Weather cache per location
+  // Weather cache per location (10 menit)
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
 
-  // Testing mode
-  static bool _disableCache = false; // false for production
+  static bool _disableCache = false; // false untuk production
 
-  // 🔥 Exact cache key dengan 5 desimal (presisi 1.1 meter)
   static String _cacheKey(double lat, double lon) {
     return '${lat.toStringAsFixed(5)},${lon.toStringAsFixed(5)}';
   }
@@ -102,22 +95,28 @@ class LocationWeatherService {
     return LinkedHashSet<String>.from(parts).toList();
   }
 
-  // 🔥 Cari nearby cache dengan memilih yang PALING DEKAT (bukan first hit)
+  // 🔥 Nearby cache dengan cleanup entry expired
   static String? _findNearbyAddressCache(double lat, double lon) {
     final now = DateTime.now();
+    final expiredKeys = <String>[];
     CachedAddress? best;
     double bestDistance = double.infinity;
 
-    for (final item in _nearbyCache.values) {
-      // Lewati jika expired
-      if (now.difference(item.timestamp) > _addressCacheDuration) {
+    for (final entry in _nearbyCache.entries) {
+      if (now.difference(entry.value.timestamp) > _addressCacheDuration) {
+        expiredKeys.add(entry.key);
         continue;
       }
-      final distance = Geolocator.distanceBetween(lat, lon, item.lat, item.lon);
+      final distance = Geolocator.distanceBetween(lat, lon, entry.value.lat, entry.value.lon);
       if (distance <= _addressCacheRadiusMeters && distance < bestDistance) {
         bestDistance = distance;
-        best = item;
+        best = entry.value;
       }
+    }
+
+    // Hapus entry expired setelah iterasi (hindari ConcurrentModificationError)
+    for (final key in expiredKeys) {
+      _nearbyCache.remove(key);
     }
 
     if (best != null) {
@@ -130,7 +129,9 @@ class LocationWeatherService {
   }
 
   static void _addToNearbyCache(double lat, double lon, String address) {
+    // Batasi ukuran cache
     if (_nearbyCache.length >= _maxNearbyCacheSize) {
+      // Hapus yang paling lama
       final oldestKey = _nearbyCache.keys.first;
       _nearbyCache.remove(oldestKey);
     }
@@ -149,7 +150,7 @@ class LocationWeatherService {
     final latStr = lat.toStringAsFixed(7);
     final lonStr = lon.toStringAsFixed(7);
 
-    // Weather cache
+    // Weather cache (berdasarkan lokasi, key 5 desimal)
     final weatherKey = _cacheKey(lat, lon);
     String weather;
     final now = DateTime.now();
@@ -167,14 +168,14 @@ class LocationWeatherService {
       address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
       if (kDebugMode) debugPrint('Geocode: cache BYPASSED');
     } else {
-      // Cek nearby cache
+      // Cek nearby cache dulu
       final nearby = _findNearbyAddressCache(lat, lon);
       if (nearby != null) {
         address = nearby;
         return LocationWeatherResult(address: address, weather: weather, rawAddress: address);
       }
 
-      // Cek exact cache dengan key 5 desimal
+      // Cek exact cache (5 desimal)
       final cacheKey = _cacheKey(lat, lon);
       final cachedAddress = _addressCache[cacheKey];
       if (cachedAddress != null) {
@@ -185,6 +186,7 @@ class LocationWeatherService {
       } else {
         address = await _fetchAddressWithFallback(lat, lon, latStr, lonStr);
         if (address.isNotEmpty) {
+          // Batasi ukuran exact cache (LRU)
           while (_addressCacheOrder.length >= _maxAddressCacheSize) {
             final oldest = _addressCacheOrder.removeAt(0);
             _addressCache.remove(oldest);
@@ -240,12 +242,12 @@ class LocationWeatherService {
     }
   }
 
-  // ==================== FALLBACK CHAIN ====================
+  // ==================== FALLBACK CHAIN (Nominatim -> Photon -> Android Geocoder) ====================
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim (presisi)
+    // 1. Nominatim (paling presisi)
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {

@@ -1,6 +1,9 @@
-```dart
 // lib/services/settings_cache.dart
-// FINAL VERSION – Production grade untuk timestamp camera
+// FINAL VERSION – Production ready
+// - Cache in-memory dengan validasi preload
+// - Reset aman (hapus semua key termasuk legacy)
+// - Whitelist validation untuk setiap value yang dibaca
+// - Kompatibel dengan camera_screen.dart v9
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
@@ -34,27 +37,18 @@ class SettingsCache {
   static const Set<String> _validMapSizes = {'small', 'medium', 'large'};
   static const Set<String> _validThemeModes = {'light', 'dark', 'system'};
 
-  // Daftar semua key yang digunakan (untuk reset aman)
+  // Daftar semua key yang digunakan (termasuk legacy untuk cleanup)
   static const List<String> _settingKeys = [
-    'showMiniMap',
-    'mapSize',
-    'mapZoomLevel',
-    'showAddress',
-    'showCoordinates',
-    'opacity',
-    'showBorder',
-    'fontSize',
-    'layout',
-    'showWeather',
-    'showAccuracy',
-    'dateFormat',
-    'timeFormat',
-    'themeMode',
-    'imageQuality',
-    'keepScreenOn',
-    'useHighAccuracy',
-    'autoSave',
-    'watermark_position',
+    // Current keys
+    'showMiniMap', 'mapSize', 'mapZoomLevel', 'showAddress', 'showCoordinates',
+    'opacity', 'showBorder', 'fontSize', 'layout', 'showWeather', 'showAccuracy',
+    'dateFormat', 'timeFormat', 'themeMode', 'imageQuality', 'keepScreenOn',
+    'useHighAccuracy', 'autoSave', 'watermark_position',
+    // Legacy keys (migration cleanup)
+    'show_mini_map', 'map_size', 'map_zoom_level', 'show_address', 'show_coordinates',
+    'show_weather', 'show_accuracy', 'date_format', 'time_format', 'theme_mode',
+    'font_size', 'show_border', 'keep_screen_on', 'auto_save', 'image_quality',
+    'use_high_accuracy', 'watermark_layout',
   ];
 
   // Validation helpers
@@ -93,7 +87,7 @@ class SettingsCache {
   }
 
   // ==========================================================================
-  // GETTERS & SETTERS
+  // GETTERS & SETTERS (dengan validasi di setter juga)
   // ==========================================================================
   static Future<bool> get showMiniMap async { await preload(); return _showMiniMap!; }
   static Future<void> setShowMiniMap(bool value) async {
@@ -275,4 +269,3 @@ class SettingsCache {
     _prefs = null;
   }
 }
-```

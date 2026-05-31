@@ -1,5 +1,6 @@
 ```dart
 // lib/services/settings_cache.dart
+// FINAL VERSION – Production grade untuk timestamp camera
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
@@ -27,8 +28,13 @@ class SettingsCache {
   static bool? _keepScreenOn;
   static bool? _useHighAccuracy;
   static bool? _autoSave;
+  static WatermarkPosition? _watermarkPosition;
 
-  // Daftar semua key yang digunakan oleh SettingsCache (untuk reset aman)
+  // Whitelist valid values
+  static const Set<String> _validMapSizes = {'small', 'medium', 'large'};
+  static const Set<String> _validThemeModes = {'light', 'dark', 'system'};
+
+  // Daftar semua key yang digunakan (untuk reset aman)
   static const List<String> _settingKeys = [
     'showMiniMap',
     'mapSize',
@@ -51,34 +57,88 @@ class SettingsCache {
     'watermark_position',
   ];
 
+  // Validation helpers
+  static String _validateMapSize(String size) =>
+      _validMapSizes.contains(size) ? size : 'medium';
+  static String _validateThemeMode(String mode) =>
+      _validThemeModes.contains(mode) ? mode : 'dark';
+  static double _validateOpacity(double value) => value.clamp(0.1, 1.0);
+  static double _validateFontSize(double value) => value.clamp(10.0, 32.0);
+  static int _validateImageQuality(int value) => value.clamp(50, 100);
+  static int _validateMapZoomLevel(int value) => value.clamp(10, 21);
+
   // ==========================================================================
-  // INIT / PRELOAD
+  // INIT & PRELOAD (dengan validasi corrupt data)
   // ==========================================================================
   static Future<void> preload() async {
     _prefs ??= await SharedPreferences.getInstance();
 
     _showMiniMap ??= _prefs!.getBool('showMiniMap') ?? true;
-    _mapSize ??= _prefs!.getString('mapSize') ?? 'medium';
-    _mapZoomLevel ??= _prefs!.getInt('mapZoomLevel') ?? 17;
+    _mapSize ??= _validateMapSize(_prefs!.getString('mapSize') ?? 'medium');
+    _mapZoomLevel ??= _validateMapZoomLevel(_prefs!.getInt('mapZoomLevel') ?? 17);
     _showAddress ??= _prefs!.getBool('showAddress') ?? true;
     _showCoordinates ??= _prefs!.getBool('showCoordinates') ?? true;
-    _opacity ??= _prefs!.getDouble('opacity') ?? 0.85;
+    _opacity ??= _validateOpacity(_prefs!.getDouble('opacity') ?? 0.85);
     _showBorder ??= _prefs!.getBool('showBorder') ?? true;
-    _fontSize ??= _prefs!.getDouble('fontSize') ?? 16.0;
+    _fontSize ??= _validateFontSize(_prefs!.getDouble('fontSize') ?? 16.0);
     _showWeather ??= _prefs!.getBool('showWeather') ?? true;
     _showAccuracy ??= _prefs!.getBool('showAccuracy') ?? true;
     _dateFormat ??= _prefs!.getString('dateFormat') ?? 'dd/MM/yyyy';
     _timeFormat ??= _prefs!.getString('timeFormat') ?? 'HH:mm:ss';
-    _themeMode ??= _prefs!.getString('themeMode') ?? 'dark';
-    _imageQuality ??= _prefs!.getInt('imageQuality') ?? 90;
+    _themeMode ??= _validateThemeMode(_prefs!.getString('themeMode') ?? 'dark');
+    _imageQuality ??= _validateImageQuality(_prefs!.getInt('imageQuality') ?? 90);
     _keepScreenOn ??= _prefs!.getBool('keepScreenOn') ?? true;
     _useHighAccuracy ??= _prefs!.getBool('useHighAccuracy') ?? true;
     _autoSave ??= _prefs!.getBool('autoSave') ?? false;
   }
 
   // ==========================================================================
-  // WATERMARK LAYOUT
+  // GETTERS & SETTERS
   // ==========================================================================
+  static Future<bool> get showMiniMap async { await preload(); return _showMiniMap!; }
+  static Future<void> setShowMiniMap(bool value) async {
+    await preload(); _showMiniMap = value; await _prefs!.setBool('showMiniMap', value);
+  }
+
+  static Future<String> get mapSize async { await preload(); return _mapSize!; }
+  static Future<void> setMapSize(String value) async {
+    await preload(); final valid = _validateMapSize(value);
+    _mapSize = valid; await _prefs!.setString('mapSize', valid);
+  }
+
+  static Future<int> get mapZoomLevel async { await preload(); return _mapZoomLevel!; }
+  static Future<void> setMapZoomLevel(int value) async {
+    await preload(); final valid = _validateMapZoomLevel(value);
+    _mapZoomLevel = valid; await _prefs!.setInt('mapZoomLevel', valid);
+  }
+
+  static Future<bool> get showAddress async { await preload(); return _showAddress!; }
+  static Future<void> setShowAddress(bool value) async {
+    await preload(); _showAddress = value; await _prefs!.setBool('showAddress', value);
+  }
+
+  static Future<bool> get showCoordinates async { await preload(); return _showCoordinates!; }
+  static Future<void> setShowCoordinates(bool value) async {
+    await preload(); _showCoordinates = value; await _prefs!.setBool('showCoordinates', value);
+  }
+
+  static Future<double> get opacity async { await preload(); return _opacity!; }
+  static Future<void> setOpacity(double value) async {
+    await preload(); final valid = _validateOpacity(value);
+    _opacity = valid; await _prefs!.setDouble('opacity', valid);
+  }
+
+  static Future<bool> get showBorder async { await preload(); return _showBorder!; }
+  static Future<void> setShowBorder(bool value) async {
+    await preload(); _showBorder = value; await _prefs!.setBool('showBorder', value);
+  }
+
+  static Future<double> get fontSize async { await preload(); return _fontSize!; }
+  static Future<void> setFontSize(double value) async {
+    await preload(); final valid = _validateFontSize(value);
+    _fontSize = valid; await _prefs!.setDouble('fontSize', valid);
+  }
+
   static Future<WatermarkLayout> get layout async {
     await preload();
     if (_layout == null) {
@@ -90,283 +150,129 @@ class SettingsCache {
     }
     return _layout!;
   }
-
   static Future<void> setLayout(WatermarkLayout value) async {
-    await preload();
-    _layout = value;
-    await _prefs!.setString('layout', value.name);
+    await preload(); _layout = value; await _prefs!.setString('layout', value.name);
   }
 
-  // ==========================================================================
-  // SHOW WEATHER & ACCURACY
-  // ==========================================================================
-  static Future<bool> get showWeather async {
-    await preload();
-    return _showWeather!;
-  }
+  static Future<bool> get showWeather async { await preload(); return _showWeather!; }
   static Future<void> setShowWeather(bool value) async {
-    await preload();
-    _showWeather = value;
-    await _prefs!.setBool('showWeather', value);
+    await preload(); _showWeather = value; await _prefs!.setBool('showWeather', value);
   }
 
-  static Future<bool> get showAccuracy async {
-    await preload();
-    return _showAccuracy!;
-  }
+  static Future<bool> get showAccuracy async { await preload(); return _showAccuracy!; }
   static Future<void> setShowAccuracy(bool value) async {
-    await preload();
-    _showAccuracy = value;
-    await _prefs!.setBool('showAccuracy', value);
+    await preload(); _showAccuracy = value; await _prefs!.setBool('showAccuracy', value);
   }
 
-  // ==========================================================================
-  // MINI MAP & MAP SETTINGS
-  // ==========================================================================
-  static Future<bool> get showMiniMap async {
-    await preload();
-    return _showMiniMap!;
-  }
-  static Future<void> setShowMiniMap(bool value) async {
-    await preload();
-    _showMiniMap = value;
-    await _prefs!.setBool('showMiniMap', value);
-  }
-
-  static Future<String> get mapSize async {
-    await preload();
-    return _mapSize!;
-  }
-  static Future<void> setMapSize(String value) async {
-    await preload();
-    _mapSize = value;
-    await _prefs!.setString('mapSize', value);
-  }
-
-  static Future<int> get mapZoomLevel async {
-    await preload();
-    return _mapZoomLevel!;
-  }
-  static Future<void> setMapZoomLevel(int value) async {
-    await preload();
-    final safeZoom = value.clamp(10, 21);
-    _mapZoomLevel = safeZoom;
-    await _prefs!.setInt('mapZoomLevel', safeZoom);
-  }
-
-  // ==========================================================================
-  // ADDRESS & COORDINATES
-  // ==========================================================================
-  static Future<bool> get showAddress async {
-    await preload();
-    return _showAddress!;
-  }
-  static Future<void> setShowAddress(bool value) async {
-    await preload();
-    _showAddress = value;
-    await _prefs!.setBool('showAddress', value);
-  }
-
-  static Future<bool> get showCoordinates async {
-    await preload();
-    return _showCoordinates!;
-  }
-  static Future<void> setShowCoordinates(bool value) async {
-    await preload();
-    _showCoordinates = value;
-    await _prefs!.setBool('showCoordinates', value);
-  }
-
-  // ==========================================================================
-  // OPACITY & BORDER
-  // ==========================================================================
-  static Future<double> get opacity async {
-    await preload();
-    return _opacity!;
-  }
-  static Future<void> setOpacity(double value) async {
-    await preload();
-    final safeValue = value.clamp(0.1, 1.0);
-    _opacity = safeValue;
-    await _prefs!.setDouble('opacity', safeValue);
-  }
-
-  static Future<bool> get showBorder async {
-    await preload();
-    return _showBorder!;
-  }
-  static Future<void> setShowBorder(bool value) async {
-    await preload();
-    _showBorder = value;
-    await _prefs!.setBool('showBorder', value);
-  }
-
-  // ==========================================================================
-  // FONT SIZE (double)
-  // ==========================================================================
-  static Future<double> get fontSize async {
-    await preload();
-    return _fontSize!;
-  }
-  static Future<void> setFontSize(double value) async {
-    await preload();
-    final safeValue = value.clamp(10.0, 32.0);
-    _fontSize = safeValue;
-    await _prefs!.setDouble('fontSize', safeValue);
-  }
-
-  // ==========================================================================
-  // DATE & TIME FORMAT
-  // ==========================================================================
-  static Future<String> get dateFormat async {
-    await preload();
-    return _dateFormat!;
-  }
+  static Future<String> get dateFormat async { await preload(); return _dateFormat!; }
   static Future<void> setDateFormat(String value) async {
-    await preload();
-    _dateFormat = value;
-    await _prefs!.setString('dateFormat', value);
+    await preload(); _dateFormat = value; await _prefs!.setString('dateFormat', value);
   }
 
-  static Future<String> get timeFormat async {
-    await preload();
-    return _timeFormat!;
-  }
+  static Future<String> get timeFormat async { await preload(); return _timeFormat!; }
   static Future<void> setTimeFormat(String value) async {
-    await preload();
-    _timeFormat = value;
-    await _prefs!.setString('timeFormat', value);
+    await preload(); _timeFormat = value; await _prefs!.setString('timeFormat', value);
   }
 
-  // ==========================================================================
-  // THEME MODE
-  // ==========================================================================
-  static Future<String> get themeMode async {
-    await preload();
-    return _themeMode!;
-  }
+  static Future<String> get themeMode async { await preload(); return _themeMode!; }
   static Future<void> setThemeMode(String value) async {
-    await preload();
-    _themeMode = value;
-    await _prefs!.setString('themeMode', value);
+    await preload(); final valid = _validateThemeMode(value);
+    _themeMode = valid; await _prefs!.setString('themeMode', valid);
   }
 
-  // ==========================================================================
-  // IMAGE QUALITY
-  // ==========================================================================
-  static Future<int> get imageQuality async {
-    await preload();
-    return _imageQuality!;
-  }
+  static Future<int> get imageQuality async { await preload(); return _imageQuality!; }
   static Future<void> setImageQuality(int value) async {
-    await preload();
-    _imageQuality = value;
-    await _prefs!.setInt('imageQuality', value);
+    await preload(); final valid = _validateImageQuality(value);
+    _imageQuality = valid; await _prefs!.setInt('imageQuality', valid);
   }
 
-  // ==========================================================================
-  // KEEP SCREEN ON
-  // ==========================================================================
-  static Future<bool> get keepScreenOn async {
-    await preload();
-    return _keepScreenOn!;
-  }
+  static Future<bool> get keepScreenOn async { await preload(); return _keepScreenOn!; }
   static Future<void> setKeepScreenOn(bool value) async {
-    await preload();
-    _keepScreenOn = value;
-    await _prefs!.setBool('keepScreenOn', value);
+    await preload(); _keepScreenOn = value; await _prefs!.setBool('keepScreenOn', value);
   }
 
-  // ==========================================================================
-  // USE HIGH ACCURACY
-  // ==========================================================================
-  static Future<bool> get useHighAccuracy async {
-    await preload();
-    return _useHighAccuracy!;
-  }
+  static Future<bool> get useHighAccuracy async { await preload(); return _useHighAccuracy!; }
   static Future<void> setUseHighAccuracy(bool value) async {
-    await preload();
-    _useHighAccuracy = value;
-    await _prefs!.setBool('useHighAccuracy', value);
+    await preload(); _useHighAccuracy = value; await _prefs!.setBool('useHighAccuracy', value);
   }
 
-  // ==========================================================================
-  // AUTO SAVE
-  // ==========================================================================
-  static Future<bool> get autoSave async {
-    await preload();
-    return _autoSave!;
-  }
+  static Future<bool> get autoSave async { await preload(); return _autoSave!; }
   static Future<void> setAutoSave(bool value) async {
-    await preload();
-    _autoSave = value;
-    await _prefs!.setBool('autoSave', value);
+    await preload(); _autoSave = value; await _prefs!.setBool('autoSave', value);
   }
 
   // ==========================================================================
-  // RESET ALL SETTINGS (SAFE)
+  // WATERMARK POSITION (full persistence dengan cache)
+  // ==========================================================================
+  static Future<WatermarkPosition> loadWatermarkPosition() async {
+    await preload();
+    if (_watermarkPosition != null) return _watermarkPosition!;
+    final raw = _prefs!.getString('watermark_position');
+    if (raw == null) {
+      _watermarkPosition = WatermarkPosition.initial;
+      return _watermarkPosition!;
+    }
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      _watermarkPosition = WatermarkPosition.fromJson(map);
+      return _watermarkPosition!;
+    } catch (_) {
+      _watermarkPosition = WatermarkPosition.initial;
+      return _watermarkPosition!;
+    }
+  }
+
+  static Future<void> saveWatermarkPosition(WatermarkPosition pos) async {
+    try {
+      await preload();
+      _watermarkPosition = pos;
+      final jsonString = jsonEncode(pos.toJson());
+      await _prefs!.setString('watermark_position', jsonString);
+    } catch (_) {}
+  }
+
+  // ==========================================================================
+  // HELPER METHODS
+  // ==========================================================================
+  static Future<Map<String, int>> getMapDimensions() async {
+    final size = await mapSize;
+    switch (size) {
+      case 'small': return {'width': 250, 'height': 150};
+      case 'large': return {'width': 450, 'height': 200};
+      default: return {'width': 350, 'height': 180};
+    }
+  }
+
+  static Future<double> getFontScale() async {
+    final double size = await fontSize;
+    if (size <= 13.0) return 0.85;
+    if (size >= 20.0) return 1.15;
+    return 1.0;
+  }
+
+  // ==========================================================================
+  // RESET & INVALIDATE
   // ==========================================================================
   static Future<void> resetAllSettings() async {
     await preload();
-    for (final key in _settingKeys) {
-      await _prefs!.remove(key);
-    }
+    await Future.wait(_settingKeys.map((key) => _prefs!.remove(key)));
     _invalidateAll();
     await preload();
   }
 
   static void _invalidateAll() {
-    _showMiniMap = null;
-    _mapSize = null;
-    _mapZoomLevel = null;
-    _showAddress = null;
-    _showCoordinates = null;
-    _opacity = null;
-    _showBorder = null;
-    _fontSize = null;
-    _layout = null;
-    _showWeather = null;
-    _showAccuracy = null;
-    _dateFormat = null;
-    _timeFormat = null;
-    _themeMode = null;
-    _imageQuality = null;
-    _keepScreenOn = null;
-    _useHighAccuracy = null;
-    _autoSave = null;
+    _showMiniMap = null; _mapSize = null; _mapZoomLevel = null;
+    _showAddress = null; _showCoordinates = null; _opacity = null;
+    _showBorder = null; _fontSize = null; _layout = null;
+    _showWeather = null; _showAccuracy = null; _dateFormat = null;
+    _timeFormat = null; _themeMode = null; _imageQuality = null;
+    _keepScreenOn = null; _useHighAccuracy = null; _autoSave = null;
+    _watermarkPosition = null;
   }
 
-  // ==========================================================================
-  // INVALIDATE CACHE (public)
-  // ==========================================================================
   static void invalidate() {
     _invalidateAll();
-    _prefs = null; // force reload on next preload
-  }
-
-  // ==========================================================================
-  // WATERMARK POSITION (persistent with safe try-catch)
-  // ==========================================================================
-  static Future<void> saveWatermarkPosition(WatermarkPosition pos) async {
-    try {
-      await preload();
-      final jsonString = jsonEncode(pos.toJson());
-      await _prefs!.setString('watermark_position', jsonString);
-    } catch (_) {
-      // silent fail – not critical
-    }
-  }
-
-  static Future<WatermarkPosition> loadWatermarkPosition() async {
-    await preload();
-    final raw = _prefs!.getString('watermark_position');
-    if (raw == null) return WatermarkPosition.initial;
-    try {
-      final Map<String, dynamic> map = jsonDecode(raw);
-      return WatermarkPosition.fromJson(map);
-    } catch (_) {
-      return WatermarkPosition.initial;
-    }
+    _prefs = null;
   }
 }
 ```

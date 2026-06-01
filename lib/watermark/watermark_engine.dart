@@ -652,7 +652,7 @@ class WatermarkEngine {
     );
     return TextPainter(
       text: span,
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
       maxLines: 1,
       ellipsis: '…',
     );

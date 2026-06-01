@@ -166,7 +166,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _onPosition(Position pos) {
     if (!mounted) return;
-    _gpsLock.update(pos);
+    _gpsLock.processSample(pos);
     final lockData = _gpsLock.lockData;
 
     setState(() {
@@ -209,9 +209,9 @@ class _CameraScreenState extends State<CameraScreen>
     if (_lastWeatherFetch != null &&
         now.difference(_lastWeatherFetch!).inMinutes < 10) return;
     _lastWeatherFetch = now;
-    LocationWeatherService.fetchWeather(pos.latitude, pos.longitude)
-        .then((w) {
-      if (mounted && w.isNotEmpty) setState(() => _weather = w);
+    LocationWeatherService.fetchFromPosition(pos)
+        .then((result) {
+      if (mounted && result.weather.isNotEmpty) setState(() => _weather = result.weather);
     }).catchError((_) {});
   }
 

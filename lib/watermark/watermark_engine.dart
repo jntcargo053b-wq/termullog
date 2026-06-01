@@ -1,13 +1,12 @@
+```dart
 // lib/watermark/watermark_engine.dart
-// TOTAL REBUILD – Pure Flutter Canvas rendering → image package untuk encode JPEG
-// Arsitektur: decode foto → paint watermark via Canvas → encode JPEG
-// Tidak ada isolate double-materialization, tidak ada layout dispatch bug.
+// FULL PRODUCTION – Mendukung mini map, format tanggal/waktu, font size, dan 5 layout.
+// Kompatibel dengan preview_screen.dart via createParams() dan applyFromMapAsync().
 
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -16,247 +15,316 @@ import '../core/constants.dart';
 import 'watermark_params.dart';
 
 class WatermarkEngine {
-  /// Entry point utama.
-  /// Menerima [WatermarkParams] dan mengembalikan JPEG bytes dengan watermark.
+  // ----------------------------------------------------------------------
+  // API untuk preview_screen
+  // ----------------------------------------------------------------------
+
+  /// Membuat WatermarkParams dari Map (biasanya dari pengaturan preview).
+  static WatermarkParams createParams(Map<String, dynamic> map) {
+    return WatermarkParams.fromMap(map);
+  }
+
+  /// Proses watermark langsung dari Map (dengan imageBytes sudah di dalam map).
+  static Future<Uint8List> applyFromMapAsync(Map<String, dynamic> map) async {
+    final params = WatermarkParams.fromMap(map);
+    return process(params);
+  }
+
+  // ----------------------------------------------------------------------
+  // Proses utama
+  // ----------------------------------------------------------------------
+
   static Future<Uint8List> process(WatermarkParams p) async {
-    // 1. Decode foto asli ke ui.Image
+    // 1. Decode foto asli
     final ui.Image original = await _decodeImage(p.imageBytes);
     final int W = original.width;
     final int H = original.height;
 
-    // 2. Pixel ratio proporsional terhadap LEBAR foto (bukan shortSide).
-    //    Watermark selalu horizontal dan terikat ke lebar — W adalah basis yang benar.
-    //    Referensi: desain dibuat pada lebar 1080px.
+    // 2. Pixel ratio berdasarkan lebar (desain referensi 1080px)
     final double pr = (W / 1080.0).clamp(0.5, 4.0);
 
-    // 3. Layout enum dari index
+    // 3. Layout
     final WatermarkLayout layout = WatermarkLayout.values[
         p.layoutIndex.clamp(0, WatermarkLayout.values.length - 1)];
 
-    // 4. Paint watermark ke canvas
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final ui.Canvas canvas = ui.Canvas(recorder);
+    // 4. Decode mini map jika ada
+    ui.Image? miniMapImage;
+    if (p.showMiniMap && p.mapBytes != null && p.mapBytes!.isNotEmpty) {
+      try {
+        miniMapImage = await _decodeImage(p.mapBytes!);
+      } catch (e) {
+        debugPrint('Mini map decode error: $e');
+      }
+    }
 
-    // Gambar foto asli
-    canvas.drawImage(original, ui.Offset.zero, ui.Paint());
+    // 5. Paint ke canvas
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawImage(original, Offset.zero, ui.Paint());
 
-    // Render watermark sesuai layout
-    _renderLayout(
-      canvas: canvas,
-      layout: layout,
-      p: p,
-      W: W,
-      H: H,
-      pr: pr,
-    );
+    _renderLayout(canvas, layout, p, W, H, pr, miniMapImage);
 
-    // 5. Finalize picture → ui.Image
-    final ui.Picture picture = recorder.endRecording();
-    final ui.Image output = await picture.toImage(W, H);
+    // 6. Konversi ke JPEG
+    final picture = recorder.endRecording();
+    final output = await picture.toImage(W, H);
+    final byteData = await output.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) throw Exception('Failed to get pixel data');
 
-    // 6. Ambil RGBA bytes → image package → encode JPEG
-    final ByteData? byteData =
-        await output.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (byteData == null) throw Exception('WatermarkEngine: toByteData failed');
-
-    final Uint8List pixels = byteData.buffer.asUint8List(
-        byteData.offsetInBytes, byteData.lengthInBytes);
-
-    final img.Image imgOut = img.Image.fromBytes(
+    final pixels = byteData.buffer.asUint8List();
+    final imgOut = img.Image.fromBytes(
       width: W,
       height: H,
       bytes: pixels.buffer,
       numChannels: 4,
     );
-
-    final Uint8List jpegBytes = Uint8List.fromList(
-      img.encodeJpg(imgOut, quality: p.imageQuality.clamp(60, 100)),
-    );
+    final jpegBytes = img.encodeJpg(imgOut, quality: p.imageQuality.clamp(60, 100));
 
     // 7. Cleanup
     original.dispose();
     output.dispose();
     picture.dispose();
+    miniMapImage?.dispose();
 
-    return jpegBytes;
+    return Uint8List.fromList(jpegBytes);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // DISPATCH LAYOUT
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
+  // Layout dispatch
+  // ----------------------------------------------------------------------
 
-  static void _renderLayout({
-    required ui.Canvas canvas,
-    required WatermarkLayout layout,
-    required WatermarkParams p,
-    required int W,
-    required int H,
-    required double pr,
-  }) {
+  static void _renderLayout(
+    ui.Canvas canvas,
+    WatermarkLayout layout,
+    WatermarkParams p,
+    int W,
+    int H,
+    double pr,
+    ui.Image? miniMapImage,
+  ) {
     switch (layout) {
       case WatermarkLayout.timemarkClassic:
-        _drawTimemarkClassic(canvas, p, W, H, pr);
+        _drawClassic(canvas, p, W, H, pr, miniMapImage);
         break;
       case WatermarkLayout.timemarkMinimal:
-        _drawTimemarkMinimal(canvas, p, W, H, pr);
+        _drawMinimal(canvas, p, W, H, pr, miniMapImage);
         break;
       case WatermarkLayout.timemarkCard:
-        _drawTimemarkCard(canvas, p, W, H, pr);
+        _drawCard(canvas, p, W, H, pr, miniMapImage);
         break;
       case WatermarkLayout.timemarkHUD:
-        _drawTimemarkHUD(canvas, p, W, H, pr);
+        _drawHUD(canvas, p, W, H, pr, miniMapImage);
         break;
       case WatermarkLayout.timemarkFilm:
-        _drawTimemarkFilm(canvas, p, W, H, pr);
+        _drawFilm(canvas, p, W, H, pr, miniMapImage);
         break;
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // LAYOUT 1: TIMEMARK CLASSIC
-  // Jam besar merah + strip GPS hitam transparan di bawah foto
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
+  // LAYOUT 1: CLASSIC (strip bawah, jam besar di kiri, info di kanan)
+  // ----------------------------------------------------------------------
 
-  static void _drawTimemarkClassic(
-      ui.Canvas canvas, WatermarkParams p, int W, int H, double pr) {
+  static void _drawClassic(
+    ui.Canvas canvas,
+    WatermarkParams p,
+    int W,
+    int H,
+    double pr,
+    ui.Image? miniMapImage,
+  ) {
     final double stripH = 88 * pr;
     final double padH = 12 * pr;
     final double stripY = H - stripH;
 
-    // Background strip hitam
-    final bgPaint = ui.Paint()
-      ..color = const ui.Color(0xDD000000).withOpacity(p.opacity.clamp(0.5, 1.0));
-    canvas.drawRect(ui.Rect.fromLTWH(0, stripY, W.toDouble(), stripH), bgPaint);
+    // Background strip hitam transparan
+    canvas.drawRect(
+      Rect.fromLTWH(0, stripY, W.toDouble(), stripH),
+      ui.Paint()
+        ..color = const Color(0xDD000000).withOpacity(p.opacity.clamp(0.5, 1.0)),
+    );
 
     // Garis aksen merah di atas strip
     canvas.drawRect(
-      ui.Rect.fromLTWH(0, stripY, W.toDouble(), 3 * pr),
-      ui.Paint()..color = const ui.Color(0xFFE63946),
+      Rect.fromLTWH(0, stripY, W.toDouble(), 3 * pr),
+      ui.Paint()..color = const Color(0xFFE63946),
     );
 
-    // ── Kolom kiri: JAM BESAR ──
-    final timeStr = DateFormat('HH:mm:ss').format(p.timestamp);
-    final timePainter = _makePainter(
+    // ---- Kolom kiri: waktu besar ----
+    final String timeStr = DateFormat(p.timeFormat).format(p.timestamp);
+    final double timeFontSize = _getFontSize(32, p.fontSize, pr);
+    final ui.TextPainter timePainter = _makePainter(
       timeStr,
-      size: 32 * pr,
-      color: const ui.Color(0xFFFFFFFF),
+      timeFontSize,
+      Colors.white,
       bold: true,
     );
     timePainter.layout(maxWidth: W * 0.5);
-    timePainter.paint(canvas, ui.Offset(16 * pr, stripY + padH));
+    timePainter.paint(canvas, Offset(16 * pr, stripY + padH));
 
-    // Tanggal di bawah jam
-    final dateStr = DateFormat('EEE, dd MMM yyyy').format(p.timestamp);
-    final datePainter = _makePainter(
+    // Tanggal
+    final String dateStr = DateFormat(p.dateFormat).format(p.timestamp);
+    final double dateFontSize = _getFontSize(13, p.fontSize, pr);
+    final ui.TextPainter datePainter = _makePainter(
       dateStr,
-      size: 13 * pr,
-      color: const ui.Color(0xFFAAAAAA),
+      dateFontSize,
+      const Color(0xFFAAAAAA),
     );
     datePainter.layout(maxWidth: W * 0.5);
-    datePainter.paint(canvas, ui.Offset(16 * pr, stripY + padH + 38 * pr));
+    datePainter.paint(canvas, Offset(16 * pr, stripY + padH + 38 * pr));
 
     // App name kecil
-    final appPainter = _makePainter(
+    final double appFontSize = _getFontSize(10, p.fontSize, pr);
+    final ui.TextPainter appPainter = _makePainter(
       p.appName,
-      size: 10 * pr,
-      color: const ui.Color(0xFF666666),
+      appFontSize,
+      const Color(0xFF666666),
       letterSpacing: 1.5,
     );
     appPainter.layout(maxWidth: W * 0.3);
-    appPainter.paint(canvas, ui.Offset(16 * pr, stripY + padH + 56 * pr));
+    appPainter.paint(canvas, Offset(16 * pr, stripY + padH + 56 * pr));
 
-    // ── Kolom kanan: GPS & INFO ──
-    final rightX = W * 0.52;
+    // ---- Kolom kanan: info GPS ----
+    final double rightX = W * 0.52;
     double ry = stripY + padH;
+    final double infoFontSize = _getFontSize(11, p.fontSize, pr);
 
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final coord =
           '${p.lat!.abs().toStringAsFixed(5)}° ${p.lat! >= 0 ? "N" : "S"}  '
           '${p.lon!.abs().toStringAsFixed(5)}° ${p.lon! >= 0 ? "E" : "W"}';
-      final cp = _makePainter(coord, size: 12 * pr, color: const ui.Color(0xFF1E90FF));
+      final cp = _makePainter(coord, infoFontSize, const Color(0xFF1E90FF));
       cp.layout(maxWidth: W * 0.46);
-      cp.paint(canvas, ui.Offset(rightX, ry));
+      cp.paint(canvas, Offset(rightX, ry));
       ry += 18 * pr;
     }
 
     if (p.showAccuracy && p.acc != null) {
       final accColor = p.acc! <= 5
-          ? const ui.Color(0xFF3CB86A)
+          ? const Color(0xFF3CB86A)
           : p.acc! <= 20
-              ? const ui.Color(0xFFFFB820)
-              : const ui.Color(0xFFE63946);
-      final ap = _makePainter('± ${p.acc!.toStringAsFixed(0)} m', size: 11 * pr, color: accColor);
+              ? const Color(0xFFFFB820)
+              : const Color(0xFFE63946);
+      final ap = _makePainter(
+        '± ${p.acc!.toStringAsFixed(0)} m',
+        infoFontSize,
+        accColor,
+      );
       ap.layout(maxWidth: W * 0.46);
-      ap.paint(canvas, ui.Offset(rightX, ry));
+      ap.paint(canvas, Offset(rightX, ry));
       ry += 16 * pr;
     }
 
     if (p.showAddress && p.address.isNotEmpty && !p.address.startsWith('GPS:')) {
       final addr = _truncate(p.address, 45);
-      final addrP = _makePainter(addr, size: 11 * pr, color: const ui.Color(0xFF999999));
+      final addrP = _makePainter(addr, infoFontSize, const Color(0xFF999999));
       addrP.layout(maxWidth: W * 0.46);
-      addrP.paint(canvas, ui.Offset(rightX, ry));
+      addrP.paint(canvas, Offset(rightX, ry));
       ry += 16 * pr;
     }
 
     if (p.showWeather && p.weather.isNotEmpty) {
-      final wp = _makePainter(p.weather, size: 11 * pr, color: const ui.Color(0xFF1E90FF));
+      final wp = _makePainter(p.weather, infoFontSize, const Color(0xFF1E90FF));
       wp.layout(maxWidth: W * 0.46);
-      wp.paint(canvas, ui.Offset(rightX, ry));
+      wp.paint(canvas, Offset(rightX, ry));
+    }
+
+    // ---- Mini map (jika ada) ----
+    if (miniMapImage != null && p.showMiniMap) {
+      final double mapSize = (p.mapSize * pr).clamp(40.0, 200.0);
+      final double mapX = 16 * pr;
+      final double mapY = stripY - mapSize - 8 * pr; // di atas strip
+      if (mapY >= 8 * pr) {
+        canvas.drawImageRect(
+          miniMapImage,
+          Rect.fromLTWH(0, 0, miniMapImage.width.toDouble(), miniMapImage.height.toDouble()),
+          Rect.fromLTWH(mapX, mapY, mapSize, mapSize),
+          ui.Paint(),
+        );
+        // Border tipis putih
+        canvas.drawRect(
+          Rect.fromLTWH(mapX, mapY, mapSize, mapSize),
+          ui.Paint()
+            ..color = const Color(0xAAFFFFFF)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
+      }
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // LAYOUT 2: TIMEMARK MINIMAL – pojok kanan bawah
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
+  // LAYOUT 2: MINIMAL (pojok kanan bawah)
+  // ----------------------------------------------------------------------
 
-  static void _drawTimemarkMinimal(
-      ui.Canvas canvas, WatermarkParams p, int W, int H, double pr) {
+  static void _drawMinimal(
+    ui.Canvas canvas,
+    WatermarkParams p,
+    int W,
+    int H,
+    double pr,
+    ui.Image? miniMapImage,
+  ) {
     final double padR = 14 * pr;
     final double padB = 14 * pr;
     final double cardW = 200 * pr;
     final double cardH = 58 * pr;
-
     final double cx = W - cardW - padR;
     final double cy = H - cardH - padB;
 
-    // Rounded rect bg
-    final rr = ui.RRect.fromRectAndRadius(
-      ui.Rect.fromLTWH(cx, cy, cardW, cardH),
-      ui.Radius.circular(8 * pr),
+    // Background rounded
+    final rr = RRect.fromRectAndRadius(
+      Rect.fromLTWH(cx, cy, cardW, cardH),
+      Radius.circular(8 * pr),
     );
-    canvas.drawRRect(rr, ui.Paint()..color = ui.Color.fromRGBO(0, 0, 0, p.opacity * 0.85));
-
-    // Aksen garis merah kiri
     canvas.drawRRect(
-      ui.RRect.fromRectAndRadius(
-        ui.Rect.fromLTWH(cx, cy, 3 * pr, cardH),
-        ui.Radius.circular(2 * pr),
+      rr,
+      ui.Paint()..color = const Color(0xDD000000).withOpacity(p.opacity * 0.85),
+    );
+    // Garis aksen merah kiri
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx, cy, 3 * pr, cardH),
+        Radius.circular(2 * pr),
       ),
-      ui.Paint()..color = const ui.Color(0xFFE63946),
+      ui.Paint()..color = const Color(0xFFE63946),
     );
 
-    final timeStr = DateFormat('HH:mm:ss').format(p.timestamp);
-    final tp = _makePainter(timeStr, size: 20 * pr, color: const ui.Color(0xFFFFFFFF), bold: true);
+    final double timeFontSize = _getFontSize(20, p.fontSize, pr);
+    final ui.TextPainter tp = _makePainter(
+      DateFormat(p.timeFormat).format(p.timestamp),
+      timeFontSize,
+      Colors.white,
+      bold: true,
+    );
     tp.layout(maxWidth: cardW - 20 * pr);
-    tp.paint(canvas, ui.Offset(cx + 10 * pr, cy + 8 * pr));
+    tp.paint(canvas, Offset(cx + 10 * pr, cy + 8 * pr));
 
-    final dateStr = DateFormat('dd/MM/yyyy').format(p.timestamp);
-    final dp = _makePainter(dateStr, size: 11 * pr, color: const ui.Color(0xFF888888));
+    final double dateFontSize = _getFontSize(11, p.fontSize, pr);
+    final ui.TextPainter dp = _makePainter(
+      DateFormat(p.dateFormat).format(p.timestamp),
+      dateFontSize,
+      const Color(0xFF888888),
+    );
     dp.layout(maxWidth: cardW - 20 * pr);
-    dp.paint(canvas, ui.Offset(cx + 10 * pr, cy + 32 * pr));
+    dp.paint(canvas, Offset(cx + 10 * pr, cy + 32 * pr));
+
+    // Mini map tidak ditampilkan di layout minimal (terlalu kecil)
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // LAYOUT 3: GLASS CARD – panel kaca transparan dengan info lengkap
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
+  // LAYOUT 3: CARD (glass card kanan bawah, info lengkap, bisa ada mini map)
+  // ----------------------------------------------------------------------
 
-  static void _drawTimemarkCard(
-      ui.Canvas canvas, WatermarkParams p, int W, int H, double pr) {
-    const double kCardWidthRatio = 0.42;
-    final double cardW = (W * kCardWidthRatio).clamp(200.0, 520.0);
-
-    // Hitung tinggi card dinamis
+  static void _drawCard(
+    ui.Canvas canvas,
+    WatermarkParams p,
+    int W,
+    int H,
+    double pr,
+    ui.Image? miniMapImage,
+  ) {
+    const double cardWidthRatio = 0.42;
+    final double cardW = (W * cardWidthRatio).clamp(200.0, 520.0);
     double lineH = 18 * pr;
     int lineCount = 3; // time + date + separator
     if (p.showCoordinates && p.lat != null) lineCount++;
@@ -264,207 +332,260 @@ class WatermarkEngine {
     if (p.showAddress && p.address.isNotEmpty) lineCount++;
     if (p.showWeather && p.weather.isNotEmpty) lineCount++;
     final double cardH = 20 * pr + lineCount * lineH + 16 * pr;
-
     final double margin = 14 * pr;
     final double cx = W - cardW - margin;
     final double cy = H - cardH - margin;
 
-    // Background glass dark
-    final bg = ui.Paint()
-      ..color = ui.Color.fromRGBO(8, 12, 24, p.opacity.clamp(0.6, 0.96));
+    // Background glass
     canvas.drawRRect(
-      ui.RRect.fromRectAndRadius(
-          ui.Rect.fromLTWH(cx, cy, cardW, cardH), ui.Radius.circular(10 * pr)),
-      bg,
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx, cy, cardW, cardH),
+        Radius.circular(10 * pr),
+      ),
+      ui.Paint()..color = const Color.fromRGBO(8, 12, 24, p.opacity.clamp(0.6, 0.96)),
     );
 
-    // Border tipis biru
+    // Border opsional
     if (p.showBorder) {
       canvas.drawRRect(
-        ui.RRect.fromRectAndRadius(
-            ui.Rect.fromLTWH(cx, cy, cardW, cardH), ui.Radius.circular(10 * pr)),
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(cx, cy, cardW, cardH),
+          Radius.circular(10 * pr),
+        ),
         ui.Paint()
-          ..color = const ui.Color(0x401E90FF)
-          ..style = ui.PaintingStyle.stroke
+          ..color = const Color(0x401E90FF)
+          ..style = PaintingStyle.stroke
           ..strokeWidth = 1 * pr,
       );
     }
 
-    // Aksen kiri biru
+    // Aksen biru kiri
     canvas.drawRRect(
-      ui.RRect.fromRectAndRadius(
-          ui.Rect.fromLTWH(cx, cy + 12 * pr, 3 * pr, cardH - 24 * pr),
-          ui.Radius.circular(2 * pr)),
-      ui.Paint()..color = const ui.Color(0xFF1E90FF),
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx, cy + 12 * pr, 3 * pr, cardH - 24 * pr),
+        Radius.circular(2 * pr),
+      ),
+      ui.Paint()..color = const Color(0xFF1E90FF),
     );
 
     final double tx = cx + 14 * pr;
     double ty = cy + 14 * pr;
 
     // Jam besar
-    final timeStr = DateFormat('HH:mm:ss').format(p.timestamp);
-    final tp = _makePainter(timeStr, size: 22 * pr, color: const ui.Color(0xFFFFFFFF), bold: true);
+    final double timeFontSize = _getFontSize(22, p.fontSize, pr);
+    final ui.TextPainter tp = _makePainter(
+      DateFormat(p.timeFormat).format(p.timestamp),
+      timeFontSize,
+      Colors.white,
+      bold: true,
+    );
     tp.layout(maxWidth: cardW - 20 * pr);
-    tp.paint(canvas, ui.Offset(tx, ty));
+    tp.paint(canvas, Offset(tx, ty));
     ty += 26 * pr;
 
     // Tanggal
-    final dateStr = DateFormat('EEE, dd MMM yyyy').format(p.timestamp);
-    final dp = _makePainter(dateStr, size: 12 * pr, color: const ui.Color(0xFF777F8E));
+    final double dateFontSize = _getFontSize(12, p.fontSize, pr);
+    final ui.TextPainter dp = _makePainter(
+      DateFormat(p.dateFormat).format(p.timestamp),
+      dateFontSize,
+      const Color(0xFF777F8E),
+    );
     dp.layout(maxWidth: cardW - 20 * pr);
-    dp.paint(canvas, ui.Offset(tx, ty));
+    dp.paint(canvas, Offset(tx, ty));
     ty += lineH + 2 * pr;
 
-    // Garis separator
+    // Separator
     canvas.drawLine(
-      ui.Offset(tx, ty),
-      ui.Offset(cx + cardW - 14 * pr, ty),
-      ui.Paint()..color = const ui.Color(0x201E90FF)..strokeWidth = 1,
+      Offset(tx, ty),
+      Offset(cx + cardW - 14 * pr, ty),
+      ui.Paint()..color = const Color(0x201E90FF)..strokeWidth = 1,
     );
     ty += 6 * pr;
+
+    final double infoFontSize = _getFontSize(11, p.fontSize, pr);
 
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final coord =
           '${p.lat!.abs().toStringAsFixed(5)}°${p.lat! >= 0 ? "N" : "S"} '
           '${p.lon!.abs().toStringAsFixed(5)}°${p.lon! >= 0 ? "E" : "W"}';
-      final cp = _makePainter(coord, size: 11 * pr, color: const ui.Color(0xFF1E90FF));
+      final cp = _makePainter(coord, infoFontSize, const Color(0xFF1E90FF));
       cp.layout(maxWidth: cardW - 20 * pr);
-      cp.paint(canvas, ui.Offset(tx, ty));
+      cp.paint(canvas, Offset(tx, ty));
       ty += lineH;
     }
 
     if (p.showAccuracy && p.acc != null) {
       final accColor = p.acc! <= 5
-          ? const ui.Color(0xFF3CB86A)
+          ? const Color(0xFF3CB86A)
           : p.acc! <= 20
-              ? const ui.Color(0xFFFFB820)
-              : const ui.Color(0xFFE63946);
-      final ap = _makePainter('± ${p.acc!.toStringAsFixed(1)} m', size: 11 * pr, color: accColor);
+              ? const Color(0xFFFFB820)
+              : const Color(0xFFE63946);
+      final ap = _makePainter('± ${p.acc!.toStringAsFixed(1)} m', infoFontSize, accColor);
       ap.layout(maxWidth: cardW - 20 * pr);
-      ap.paint(canvas, ui.Offset(tx, ty));
+      ap.paint(canvas, Offset(tx, ty));
       ty += lineH;
     }
 
     if (p.showAddress && p.address.isNotEmpty) {
       final addr = _truncate(p.address, 48);
-      final addrP = _makePainter(addr, size: 10.5 * pr, color: const ui.Color(0xFF6A7280));
+      final addrP = _makePainter(addr, infoFontSize, const Color(0xFF6A7280));
       addrP.layout(maxWidth: cardW - 20 * pr);
-      addrP.paint(canvas, ui.Offset(tx, ty));
+      addrP.paint(canvas, Offset(tx, ty));
       ty += lineH;
     }
 
     if (p.showWeather && p.weather.isNotEmpty) {
-      final wp = _makePainter(p.weather, size: 11 * pr, color: const ui.Color(0xFF1E90FF));
+      final wp = _makePainter(p.weather, infoFontSize, const Color(0xFF1E90FF));
       wp.layout(maxWidth: cardW - 20 * pr);
-      wp.paint(canvas, ui.Offset(tx, ty));
+      wp.paint(canvas, Offset(tx, ty));
+    }
+
+    // Mini map di dalam card (pojok kiri bawah card)
+    if (miniMapImage != null && p.showMiniMap) {
+      final double mapSize = (p.mapSize * pr).clamp(40.0, 120.0);
+      final double mapX = cx + 14 * pr;
+      final double mapY = cy + cardH - mapSize - 12 * pr;
+      if (mapY > cy + 40 * pr) {
+        canvas.drawImageRect(
+          miniMapImage,
+          Rect.fromLTWH(0, 0, miniMapImage.width.toDouble(), miniMapImage.height.toDouble()),
+          Rect.fromLTWH(mapX, mapY, mapSize, mapSize),
+          ui.Paint(),
+        );
+        // Border tipis
+        canvas.drawRect(
+          Rect.fromLTWH(mapX, mapY, mapSize, mapSize),
+          ui.Paint()
+            ..color = const Color(0xAA1E90FF)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
+      }
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // LAYOUT 4: HUD OVERLAY
-  // Crosshair ring + data panel pojok kanan atas
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
+  // LAYOUT 4: HUD (crosshair tengah, info di pojok kanan atas)
+  // ----------------------------------------------------------------------
 
-  static void _drawTimemarkHUD(
-      ui.Canvas canvas, WatermarkParams p, int W, int H, double pr) {
-    // Crosshair di tengah (faint)
-    final centerX = W / 2.0;
-    final centerY = H / 2.0;
+  static void _drawHUD(
+    ui.Canvas canvas,
+    WatermarkParams p,
+    int W,
+    int H,
+    double pr,
+    ui.Image? miniMapImage,
+  ) {
+    final double centerX = W / 2.0;
+    final double centerY = H / 2.0;
     final crossPaint = ui.Paint()
-      ..color = const ui.Color(0x401E90FF)
+      ..color = const Color(0x401E90FF)
       ..strokeWidth = 1.5 * pr
-      ..style = ui.PaintingStyle.stroke;
-    // Ring
-    canvas.drawCircle(ui.Offset(centerX, centerY), 28 * pr, crossPaint);
-    // Cross lines
-    canvas.drawLine(ui.Offset(centerX - 40 * pr, centerY),
-        ui.Offset(centerX - 32 * pr, centerY), crossPaint);
-    canvas.drawLine(ui.Offset(centerX + 32 * pr, centerY),
-        ui.Offset(centerX + 40 * pr, centerY), crossPaint);
-    canvas.drawLine(ui.Offset(centerX, centerY - 40 * pr),
-        ui.Offset(centerX, centerY - 32 * pr), crossPaint);
-    canvas.drawLine(ui.Offset(centerX, centerY + 32 * pr),
-        ui.Offset(centerX, centerY + 40 * pr), crossPaint);
+      ..style = PaintingStyle.stroke;
+    canvas.drawCircle(Offset(centerX, centerY), 28 * pr, crossPaint);
+    canvas.drawLine(Offset(centerX - 40 * pr, centerY), Offset(centerX - 32 * pr, centerY), crossPaint);
+    canvas.drawLine(Offset(centerX + 32 * pr, centerY), Offset(centerX + 40 * pr, centerY), crossPaint);
+    canvas.drawLine(Offset(centerX, centerY - 40 * pr), Offset(centerX, centerY - 32 * pr), crossPaint);
+    canvas.drawLine(Offset(centerX, centerY + 32 * pr), Offset(centerX, centerY + 40 * pr), crossPaint);
 
-    // Panel pojok kanan atas
     final double padR = 12 * pr;
     final double padT = 40 * pr;
     final double cardW = 180 * pr;
 
-    // Waktu
-    final timeStr = DateFormat('HH:mm:ss').format(p.timestamp);
-    final tp = _makePainter(timeStr, size: 18 * pr, color: const ui.Color(0xFF00E5FF), bold: true);
+    final double timeFontSize = _getFontSize(18, p.fontSize, pr);
+    final ui.TextPainter tp = _makePainter(
+      DateFormat(p.timeFormat).format(p.timestamp),
+      timeFontSize,
+      const Color(0xFF00E5FF),
+      bold: true,
+    );
     tp.layout(maxWidth: cardW);
-    tp.paint(canvas, ui.Offset(W - tp.width - padR, padT));
+    tp.paint(canvas, Offset(W - tp.width - padR, padT));
 
-    // Tanggal
-    final dateStr = DateFormat('dd/MM/yyyy').format(p.timestamp);
-    final dp = _makePainter(dateStr, size: 11 * pr, color: const ui.Color(0xFF006080));
+    final double dateFontSize = _getFontSize(11, p.fontSize, pr);
+    final ui.TextPainter dp = _makePainter(
+      DateFormat(p.dateFormat).format(p.timestamp),
+      dateFontSize,
+      const Color(0xFF006080),
+    );
     dp.layout(maxWidth: cardW);
-    dp.paint(canvas, ui.Offset(W - dp.width - padR, padT + 24 * pr));
+    dp.paint(canvas, Offset(W - dp.width - padR, padT + 24 * pr));
 
-    // GPS strip bawah
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final coord =
           '${p.lat!.abs().toStringAsFixed(4)}°${p.lat! >= 0 ? "N" : "S"} '
           '${p.lon!.abs().toStringAsFixed(4)}°${p.lon! >= 0 ? "E" : "W"}';
-      final cp = _makePainter(coord, size: 11 * pr, color: const ui.Color(0xFF00E5FF));
+      final cp = _makePainter(coord, dateFontSize, const Color(0xFF00E5FF));
       cp.layout(maxWidth: W * 0.8);
-      final oy = H - 24 * pr;
+      final double oy = H - 24 * pr;
       canvas.drawRect(
-        ui.Rect.fromLTWH(0, oy - 4 * pr, cp.width + 24 * pr, 20 * pr),
-        ui.Paint()..color = const ui.Color(0xCC000D1A),
+        Rect.fromLTWH(0, oy - 4 * pr, cp.width + 24 * pr, 20 * pr),
+        ui.Paint()..color = const Color(0xCC000D1A),
       );
-      cp.paint(canvas, ui.Offset(12 * pr, oy));
+      cp.paint(canvas, Offset(12 * pr, oy));
     }
 
-    // App name pojok kiri atas
-    final appPainter = _makePainter(p.appName,
-        size: 10 * pr,
-        color: const ui.Color(0xFF00697A),
-        letterSpacing: 2.0);
+    final double appFontSize = _getFontSize(10, p.fontSize, pr);
+    final ui.TextPainter appPainter = _makePainter(
+      p.appName,
+      appFontSize,
+      const Color(0xFF00697A),
+      letterSpacing: 2.0,
+    );
     appPainter.layout(maxWidth: 200 * pr);
-    appPainter.paint(canvas, ui.Offset(14 * pr, 20 * pr));
+    appPainter.paint(canvas, Offset(14 * pr, 20 * pr));
+
+    // HUD tidak menampilkan mini map
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // LAYOUT 5: FILM STRIP
-  // Border film perforated + timestamp pojok kanan bawah
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
+  // LAYOUT 5: FILM (border perforated, info di pojok kanan bawah)
+  // ----------------------------------------------------------------------
 
-  static void _drawTimemarkFilm(
-      ui.Canvas canvas, WatermarkParams p, int W, int H, double pr) {
+  static void _drawFilm(
+    ui.Canvas canvas,
+    WatermarkParams p,
+    int W,
+    int H,
+    double pr,
+    ui.Image? miniMapImage,
+  ) {
     final double borderW = 28 * pr;
     final double holeR = 5 * pr;
     final double holeSpacing = 18 * pr;
 
-    // Border oranye-hitam atas dan bawah
-    final filmPaint = ui.Paint()..color = const ui.Color(0xFF1A1000);
-    canvas.drawRect(ui.Rect.fromLTWH(0, 0, W.toDouble(), borderW), filmPaint);
+    // Border atas dan bawah
     canvas.drawRect(
-        ui.Rect.fromLTWH(0, H - borderW, W.toDouble(), borderW), filmPaint);
+      Rect.fromLTWH(0, 0, W.toDouble(), borderW),
+      ui.Paint()..color = const Color(0xFF1A1000),
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(0, H - borderW, W.toDouble(), borderW),
+      ui.Paint()..color = const Color(0xFF1A1000),
+    );
 
     // Lubang perforasi
-    final holePaint = ui.Paint()..color = const ui.Color(0xFFFF9500);
-    final holeCount = (W / holeSpacing).floor();
+    final holePaint = ui.Paint()..color = const Color(0xFFFF9500);
+    final int holeCount = (W / holeSpacing).floor();
     for (int i = 0; i < holeCount; i++) {
-      final hx = i * holeSpacing + holeSpacing / 2;
+      final double hx = i * holeSpacing + holeSpacing / 2;
       canvas.drawRRect(
-        ui.RRect.fromRectAndRadius(
-            ui.Rect.fromLTWH(hx - holeR, borderW * 0.25, holeR * 2, borderW * 0.5),
-            ui.Radius.circular(2 * pr)),
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(hx - holeR, borderW * 0.25, holeR * 2, borderW * 0.5),
+          Radius.circular(2 * pr),
+        ),
         holePaint,
       );
       canvas.drawRRect(
-        ui.RRect.fromRectAndRadius(
-            ui.Rect.fromLTWH(
-                hx - holeR, H - borderW + borderW * 0.25, holeR * 2, borderW * 0.5),
-            ui.Radius.circular(2 * pr)),
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(hx - holeR, H - borderW + borderW * 0.25, holeR * 2, borderW * 0.5),
+          Radius.circular(2 * pr),
+        ),
         holePaint,
       );
     }
 
-    // Info card pojok kanan bawah (dalam area foto, di atas border)
+    // Card info di kanan bawah (dalam area foto)
     const double cardWidthRatio = 0.38;
     final double cardW = (W * cardWidthRatio).clamp(170.0, 400.0);
     final double cardH = 72 * pr;
@@ -473,44 +594,72 @@ class WatermarkEngine {
     final double cy = H - borderW - cardH - margin;
 
     canvas.drawRRect(
-      ui.RRect.fromRectAndRadius(
-          ui.Rect.fromLTWH(cx, cy, cardW, cardH), ui.Radius.circular(6 * pr)),
-      ui.Paint()..color = ui.Color.fromRGBO(0, 0, 0, p.opacity * 0.82),
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx, cy, cardW, cardH),
+        Radius.circular(6 * pr),
+      ),
+      ui.Paint()..color = const Color.fromRGBO(0, 0, 0, p.opacity * 0.82),
     );
-
-    // Garis aksen oranye
     canvas.drawRect(
-      ui.Rect.fromLTWH(cx, cy, cardW, 2.5 * pr),
-      ui.Paint()..color = const ui.Color(0xFFFF9500),
+      Rect.fromLTWH(cx, cy, cardW, 2.5 * pr),
+      ui.Paint()..color = const Color(0xFFFF9500),
     );
 
     final double tx = cx + 10 * pr;
-    final timeStr = DateFormat('HH:mm:ss').format(p.timestamp);
-    final tp = _makePainter(timeStr, size: 20 * pr, color: const ui.Color(0xFFFFD95A), bold: true);
-    tp.layout(maxWidth: cardW - 16 * pr);
-    tp.paint(canvas, ui.Offset(tx, cy + 8 * pr));
 
-    final dateStr = DateFormat('EEE, dd MMM yyyy').format(p.timestamp);
-    final dp = _makePainter(dateStr, size: 11 * pr, color: const ui.Color(0xFFB89040));
+    final double timeFontSize = _getFontSize(20, p.fontSize, pr);
+    final ui.TextPainter tp = _makePainter(
+      DateFormat(p.timeFormat).format(p.timestamp),
+      timeFontSize,
+      const Color(0xFFFFD95A),
+      bold: true,
+    );
+    tp.layout(maxWidth: cardW - 16 * pr);
+    tp.paint(canvas, Offset(tx, cy + 8 * pr));
+
+    final double dateFontSize = _getFontSize(11, p.fontSize, pr);
+    final ui.TextPainter dp = _makePainter(
+      DateFormat(p.dateFormat).format(p.timestamp),
+      dateFontSize,
+      const Color(0xFFB89040),
+    );
     dp.layout(maxWidth: cardW - 16 * pr);
-    dp.paint(canvas, ui.Offset(tx, cy + 32 * pr));
+    dp.paint(canvas, Offset(tx, cy + 32 * pr));
 
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final coord = '${p.lat!.toStringAsFixed(4)}, ${p.lon!.toStringAsFixed(4)}';
-      final cp = _makePainter(coord, size: 10 * pr, color: const ui.Color(0xFF7A6020));
+      final cp = _makePainter(coord, dateFontSize, const Color(0xFF7A6020));
       cp.layout(maxWidth: cardW - 16 * pr);
-      cp.paint(canvas, ui.Offset(tx, cy + 50 * pr));
+      cp.paint(canvas, Offset(tx, cy + 50 * pr));
     }
+
+    // Mini map tidak ditampilkan di film strip
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
   // HELPERS
-  // ─────────────────────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------------
 
-  static TextPainter _makePainter(
-    String text, {
-    required double size,
-    required ui.Color color,
+  /// Menyesuaikan ukuran font berdasarkan preferensi fontSize ('small'/'normal'/'large') dan pr.
+  static double _getFontSize(double baseSize, String fontSizePref, double pr) {
+    double multiplier = 1.0;
+    switch (fontSizePref.toLowerCase()) {
+      case 'small':
+        multiplier = 0.85;
+        break;
+      case 'large':
+        multiplier = 1.25;
+        break;
+      default:
+        multiplier = 1.0;
+    }
+    return (baseSize * multiplier * pr).clamp(8.0, 80.0);
+  }
+
+  static ui.TextPainter _makePainter(
+    String text,
+    double size,
+    ui.Color color, {
     bool bold = false,
     double letterSpacing = 0.0,
   }) {
@@ -522,15 +671,12 @@ class WatermarkEngine {
         fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
         letterSpacing: letterSpacing,
         height: 1.2,
-        shadows: [
-          Shadow(
-              blurRadius: 4,
-              color: const ui.Color(0x88000000),
-              offset: const Offset(1, 1)),
+        shadows: const [
+          Shadow(blurRadius: 4, color: Color(0x88000000), offset: Offset(1, 1)),
         ],
       ),
     );
-    return TextPainter(
+    return ui.TextPainter(
       text: span,
       textDirection: ui.TextDirection.ltr,
       maxLines: 1,
@@ -538,12 +684,15 @@ class WatermarkEngine {
     );
   }
 
-  static String _truncate(String s, int maxLen) =>
-      s.length > maxLen ? '${s.substring(0, maxLen - 1)}…' : s;
+  static String _truncate(String s, int maxLen) {
+    if (s.length <= maxLen) return s;
+    return '${s.substring(0, maxLen - 1)}…';
+  }
 
   static Future<ui.Image> _decodeImage(Uint8List bytes) async {
-    final Completer<ui.Image> c = Completer();
-    ui.decodeImageFromList(bytes, (image) => c.complete(image));
-    return c.future;
+    final Completer<ui.Image> completer = Completer();
+    ui.decodeImageFromList(bytes, completer.complete);
+    return completer.future;
   }
 }
+```

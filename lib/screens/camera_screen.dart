@@ -1,6 +1,6 @@
 
 // lib/screens/camera_screen.dart
-// Final – GPS stabil dengan lock threshold 6m, move threshold 3m, distanceFilter 3, akurasi high
+// Final – GPS stabil dengan lock threshold adaptif, Kalman filter 4D, distanceFilter 3, akurasi high
 // Resolusi kamera veryHigh, resize ke 1920px, watermark proporsional
 
 import 'dart:async';
@@ -81,9 +81,9 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showBorder = true;
   WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
 
-  // Outlier
+  // Filter outlier
   Position? _lastAcceptedRaw;
-  static const double _maxAcceptableAccuracy = 15.0; // tolak akurasi >15m
+  static const double _maxAcceptableAccuracy = 15.0;
   static const double _maxJumpDistance = 200.0;
 
   @override

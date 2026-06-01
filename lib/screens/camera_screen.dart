@@ -1,11 +1,16 @@
-
 // lib/screens/camera_screen.dart
-// Final – GPS stabil dengan lock threshold adaptif, Kalman filter 4D, distanceFilter 3, akurasi high
-// Resolusi kamera veryHigh, resize ke 1920px, watermark proporsional
+// FINAL PRODUCTION – Timestamp/Logistik Camera Screen
+// - GPS lock dengan GpsLockManager (weighted centroid, Kalman, rolling window)
+// - LastKnownPosition filter akurasi ≤20m, usia ≤2 menit, dan timestamp tidak null
+// - Capture gate: hanya jika displayLat tidak null dan akurasi ≤25m
+// - Geocoding dan weather menggunakan smoothed coordinate saat locked (konsisten dengan watermark)
+// - Outlier rejection yang lebih cerdas: tidak menolak recovery GPS yang akurat
+// - Aman terhadap berbagai versi geolocator (menggunakan helper _copyPosition)
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data'; // untuk Uint8List
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -52,21 +57,19 @@ class _CameraScreenState extends State<CameraScreen>
   StreamSubscription<Position>? _posSub;
   bool _locationActive = false;
 
-  Position? _displayPos;
-  double? _currentAcc;
-  double? _lastGeocodedAcc;
-  bool _isFallback = false;
-  String _gpsStatus = '🟡 Mencari GPS';
-  double _gpsConfidence = 0.0;
-
+  // Data untuk display & watermark
   double? _displayLat;
   double? _displayLon;
   double? _displayAcc;
-
-  // Address & Weather
   String _address = 'Mencari lokasi…';
   String _weather = '';
   bool _addrLoading = false;
+  double? _lastGeocodedAcc;
+
+  // Status GPS untuk UI chip
+  String _gpsStatus = '🟡 Mencari GPS';
+  double _gpsConfidence = 0.0;
+  bool _isFallback = false;
 
   // Waktu
   Timer? _clockTimer;
@@ -81,10 +84,14 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showBorder = true;
   WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
 
-  // Filter outlier
+  // Outlier filter (lebih cerdas)
   Position? _lastAcceptedRaw;
   static const double _maxAcceptableAccuracy = 15.0;
   static const double _maxJumpDistance = 200.0;
+
+  // LastKnown position filter
+  static const double _maxLastKnownAccuracy = 20.0;
+  static const Duration _maxLastKnownAge = Duration(minutes: 2);
 
   @override
   void initState() {
@@ -161,19 +168,61 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
 
+  // Helper untuk membuat Position baru dengan field yang aman lintas versi geolocator
+  Position _copyPosition({
+    required Position source,
+    required double lat,
+    required double lon,
+    required double acc,
+    required DateTime timestamp,
+  }) {
+    return Position(
+      latitude: lat,
+      longitude: lon,
+      timestamp: timestamp,
+      accuracy: acc,
+      altitude: source.altitude,
+      altitudeAccuracy: source.altitudeAccuracy,
+      heading: source.heading,
+      headingAccuracy: source.headingAccuracy,
+      speed: source.speed,
+      speedAccuracy: source.speedAccuracy,
+      floor: source.floor,
+      isMocked: source.isMocked,
+    );
+  }
+
   Future<void> _loadLastKnownPosition() async {
     try {
       final last = await Geolocator.getLastKnownPosition();
       if (last == null || !mounted) return;
 
+      // Filter akurasi
+      if (last.accuracy > _maxLastKnownAccuracy) {
+        if (kDebugMode) debugPrint('LastKnown skipped: accuracy ${last.accuracy.toStringAsFixed(0)}m > $_maxLastKnownAccuracy');
+        return;
+      }
+
+      // Filter timestamp null
+      final timestamp = last.timestamp;
+      if (timestamp == null) {
+        if (kDebugMode) debugPrint('LastKnown skipped: null timestamp');
+        return;
+      }
+
+      // Filter usia
+      final age = DateTime.now().difference(timestamp);
+      if (age > _maxLastKnownAge) {
+        if (kDebugMode) debugPrint('LastKnown skipped: stale timestamp (${age.inMinutes} min)');
+        return;
+      }
+
       final addr = await _addrResolver.resolve(last);
       if (!mounted) return;
       setState(() {
-        _displayPos = last;
         _displayLat = last.latitude;
         _displayLon = last.longitude;
         _displayAcc = last.accuracy;
-        _currentAcc = last.accuracy;
         _gpsStatus = '🕐 Posisi Terakhir';
         if (addr.isNotEmpty) {
           _address = addr;
@@ -196,10 +245,10 @@ class _CameraScreenState extends State<CameraScreen>
         if (mounted) _onPosition(pos);
       }).catchError((_) {});
 
-      // Stream GPS dengan setting produksi: high accuracy, distanceFilter 3 meter
+      // Stream GPS produksi: bestForNavigation + distanceFilter 3
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: 3,
         ),
       ).listen(_onPosition, onError: (_) {});
@@ -208,11 +257,20 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  // Outlier rejection yang lebih cerdas (jangan tolak recovery GPS)
   bool _isValidPosition(Position pos) {
     if (pos.accuracy > _maxAcceptableAccuracy) return false;
+
     if (_lastAcceptedRaw != null) {
       final distance = _haversineDistance(_lastAcceptedRaw!, pos);
-      if (distance > _maxJumpDistance) return false;
+      // Tolak hanya jika loncatan sangat besar DAN akurasi memburuk
+      if (distance > _maxJumpDistance &&
+          pos.accuracy > (_lastAcceptedRaw!.accuracy + 5)) {
+        if (kDebugMode) {
+          debugPrint('Rejected jump ${distance.toStringAsFixed(0)}m acc=${pos.accuracy.toStringAsFixed(0)}m');
+        }
+        return false;
+      }
     }
     return true;
   }
@@ -231,38 +289,58 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _onPosition(Position pos) {
     if (!mounted) return;
-
     if (!_isValidPosition(pos)) return;
     _lastAcceptedRaw = pos;
 
     final justLocked = _gpsLock.processSample(pos);
     final lockData = _gpsLock.lockData;
+    final isLocked = _gpsLock.isLocked;
 
+    // Update UI status chip (konsisten dengan filter akurasi)
     setState(() {
-      _currentAcc = pos.accuracy;
-      _isFallback = lockData?.isFallbackLock ?? false;
       _gpsConfidence = lockData?.confidence ?? 0;
-      _displayPos = lockData?.position ?? pos;
+      _isFallback = lockData?.isFallbackLock ?? false;
+      _gpsStatus = isLocked
+          ? '🟢 Terkunci'
+          : pos.accuracy <= 5
+              ? '🔵 Sangat Akurat'
+              : pos.accuracy <= 10
+                  ? '🟡 Akurat'
+                  : '🟠 Menstabilkan';
+    });
 
-      if (_gpsLock.isLocked && lockData != null) {
-        _displayLat = lockData.smoothedLatitude;
-        _displayLon = lockData.smoothedLongitude;
-        _displayAcc = lockData.accuracy;
-      } else {
+    // Tentukan koordinat untuk display & watermark
+    if (isLocked && lockData != null) {
+      // Locked: gunakan smoothed coordinate (stabil)
+      _displayLat = lockData.smoothedLatitude;
+      _displayLon = lockData.smoothedLongitude;
+      _displayAcc = lockData.accuracy;
+    } else {
+      // Belum lock: gunakan bestFix jika ada dan cukup akurat
+      final best = _gpsLock.bestFix;
+      if (best != null && best.accuracy <= _maxAcceptableAccuracy) {
+        _displayLat = best.latitude;
+        _displayLon = best.longitude;
+        _displayAcc = best.accuracy;
+      } else if (pos.accuracy <= 20.0) {
         _displayLat = pos.latitude;
         _displayLon = pos.longitude;
         _displayAcc = pos.accuracy;
       }
+    }
 
-      _gpsStatus = _gpsLock.isLocked
-          ? '🟢 Terkunci'
-          : pos.accuracy <= 10
-              ? '🔵 Akurat'
-              : pos.accuracy <= 30
-                  ? '🟡 Sedang'
-                  : '🔴 Lemah';
-    });
+    // Untuk geocoding dan weather, gunakan koordinat yang konsisten dengan watermark
+    final Position sourcePos = (isLocked && lockData != null)
+        ? _copyPosition(
+            source: pos,
+            lat: lockData.smoothedLatitude,
+            lon: lockData.smoothedLongitude,
+            acc: lockData.accuracy,
+            timestamp: DateTime.now(),
+          )
+        : pos;
 
+    // Trigger geocoding saat lock pertama kali
     if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
       LastKnownLocationCache.save(
@@ -272,15 +350,14 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    _maybeResolveAddress(pos);
-    _maybeLoadWeather(pos);
+    _maybeResolveAddress(sourcePos);
+    _maybeLoadWeather(sourcePos);
   }
 
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
     final accImproved = _lastGeocodedAcc != null &&
         (_lastGeocodedAcc! - pos.accuracy) >= 15.0;
-
     if (_addrLoading && !accImproved) return;
     if (_addrLoading) _geoReqId++;
 
@@ -338,11 +415,43 @@ class _CameraScreenState extends State<CameraScreen>
     await _loadSettings();
   }
 
-  // Capture
+  // Capture dengan gate akurasi: hanya aktif jika display lat tidak null dan akurasi ≤25m
   Future<void> _takePhoto() async {
-    if (_isCapturing || _controller == null || !_controller!.value.isInitialized)
+    if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
+
+    final double acc = _displayAcc ?? 999.0;
+    if (_displayLat == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⏳ GPS belum siap, tunggu sebentar...'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
       return;
-    if (_displayLat == null && (_currentAcc ?? 999) > 50.0) return;
+    }
+    if (acc > 25.0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ GPS masih ±${acc.toStringAsFixed(0)}m >25m. Tunggu lebih akurat.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    if (acc > 15.0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('📍 GPS ±${acc.toStringAsFixed(0)}m, foto tetap diambil.'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
 
     HapticFeedback.mediumImpact();
     setState(() => _isCapturing = true);
@@ -354,7 +463,7 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
-      // Resize ke 1920px jika lebar >1920
+      // Resize ke 1920px
       Uint8List finalBytes = rawBytes;
       img.Image? originalImg = img.decodeImage(rawBytes);
       if (originalImg != null) {
@@ -493,8 +602,10 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
+    // Capture button hanya aktif jika displayLat tidak null dan akurasi ≤25m
     final canCapture = !_isCapturing &&
-        (_displayLat != null || (_currentAcc ?? 999) <= 50.0);
+        _displayLat != null &&
+        (_displayAcc ?? 999) <= 25.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -528,7 +639,7 @@ class _CameraScreenState extends State<CameraScreen>
               acc: _displayAcc,
               confidence: _gpsConfidence,
               isFallback: _isFallback,
-              color: _accColor(_currentAcc),
+              color: _accColor(_displayAcc),
             ),
           ),
           if (_addrLoading)

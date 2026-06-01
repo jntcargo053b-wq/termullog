@@ -1,4 +1,4 @@
-```dart
+
 // lib/screens/camera_screen.dart
 // TOTAL REBUILD – TimeMark-style camera screen
 // Kompatibel dengan geolocator ^11.0.0
@@ -774,4 +774,4 @@ class _LayoutPickerSheet extends StatelessWidget {
     }
   }
 }
-```
+

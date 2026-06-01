@@ -1,16 +1,20 @@
 // lib/services/kalman_filter_4d.dart
+// 4D Kalman filter (position + velocity) untuk GPS mobile/logistik.
+// - Process noise: qPos=4.0, qVel=5.0 (stabil & responsif)
+// - Velocity damping adaptif pow(0.90, dt.clamp(0.3, 2.5))
+// - Measurement gating: hard accept hanya jika akurasi <=15m
+// - Reject middle jump: inflate covariance 1.2
+// - Hard accept inflate 2.0
+// - Health check & auto-reset jika covariance corrupt
+
 import 'dart:math';
 
-/// 4D Kalman filter (position + velocity) dengan constant velocity model.
-/// State: [east, north, v_east, v_north] dalam meter dan m/s.
-/// Menggunakan Joseph form untuk update covariance (stabil numerik).
 class KalmanFilter4D {
   List<double> _x = [0.0, 0.0, 0.0, 0.0];
   List<List<double>> _P = List.generate(4, (_) => List.filled(4, 0.0));
 
-  // Process noise intensities (tuned untuk GPS mobile)
-  static const double _qPos = 2.5;
-  static const double _qVel = 3.0;
+  static const double _qPos = 4.0;
+  static const double _qVel = 5.0;
 
   KalmanFilter4D() {
     _resetCovariance();
@@ -44,7 +48,6 @@ class KalmanFilter4D {
     ];
   }
 
-  // Simetri dan batas bawah untuk stabilitas numerik
   List<List<double>> _enforceSymmetry(List<List<double>> M) {
     final sym = List.generate(4, (i) => List.filled(4, 0.0));
     for (int i = 0; i < 4; i++) {
@@ -61,15 +64,17 @@ class KalmanFilter4D {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Prediction step: update state dan covariance berdasarkan dt.
-  // Mengembalikan (state_pred, cov_pred).
-  // ─────────────────────────────────────────────────────────────────────────
+  // Prediction dengan damping adaptif (base 0.90)
   (List<double>, List<List<double>>) predict(double dt) {
     final F = _getF(dt);
     final Q = _getQ(dt);
 
-    final xPred = _matMulVec(F, _x);
+    List<double> xPred = _matMulVec(F, _x);
+    final clampedDt = dt.clamp(0.3, 2.5);
+    final damping = pow(0.90, clampedDt).toDouble();
+    xPred[2] *= damping;
+    xPred[3] *= damping;
+
     final FP = _matMul(F, _P);
     final FPFt = _matMul(FP, _transpose(F));
     final PPred = _matAdd(FPFt, Q);
@@ -81,27 +86,21 @@ class KalmanFilter4D {
     return (_x, _P);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Update dengan measurement (east, north) dalam meter dan noise variance R.
-  // Mengembalikan (state_upd, cov_upd).
-  // ─────────────────────────────────────────────────────────────────────────
+  // Update step (Joseph form)
   (List<double>, List<List<double>>) update(
       double measurementEast,
       double measurementNorth,
       double R,
       List<List<double>> Ppred) {
-    // Matriks observasi H (hanya posisi)
     final H = [
       [1.0, 0.0, 0.0, 0.0],
       [0.0, 1.0, 0.0, 0.0],
     ];
-    // Inovasi: z = measurement - H * x_pred
     final innovation = [
       measurementEast - _x[0],
       measurementNorth - _x[1],
     ];
 
-    // S = H * Ppred * H^T + R*I
     final HP = _matMul(H, Ppred);
     final HPHt = _matMul(HP, _transpose(H));
     final S = [
@@ -109,19 +108,16 @@ class KalmanFilter4D {
       [HPHt[1][0], HPHt[1][1] + R],
     ];
 
-    // Invers S (2x2)
     final det = S[0][0] * S[1][1] - S[0][1] * S[1][0];
-    if (det.abs() < 1e-12) return (_x, _P); // singular, skip
+    if (det.abs() < 1e-12) return (_x, _P);
     final invS = [
       [S[1][1] / det, -S[0][1] / det],
       [-S[1][0] / det, S[0][0] / det],
     ];
 
-    // Kalman gain K = Ppred * H^T * inv(S)
     final PHt = _matMul(Ppred, _transpose(H));
-    final K = _matMul(PHt, invS); // 4x2
+    final K = _matMul(PHt, invS);
 
-    // Update state
     final xUpd = List<double>.from(_x);
     for (int i = 0; i < 4; i++) {
       for (int j = 0; j < 2; j++) {
@@ -129,7 +125,6 @@ class KalmanFilter4D {
       }
     }
 
-    // Joseph form: P = (I - K*H) * Ppred * (I - K*H)^T + K*R*K^T
     final I = [
       [1.0, 0.0, 0.0, 0.0],
       [0.0, 1.0, 0.0, 0.0],
@@ -151,17 +146,47 @@ class KalmanFilter4D {
     return (_x, _P);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Convenience: predict lalu update dengan measurement.
-  // Mengembalikan (state_upd, cov_upd) setelah update.
-  // ─────────────────────────────────────────────────────────────────────────
+  // Predict + update dengan outlier rejection dan health check
   (List<double>, List<List<double>>) predictAndUpdate(
       double dt,
       double measurementEast,
       double measurementNorth,
       double R) {
     final (_, Ppred) = predict(dt);
-    return update(measurementEast, measurementNorth, R, Ppred);
+
+    // Health check: jika covariance corrupt, reset filter
+    if (!isHealthy()) {
+      reset(measurementEast, measurementNorth);
+      return (_x, _P);
+    }
+
+    final dx = measurementEast - _x[0];
+    final dy = measurementNorth - _x[1];
+    final innovationDistance = sqrt(dx * dx + dy * dy);
+
+    final gateThreshold = max(20.0, sqrt(R) * 2.5);
+    final hardAcceptThreshold = gateThreshold * 3.0;
+
+    if (innovationDistance <= gateThreshold) {
+      // Loncatan kecil → terima
+      return update(measurementEast, measurementNorth, R, Ppred);
+    } 
+    else if (innovationDistance > hardAcceptThreshold) {
+      // Loncatan besar → hanya terima jika akurasi GPS cukup bagus (≤15m)
+      final measurementSigma = sqrt(R);
+      if (measurementSigma <= 15.0) {
+        inflateCovariance(2.0);
+        return update(measurementEast, measurementNorth, R, _P);
+      } else {
+        inflateCovariance(1.2);
+        return (_x, _P);
+      }
+    } 
+    else {
+      // Loncatan menengah → tolak, inflate kecil
+      inflateCovariance(1.2);
+      return (_x, _P);
+    }
   }
 
   void inflateCovariance([double factor = 3.0]) {
@@ -188,7 +213,7 @@ class KalmanFilter4D {
     return true;
   }
 
-  // ========== Matrix utilities (tidak berubah) ==========
+  // Matrix utilities (sama seperti sebelumnya, tidak diubah)
   List<List<double>> _matMul(List<List<double>> A, List<List<double>> B) {
     final int aRows = A.length, aCols = A[0].length, bCols = B[0].length;
     final result = List.generate(aRows, (_) => List.filled(bCols, 0.0));

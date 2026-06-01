@@ -1,6 +1,7 @@
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION v12 – Menyimpan foto ke galeri dan juga ke history permanen
+// FINAL PRODUCTION v13 – Menyimpan foto ke galeri dan history permanen
 // Prefix file: termullog_timestamp.jpg
+// Hapus RouteAware dan appRouteObserver (tidak diperlukan)
 import 'dart:async';
 import 'dart:io';
 
@@ -22,7 +23,6 @@ import '../core/constants.dart';
 import '../widgets/draggable_watermark_overlay.dart';
 import '../services/gps_lock_manager.dart';
 import '../services/address_resolver.dart';
-import '../ui/app.dart';
 
 class CameraScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -32,7 +32,7 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver, RouteAware {
+class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
   // Camera
   CameraController? _controller;
   bool _isCameraReady = false;
@@ -92,15 +92,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _loadSettingsAndPosition();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      appRouteObserver.subscribe(this, ModalRoute.of(context)!);
       _initialize();
     });
-  }
-
-  // Dipanggil saat screen ini kembali ke foreground setelah settings (atau screen lain) di-pop
-  @override
-  void didPopNext() {
-    _reloadSettings();
   }
 
   Future<void> _reloadSettings() async {
@@ -152,7 +145,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   void dispose() {
-    appRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     _positionSub?.cancel();
@@ -183,6 +175,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (mounted) setState(() => _gpsStatus = '🟡 Mencari GPS');
       await _initCamera();
       await _initLocationStream();
+      await _reloadSettings();
     }
   }
 

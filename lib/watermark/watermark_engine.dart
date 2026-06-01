@@ -24,9 +24,10 @@ class WatermarkEngine {
     final int W = original.width;
     final int H = original.height;
 
-    // 2. Hitung pixel ratio proporsional terhadap resolusi 1080p
-    final double shortSide = W < H ? W.toDouble() : H.toDouble();
-    final double pr = (shortSide / 1080.0).clamp(0.8, 3.0);
+    // 2. Pixel ratio proporsional terhadap LEBAR foto (bukan shortSide).
+    //    Watermark selalu horizontal dan terikat ke lebar — W adalah basis yang benar.
+    //    Referensi: desain dibuat pada lebar 1080px.
+    final double pr = (W / 1080.0).clamp(0.5, 4.0);
 
     // 3. Layout enum dari index
     final WatermarkLayout layout = WatermarkLayout.values[

@@ -1,13 +1,11 @@
 
 // lib/screens/camera_screen.dart
-// TOTAL REBUILD – TimeMark-style camera screen
-// Kompatibel dengan geolocator ^11.0.0
-// GPS stabil dengan Kalman filter + outlier rejection
-// Resolusi kamera: veryHigh, lalu resize ke 1920px untuk watermark optimal
+// Final – GPS stabil dengan lock threshold 6m, move threshold 3m, distanceFilter 3, akurasi high
+// Resolusi kamera veryHigh, resize ke 1920px, watermark proporsional
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:math'; // untuk pi, sin, cos
+import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -18,7 +16,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:image/image.dart' as img; // untuk resize
+import 'package:image/image.dart' as img;
 
 import '../core/constants.dart';
 import '../services/gps_lock_manager.dart';
@@ -40,7 +38,7 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  // ── Camera ──────────────────────────────────────────────────────────────
+  // Camera
   CameraController? _controller;
   bool _isCameraReady = false;
   bool _isCapturing = false;
@@ -48,7 +46,7 @@ class _CameraScreenState extends State<CameraScreen>
   Completer<void>? _initCompleter;
   bool _torchOn = false;
 
-  // ── GPS ─────────────────────────────────────────────────────────────────
+  // GPS
   final GpsLockManager _gpsLock = GpsLockManager();
   final AddressResolver _addrResolver = AddressResolver();
   StreamSubscription<Position>? _posSub;
@@ -65,16 +63,16 @@ class _CameraScreenState extends State<CameraScreen>
   double? _displayLon;
   double? _displayAcc;
 
-  // ── Address & Weather ────────────────────────────────────────────────────
+  // Address & Weather
   String _address = 'Mencari lokasi…';
   String _weather = '';
   bool _addrLoading = false;
 
-  // ── Waktu ────────────────────────────────────────────────────────────────
+  // Waktu
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
 
-  // ── Pengaturan ───────────────────────────────────────────────────────────
+  // Pengaturan
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -83,9 +81,9 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showBorder = true;
   WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
 
-  // ── Helper outlier ───────────────────────────────────────────────────────
+  // Outlier
   Position? _lastAcceptedRaw;
-  static const double _maxAcceptableAccuracy = 100.0;
+  static const double _maxAcceptableAccuracy = 15.0; // tolak akurasi >15m
   static const double _maxJumpDistance = 200.0;
 
   @override
@@ -96,7 +94,6 @@ class _CameraScreenState extends State<CameraScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
   }
 
-  // ── Boot sequence ────────────────────────────────────────────────────────
   Future<void> _boot() async {
     await _checkGalleryPermission();
     await _initCamera();
@@ -139,7 +136,7 @@ class _CameraScreenState extends State<CameraScreen>
       await _controller?.dispose();
       final c = CameraController(
         widget.cameras.first,
-        ResolutionPreset.veryHigh, // Pakai veryHigh untuk hasil maksimal
+        ResolutionPreset.veryHigh,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
@@ -192,18 +189,18 @@ class _CameraScreenState extends State<CameraScreen>
     if (_locationActive) return;
     _locationActive = true;
     try {
-      // Warm-up: gunakan desiredAccuracy (API kompatibel v11)
+      // Warm-up
       Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.bestForNavigation,
       ).then((pos) {
         if (mounted) _onPosition(pos);
       }).catchError((_) {});
 
-      // Stream GPS dengan distanceFilter (int)
+      // Stream GPS dengan setting produksi: high accuracy, distanceFilter 3 meter
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 10, // int, bukan double
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 3,
         ),
       ).listen(_onPosition, onError: (_) {});
     } catch (e) {
@@ -221,7 +218,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   double _haversineDistance(Position a, Position b) {
-    const double R = 6371000; // Radius bumi dalam meter
+    const double R = 6371000;
     final lat1 = a.latitude * pi / 180;
     final lat2 = b.latitude * pi / 180;
     final deltaLat = (b.latitude - a.latitude) * pi / 180;
@@ -341,7 +338,7 @@ class _CameraScreenState extends State<CameraScreen>
     await _loadSettings();
   }
 
-  // ── Capture ──────────────────────────────────────────────────────────────
+  // Capture
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized)
       return;
@@ -357,7 +354,7 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
-      // --- RESIZE KE 1920px jika lebar > 1920 ---
+      // Resize ke 1920px jika lebar >1920
       Uint8List finalBytes = rawBytes;
       img.Image? originalImg = img.decodeImage(rawBytes);
       if (originalImg != null) {
@@ -368,14 +365,12 @@ class _CameraScreenState extends State<CameraScreen>
           final resized = img.copyResize(originalImg, width: targetWidth, height: targetHeight);
           finalBytes = Uint8List.fromList(img.encodeJpg(resized, quality: imageQuality));
         } else {
-          // Kompres ulang dengan kualitas yang diinginkan
           finalBytes = Uint8List.fromList(img.encodeJpg(originalImg, quality: imageQuality));
         }
       }
-      // --- Selesai resize ---
 
       final params = WatermarkParams(
-        imageBytes: finalBytes, // pakai bytes yang sudah diresize
+        imageBytes: finalBytes,
         timestamp: captureTime,
         address: _address,
         weather: _weather,
@@ -469,7 +464,6 @@ class _CameraScreenState extends State<CameraScreen>
     super.dispose();
   }
 
-  // ── UI ───────────────────────────────────────────────────────────────────
   Color _accColor(double? acc) {
     if (acc == null) return Colors.grey;
     if (acc <= 5) return const Color(0xFF3CB86A);
@@ -642,10 +636,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GPS Chip Widget
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _GpsChip extends StatelessWidget {
   final String status;
   final double? acc;
@@ -695,10 +686,7 @@ class _GpsChip extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Layout Picker Bottom Sheet
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _LayoutPickerSheet extends StatelessWidget {
   final WatermarkLayout current;
   final ValueChanged<WatermarkLayout> onSelect;
@@ -774,4 +762,3 @@ class _LayoutPickerSheet extends StatelessWidget {
     }
   }
 }
-

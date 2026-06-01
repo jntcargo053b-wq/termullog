@@ -173,9 +173,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         imageBytes: rawBytes,
         timestamp: _currentTimestamp,
         layout: _currentLayout,
-        lat: lockData.position.latitude,
-        lon: lockData.position.longitude,
-        acc: lockData.position.accuracy,
+        lat: lockData.smoothedLatitude,
+        lon: lockData.smoothedLongitude,
+        acc: lockData.accuracy,
         address: lockData.address,   // sudah berisi alamat setelah lock
         weather: lockData.weather,
         // ... parameter lain sama

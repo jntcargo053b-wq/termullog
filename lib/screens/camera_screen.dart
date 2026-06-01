@@ -55,6 +55,12 @@ class _CameraScreenState extends State<CameraScreen>
   String _gpsStatus = '🟡 Mencari GPS';
   double _gpsConfidence = 0.0;
 
+  /// Koordinat untuk display dan watermark.
+  /// Saat locked: pakai smoothedLatitude/Longitude dari Kalman filter.
+  /// Saat belum locked: pakai koordinat raw dari stream.
+  double? _displayLat;
+  double? _displayLon;
+
   // ── Address & Weather ────────────────────────────────────────────────────
   String _address = 'Mencari lokasi…';
   String _weather = '';
@@ -164,6 +170,8 @@ class _CameraScreenState extends State<CameraScreen>
       if (!mounted) return;
       setState(() {
         _displayPos = last;
+        _displayLat = last.latitude;
+        _displayLon = last.longitude;
         _currentAcc = last.accuracy;
         _gpsStatus = '🕐 Posisi Terakhir';
         if (addr.isNotEmpty) {
@@ -180,6 +188,17 @@ class _CameraScreenState extends State<CameraScreen>
     if (_locationActive) return;
     _locationActive = true;
     try {
+      // ── Tahap 2: paksa warm-up receiver sebelum stream ──────────────────────
+      // getCurrentPosition() membantu Android/iOS segera mengaktifkan chip GPS
+      // sehingga sample pertama dari stream sudah dalam kondisi "warm" (first fix lebih cepat).
+      Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+        ),
+      ).then((pos) {
+        if (mounted) _onPosition(pos);
+      }).catchError((_) {}); // fire-and-forget, stream tetap jalan
+
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
@@ -193,7 +212,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _onPosition(Position pos) {
     if (!mounted) return;
-    _gpsLock.processSample(pos);
+    final justLocked = _gpsLock.processSample(pos);
     final lockData = _gpsLock.lockData;
 
     setState(() {
@@ -201,6 +220,17 @@ class _CameraScreenState extends State<CameraScreen>
       _isFallback = lockData?.isFallbackLock ?? false;
       _gpsConfidence = lockData?.confidence ?? 0;
       _displayPos = lockData?.position ?? pos;
+
+      if (_gpsLock.isLocked && lockData != null) {
+        // ── Koordinat Kalman: lebih akurat dari raw GPS ──────────────────────
+        _displayLat = lockData.smoothedLatitude;
+        _displayLon = lockData.smoothedLongitude;
+      } else {
+        // Belum locked: pakai koordinat raw dari stream
+        _displayLat = pos.latitude;
+        _displayLon = pos.longitude;
+      }
+
       _gpsStatus = _gpsLock.isLocked
           ? '🟢 Terkunci'
           : pos.accuracy <= 10
@@ -209,6 +239,13 @@ class _CameraScreenState extends State<CameraScreen>
                   ? '🟡 Sedang'
                   : '🔴 Lemah';
     });
+
+    // ── Saran 3: force geocode segera saat baru pertama kali lock ─────────
+    // justLocked = true hanya sekali saat transisi acquiring → locked.
+    // Reset _lastGeocodedAcc supaya _needsUpdate() pasti true.
+    if (justLocked) {
+      _lastGeocodedAcc = null;
+    }
 
     _maybeResolveAddress(pos);
     _maybeLoadWeather(pos);
@@ -306,10 +343,9 @@ class _CameraScreenState extends State<CameraScreen>
         showCoordinates: _showCoordinates,
         opacity: _opacity,
         showBorder: _showBorder,
-        lat: _displayPos?.latitude,
-        lon: _displayPos?.longitude,
+        lat: _displayLat,
+        lon: _displayLon,
         acc: _currentAcc,
-        imageQuality: imageQuality,
         fontScale: fontScale,
       );
 
@@ -434,9 +470,9 @@ class _CameraScreenState extends State<CameraScreen>
           CustomPaint(
             painter: WatermarkPreviewPainter(
               timestamp: _now,
-              hasPosition: _displayPos != null,
-              lat: _displayPos?.latitude,
-              lon: _displayPos?.longitude,
+              hasPosition: _displayLat != null,
+              lat: _displayLat,
+              lon: _displayLon,
               acc: _currentAcc,
               address: _address,
               weather: _weather,

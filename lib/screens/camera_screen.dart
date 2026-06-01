@@ -50,6 +50,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   Position? _displayPos;
   double? _currentAcc;
+  double? _lastGeocodedAcc;        // akurasi saat geocode terakhir
   bool _isFallback = false;
   String _gpsStatus = '🟡 Mencari GPS';
   double _gpsConfidence = 0.0;
@@ -87,6 +88,7 @@ class _CameraScreenState extends State<CameraScreen>
     await _checkGalleryPermission();
     await _initCamera();
     await _requestHighAccuracy();
+    await _loadLastKnownPosition(); // tampilkan data lama sebelum GPS lock
     await _initLocation();
     _startClock();
   }
@@ -149,6 +151,31 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
 
+  /// Tahap 1 startup: tampilkan last known position instan tanpa tunggu GPS.
+  /// Memberikan alamat + koordinat segera saat layar dibuka.
+  Future<void> _loadLastKnownPosition() async {
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last == null || !mounted) return;
+
+      // Resolve alamat dari cache (hampir selalu hit karena posisi sama)
+      final addr = await _addrResolver.resolve(last);
+
+      if (!mounted) return;
+      setState(() {
+        _displayPos = last;
+        _currentAcc = last.accuracy;
+        _gpsStatus = '🕐 Posisi Terakhir';
+        if (addr.isNotEmpty) {
+          _address = addr;
+          _lastGeocodedAcc = last.accuracy;
+        }
+      });
+    } catch (e) {
+      debugPrint('LastKnownPosition error: $e');
+    }
+  }
+
   Future<void> _initLocation() async {
     if (_locationActive) return;
     _locationActive = true;
@@ -189,13 +216,25 @@ class _CameraScreenState extends State<CameraScreen>
 
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
-    if (_addrLoading) return;
+    // Force refresh jika akurasi membaik ≥15m dari resolve terakhir
+    final accImproved = _lastGeocodedAcc != null &&
+        (_lastGeocodedAcc! - pos.accuracy) >= 15.0;
+
+    if (_addrLoading && !accImproved) return;
+    if (_addrLoading) {
+      // Batalkan request lama, mulai yang baru
+      _geoReqId++;
+    }
+
     final id = ++_geoReqId;
     _addrLoading = true;
     _addrResolver.resolve(pos).then((addr) {
       if (!mounted || id != _geoReqId) return;
       setState(() {
-        _address = addr;
+        if (addr.isNotEmpty) {
+          _address = addr;
+          _lastGeocodedAcc = pos.accuracy;
+        }
         _addrLoading = false;
       });
     }).catchError((_) {

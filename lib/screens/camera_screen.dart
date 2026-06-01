@@ -1,6 +1,7 @@
 // lib/screens/camera_screen.dart
 // TOTAL REBUILD – TimeMark-style camera screen
-// Bersih, tidak ada RouteAware, tidak ada double-compute bug.
+// Kompatibel dengan geolocator ^11.0.0
+// GPS stabil dengan Kalman filter + outlier rejection
 
 import 'dart:async';
 import 'dart:io';
@@ -85,7 +86,10 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showBorder = true;
   WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
 
-  static const double _kMinAcc = 25.0;
+  // ── Helper outlier ───────────────────────────────────────────────────────
+  Position? _lastAcceptedRaw;
+  static const double _maxAcceptableAccuracy = 100.0;  // tolak akurasi >100m
+  static const double _maxJumpDistance = 200.0;        // tolak loncatan >200m
 
   @override
   void initState() {
@@ -163,16 +167,13 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
 
-  /// Tahap 1 startup: tampilkan last known position instan tanpa tunggu GPS.
-  /// Memberikan alamat + koordinat segera saat layar dibuka.
+  /// Tampilkan last known position instan (tanpa GPS live)
   Future<void> _loadLastKnownPosition() async {
     try {
       final last = await Geolocator.getLastKnownPosition();
       if (last == null || !mounted) return;
 
-      // Resolve alamat dari cache (hampir selalu hit karena posisi sama)
       final addr = await _addrResolver.resolve(last);
-
       if (!mounted) return;
       setState(() {
         _displayPos = last;
@@ -195,21 +196,18 @@ class _CameraScreenState extends State<CameraScreen>
     if (_locationActive) return;
     _locationActive = true;
     try {
-      // ── Tahap 2: paksa warm-up receiver sebelum stream ──────────────────────
-      // getCurrentPosition() membantu Android/iOS segera mengaktifkan chip GPS
-      // sehingga sample pertama dari stream sudah dalam kondisi "warm" (first fix lebih cepat).
+      // Warm-up: gunakan desiredAccuracy (API kompatibel v11)
       Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-        ),
+        desiredAccuracy: LocationAccuracy.bestForNavigation,
       ).then((pos) {
         if (mounted) _onPosition(pos);
-      }).catchError((_) {}); // fire-and-forget, stream tetap jalan
+      }).catchError((_) {});
 
+      // Stream GPS dengan distanceFilter untuk mengurangi noise
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 0,
+          distanceFilter: 10.0, // hanya trigger jika bergerak >10 meter
         ),
       ).listen(_onPosition, onError: (_) {});
     } catch (e) {
@@ -217,8 +215,35 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  /// Filter outlier: tolak akurasi buruk & loncatan drastis
+  bool _isValidPosition(Position pos) {
+    if (pos.accuracy > _maxAcceptableAccuracy) return false;
+    if (_lastAcceptedRaw != null) {
+      final distance = _haversineDistance(_lastAcceptedRaw!, pos);
+      if (distance > _maxJumpDistance) return false;
+    }
+    return true;
+  }
+
+  double _haversineDistance(Position a, Position b) {
+    const double R = 6371000; // radius bumi dalam meter
+    final lat1 = a.latitude * pi / 180;
+    final lat2 = b.latitude * pi / 180;
+    final deltaLat = (b.latitude - a.latitude) * pi / 180;
+    final deltaLon = (b.longitude - a.longitude) * pi / 180;
+    final aVal = sin(deltaLat / 2) * sin(deltaLat / 2) +
+        cos(lat1) * cos(lat2) * sin(deltaLon / 2) * sin(deltaLon / 2);
+    final c = 2 * atan2(sqrt(aVal), sqrt(1 - aVal));
+    return R * c;
+  }
+
   void _onPosition(Position pos) {
     if (!mounted) return;
+
+    // Filter outlier terlebih dahulu
+    if (!_isValidPosition(pos)) return;
+    _lastAcceptedRaw = pos;
+
     final justLocked = _gpsLock.processSample(pos);
     final lockData = _gpsLock.lockData;
 
@@ -229,13 +254,11 @@ class _CameraScreenState extends State<CameraScreen>
       _displayPos = lockData?.position ?? pos;
 
       if (_gpsLock.isLocked && lockData != null) {
-        // ── Koordinat Kalman: lebih akurat dari raw GPS ──────────────────────
+        // Koordinat hasil Kalman filter
         _displayLat = lockData.smoothedLatitude;
         _displayLon = lockData.smoothedLongitude;
-        // ── Weighted centroid accuracy: hasil dari banyak sample ─────────────
-        _displayAcc = lockData.accuracy;
+        _displayAcc = lockData.accuracy; // weighted centroid accuracy
       } else {
-        // Belum locked: pakai koordinat raw dari stream
         _displayLat = pos.latitude;
         _displayLon = pos.longitude;
         _displayAcc = pos.accuracy;
@@ -250,15 +273,9 @@ class _CameraScreenState extends State<CameraScreen>
                   : '🔴 Lemah';
     });
 
-    // ── Saran 3: force geocode segera saat baru pertama kali lock ─────────
-    // justLocked = true hanya sekali saat transisi acquiring → locked.
-    // Reset _lastGeocodedAcc supaya _needsUpdate() pasti true.
+    // Simpan ke cache saat pertama kali lock
     if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
-
-      // ── Simpan last known location — pakai rawPosition, BUKAN smoothed ───
-      // Smoothed = hasil model matematika, tidak cocok sebagai cache koordinat.
-      // rawPosition = koordinat GNSS sebenarnya dari sample terbaik.
       LastKnownLocationCache.save(
         position: lockData.rawPosition,
         address: _address,
@@ -266,24 +283,18 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    // ── Geocoding & weather: SELALU pakai pos raw dari stream ─────────────
-    // Smoothed (Kalman) hanya untuk display koordinat dan watermark.
-    // Geocoding butuh koordinat GNSS asli — jangan ganti dengan smoothedLat/Lon.
+    // Geocoding & weather selalu pakai raw position (bukan smoothed)
     _maybeResolveAddress(pos);
     _maybeLoadWeather(pos);
   }
 
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
-    // Force refresh jika akurasi membaik ≥15m dari resolve terakhir
     final accImproved = _lastGeocodedAcc != null &&
         (_lastGeocodedAcc! - pos.accuracy) >= 15.0;
 
     if (_addrLoading && !accImproved) return;
-    if (_addrLoading) {
-      // Batalkan request lama, mulai yang baru
-      _geoReqId++;
-    }
+    if (_addrLoading) _geoReqId++;
 
     final id = ++_geoReqId;
     _addrLoading = true;
@@ -309,7 +320,9 @@ class _CameraScreenState extends State<CameraScreen>
     _lastWeatherFetch = now;
     LocationWeatherService.fetchFromPosition(pos)
         .then((result) {
-      if (mounted && result.weather.isNotEmpty) setState(() => _weather = result.weather);
+      if (mounted && result.weather.isNotEmpty) {
+        setState(() => _weather = result.weather);
+      }
     }).catchError((_) {});
   }
 
@@ -341,7 +354,7 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized)
       return;
-    if (_displayPos == null && (_currentAcc ?? 999) > 50.0) return;
+    if (_displayLat == null && (_currentAcc ?? 999) > 50.0) return;
 
     HapticFeedback.mediumImpact();
     setState(() => _isCapturing = true);
@@ -369,11 +382,12 @@ class _CameraScreenState extends State<CameraScreen>
         lon: _displayLon,
         acc: _displayAcc,
         fontScale: fontScale,
+        imageQuality: imageQuality,
+        appName: 'TermulLog',
       );
 
       final jpegBytes = await WatermarkEngine.process(params);
 
-      // Simpan ke direktori history internal
       final appDir = await getApplicationDocumentsDirectory();
       final histDir = Directory('${appDir.path}/history');
       await histDir.create(recursive: true);
@@ -381,11 +395,11 @@ class _CameraScreenState extends State<CameraScreen>
       final outPath = '${histDir.path}/termullog_$ts.jpg';
       await File(outPath).writeAsBytes(jpegBytes);
 
-      // Simpan juga ke galeri
       await GallerySaver.saveImage(outPath, albumName: 'TermulLog');
 
-      // Hapus temp
-      try { await File(xFile.path).delete(); } catch (_) {}
+      try {
+        await File(xFile.path).delete();
+      } catch (_) {}
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -478,17 +492,14 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     final canCapture = !_isCapturing &&
-        (_displayPos != null || (_currentAcc ?? 999) <= 50.0);
+        (_displayLat != null || (_currentAcc ?? 999) <= 50.0);
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Kamera preview ──────────────────────────────────────
           CameraPreview(_controller!),
-
-          // ── Watermark preview overlay ──────────────────────────
           CustomPaint(
             painter: WatermarkPreviewPainter(
               timestamp: _now,
@@ -507,8 +518,6 @@ class _CameraScreenState extends State<CameraScreen>
               layout: _layout,
             ),
           ),
-
-          // ── Status bar GPS (atas kiri) ─────────────────────────
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -520,8 +529,6 @@ class _CameraScreenState extends State<CameraScreen>
               color: _accColor(_currentAcc),
             ),
           ),
-
-          // ── Address loading indicator ───────────────────────────
           if (_addrLoading)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
@@ -549,8 +556,6 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
             ),
-
-          // ── Control bar bawah ──────────────────────────────────
           Positioned(
             bottom: 0,
             left: 0,
@@ -564,7 +569,6 @@ class _CameraScreenState extends State<CameraScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Torch button
                   IconButton(
                     icon: Icon(
                       _torchOn ? Icons.flash_on : Icons.flash_off,
@@ -573,8 +577,6 @@ class _CameraScreenState extends State<CameraScreen>
                     ),
                     onPressed: _toggleTorch,
                   ),
-
-                  // Shutter button
                   GestureDetector(
                     onTap: canCapture ? _takePhoto : null,
                     child: AnimatedContainer(
@@ -600,8 +602,6 @@ class _CameraScreenState extends State<CameraScreen>
                           : null,
                     ),
                   ),
-
-                  // Layout switcher
                   IconButton(
                     icon: const Icon(Icons.layers_outlined,
                         color: Colors.white54, size: 28),
@@ -704,20 +704,23 @@ class _LayoutPickerSheet extends StatelessWidget {
       children: [
         const SizedBox(height: 12),
         Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2))),
+                color: Colors.white24, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 16),
         const Text('Pilih Gaya Watermark',
-            style: TextStyle(color: Colors.white,
-                fontSize: 16, fontWeight: FontWeight.w600)),
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         ...WatermarkLayout.values.map((l) {
           final selected = l == current;
           return ListTile(
             leading: Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: selected
                     ? const Color(0xFF1E90FF).withOpacity(0.2)
@@ -750,11 +753,16 @@ class _LayoutPickerSheet extends StatelessWidget {
 
   IconData _iconFor(WatermarkLayout l) {
     switch (l) {
-      case WatermarkLayout.timemarkClassic: return Icons.access_time;
-      case WatermarkLayout.timemarkMinimal: return Icons.radio_button_checked;
-      case WatermarkLayout.timemarkCard:    return Icons.credit_card;
-      case WatermarkLayout.timemarkHUD:     return Icons.track_changes;
-      case WatermarkLayout.timemarkFilm:    return Icons.photo_camera_back;
+      case WatermarkLayout.timemarkClassic:
+        return Icons.access_time;
+      case WatermarkLayout.timemarkMinimal:
+        return Icons.radio_button_checked;
+      case WatermarkLayout.timemarkCard:
+        return Icons.credit_card;
+      case WatermarkLayout.timemarkHUD:
+        return Icons.track_changes;
+      case WatermarkLayout.timemarkFilm:
+        return Icons.photo_camera_back;
     }
   }
 }

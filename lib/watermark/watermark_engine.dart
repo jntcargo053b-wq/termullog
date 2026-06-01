@@ -1,5 +1,4 @@
 // lib/watermark/watermark_engine.dart
-// FINAL – perbaikan bug Image.fromBytes (bytes: pixels)
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -108,11 +107,11 @@ class WatermarkEngine {
     if (byteData == null) throw Exception('Failed to get image bytes');
 
     final Uint8List pixels = byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes);
-    // 🔥 Perbaikan: gunakan pixels langsung, bukan pixels.buffer
+    // 🔥 Perbaikan: gunakan pixels.buffer (ByteBuffer)
     final img.Image jpegImg = img.Image.fromBytes(
       width: width,
       height: height,
-      bytes: pixels,      // ← perbaikan kritis
+      bytes: pixels.buffer,      // ← perbaikan kritis
       numChannels: 4,
     );
     final Uint8List jpegBytes = Uint8List.fromList(

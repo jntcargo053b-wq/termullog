@@ -1,9 +1,9 @@
-// ============================================================================
-// 3. lib/services/location_weather_service.dart
-// ============================================================================
+```dart
+// lib/services/location_weather_service.dart
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -312,7 +312,6 @@ class LocationWeatherService {
         final addr = data['address'] as Map<String, dynamic>?;
         if (addr == null) return '';
 
-        // NO snap distance filter – centroid of OSM objects is naturally far from GPS point
         final road = _safeStr(addr['road'])
             ?? _safeStr(addr['residential'])
             ?? _safeStr(addr['pedestrian'])
@@ -429,7 +428,7 @@ class LocationWeatherService {
         '?latitude=$latStr&longitude=$lonStr'
         '&current=temperature_2m,weather_code&timezone=auto',
       );
-      final res = await _client.get(uri).timeout(const Duration(seconds: 8)); // timeout 8s
+      final res = await _client.get(uri).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final current = data['current'] as Map<String, dynamic>?;
@@ -472,6 +471,42 @@ class LocationWeatherService {
     final s = v.toString().trim();
     return s.isEmpty ? null : s;
   }
+
+  // ----------------------------------------------------------------------
+  // MAP STATIC (OpenStreetMap)
+  // ----------------------------------------------------------------------
+
+  /// Mengambil static map dari OpenStreetMap staticmap.de (mirror)
+  static Future<Uint8List?> fetchMap(double lat, double lon,
+      {int width = 300, int height = 300, int zoom = 15}) async {
+    if (_isClosed) return null;
+    try {
+      // Gunakan layanan static map openstreetmap (staticmap.openstreetmap.de)
+      final url = Uri.parse(
+          'https://staticmap.openstreetmap.de/staticmap.php?center=$lat,$lon&zoom=$zoom&size=${width}x$height&maptype=mapnik');
+      final response = await _client.get(url).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      } else {
+        if (kDebugMode) debugPrint('Map fetch failed: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('Map fetch error: $e');
+      return null;
+    }
+  }
+
+  /// fetchMap dengan retry otomatis
+  static Future<Uint8List?> fetchMapWithRetry(double lat, double lon,
+      {int retries = 2}) async {
+    for (int i = 0; i < retries; i++) {
+      final result = await fetchMap(lat, lon);
+      if (result != null) return result;
+      await Future.delayed(Duration(milliseconds: 500 * (i + 1)));
+    }
+    return null;
+  }
 }
 
 class _WeatherCacheEntry {
@@ -480,8 +515,8 @@ class _WeatherCacheEntry {
   _WeatherCacheEntry(this.weather, this.expiry);
 }
 
+// Extension untuk kompatibilitas dengan camera_screen.dart (method fetchWeather)
 extension LocationWeatherServiceExt on LocationWeatherService {
-  /// Convenience method untuk camera_screen.dart
   static Future<String> fetchWeather(double lat, double lon) async {
     try {
       final latStr = lat.toStringAsFixed(5);
@@ -492,3 +527,4 @@ extension LocationWeatherServiceExt on LocationWeatherService {
     }
   }
 }
+```

@@ -173,7 +173,7 @@ class WatermarkEngine {
 
     final String timeStr = DateFormat(p.timeFormat).format(p.timestamp);
     final double timeFontSize = _getFontSize(32, p.fontSize, pr);
-    final ui.TextPainter timePainter = _makePainter(
+    final TextPainter timePainter = _makePainter(
       timeStr,
       timeFontSize,
       ui.Color(0xFFFFFFFF),
@@ -184,7 +184,7 @@ class WatermarkEngine {
 
     final String dateStr = DateFormat(p.dateFormat).format(p.timestamp);
     final double dateFontSize = _getFontSize(13, p.fontSize, pr);
-    final ui.TextPainter datePainter = _makePainter(
+    final TextPainter datePainter = _makePainter(
       dateStr,
       dateFontSize,
       ui.Color(0xFFAAAAAA),
@@ -193,7 +193,7 @@ class WatermarkEngine {
     datePainter.paint(canvas, Offset(16 * pr, stripY + padH + 38 * pr));
 
     final double appFontSize = _getFontSize(10, p.fontSize, pr);
-    final ui.TextPainter appPainter = _makePainter(
+    final TextPainter appPainter = _makePainter(
       p.appName,
       appFontSize,
       ui.Color(0xFF666666),
@@ -210,7 +210,7 @@ class WatermarkEngine {
       final coord =
           '${p.lat!.abs().toStringAsFixed(5)}° ${p.lat! >= 0 ? "N" : "S"}  '
           '${p.lon!.abs().toStringAsFixed(5)}° ${p.lon! >= 0 ? "E" : "W"}';
-      final cp = _makePainter(coord, infoFontSize, ui.Color(0xFF1E90FF));
+      final TextPainter cp = _makePainter(coord, infoFontSize, ui.Color(0xFF1E90FF));
       cp.layout(maxWidth: W * 0.46);
       cp.paint(canvas, Offset(rightX, ry));
       ry += 18 * pr;
@@ -222,7 +222,7 @@ class WatermarkEngine {
           : p.acc! <= 20
               ? const ui.Color(0xFFFFB820)
               : const ui.Color(0xFFE63946);
-      final ap = _makePainter(
+      final TextPainter ap = _makePainter(
         '± ${p.acc!.toStringAsFixed(0)} m',
         infoFontSize,
         accColor,
@@ -234,14 +234,14 @@ class WatermarkEngine {
 
     if (p.showAddress && p.address.isNotEmpty && !p.address.startsWith('GPS:')) {
       final addr = _truncate(p.address, 45);
-      final addrP = _makePainter(addr, infoFontSize, ui.Color(0xFF999999));
+      final TextPainter addrP = _makePainter(addr, infoFontSize, ui.Color(0xFF999999));
       addrP.layout(maxWidth: W * 0.46);
       addrP.paint(canvas, Offset(rightX, ry));
       ry += 16 * pr;
     }
 
     if (p.showWeather && p.weather.isNotEmpty) {
-      final wp = _makePainter(p.weather, infoFontSize, ui.Color(0xFF1E90FF));
+      final TextPainter wp = _makePainter(p.weather, infoFontSize, ui.Color(0xFF1E90FF));
       wp.layout(maxWidth: W * 0.46);
       wp.paint(canvas, Offset(rightX, ry));
     }
@@ -300,7 +300,7 @@ class WatermarkEngine {
     );
 
     final double timeFontSize = _getFontSize(20, p.fontSize, pr);
-    final ui.TextPainter tp = _makePainter(
+    final TextPainter tp = _makePainter(
       DateFormat(p.timeFormat).format(p.timestamp),
       timeFontSize,
       ui.Color(0xFFFFFFFF),
@@ -310,7 +310,7 @@ class WatermarkEngine {
     tp.paint(canvas, Offset(cx + 10 * pr, cy + 8 * pr));
 
     final double dateFontSize = _getFontSize(11, p.fontSize, pr);
-    final ui.TextPainter dp = _makePainter(
+    final TextPainter dp = _makePainter(
       DateFormat(p.dateFormat).format(p.timestamp),
       dateFontSize,
       ui.Color(0xFF888888),
@@ -373,7 +373,7 @@ class WatermarkEngine {
     double ty = cy + 14 * pr;
 
     final double timeFontSize = _getFontSize(22, p.fontSize, pr);
-    final ui.TextPainter tp = _makePainter(
+    final TextPainter tp = _makePainter(
       DateFormat(p.timeFormat).format(p.timestamp),
       timeFontSize,
       ui.Color(0xFFFFFFFF),
@@ -384,7 +384,7 @@ class WatermarkEngine {
     ty += 26 * pr;
 
     final double dateFontSize = _getFontSize(12, p.fontSize, pr);
-    final ui.TextPainter dp = _makePainter(
+    final TextPainter dp = _makePainter(
       DateFormat(p.dateFormat).format(p.timestamp),
       dateFontSize,
       ui.Color(0xFF777F8E),
@@ -406,7 +406,7 @@ class WatermarkEngine {
       final coord =
           '${p.lat!.abs().toStringAsFixed(5)}°${p.lat! >= 0 ? "N" : "S"} '
           '${p.lon!.abs().toStringAsFixed(5)}°${p.lon! >= 0 ? "E" : "W"}';
-      final cp = _makePainter(coord, infoFontSize, ui.Color(0xFF1E90FF));
+      final TextPainter cp = _makePainter(coord, infoFontSize, ui.Color(0xFF1E90FF));
       cp.layout(maxWidth: cardW - 20 * pr);
       cp.paint(canvas, Offset(tx, ty));
       ty += lineH;
@@ -418,7 +418,7 @@ class WatermarkEngine {
           : p.acc! <= 20
               ? const ui.Color(0xFFFFB820)
               : const ui.Color(0xFFE63946);
-      final ap = _makePainter('± ${p.acc!.toStringAsFixed(1)} m', infoFontSize, accColor);
+      final TextPainter ap = _makePainter('± ${p.acc!.toStringAsFixed(1)} m', infoFontSize, accColor);
       ap.layout(maxWidth: cardW - 20 * pr);
       ap.paint(canvas, Offset(tx, ty));
       ty += lineH;
@@ -426,14 +426,14 @@ class WatermarkEngine {
 
     if (p.showAddress && p.address.isNotEmpty) {
       final addr = _truncate(p.address, 48);
-      final addrP = _makePainter(addr, infoFontSize, ui.Color(0xFF6A7280));
+      final TextPainter addrP = _makePainter(addr, infoFontSize, ui.Color(0xFF6A7280));
       addrP.layout(maxWidth: cardW - 20 * pr);
       addrP.paint(canvas, Offset(tx, ty));
       ty += lineH;
     }
 
     if (p.showWeather && p.weather.isNotEmpty) {
-      final wp = _makePainter(p.weather, infoFontSize, ui.Color(0xFF1E90FF));
+      final TextPainter wp = _makePainter(p.weather, infoFontSize, ui.Color(0xFF1E90FF));
       wp.layout(maxWidth: cardW - 20 * pr);
       wp.paint(canvas, Offset(tx, ty));
     }
@@ -485,7 +485,7 @@ class WatermarkEngine {
     final double cardW = 180 * pr;
 
     final double timeFontSize = _getFontSize(18, p.fontSize, pr);
-    final ui.TextPainter tp = _makePainter(
+    final TextPainter tp = _makePainter(
       DateFormat(p.timeFormat).format(p.timestamp),
       timeFontSize,
       ui.Color(0xFF00E5FF),
@@ -495,7 +495,7 @@ class WatermarkEngine {
     tp.paint(canvas, Offset(W - tp.width - padR, padT));
 
     final double dateFontSize = _getFontSize(11, p.fontSize, pr);
-    final ui.TextPainter dp = _makePainter(
+    final TextPainter dp = _makePainter(
       DateFormat(p.dateFormat).format(p.timestamp),
       dateFontSize,
       ui.Color(0xFF006080),
@@ -507,7 +507,7 @@ class WatermarkEngine {
       final coord =
           '${p.lat!.abs().toStringAsFixed(4)}°${p.lat! >= 0 ? "N" : "S"} '
           '${p.lon!.abs().toStringAsFixed(4)}°${p.lon! >= 0 ? "E" : "W"}';
-      final cp = _makePainter(coord, dateFontSize, ui.Color(0xFF00E5FF));
+      final TextPainter cp = _makePainter(coord, dateFontSize, ui.Color(0xFF00E5FF));
       cp.layout(maxWidth: W * 0.8);
       final double oy = H - 24 * pr;
       canvas.drawRect(
@@ -518,7 +518,7 @@ class WatermarkEngine {
     }
 
     final double appFontSize = _getFontSize(10, p.fontSize, pr);
-    final ui.TextPainter appPainter = _makePainter(
+    final TextPainter appPainter = _makePainter(
       p.appName,
       appFontSize,
       ui.Color(0xFF00697A),
@@ -591,7 +591,7 @@ class WatermarkEngine {
     final double tx = cx + 10 * pr;
 
     final double timeFontSize = _getFontSize(20, p.fontSize, pr);
-    final ui.TextPainter tp = _makePainter(
+    final TextPainter tp = _makePainter(
       DateFormat(p.timeFormat).format(p.timestamp),
       timeFontSize,
       ui.Color(0xFFFFD95A),
@@ -601,7 +601,7 @@ class WatermarkEngine {
     tp.paint(canvas, Offset(tx, cy + 8 * pr));
 
     final double dateFontSize = _getFontSize(11, p.fontSize, pr);
-    final ui.TextPainter dp = _makePainter(
+    final TextPainter dp = _makePainter(
       DateFormat(p.dateFormat).format(p.timestamp),
       dateFontSize,
       ui.Color(0xFFB89040),
@@ -611,7 +611,7 @@ class WatermarkEngine {
 
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final coord = '${p.lat!.toStringAsFixed(4)}, ${p.lon!.toStringAsFixed(4)}';
-      final cp = _makePainter(coord, dateFontSize, ui.Color(0xFF7A6020));
+      final TextPainter cp = _makePainter(coord, dateFontSize, ui.Color(0xFF7A6020));
       cp.layout(maxWidth: cardW - 16 * pr);
       cp.paint(canvas, Offset(tx, cy + 50 * pr));
     }
@@ -630,7 +630,7 @@ class WatermarkEngine {
     return (baseSize * multiplier * pr).clamp(8.0, 80.0);
   }
 
-  static ui.TextPainter _makePainter(
+  static TextPainter _makePainter(
     String text,
     double size,
     ui.Color color, {
@@ -650,9 +650,9 @@ class WatermarkEngine {
         ],
       ),
     );
-    return ui.TextPainter(
+    return TextPainter(
       text: span,
-      textDirection: ui.TextDirection.ltr,
+      textDirection: TextDirection.ltr,
       maxLines: 1,
       ellipsis: '…',
     );

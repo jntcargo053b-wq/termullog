@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math'; // untuk pi, sin, cos
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -52,20 +53,13 @@ class _CameraScreenState extends State<CameraScreen>
 
   Position? _displayPos;
   double? _currentAcc;
-  double? _lastGeocodedAcc;        // akurasi saat geocode terakhir
+  double? _lastGeocodedAcc;
   bool _isFallback = false;
   String _gpsStatus = '🟡 Mencari GPS';
   double _gpsConfidence = 0.0;
 
-  /// Koordinat untuk display dan watermark.
-  /// Saat locked: pakai smoothedLatitude/Longitude dari Kalman filter.
-  /// Saat belum locked: pakai koordinat raw dari stream.
   double? _displayLat;
   double? _displayLon;
-
-  /// Accuracy untuk watermark.
-  /// Saat locked: weighted centroid accuracy dari lockData (lebih representatif).
-  /// Saat belum locked: raw accuracy dari stream.
   double? _displayAcc;
 
   // ── Address & Weather ────────────────────────────────────────────────────
@@ -88,8 +82,8 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Helper outlier ───────────────────────────────────────────────────────
   Position? _lastAcceptedRaw;
-  static const double _maxAcceptableAccuracy = 100.0;  // tolak akurasi >100m
-  static const double _maxJumpDistance = 200.0;        // tolak loncatan >200m
+  static const double _maxAcceptableAccuracy = 100.0;
+  static const double _maxJumpDistance = 200.0;
 
   @override
   void initState() {
@@ -104,7 +98,7 @@ class _CameraScreenState extends State<CameraScreen>
     await _checkGalleryPermission();
     await _initCamera();
     await _requestHighAccuracy();
-    await _loadLastKnownPosition(); // tampilkan data lama sebelum GPS lock
+    await _loadLastKnownPosition();
     await _initLocation();
     _startClock();
   }
@@ -167,7 +161,6 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
 
-  /// Tampilkan last known position instan (tanpa GPS live)
   Future<void> _loadLastKnownPosition() async {
     try {
       final last = await Geolocator.getLastKnownPosition();
@@ -203,11 +196,11 @@ class _CameraScreenState extends State<CameraScreen>
         if (mounted) _onPosition(pos);
       }).catchError((_) {});
 
-      // Stream GPS dengan distanceFilter untuk mengurangi noise
+      // Stream GPS dengan distanceFilter (int)
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 10.0, // hanya trigger jika bergerak >10 meter
+          distanceFilter: 10, // int, bukan double
         ),
       ).listen(_onPosition, onError: (_) {});
     } catch (e) {
@@ -215,7 +208,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  /// Filter outlier: tolak akurasi buruk & loncatan drastis
   bool _isValidPosition(Position pos) {
     if (pos.accuracy > _maxAcceptableAccuracy) return false;
     if (_lastAcceptedRaw != null) {
@@ -226,7 +218,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   double _haversineDistance(Position a, Position b) {
-    const double R = 6371000; // radius bumi dalam meter
+    const double R = 6371000; // Radius bumi dalam meter
     final lat1 = a.latitude * pi / 180;
     final lat2 = b.latitude * pi / 180;
     final deltaLat = (b.latitude - a.latitude) * pi / 180;
@@ -240,7 +232,6 @@ class _CameraScreenState extends State<CameraScreen>
   void _onPosition(Position pos) {
     if (!mounted) return;
 
-    // Filter outlier terlebih dahulu
     if (!_isValidPosition(pos)) return;
     _lastAcceptedRaw = pos;
 
@@ -254,10 +245,9 @@ class _CameraScreenState extends State<CameraScreen>
       _displayPos = lockData?.position ?? pos;
 
       if (_gpsLock.isLocked && lockData != null) {
-        // Koordinat hasil Kalman filter
         _displayLat = lockData.smoothedLatitude;
         _displayLon = lockData.smoothedLongitude;
-        _displayAcc = lockData.accuracy; // weighted centroid accuracy
+        _displayAcc = lockData.accuracy;
       } else {
         _displayLat = pos.latitude;
         _displayLon = pos.longitude;
@@ -273,7 +263,6 @@ class _CameraScreenState extends State<CameraScreen>
                   : '🔴 Lemah';
     });
 
-    // Simpan ke cache saat pertama kali lock
     if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
       LastKnownLocationCache.save(
@@ -283,7 +272,6 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    // Geocoding & weather selalu pakai raw position (bukan smoothed)
     _maybeResolveAddress(pos);
     _maybeLoadWeather(pos);
   }

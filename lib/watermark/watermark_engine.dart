@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 
@@ -505,32 +506,32 @@ class WatermarkEngine {
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────
 
-  static ui.TextPainter _makePainter(
+  static TextPainter _makePainter(
     String text, {
     required double size,
     required ui.Color color,
     bool bold = false,
     double letterSpacing = 0.0,
   }) {
-    final span = ui.TextSpan(
+    final span = TextSpan(
       text: text,
-      style: ui.TextStyle(
+      style: TextStyle(
         color: color,
         fontSize: size,
-        fontWeight: bold ? ui.FontWeight.w700 : ui.FontWeight.w400,
+        fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
         letterSpacing: letterSpacing,
         height: 1.2,
         shadows: [
-          ui.Shadow(
+          Shadow(
               blurRadius: 4,
               color: const ui.Color(0x88000000),
-              offset: const ui.Offset(1, 1)),
+              offset: const Offset(1, 1)),
         ],
       ),
     );
-    return ui.TextPainter(
+    return TextPainter(
       text: span,
-      textDirection: ui.TextDirection.ltr,
+      textDirection: TextDirection.ltr,
       maxLines: 1,
       ellipsis: '…',
     );

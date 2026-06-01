@@ -282,7 +282,7 @@ class WatermarkPreviewPainter extends CustomPainter {
           shadows: const [Shadow(blurRadius: 3, color: Color(0x88000000), offset: Offset(1, 1))],
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
       maxLines: 1,
       ellipsis: '…',
     );

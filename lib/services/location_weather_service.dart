@@ -1,4 +1,3 @@
-```dart
 // lib/services/location_weather_service.dart
 import 'dart:collection';
 import 'dart:convert';
@@ -40,22 +39,19 @@ class LocationWeatherService {
   static http.Client _client = http.Client();
   static bool _isClosed = false;
 
-  // Exact coordinate cache (5 decimal places)
   static final Map<String, String> _addressCache = {};
   static const int _maxAddressCacheSize = 100;
   static final List<String> _addressCacheOrder = [];
 
-  // Nearby cache (radius 20m, expiry 30 menit untuk sesi lapangan)
   static const double _addressCacheRadiusMeters = 20.0;
   static const Duration _addressCacheDuration = Duration(minutes: 30);
   static final Map<String, CachedAddress> _nearbyCache = {};
   static const int _maxNearbyCacheSize = 50;
 
-  // Weather cache (10 menit, per koordinat 5 desimal)
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);
 
-  static bool _disableCache = false; // false for production
+  static bool _disableCache = false;
 
   static String _cacheKey(double lat, double lon) {
     return '${lat.toStringAsFixed(5)},${lon.toStringAsFixed(5)}';
@@ -142,7 +138,6 @@ class LocationWeatherService {
     final latStr = lat.toStringAsFixed(7);
     final lonStr = lon.toStringAsFixed(7);
 
-    // Weather cache
     final weatherKey = _cacheKey(lat, lon);
     String weather;
     final now = DateTime.now();
@@ -231,12 +226,10 @@ class LocationWeatherService {
     }
   }
 
-  // FALLBACK CHAIN: Nominatim -> Photon -> Android Geocoder
   static Future<String> _fetchAddressWithFallback(
       double lat, double lon, String latStr, String lonStr) async {
     if (_isClosed) return '';
 
-    // 1. Nominatim
     try {
       final nominatim = await _fetchFromNominatim(latStr, lonStr);
       if (nominatim.isNotEmpty) {
@@ -247,7 +240,6 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Nominatim error → $e');
     }
 
-    // 2. Photon
     try {
       final photon = await _fetchFromPhoton(latStr, lonStr);
       if (photon.isNotEmpty) {
@@ -258,7 +250,6 @@ class LocationWeatherService {
       if (kDebugMode) debugPrint('Geocode: Photon error → $e');
     }
 
-    // 3. Android Geocoder
     try {
       final android = await _fetchFromAndroidGeocoder(lat, lon);
       if (android.isNotEmpty && !android.contains('Unnamed Road')) {
@@ -472,16 +463,11 @@ class LocationWeatherService {
     return s.isEmpty ? null : s;
   }
 
-  // ----------------------------------------------------------------------
-  // MAP STATIC (OpenStreetMap)
-  // ----------------------------------------------------------------------
-
-  /// Mengambil static map dari OpenStreetMap staticmap.de (mirror)
+  // MAP STATIC
   static Future<Uint8List?> fetchMap(double lat, double lon,
       {int width = 300, int height = 300, int zoom = 15}) async {
     if (_isClosed) return null;
     try {
-      // Gunakan layanan static map openstreetmap (staticmap.openstreetmap.de)
       final url = Uri.parse(
           'https://staticmap.openstreetmap.de/staticmap.php?center=$lat,$lon&zoom=$zoom&size=${width}x$height&maptype=mapnik');
       final response = await _client.get(url).timeout(const Duration(seconds: 10));
@@ -497,7 +483,6 @@ class LocationWeatherService {
     }
   }
 
-  /// fetchMap dengan retry otomatis
   static Future<Uint8List?> fetchMapWithRetry(double lat, double lon,
       {int retries = 2}) async {
     for (int i = 0; i < retries; i++) {
@@ -515,7 +500,6 @@ class _WeatherCacheEntry {
   _WeatherCacheEntry(this.weather, this.expiry);
 }
 
-// Extension untuk kompatibilitas dengan camera_screen.dart (method fetchWeather)
 extension LocationWeatherServiceExt on LocationWeatherService {
   static Future<String> fetchWeather(double lat, double lon) async {
     try {
@@ -527,4 +511,3 @@ extension LocationWeatherServiceExt on LocationWeatherService {
     }
   }
 }
-```

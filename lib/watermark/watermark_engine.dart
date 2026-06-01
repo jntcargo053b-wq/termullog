@@ -19,8 +19,61 @@ class WatermarkEngine {
   // API untuk preview_screen
   // ----------------------------------------------------------------------
 
-  /// Membuat WatermarkParams dari Map (biasanya dari pengaturan preview).
-  static WatermarkParams createParams(Map<String, dynamic> map) {
+  /// Membuat WatermarkParams dari named parameters (dipanggil oleh preview_screen)
+  static WatermarkParams createParams({
+    required Uint8List imageBytes,
+    required DateTime timestamp,
+    required int layoutIndex,
+    required String address,
+    required String weather,
+    required bool showWeather,
+    required bool showAccuracy,
+    required bool showMiniMap,
+    required double? lat,
+    required double? lon,
+    required double? acc,
+    required Uint8List? mapBytes,
+    required int mapSize,
+    required int mapZoomLevel,
+    required bool showAddress,
+    required bool showCoordinates,
+    required double opacity,
+    required bool showBorder,
+    required String fontSize,
+    required int imageQuality,
+    required String dateFormat,
+    required String timeFormat,
+  }) {
+    return WatermarkParams(
+      imageBytes: imageBytes,
+      timestamp: timestamp,
+      layoutIndex: layoutIndex,
+      address: address,
+      weather: weather,
+      showWeather: showWeather,
+      showAccuracy: showAccuracy,
+      showAddress: showAddress,
+      showCoordinates: showCoordinates,
+      opacity: opacity,
+      showBorder: showBorder,
+      lat: lat,
+      lon: lon,
+      acc: acc,
+      fontScale: 1.0, // fontSize string akan override
+      imageQuality: imageQuality,
+      appName: 'TermulLog',
+      showMiniMap: showMiniMap,
+      mapBytes: mapBytes,
+      mapSize: mapSize,
+      mapZoomLevel: mapZoomLevel,
+      fontSize: fontSize,
+      dateFormat: dateFormat,
+      timeFormat: timeFormat,
+    );
+  }
+
+  /// Alternatif: dari Map (jika diperlukan)
+  static WatermarkParams createParamsFromMap(Map<String, dynamic> map) {
     return WatermarkParams.fromMap(map);
   }
 

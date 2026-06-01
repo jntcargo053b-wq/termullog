@@ -18,6 +18,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import '../core/constants.dart';
 import '../services/gps_lock_manager.dart';
 import '../services/address_resolver.dart';
+import '../services/last_known_location_cache.dart';
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../watermark/watermark_engine.dart';
@@ -60,6 +61,11 @@ class _CameraScreenState extends State<CameraScreen>
   /// Saat belum locked: pakai koordinat raw dari stream.
   double? _displayLat;
   double? _displayLon;
+
+  /// Accuracy untuk watermark.
+  /// Saat locked: weighted centroid accuracy dari lockData (lebih representatif).
+  /// Saat belum locked: raw accuracy dari stream.
+  double? _displayAcc;
 
   // ── Address & Weather ────────────────────────────────────────────────────
   String _address = 'Mencari lokasi…';
@@ -172,6 +178,7 @@ class _CameraScreenState extends State<CameraScreen>
         _displayPos = last;
         _displayLat = last.latitude;
         _displayLon = last.longitude;
+        _displayAcc = last.accuracy;
         _currentAcc = last.accuracy;
         _gpsStatus = '🕐 Posisi Terakhir';
         if (addr.isNotEmpty) {
@@ -225,10 +232,13 @@ class _CameraScreenState extends State<CameraScreen>
         // ── Koordinat Kalman: lebih akurat dari raw GPS ──────────────────────
         _displayLat = lockData.smoothedLatitude;
         _displayLon = lockData.smoothedLongitude;
+        // ── Weighted centroid accuracy: hasil dari banyak sample ─────────────
+        _displayAcc = lockData.accuracy;
       } else {
         // Belum locked: pakai koordinat raw dari stream
         _displayLat = pos.latitude;
         _displayLon = pos.longitude;
+        _displayAcc = pos.accuracy;
       }
 
       _gpsStatus = _gpsLock.isLocked
@@ -243,10 +253,22 @@ class _CameraScreenState extends State<CameraScreen>
     // ── Saran 3: force geocode segera saat baru pertama kali lock ─────────
     // justLocked = true hanya sekali saat transisi acquiring → locked.
     // Reset _lastGeocodedAcc supaya _needsUpdate() pasti true.
-    if (justLocked) {
+    if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
+
+      // ── Simpan last known location — pakai rawPosition, BUKAN smoothed ───
+      // Smoothed = hasil model matematika, tidak cocok sebagai cache koordinat.
+      // rawPosition = koordinat GNSS sebenarnya dari sample terbaik.
+      LastKnownLocationCache.save(
+        position: lockData.rawPosition,
+        address: _address,
+        weather: _weather,
+      );
     }
 
+    // ── Geocoding & weather: SELALU pakai pos raw dari stream ─────────────
+    // Smoothed (Kalman) hanya untuk display koordinat dan watermark.
+    // Geocoding butuh koordinat GNSS asli — jangan ganti dengan smoothedLat/Lon.
     _maybeResolveAddress(pos);
     _maybeLoadWeather(pos);
   }
@@ -345,7 +367,7 @@ class _CameraScreenState extends State<CameraScreen>
         showBorder: _showBorder,
         lat: _displayLat,
         lon: _displayLon,
-        acc: _currentAcc,
+        acc: _displayAcc,
         fontScale: fontScale,
       );
 
@@ -473,7 +495,7 @@ class _CameraScreenState extends State<CameraScreen>
               hasPosition: _displayLat != null,
               lat: _displayLat,
               lon: _displayLon,
-              acc: _currentAcc,
+              acc: _displayAcc,
               address: _address,
               weather: _weather,
               showWeather: _showWeather,
@@ -492,7 +514,7 @@ class _CameraScreenState extends State<CameraScreen>
             left: 12,
             child: _GpsChip(
               status: _gpsStatus,
-              acc: _currentAcc,
+              acc: _displayAcc,
               confidence: _gpsConfidence,
               isFallback: _isFallback,
               color: _accColor(_currentAcc),

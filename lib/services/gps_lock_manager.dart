@@ -85,11 +85,26 @@ class GpsLockManager {
 
   // Parameter lock untuk aplikasi timestamp/logistik (stabil)
   static const int _samplesBeforeLock = 5;
-  static const double _lockAccuracyThreshold = 20.0;
   static const double _moveThreshold = 3.0;            // 3m deteksi gerakan (lebih sensitif)
   static const double _unlockDriftThreshold = 12.0;    // 12m drift baru unlock
   static const double _unlockAccuracyRequired = 15.0;  // dan akurasi ≤15m
   static const double _stationaryTimeoutSeconds = 4.0;
+
+  // Adaptive lock threshold — bukan konstanta tetap.
+  // Dihitung ulang tiap kali ada sample baru yang masuk window.
+  // Referensi: urban 12m, suburban 18m, rural 25m.
+  // Formula: max(12, weightedAcc * 1.2) — mengikuti kondisi GPS saat ini.
+  double get _lockAccuracyThreshold {
+    if (_acquiringSamples.isEmpty) return 20.0; // default sebelum ada sample
+    double sumW = 0.0, sumAcc = 0.0;
+    for (final s in _acquiringSamples) {
+      final w = 1.0 / (s.accuracy * s.accuracy);
+      sumW += w;
+      sumAcc += s.accuracy * w;
+    }
+    final weightedAcc = sumW > 0 ? sumAcc / sumW : 20.0;
+    return (weightedAcc * 1.2).clamp(12.0, 25.0);
+  }
 
   // Interval adaptif (ms)
   static const int _intervalSearching = 1000;

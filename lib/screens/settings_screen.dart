@@ -1,55 +1,43 @@
 // lib/screens/settings_screen.dart
+// TOTAL REBUILD – Settings bersih, hanya yang relevan untuk timestamp app
+
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
-import 'package:intl/intl.dart';
 import '../core/constants.dart';
 import '../services/settings_cache.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
-
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  WatermarkLayout _selectedLayout = WatermarkLayout.modern;
+  WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
   bool _showCoordinates = true;
-  double _opacity = 0.85;
+  double _opacity = 0.88;
   bool _showBorder = true;
-  String _dateFormat = 'dd/MM/yyyy';
+  String _dateFormat = 'dd MMM yyyy';
   String _timeFormat = 'HH:mm:ss';
-  bool _showMiniMap = true;
-  int _mapZoomLevel = 16;
-  String _mapSize = 'medium';
-  String _fontSize = 'normal';
-  String _themeMode = 'dark';
-  int _imageQuality = 90;
-  bool _keepScreenOn = true;
+  int _imageQuality = 92;
   bool _useHighAccuracy = true;
   bool _autoSave = false;
-  int _tempFileCount = 0;
-  String _tempFileSize = '0 KB';
-  bool _isLoading = true;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadSettings();
-    _loadCacheInfo();
+    _load();
   }
 
-  Future<void> _loadSettings() async {
-    setState(() => _isLoading = true);
-
-    // Memuat semua pengaturan dari SettingsCache
-    _selectedLayout = await SettingsCache.layout;
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    _layout = await SettingsCache.layout;
     _showWeather = await SettingsCache.showWeather;
     _showAccuracy = await SettingsCache.showAccuracy;
     _showAddress = await SettingsCache.showAddress;
@@ -58,25 +46,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _showBorder = await SettingsCache.showBorder;
     _dateFormat = await SettingsCache.dateFormat;
     _timeFormat = await SettingsCache.timeFormat;
-    _showMiniMap = await SettingsCache.showMiniMap;
-    _mapZoomLevel = await SettingsCache.mapZoomLevel;
-    _mapSize = await SettingsCache.mapSize;
-    _themeMode = await SettingsCache.themeMode;
     _imageQuality = await SettingsCache.imageQuality;
-    _keepScreenOn = await SettingsCache.keepScreenOn;
     _useHighAccuracy = await SettingsCache.useHighAccuracy;
     _autoSave = await SettingsCache.autoSave;
-
-    // Konversi fontSize dari double (cache) ke string (UI)
-    final double fontSizeDouble = await SettingsCache.fontSize;
-    _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
-
-    setState(() => _isLoading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _saveSettings() async {
-    // Menyimpan semua pengaturan ke SettingsCache
-    await SettingsCache.setLayout(_selectedLayout);
+  Future<void> _save() async {
+    await SettingsCache.setLayout(_layout);
     await SettingsCache.setShowWeather(_showWeather);
     await SettingsCache.setShowAccuracy(_showAccuracy);
     await SettingsCache.setShowAddress(_showAddress);
@@ -85,782 +62,281 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await SettingsCache.setShowBorder(_showBorder);
     await SettingsCache.setDateFormat(_dateFormat);
     await SettingsCache.setTimeFormat(_timeFormat);
-    await SettingsCache.setShowMiniMap(_showMiniMap);
-    await SettingsCache.setMapZoomLevel(_mapZoomLevel);
-    await SettingsCache.setMapSize(_mapSize);
-    await SettingsCache.setThemeMode(_themeMode);
     await SettingsCache.setImageQuality(_imageQuality);
-    await SettingsCache.setKeepScreenOn(_keepScreenOn);
     await SettingsCache.setUseHighAccuracy(_useHighAccuracy);
     await SettingsCache.setAutoSave(_autoSave);
-
-    // Konversi fontSize dari string (UI) ke double (cache)
-    final double fontSizeDouble = _fontSize == 'small' ? 13 : _fontSize == 'large' ? 20 : 16;
-    await SettingsCache.setFontSize(fontSizeDouble);
-
-    // Invalidasi cache agar nilai terbaru terbaca
-    SettingsCache.invalidate();
-
-    // Terapkan efek langsung (tema, layar)
-    _applyThemeMode();
-    _applyKeepScreenOn();
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 20),
-              SizedBox(width: 8),
-              Text('Pengaturan berhasil disimpan'),
-            ],
-          ),
-          backgroundColor: Color(0xFF1A1F2E),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  void _applyThemeMode() {
-    // Implementasi perubahan tema (jika diperlukan)
-  }
-
-  void _applyKeepScreenOn() {
-    if (_keepScreenOn) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    }
-  }
-
-  Future<void> _resetToDefault() async {
-    await SettingsCache.resetAllSettings();
-    await _loadSettings();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 20),
-              SizedBox(width: 8),
-              Text('Pengaturan berhasil direset ke default'),
-            ],
-          ),
-          backgroundColor: Color(0xFF1A1F2E),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
-  Future<void> _loadCacheInfo() async {
-    try {
-      final dir = await getTemporaryDirectory();
-      final files = dir.listSync()
-          .whereType<File>()
-          .where((f) => path.basename(f.path).startsWith('termullog_'))
-          .toList();
-      int totalSize = 0;
-      for (final file in files) {
-        totalSize += await file.length();
-      }
-      setState(() {
-        _tempFileCount = files.length;
-        if (totalSize < 1024) {
-          _tempFileSize = '$totalSize B';
-        } else if (totalSize < 1024 * 1024) {
-          _tempFileSize = '${(totalSize / 1024).toStringAsFixed(1)} KB';
-        } else {
-          _tempFileSize = '${(totalSize / (1024 * 1024)).toStringAsFixed(1)} MB';
-        }
-      });
-    } catch (e) {
-      debugPrint('Load cache info error: $e');
-    }
-  }
-
-  Future<void> _clearTempFiles() async {
-    try {
-      final dir = await getTemporaryDirectory();
-      final files = dir.listSync()
-          .whereType<File>()
-          .where((f) => path.basename(f.path).startsWith('termullog_'))
-          .toList();
-      int deletedCount = 0;
-      for (final file in files) {
-        try {
-          await file.delete();
-          deletedCount++;
-        } catch (e) {
-          debugPrint('Failed to delete: ${file.path} - $e');
-        }
-      }
-      await _loadCacheInfo();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Berhasil menghapus $deletedCount file temporary'),
-            backgroundColor: Colors.green.shade700,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Gagal membersihkan cache'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final dividerColor = Colors.grey.shade800;
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: const Color(0xFF070B16),
       appBar: AppBar(
-        title: const Text('Pengaturan', style: TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: const Color(0xFF1A1F2E),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
+        backgroundColor: const Color(0xFF070B16),
+        title: const Text('Pengaturan',
+            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
+        iconTheme: const IconThemeData(color: Colors.white70),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.save, color: Color(0xFF00B8D4)),
-            onPressed: _saveSettings,
-            tooltip: 'Simpan Pengaturan',
+          TextButton(
+            onPressed: () async {
+              await _save();
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Simpan',
+                style: TextStyle(color: Color(0xFF1E90FF), fontWeight: FontWeight.w600)),
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF00B8D4)))
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E90FF)))
           : ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                _buildPreviewCard(),
-                const SizedBox(height: 8),
-                _buildSectionHeader('GAYA TAMPILAN', Icons.style),
-                ...WatermarkLayout.values.map((layout) => _buildLayoutOption(layout)),
-                _buildSliderTile(
-                  title: 'Transparansi Background', subtitle: 'Atur kegelapan background watermark',
-                  value: _opacity, min: 0.3, max: 1.0, divisions: 14,
-                  onChanged: (value) => setState(() => _opacity = value), icon: Icons.opacity,
-                ),
-                _buildSwitchTile(
-                  title: 'Tampilkan Border', subtitle: 'Menampilkan border di sekitar watermark',
-                  value: _showBorder, onChanged: (value) => setState(() => _showBorder = value), icon: Icons.border_style,
-                ),
-                Divider(color: dividerColor, height: 24, thickness: 1),
-                _buildSectionHeader('INFORMASI YANG DITAMPILKAN', Icons.info_outline),
-                _buildSwitchTile(title: 'Tampilkan Cuaca', subtitle: 'Menampilkan informasi cuaca di watermark', value: _showWeather, onChanged: (value) => setState(() => _showWeather = value), icon: Icons.wb_sunny),
-                _buildSwitchTile(title: 'Tampilkan Akurasi GPS', subtitle: 'Menampilkan tingkat akurasi GPS dalam meter', value: _showAccuracy, onChanged: (value) => setState(() => _showAccuracy = value), icon: Icons.gps_fixed),
-                _buildSwitchTile(title: 'Tampilkan Alamat', subtitle: 'Menampilkan alamat lengkap lokasi', value: _showAddress, onChanged: (value) => setState(() => _showAddress = value), icon: Icons.location_on),
-                _buildSwitchTile(title: 'Tampilkan Koordinat', subtitle: 'Menampilkan koordinat GPS', value: _showCoordinates, onChanged: (value) => setState(() => _showCoordinates = value), icon: Icons.map),
-                Divider(color: dividerColor, height: 24, thickness: 1),
-                _buildSectionHeader('FORMAT TANGGAL & WAKTU', Icons.calendar_today),
-                _buildDropdownTile(title: 'Format Tanggal', subtitle: 'Pilih format tampilan tanggal', value: _dateFormat, items: const ['dd/MM/yyyy', 'yyyy-MM-dd', 'dd MMM yyyy', 'MMMM dd, yyyy', 'dd MMMM yyyy'], onChanged: (value) => setState(() => _dateFormat = value!), icon: Icons.calendar_today),
-                _buildDropdownTile(title: 'Format Waktu', subtitle: 'Pilih format tampilan waktu', value: _timeFormat, items: const ['HH:mm:ss', 'HH:mm', 'hh:mm:ss a', 'hh:mm a'], onChanged: (value) => setState(() => _timeFormat = value!), icon: Icons.access_time),
-                Divider(color: dividerColor, height: 24, thickness: 1),
-                _buildSectionHeader('MINI MAP', Icons.map),
-                _buildSwitchTile(title: 'Tampilkan Mini Map', subtitle: 'Menampilkan peta lokasi pada watermark', value: _showMiniMap, onChanged: (value) => setState(() => _showMiniMap = value), icon: Icons.map),
-                if (_showMiniMap) ...[
-                  _buildSliderTile(title: 'Zoom Level Mini Map', subtitle: 'Atur tingkat zoom peta (${_mapZoomLevel})', value: _mapZoomLevel.toDouble(), min: 10, max: 18, divisions: 8, onChanged: (value) => setState(() => _mapZoomLevel = value.toInt()), icon: Icons.zoom_in),
-                  _buildRadioTile(title: 'Ukuran Kecil', subtitle: '250 x 150 pixel', value: 'small', groupValue: _mapSize, onChanged: (value) => setState(() => _mapSize = value!), icon: Icons.crop_square),
-                  _buildRadioTile(title: 'Ukuran Sedang', subtitle: '350 x 180 pixel', value: 'medium', groupValue: _mapSize, onChanged: (value) => setState(() => _mapSize = value!), icon: Icons.crop_square),
-                  _buildRadioTile(title: 'Ukuran Besar', subtitle: '450 x 200 pixel', value: 'large', groupValue: _mapSize, onChanged: (value) => setState(() => _mapSize = value!), icon: Icons.crop_square),
-                ],
-                Divider(color: dividerColor, height: 24, thickness: 1),
-                _buildSectionHeader('TAMPILAN', Icons.display_settings),
-                _buildDropdownTile(title: 'Ukuran Font', subtitle: 'Pilih ukuran teks watermark', value: _fontSize, items: const ['small', 'normal', 'large'], onChanged: (value) => setState(() => _fontSize = value!), icon: Icons.text_fields),
-                _buildDropdownTile(title: 'Mode Tema', subtitle: 'Pilih tema aplikasi', value: _themeMode, items: const ['light', 'dark', 'system'], onChanged: (value) => setState(() => _themeMode = value!), icon: Icons.brightness_4),
-                Divider(color: dividerColor, height: 24, thickness: 1),
-                _buildSectionHeader('KAMERA', Icons.camera_alt),
-                _buildSliderTile(title: 'Kualitas Gambar', subtitle: 'Atur kualitas JPEG (${_imageQuality}%)', value: _imageQuality.toDouble(), min: 50, max: 100, divisions: 10, onChanged: (value) => setState(() => _imageQuality = value.toInt()), icon: Icons.image),
-                _buildSwitchTile(title: 'Jaga Layar Tetap Nyala', subtitle: 'Mencegah layar mati saat menggunakan kamera', value: _keepScreenOn, onChanged: (value) => setState(() => _keepScreenOn = value), icon: Icons.screen_lock_portrait),
-                _buildSwitchTile(title: 'GPS Akurasi Tinggi', subtitle: 'Menggunakan GPS dengan akurasi maksimal', value: _useHighAccuracy, onChanged: (value) => setState(() => _useHighAccuracy = value), icon: Icons.gps_fixed),
-                _buildSwitchTile(title: 'Auto Save ke Galeri', subtitle: 'Menyimpan foto otomatis ke galeri setelah preview', value: _autoSave, onChanged: (value) => setState(() => _autoSave = value), icon: Icons.save_alt),
-                Divider(color: dividerColor, height: 24, thickness: 1),
-                _buildSectionHeader('PENYIMPANAN', Icons.storage),
-                ListTile(
-                  leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.cleaning_services, color: Colors.orange, size: 20)),
-                  title: const Text('Bersihkan File Temporary', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-                  subtitle: Text('$_tempFileCount file (${_tempFileSize})', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-                  trailing: ElevatedButton(onPressed: () => _showClearCacheDialog(), style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: const Text('Hapus')),
-                  onTap: () => _showClearCacheDialog(),
-                ),
-                Divider(color: dividerColor, height: 24, thickness: 1),
-                _buildSectionHeader('TENTANG APLIKASI', Icons.info_outline),
-                _buildInfoTile(title: 'TermulLog Premium', subtitle: 'Aplikasi dokumentasi dengan GPS watermark', icon: Icons.app_registration),
-                _buildInfoTile(title: 'Versi', subtitle: '1.0.0 (Build 1)', icon: Icons.code),
-                _buildInfoTile(title: 'Developer', subtitle: 'TermulLog Team', icon: Icons.developer_mode),
-                _buildInfoTile(title: 'Sumber Data', subtitle: 'GPS: Geolocator • Cuaca: Open-Meteo • Peta: OpenStreetMap', icon: Icons.data_usage),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showResetDialog(),
-                    icon: const Icon(Icons.restore, size: 18),
-                    label: const Text('Reset ke Pengaturan Default'),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.grey.shade400, side: BorderSide(color: Colors.grey.shade700), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  ),
-                ),
-                const SizedBox(height: 30),
+                _sectionHeader('Gaya Watermark'),
+                _layoutPicker(),
+
+                _sectionHeader('Informasi yang Ditampilkan'),
+                _toggle('Koordinat GPS', _showCoordinates,
+                    (v) => setState(() => _showCoordinates = v),
+                    icon: Icons.gps_fixed),
+                _toggle('Akurasi GPS', _showAccuracy,
+                    (v) => setState(() => _showAccuracy = v),
+                    icon: Icons.radar),
+                _toggle('Alamat', _showAddress,
+                    (v) => setState(() => _showAddress = v),
+                    icon: Icons.location_on_outlined),
+                _toggle('Cuaca', _showWeather,
+                    (v) => setState(() => _showWeather = v),
+                    icon: Icons.wb_cloudy_outlined),
+
+                _sectionHeader('Tampilan'),
+                _toggle('Border kartu', _showBorder,
+                    (v) => setState(() => _showBorder = v),
+                    icon: Icons.border_outer),
+                _slider('Transparansi', _opacity, 0.4, 1.0,
+                    (v) => setState(() => _opacity = v)),
+                _slider('Kualitas JPEG', _imageQuality.toDouble(), 60, 100,
+                    (v) => setState(() => _imageQuality = v.round()),
+                    suffix: '%'),
+
+                _sectionHeader('Format'),
+                _formatPicker('Format Tanggal', _dateFormat, [
+                  'dd MMM yyyy',
+                  'dd/MM/yyyy',
+                  'yyyy-MM-dd',
+                  'EEEE, dd MMM yyyy',
+                ], (v) => setState(() => _dateFormat = v)),
+                _formatPicker('Format Waktu', _timeFormat, [
+                  'HH:mm:ss',
+                  'HH:mm',
+                  'hh:mm a',
+                ], (v) => setState(() => _timeFormat = v)),
+
+                _sectionHeader('GPS'),
+                _toggle('Akurasi Tinggi (GPS + Network)', _useHighAccuracy,
+                    (v) => setState(() => _useHighAccuracy = v),
+                    icon: Icons.satellite_alt),
+
+                _sectionHeader('Lainnya'),
+                _toggle('Simpan Otomatis ke Galeri', _autoSave,
+                    (v) => setState(() => _autoSave = v),
+                    icon: Icons.save_alt),
+
+                _sectionHeader('Penyimpanan'),
+                _cacheInfo(),
+
+                const SizedBox(height: 32),
               ],
             ),
     );
   }
 
-  Widget _buildPreviewCard() {
-    return Container(
-      margin: const EdgeInsets.all(16), padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: const Color(0xFF1A1F2E), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFF00B8D4).withOpacity(0.3), width: 1)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.style, color: Color(0xFF00B8D4), size: 20)),
-          const SizedBox(width: 12),
-          const Text('Preview Watermark', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-        ]),
-        const SizedBox(height: 16),
-        Container(height: 200, width: double.infinity, decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade800)), child: Center(child: _buildPreview())),
-      ]),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, IconData icon) {
+  Widget _sectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(children: [Icon(icon, color: const Color(0xFF00B8D4), size: 18), const SizedBox(width: 8), Text(title, style: const TextStyle(color: Color(0xFF00B8D4), fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1))]),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+      child: Text(title.toUpperCase(),
+          style: const TextStyle(
+              color: Color(0xFF1E90FF),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2)),
     );
   }
 
-  Widget _buildLayoutOption(WatermarkLayout layout) {
-    final isSelected = _selectedLayout == layout;
+  Widget _toggle(String label, bool value, ValueChanged<bool> onChange,
+      {IconData? icon}) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(color: isSelected ? const Color(0xFF00B8D4).withOpacity(0.15) : Colors.transparent, borderRadius: BorderRadius.circular(12), border: isSelected ? Border.all(color: const Color(0xFF00B8D4).withOpacity(0.5), width: 1) : null),
-      child: RadioListTile<WatermarkLayout>(
-        title: Text(layout.displayName, style: TextStyle(color: Colors.white, fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
-        subtitle: Text(layout.description, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-        value: layout, groupValue: _selectedLayout, onChanged: (value) { if (value != null) setState(() => _selectedLayout = value); },
-        activeColor: const Color(0xFF00B8D4), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: SwitchListTile(
+        title: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
+        secondary:
+            icon != null ? Icon(icon, color: const Color(0xFF3A4570), size: 20) : null,
+        value: value,
+        onChanged: onChange,
+        activeColor: const Color(0xFF1E90FF),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       ),
     );
   }
 
-  Widget _buildSwitchTile({required String title, required String subtitle, required bool value, required Function(bool) onChanged, required IconData icon}) {
-    return SwitchListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-      value: value, onChanged: onChanged, activeColor: const Color(0xFF00B8D4),
-      secondary: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
-    );
-  }
-
-  Widget _buildSliderTile({required String title, required String subtitle, required double value, required double min, required double max, required int divisions, required Function(double) onChanged, required IconData icon}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)), Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12))])),
-        ]),
-        const SizedBox(height: 8),
-        Slider(value: value, min: min, max: max, divisions: divisions, activeColor: const Color(0xFF00B8D4), inactiveColor: Colors.grey.shade700, label: value.toInt().toString(), onChanged: onChanged),
-      ]),
-    );
-  }
-
-  Widget _buildDropdownTile({required String title, required String subtitle, required String value, required List<String> items, required Function(String?) onChanged, required IconData icon}) {
-    return ListTile(
-      leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
-      title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-      trailing: DropdownButton<String>(value: value, dropdownColor: const Color(0xFF1A1F2E), style: const TextStyle(color: Color(0xFF00B8D4)), underline: Container(height: 0), items: items.map((item) => DropdownMenuItem(value: item, child: Text(item == 'small' ? 'Kecil' : item == 'normal' ? 'Normal' : item == 'large' ? 'Besar' : item == 'light' ? 'Terang' : item == 'dark' ? 'Gelap' : item == 'system' ? 'Sistem' : item))).toList(), onChanged: onChanged),
-    );
-  }
-
-  Widget _buildRadioTile({required String title, required String subtitle, required String value, required String groupValue, required Function(String?) onChanged, required IconData icon}) {
-    return RadioListTile<String>(
-      title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-      value: value, groupValue: groupValue, onChanged: onChanged, activeColor: const Color(0xFF00B8D4),
-      secondary: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
-    );
-  }
-
-  Widget _buildInfoTile({required String title, required String subtitle, required IconData icon}) {
-    return ListTile(
-      leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: const Color(0xFF00B8D4), size: 20)),
-      title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-    );
-  }
-
-  Widget _buildPreview() {
-    final now = DateTime.now();
-    final String dateStr = _dateFormat == 'yyyy-MM-dd' ? DateFormat('yyyy-MM-dd').format(now)
-        : _dateFormat == 'dd MMM yyyy' ? DateFormat('dd MMM yyyy', 'id').format(now)
-        : _dateFormat == 'MMMM dd, yyyy' ? DateFormat('MMMM dd, yyyy', 'id').format(now)
-        : DateFormat('dd/MM/yyyy').format(now);
-    final String timeStr = _timeFormat == 'HH:mm' ? DateFormat('HH:mm').format(now)
-        : _timeFormat == 'hh:mm:ss a' ? DateFormat('hh:mm:ss a', 'id').format(now)
-        : DateFormat('HH:mm:ss').format(now);
-
-    final double fontSize = _fontSize == 'small' ? 13 : _fontSize == 'large' ? 20 : 16;
-    final double titleFontSize = fontSize + 4;
-    final Color accent = const Color(0xFF00B8D4);
-    final Color bgColor = Colors.black.withOpacity(_opacity);
-    final Widget miniMapPlaceholder = _showMiniMap
-        ? Container(
-            width: _mapSize == 'small' ? 60 : _mapSize == 'large' ? 90 : 75,
-            height: _mapSize == 'small' ? 60 : _mapSize == 'large' ? 90 : 75,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade800,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Center(child: Icon(Icons.map, color: Colors.grey, size: 28)),
-          )
-        : const SizedBox.shrink();
-
-    switch (_selectedLayout) {
-      case WatermarkLayout.minimal:
-        return Container(
-          padding: const EdgeInsets.all(14),
-          color: bgColor,
-          child: Row(
-            children: [
-              Container(width: 4, height: 40, color: accent),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('$dateStr  $timeStr', style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w500)),
-                    if (_showCoordinates)
-                      Text('-6.123456, 106.123456', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-                    if (_showAccuracy)
-                      Text('±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-
-      case WatermarkLayout.dslrCorner:
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: _showBorder ? BorderRadius.circular(14) : null,
-            border: _showBorder ? Border.all(color: accent.withOpacity(0.4)) : null,
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.location_on, color: Colors.redAccent, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('TERMULOG', style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: titleFontSize)),
-                    const SizedBox(height: 4),
-                    Text('$timeStr  •  $dateStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-                    if (_showCoordinates)
-                      Text('-6.123456°, 106.123456°', style: TextStyle(color: Colors.white70, fontSize: fontSize - 3)),
-                    if (_showAccuracy)
-                      Text('Akurasi: ±5 m', style: TextStyle(color: accent, fontSize: fontSize - 2)),
-                    if (_showWeather)
-                      Text('Cerah 32°C', style: TextStyle(color: accent, fontSize: fontSize - 2)),
-                  ],
-                ),
-              ),
-              if (_showMiniMap) miniMapPlaceholder,
-            ],
-          ),
-        );
-
-      case WatermarkLayout.cinematic:
-        return Container(
-          padding: const EdgeInsets.all(14),
-          color: bgColor,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('TERMULOG', style: TextStyle(color: const Color(0xFFFFB432), fontWeight: FontWeight.bold, fontSize: titleFontSize)),
-              const SizedBox(height: 8),
-              Text(dateStr, style: TextStyle(color: Colors.white70, fontSize: fontSize)),
-              Text(timeStr, style: TextStyle(color: accent, fontSize: fontSize + 4)),
-              if (_showCoordinates)
-                Text('-6.123456° / 106.123456°', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-              if (_showAccuracy)
-                Text('Akurasi ±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 2)),
-            ],
-          ),
-        );
-
-      case WatermarkLayout.fieldSurvey:
-        return Container(
-          padding: const EdgeInsets.all(12),
-          color: bgColor,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
-                color: accent,
-                child: Text('TERMULOG DOCUMENT', style: TextStyle(color: Colors.black, fontSize: fontSize - 2, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(height: 8),
-              Text('DATE : $dateStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-              Text('TIME : $timeStr', style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-              if (_showCoordinates)
-                Text('LAT : -6.123456  LON : 106.123456', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
-              if (_showAccuracy)
-                Text('ACC : ±5 m', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
-              if (_showAddress)
-                Text('ADDR : Jl. Contoh No. 123', style: TextStyle(color: Colors.grey, fontSize: fontSize - 3)),
-            ],
-          ),
-        );
-
-      case WatermarkLayout.hud:
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF04081A),
-            border: Border(
-              top: BorderSide(color: const Color(0xFF00C8F0).withOpacity(0.6), width: 2),
-              bottom: BorderSide(color: const Color(0xFF00C8F0).withOpacity(0.6), width: 2),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(timeStr, style: TextStyle(color: Colors.white, fontSize: titleFontSize, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
-                  Text(dateStr, style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 2)),
-                ],
-              ),
-              const SizedBox(height: 6),
-              if (_showCoordinates)
-                Text('-6.12345° S   106.12345° E', style: TextStyle(color: const Color(0xFF00C8F0), fontSize: fontSize - 1)),
-              if (_showAccuracy)
-                Text('GPS Accuracy  ± 5 m', style: TextStyle(color: Colors.greenAccent.shade400, fontSize: fontSize - 2)),
-              if (_showAddress)
-                Text('Jl. Contoh No. 123, Malang', style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 2)),
-            ],
-          ),
-        );
-
-      case WatermarkLayout.gpsCard:
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF08142A), Color(0xFF101826)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            border: Border(
-              left: BorderSide(color: accent, width: 4),
-              bottom: BorderSide(color: accent, width: 2),
-            ),
-          ),
-          child: Row(
+  Widget _slider(String label, double value, double min, double max,
+      ValueChanged<double> onChange,
+      {String suffix = ''}) {
+    final display = suffix == '%'
+        ? '${value.round()}$suffix'
+        : value.toStringAsFixed(2);
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(timeStr, style: TextStyle(color: Colors.white, fontSize: titleFontSize, fontWeight: FontWeight.bold)),
-                        Text(dateStr, style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 3)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    if (_showCoordinates)
-                      Text('-6.12345° S   106.12345° E', style: TextStyle(color: accent, fontSize: fontSize - 2)),
-                    if (_showAccuracy)
-                      Text('Accuracy  ± 5 m', style: TextStyle(color: Colors.greenAccent.shade400, fontSize: fontSize - 3)),
-                    if (_showAddress)
-                      Text('Jl. Contoh No. 123, Kec. Contoh', style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize - 3), maxLines: 1),
-                  ],
-                ),
-              ),
-              if (_showMiniMap) ...[const SizedBox(width: 8), miniMapPlaceholder],
+                  child: Text(label,
+                      style: const TextStyle(color: Colors.white, fontSize: 14))),
+              Text(display,
+                  style: const TextStyle(
+                      color: Color(0xFF1E90FF), fontSize: 13, fontWeight: FontWeight.w600)),
             ],
           ),
-        );
-
-      case WatermarkLayout.polaroid:
-        return Container(
-          color: const Color(0xFFF8F5EB),
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                height: 90,
-                width: double.infinity,
-                color: Colors.grey.shade400,
-                child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 36)),
-              ),
-              const SizedBox(height: 10),
-              Text(dateStr, style: TextStyle(color: Colors.black87, fontSize: fontSize, fontWeight: FontWeight.w500)),
-              if (_showCoordinates)
-                Text('-6.123, 106.123', style: TextStyle(color: Colors.black54, fontSize: fontSize - 2)),
-            ],
-          ),
-        );
-
-      case WatermarkLayout.sidePanel:
-        return Row(
-          children: [
-            Container(
-              width: 60,
-              height: 140,
-              color: const Color(0xFF0A0F28),
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(DateFormat('HH').format(now), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                  Text(DateFormat('mm').format(now), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                  Text(DateFormat('ss').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 22, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  Text(DateFormat('dd').format(now), style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                  Text(DateFormat('MMM', 'id').format(now), style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 14)),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Container(
-                height: 140,
-                color: Colors.grey.shade800,
-                child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 48)),
-              ),
-            ),
-          ],
-        );
-
-      case WatermarkLayout.cinematicV2:
-        return Stack(
-          children: [
-            Container(
-              height: 200,
-              width: double.infinity,
-              color: Colors.black,
-              child: const Center(child: Icon(Icons.image, color: Colors.grey, size: 48)),
-            ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black.withOpacity(0.9), Colors.transparent],
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('REC • $timeStr', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text('JAKARTA INDONESIA', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                    const SizedBox(height: 3),
-                    Text('SONY FX3 • 24MM', style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 28,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.black.withOpacity(0.9), Colors.transparent],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-
-      case WatermarkLayout.timeMarkStyle:
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF08122A), Color(0xFF101826)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            border: _showBorder ? Border.all(color: accent.withOpacity(0.35)) : null,
-          ),
-          child: Row(
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 26),
-                ],
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(timeStr, style: TextStyle(color: Colors.white, fontSize: titleFontSize, fontWeight: FontWeight.bold, height: 1.1)),
-                    const SizedBox(height: 4),
-                    Text(dateStr, style: TextStyle(color: Colors.white70, fontSize: fontSize - 2)),
-                    if (_showCoordinates)
-                      Text('-6.1234° S   106.1234° E', style: TextStyle(color: accent, fontSize: fontSize - 3)),
-                    if (_showAccuracy)
-                      Text('± 5 m', style: TextStyle(color: Colors.greenAccent.shade400, fontSize: fontSize - 3)),
-                    if (_showWeather)
-                      Text('Cerah 32°C', style: TextStyle(color: accent, fontSize: fontSize - 3)),
-                  ],
-                ),
-              ),
-              if (_showMiniMap) ...[const SizedBox(width: 8), miniMapPlaceholder],
-            ],
-          ),
-        );
-
-      case WatermarkLayout.modern:
-        return Container(
-          margin: const EdgeInsets.all(14),
-          padding: const EdgeInsets.only(left: 20, top: 14, bottom: 14),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0D1117), Color(0xFF141E2E)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            border: Border(left: BorderSide(color: const Color(0xFF00D4AA), width: 4)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(timeStr, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text(dateStr, style: const TextStyle(color: Color(0xFFA0AFC3), fontSize: 14)),
-              const SizedBox(height: 8),
-              if (_showCoordinates)
-                Text('📍 -6.123456°  106.123456°', style: const TextStyle(color: Color(0xFF00B8D4), fontSize: 13)),
-              if (_showAccuracy)
-                Text('Akurasi ±5 m', style: const TextStyle(color: Color(0xFF8296AE), fontSize: 13)),
-              if (_showWeather)
-                Text('Cerah 32°C', style: const TextStyle(color: Color(0xFF00D4AA), fontSize: 13)),
-            ],
-          ),
-        );
-
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
-  Color _getPreviewTextColor() {
-    switch (_selectedLayout) {
-      case WatermarkLayout.minimal: return Colors.white;
-      case WatermarkLayout.dslrCorner: return const Color(0xFF00B8D4);
-      case WatermarkLayout.cinematic: return const Color(0xFFFFB432);
-      case WatermarkLayout.fieldSurvey: return Colors.white70;
-      case WatermarkLayout.hud: return const Color(0xFF00B8D4);
-      case WatermarkLayout.gpsCard: return const Color(0xFF00B8D4);
-      case WatermarkLayout.polaroid: return Colors.black87;
-      case WatermarkLayout.sidePanel: return Colors.white;
-      case WatermarkLayout.cinematicV2: return Colors.white;
-      case WatermarkLayout.timeMarkStyle: return const Color(0xFF00B8D4);
-      case WatermarkLayout.modern: return const Color(0xFF00D4AA);
-      default: return const Color(0xFF00B8D4);
-    }
-  }
-
-  void _showResetDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F2E),
-        title: const Text('Reset Pengaturan', style: TextStyle(color: Colors.white)),
-        content: const Text('Apakah Anda yakin ingin mereset semua pengaturan watermark ke nilai default?', style: TextStyle(color: Colors.grey)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _resetToDefault();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00B8D4), foregroundColor: Colors.black),
-            child: const Text('Reset'),
+          Slider(
+            value: value,
+            min: min,
+            max: max,
+            onChanged: onChange,
+            activeColor: const Color(0xFF1E90FF),
+            inactiveColor: const Color(0xFF1A2540),
           ),
         ],
       ),
     );
   }
 
-  void _showClearCacheDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F2E),
-        title: const Text('Bersihkan Cache', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Hapus $_tempFileCount file temporary (${_tempFileSize})?\n\nFile ini adalah foto sementara yang belum disimpan ke galeri. Foto yang sudah disimpan tidak akan terhapus.',
-          style: TextStyle(color: Colors.grey.shade400),
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _clearTempFiles();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
-            child: const Text('Hapus Sekarang'),
+  Widget _formatPicker(
+      String label, String current, List<String> options, ValueChanged<String> onChange) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+              child: Text(label,
+                  style: const TextStyle(color: Colors.white, fontSize: 14))),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: current,
+              dropdownColor: const Color(0xFF0D1325),
+              style: const TextStyle(color: Color(0xFF1E90FF), fontSize: 13),
+              items: options
+                  .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+                  .toList(),
+              onChanged: (v) { if (v != null) onChange(v); },
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _layoutPicker() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: WatermarkLayout.values.map((l) {
+          final sel = l == _layout;
+          return GestureDetector(
+            onTap: () => setState(() => _layout = l),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: sel ? const Color(0xFF1E90FF).withOpacity(0.15) : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: sel ? const Color(0xFF1E90FF) : const Color(0xFF1A2540),
+                ),
+              ),
+              child: Text(l.displayName,
+                  style: TextStyle(
+                      color: sel ? const Color(0xFF1E90FF) : Colors.white38,
+                      fontSize: 12,
+                      fontWeight: sel ? FontWeight.w600 : FontWeight.w400)),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _cacheInfo() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.delete_sweep_outlined,
+            color: Color(0xFFE63946), size: 20),
+        title: const Text('Bersihkan Cache Histori',
+            style: TextStyle(color: Colors.white, fontSize: 14)),
+        subtitle: const Text('Hapus semua foto dari penyimpanan internal',
+            style: TextStyle(color: Color(0xFF3A4570), fontSize: 11)),
+        onTap: _clearCache,
+      ),
+    );
+  }
+
+  Future<void> _clearCache() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0A0E1A),
+        title: const Text('Bersihkan cache?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+            'Foto di penyimpanan internal akan dihapus (galeri tidak terpengaruh).',
+            style: TextStyle(color: Colors.white54)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Batal')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Hapus', style: TextStyle(color: Color(0xFFE63946)))),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        final dir = Directory(
+            '${(await getApplicationDocumentsDirectory()).path}/history');
+        if (await dir.exists()) await dir.delete(recursive: true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Cache dibersihkan')));
+        }
+      } catch (_) {}
+    }
   }
 }

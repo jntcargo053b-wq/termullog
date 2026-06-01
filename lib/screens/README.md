@@ -1,2 +1,1 @@
-# termullog
-jarak dan waktu
+Screens rebuilt for TimeMark-style timestamp camera.

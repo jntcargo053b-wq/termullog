@@ -1,8 +1,10 @@
 // lib/screens/home_screen.dart
-// FINAL PRODUCTION – baca folder history yang sama, thumbnail efisien, tidak decode penuh
+// TOTAL REBUILD – TimeMark-inspired home screen
+// Dark navy theme, recent photos grid, clean action bar
+
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -21,427 +23,290 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<Map<String, dynamic>> _recentPhotos = [];
-  bool _isLoading = true;
-  int _totalPhotos = 0;
-  double _avgAccuracy = 0;
+  List<_PhotoEntry> _photos = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadRecentPhotos();
+    _loadPhotos();
   }
 
-  Future<Directory> _getHistoryDirectory() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final historyDir = Directory('${appDir.path}/history');
-    if (!await historyDir.exists()) {
-      await historyDir.create(recursive: true);
-    }
-    return historyDir;
+  Future<Directory> _histDir() async {
+    final d = Directory(
+        '${(await getApplicationDocumentsDirectory()).path}/history');
+    await d.create(recursive: true);
+    return d;
   }
 
-  Future<void> _loadRecentPhotos() async {
-    if (mounted) setState(() => _isLoading = true);
-
+  Future<void> _loadPhotos() async {
+    setState(() => _loading = true);
     try {
-      final historyDir = await _getHistoryDirectory();
-      final files = historyDir
+      final dir = await _histDir();
+      final files = dir
           .listSync()
           .whereType<File>()
-          .where((f) => p.basename(f.path).startsWith('termullog_'))
-          .where((f) => f.path.endsWith('.jpg'))
-          .toList();
+          .where((f) =>
+              f.path.endsWith('.jpg') &&
+              p.basename(f.path).startsWith('termullog_'))
+          .toList()
+        ..sort((a, b) =>
+            b.lastModifiedSync().compareTo(a.lastModifiedSync()));
 
-      files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-
-      final List<Map<String, dynamic>> photos = [];
-      for (final file in files.take(20)) {
-        try {
-          if (!await file.exists()) continue;
-          final fileName = p.basenameWithoutExtension(file.path);
-          final parts = fileName.split('_');
-          DateTime timestamp = file.lastModifiedSync();
-          if (parts.length > 1) {
-            final ms = int.tryParse(parts[1]);
-            if (ms != null) timestamp = DateTime.fromMillisecondsSinceEpoch(ms);
-          }
-          photos.add({
-            'path': file.path,
-            'timestamp': timestamp,
-          });
-        } catch (e) {
-          debugPrint('Photo load error: $e');
-        }
+      final entries = <_PhotoEntry>[];
+      for (final f in files.take(50)) {
+        final base = p.basenameWithoutExtension(f.path);
+        final ms = int.tryParse(base.split('_').elementAtOrNull(1) ?? '');
+        entries.add(_PhotoEntry(
+          path: f.path,
+          timestamp: ms != null
+              ? DateTime.fromMillisecondsSinceEpoch(ms)
+              : f.lastModifiedSync(),
+        ));
       }
-
-      if (!mounted) return;
-      setState(() {
-        _recentPhotos = photos;
-        _totalPhotos = files.length;
-        _avgAccuracy = 0; // placeholder, bisa diabaikan
-        _isLoading = false;
-      });
+      if (mounted) setState(() { _photos = entries; _loading = false; });
     } catch (e) {
-      debugPrint('Load photos error: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _refreshPhotos() async {
-    await _loadRecentPhotos();
+  void _openCamera() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (_) =>
+              CameraScreen(cameras: CameraRegistry.cameras)),
+    );
+    _loadPhotos();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: const Color(0xFF070B16),
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF00B8D4), Color(0xFF1B4F72)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'T',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'TermulLog',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.settings_outlined, color: Colors.white70),
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                        );
-                        _refreshPhotos();
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _StatCard(
-                        icon: Icons.photo_camera_outlined,
-                        title: 'Total Foto',
-                        value: '$_totalPhotos',
-                        color: const Color(0xFF1B4F72),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _StatCard(
-                        icon: Icons.gps_fixed,
-                        title: 'Rata-rata Akurasi',
-                        value: _avgAccuracy > 0 ? '${_avgAccuracy.toStringAsFixed(0)}m' : '--',
-                        color: const Color(0xFF00B8D4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                child: InkWell(
-                  onTap: () async {
-                    HapticFeedback.mediumImpact();
-                    final cameras = CameraRegistry.cameras;
-                    if (cameras.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Kamera tidak tersedia')),
-                      );
-                      return;
-                    }
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CameraScreen(cameras: cameras),
-                      ),
-                    );
-                    _refreshPhotos();
-                  },
-                  borderRadius: BorderRadius.circular(24),
-                  child: Container(
-                    height: 140,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF00B8D4), Color(0xFF0077B6)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF00B8D4).withOpacity(0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          right: -20,
-                          top: -20,
-                          child: Container(
-                            width: 100,
-                            height: 100,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: -30,
-                          bottom: -30,
-                          child: Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                        Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.camera_alt,
-                                size: 48,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Ambil Foto Baru',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white.withOpacity(0.95),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Dengan GPS & Watermark',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white.withOpacity(0.7),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Foto Terbaru',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const HistoryScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.history, size: 18),
-                      label: const Text('Lihat Semua'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF00B8D4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_isLoading)
-              const SliverFillRemaining(
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF00B8D4),
-                  ),
-                ),
-              )
-            else if (_recentPhotos.isEmpty)
-              SliverFillRemaining(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.photo_library_outlined,
-                        size: 64,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Belum ada foto',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Ambil foto pertama Anda',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.85,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final photo = _recentPhotos[index];
-                      return _PhotoCard(
-                        photo: photo,
-                        onTap: () {
-                          _viewPhotoDetail(photo['path']);
-                        },
-                      );
-                    },
-                    childCount: _recentPhotos.length,
-                  ),
-                ),
-              ),
-            const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildStatsBar(),
+            Expanded(child: _buildBody()),
           ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openCamera,
+        backgroundColor: const Color(0xFFE63946),
+        icon: const Icon(Icons.camera_alt, color: Colors.white),
+        label: const Text('Ambil Foto',
+            style: TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
+      child: Row(
+        children: [
+          // Logo
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE63946), Color(0xFF9B2335)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Center(
+              child: Text('T',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('TermulLog',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3)),
+                Text('Timestamp Camera',
+                    style: TextStyle(color: Color(0xFF4A5568), fontSize: 11)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.history, color: Colors.white54, size: 24),
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HistoryScreen())),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined,
+                color: Colors.white54, size: 24),
+            onPressed: () async {
+              await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const SettingsScreen()));
+              _loadPhotos();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Row(
+        children: [
+          _StatChip(
+              label: '${_photos.length}',
+              sub: 'Foto',
+              icon: Icons.photo_library_outlined),
+          const SizedBox(width: 12),
+          _StatChip(
+              label: _photos.isEmpty
+                  ? '—'
+                  : DateFormat('dd MMM').format(_photos.first.timestamp),
+              sub: 'Terbaru',
+              icon: Icons.schedule),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(
+          child:
+              CircularProgressIndicator(color: Color(0xFF1E90FF)));
+    }
+    if (_photos.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.photo_camera_outlined,
+                color: Color(0xFF2A3456), size: 64),
+            const SizedBox(height: 16),
+            const Text('Belum ada foto',
+                style: TextStyle(
+                    color: Color(0xFF3A4570), fontSize: 16)),
+            const SizedBox(height: 8),
+            const Text('Tap tombol kamera untuk mulai',
+                style: TextStyle(
+                    color: Color(0xFF2A3456), fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadPhotos,
+      color: const Color(0xFF1E90FF),
+      backgroundColor: const Color(0xFF0A0E1A),
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 100),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: _photos.length,
+        itemBuilder: (_, i) => _PhotoCard(
+          entry: _photos[i],
+          onShare: () => _share(_photos[i].path),
+          onDelete: () => _delete(_photos[i]),
         ),
       ),
     );
   }
 
-  void _viewPhotoDetail(String path) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _PhotoDetailScreen(imagePath: path),
+  void _share(String path) {
+    Share.shareXFiles([XFile(path)]);
+  }
+
+  Future<void> _delete(_PhotoEntry entry) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0A0E1A),
+        title: const Text('Hapus foto?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text('Foto akan dihapus dari histori.',
+            style: TextStyle(color: Colors.white54)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Batal')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Hapus',
+                  style: TextStyle(color: Color(0xFFE63946)))),
+        ],
       ),
     );
+    if (ok == true) {
+      try { await File(entry.path).delete(); } catch (_) {}
+      _loadPhotos();
+    }
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final Color color;
+class _PhotoEntry {
+  final String path;
+  final DateTime timestamp;
+  const _PhotoEntry({required this.path, required this.timestamp});
+}
 
-  const _StatCard({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.color,
-  });
+class _StatChip extends StatelessWidget {
+  final String label;
+  final String sub;
+  final IconData icon;
+
+  const _StatChip(
+      {required this.label, required this.sub, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1F2E),
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF1A2540)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
+          Icon(icon, size: 14, color: const Color(0xFF1E90FF)),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700)),
+              Text(sub,
+                  style: const TextStyle(
+                      color: Color(0xFF3A4570), fontSize: 10)),
+            ],
           ),
         ],
       ),
@@ -450,87 +315,48 @@ class _StatCard extends StatelessWidget {
 }
 
 class _PhotoCard extends StatelessWidget {
-  final Map<String, dynamic> photo;
-  final VoidCallback onTap;
+  final _PhotoEntry entry;
+  final VoidCallback onShare;
+  final VoidCallback onDelete;
 
   const _PhotoCard({
-    required this.photo,
-    required this.onTap,
+    required this.entry,
+    required this.onShare,
+    required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
-    final timestamp = photo['timestamp'] as DateTime;
-    final isToday = timestamp.day == DateTime.now().day &&
-        timestamp.month == DateTime.now().month &&
-        timestamp.year == DateTime.now().year;
-
-    String timeStr;
-    if (isToday) {
-      timeStr = 'Hari ini ${DateFormat('HH:mm').format(timestamp)}';
-    } else {
-      timeStr = DateFormat('dd/MM/yy HH:mm').format(timestamp);
-    }
-
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1F2E),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      onLongPress: () => _showActions(context),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: Image.file(
-                File(photo['path']),
-                height: 140,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                cacheWidth: 400,
-                filterQuality: FilterQuality.low,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 140,
-                  color: Colors.grey.shade800,
-                  child: const Icon(Icons.broken_image, color: Colors.white38),
+            Image.file(File(entry.path), fit: BoxFit.cover),
+            // Timestamp overlay
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 20, 8, 6),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Color(0xCC000000), Colors.transparent],
+                  ),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    timeStr,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                child: Text(
+                  DateFormat('dd/MM/yy HH:mm').format(entry.timestamp),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.gps_fixed, size: 12, color: Color(0xFF00B8D4)),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          'GPS Location',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white70,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ],
@@ -538,98 +364,37 @@ class _PhotoCard extends StatelessWidget {
       ),
     );
   }
-}
 
-class _PhotoDetailScreen extends StatefulWidget {
-  final String imagePath;
-
-  const _PhotoDetailScreen({required this.imagePath});
-
-  @override
-  State<_PhotoDetailScreen> createState() => _PhotoDetailScreenState();
-}
-
-class _PhotoDetailScreenState extends State<_PhotoDetailScreen> {
-  final TransformationController _transformController = TransformationController();
-
-  @override
-  void dispose() {
-    _transformController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black.withOpacity(0.8),
-        foregroundColor: Colors.white,
-        title: const Text('Detail Foto'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            onPressed: () async {
-              await Share.shareXFiles(
-                [XFile(widget.imagePath)],
-                text: 'Foto GPS dari TermulLog',
-              );
-            },
+  void _showActions(BuildContext context) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0A0E1A),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.share, color: Color(0xFF1E90FF)),
+            title: const Text('Bagikan',
+                style: TextStyle(color: Colors.white)),
+            onTap: () { Navigator.pop(context); onShare(); },
           ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Color(0xFFE63946)),
+            title: const Text('Hapus',
+                style: TextStyle(color: Color(0xFFE63946))),
+            onTap: () { Navigator.pop(context); onDelete(); },
+          ),
+          const SizedBox(height: 8),
         ],
       ),
-      body: InteractiveViewer(
-        transformationController: _transformController,
-        minScale: 0.8,
-        maxScale: 4.0,
-        child: Center(
-          child: Image.file(
-            File(widget.imagePath),
-            fit: BoxFit.contain,
-          ),
-        ),
-      ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.8),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
-                label: const Text('Tutup'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white38),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await Share.shareXFiles(
-                    [XFile(widget.imagePath)],
-                    text: 'Foto GPS dari TermulLog',
-                  );
-                },
-                icon: const Icon(Icons.share),
-                label: const Text('Bagikan'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00B8D4),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
+  }
+}
+
+extension _SafeList<T> on List<T> {
+  T? elementAtOrNull(int index) {
+    if (index < 0 || index >= length) return null;
+    return this[index];
   }
 }

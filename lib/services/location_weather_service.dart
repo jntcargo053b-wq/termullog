@@ -479,3 +479,16 @@ class _WeatherCacheEntry {
   final DateTime expiry;
   _WeatherCacheEntry(this.weather, this.expiry);
 }
+
+extension LocationWeatherServiceExt on LocationWeatherService {
+  /// Convenience method untuk camera_screen.dart
+  static Future<String> fetchWeather(double lat, double lon) async {
+    try {
+      final latStr = lat.toStringAsFixed(5);
+      final lonStr = lon.toStringAsFixed(5);
+      return await LocationWeatherService._fetchWeatherFromApi(latStr, lonStr);
+    } catch (_) {
+      return '';
+    }
+  }
+}

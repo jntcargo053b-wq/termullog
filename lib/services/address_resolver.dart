@@ -14,7 +14,7 @@ class AddressResolver {
   Timer? _debounce;
   DateTime? _lastRequestTime;      // untuk cooldown
 
-  static const double _minDist = 6.0;               // jarak minimum untuk re-geocode (6 meter)
+  static const double _minDist = 5.0;               // jarak minimum untuk re-geocode (6 meter)
   static const double _accImprovementThreshold = 10.0; // m — jika akurasi membaik ≥10m, geocode ulang
   static const Duration _cooldown = Duration(seconds: 8); // minimal 8 detik antar request
   static const double _minAccuracy = 15.0;          // hanya geocode jika akurasi <= 15m

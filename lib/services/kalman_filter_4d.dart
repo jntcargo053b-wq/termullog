@@ -1,11 +1,11 @@
 // lib/services/kalman_filter_4d.dart
-// 4D Kalman filter (position + velocity) untuk GPS mobile/logistik.
-// - Process noise: qPos=4.0, qVel=5.0 (stabil & responsif)
-// - Velocity damping adaptif pow(0.90, dt.clamp(0.3, 2.5))
-// - Measurement gating: hard accept hanya jika akurasi <=15m
-// - Reject middle jump: inflate covariance 1.2
-// - Hard accept inflate 2.0
-// - Health check & auto-reset jika covariance corrupt
+// 4D Kalman filter untuk GPS mobile/logistik – responsif & stabil.
+// - Process noise dinaikkan: qPos=6.0, qVel=7.0
+// - Damping adaptif pow(0.92, dt.clamp(0.3, 2.5))
+// - Gate threshold adaptif (tanpa minimum 20m statis)
+// - Hard accept threshold = gate * 2.0
+// - Adjusted R (measurement noise dikompres saat accuracy bagus)
+// - Joseph form, symmetry, covariance floor, health check
 
 import 'dart:math';
 
@@ -13,8 +13,9 @@ class KalmanFilter4D {
   List<double> _x = [0.0, 0.0, 0.0, 0.0];
   List<List<double>> _P = List.generate(4, (_) => List.filled(4, 0.0));
 
-  static const double _qPos = 4.0;
-  static const double _qVel = 5.0;
+  // Process noise dinaikkan untuk responsivitas
+  static const double _qPos = 6.0;
+  static const double _qVel = 7.0;
 
   KalmanFilter4D() {
     _resetCovariance();
@@ -64,14 +65,14 @@ class KalmanFilter4D {
     }
   }
 
-  // Prediction dengan damping adaptif (base 0.90)
+  // Prediction dengan damping adaptif (base 0.92)
   (List<double>, List<List<double>>) predict(double dt) {
     final F = _getF(dt);
     final Q = _getQ(dt);
 
     List<double> xPred = _matMulVec(F, _x);
     final clampedDt = dt.clamp(0.3, 2.5);
-    final damping = pow(0.90, clampedDt).toDouble();
+    final damping = pow(0.92, clampedDt).toDouble();
     xPred[2] *= damping;
     xPred[3] *= damping;
 
@@ -146,7 +147,7 @@ class KalmanFilter4D {
     return (_x, _P);
   }
 
-  // Predict + update dengan outlier rejection dan health check
+  // Predict + update dengan outlier rejection adaptif dan adjusted R
   (List<double>, List<List<double>>) predictAndUpdate(
       double dt,
       double measurementEast,
@@ -154,35 +155,44 @@ class KalmanFilter4D {
       double R) {
     final (_, Ppred) = predict(dt);
 
-    // Health check: jika covariance corrupt, reset filter
     if (!isHealthy()) {
       reset(measurementEast, measurementNorth);
       return (_x, _P);
     }
 
+    final measurementSigma = sqrt(R);
     final dx = measurementEast - _x[0];
     final dy = measurementNorth - _x[1];
     final innovationDistance = sqrt(dx * dx + dy * dy);
 
-    final gateThreshold = max(20.0, sqrt(R) * 2.5);
-    final hardAcceptThreshold = gateThreshold * 3.0;
+    // Gate threshold adaptif (tanpa minimum statis 20m)
+    final gateThreshold = measurementSigma <= 10
+        ? max(8.0, measurementSigma * 1.8)
+        : max(15.0, measurementSigma * 2.2);
+
+    final hardAcceptThreshold = gateThreshold * 2.0; // 2x gate, lebih responsif
+
+    // Adjusted R: kompres measurement noise saat accuracy bagus
+    double adjustedR = R;
+    if (measurementSigma <= 10) {
+      adjustedR *= 0.35;
+    } else if (measurementSigma <= 20) {
+      adjustedR *= 0.6;
+    }
 
     if (innovationDistance <= gateThreshold) {
-      // Loncatan kecil → terima
-      return update(measurementEast, measurementNorth, R, Ppred);
-    } 
-    else if (innovationDistance > hardAcceptThreshold) {
-      // Loncatan besar → hanya terima jika akurasi GPS cukup bagus (≤15m)
-      final measurementSigma = sqrt(R);
+      // Loncatan kecil → terima dengan adjusted R
+      return update(measurementEast, measurementNorth, adjustedR, Ppred);
+    } else if (innovationDistance > hardAcceptThreshold) {
+      // Loncatan besar → hanya terima jika akurasi cukup baik
       if (measurementSigma <= 15.0) {
         inflateCovariance(2.0);
-        return update(measurementEast, measurementNorth, R, _P);
+        return update(measurementEast, measurementNorth, adjustedR, _P);
       } else {
         inflateCovariance(1.2);
         return (_x, _P);
       }
-    } 
-    else {
+    } else {
       // Loncatan menengah → tolak, inflate kecil
       inflateCovariance(1.2);
       return (_x, _P);
@@ -213,7 +223,7 @@ class KalmanFilter4D {
     return true;
   }
 
-  // Matrix utilities (sama seperti sebelumnya, tidak diubah)
+  // ========== Matrix utilities ==========
   List<List<double>> _matMul(List<List<double>> A, List<List<double>> B) {
     final int aRows = A.length, aCols = A[0].length, bCols = B[0].length;
     final result = List.generate(aRows, (_) => List.filled(bCols, 0.0));

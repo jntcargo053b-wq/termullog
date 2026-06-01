@@ -43,10 +43,10 @@ class LocationWeatherService {
   static const int _maxAddressCacheSize = 100;
   static final List<String> _addressCacheOrder = [];
 
-  static const double _addressCacheRadiusMeters = 20.0;
-  static const Duration _addressCacheDuration = Duration(minutes: 30);
+  static const double _addressCacheRadiusMeters = 5.0;
+  static const Duration _addressCacheDuration = Duration(minutes: 10);
   static final Map<String, CachedAddress> _nearbyCache = {};
-  static const int _maxNearbyCacheSize = 50;
+  static const int _maxNearbyCacheSize = 30;
 
   static final Map<String, _WeatherCacheEntry> _weatherCache = {};
   static const Duration _weatherCacheDuration = Duration(minutes: 10);

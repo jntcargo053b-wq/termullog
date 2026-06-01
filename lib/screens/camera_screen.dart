@@ -1,7 +1,9 @@
+```dart
 // lib/screens/camera_screen.dart
 // TOTAL REBUILD – TimeMark-style camera screen
 // Kompatibel dengan geolocator ^11.0.0
 // GPS stabil dengan Kalman filter + outlier rejection
+// Resolusi kamera: veryHigh, lalu resize ke 1920px untuk watermark optimal
 
 import 'dart:async';
 import 'dart:io';
@@ -16,6 +18,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:image/image.dart' as img; // untuk resize
 
 import '../core/constants.dart';
 import '../services/gps_lock_manager.dart';
@@ -136,7 +139,7 @@ class _CameraScreenState extends State<CameraScreen>
       await _controller?.dispose();
       final c = CameraController(
         widget.cameras.first,
-        ResolutionPreset.high,
+        ResolutionPreset.veryHigh, // Pakai veryHigh untuk hasil maksimal
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
@@ -354,8 +357,25 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
+      // --- RESIZE KE 1920px jika lebar > 1920 ---
+      Uint8List finalBytes = rawBytes;
+      img.Image? originalImg = img.decodeImage(rawBytes);
+      if (originalImg != null) {
+        const int targetWidth = 1920;
+        if (originalImg.width > targetWidth) {
+          final double ratio = originalImg.height / originalImg.width;
+          final int targetHeight = (targetWidth * ratio).round();
+          final resized = img.copyResize(originalImg, width: targetWidth, height: targetHeight);
+          finalBytes = Uint8List.fromList(img.encodeJpg(resized, quality: imageQuality));
+        } else {
+          // Kompres ulang dengan kualitas yang diinginkan
+          finalBytes = Uint8List.fromList(img.encodeJpg(originalImg, quality: imageQuality));
+        }
+      }
+      // --- Selesai resize ---
+
       final params = WatermarkParams(
-        imageBytes: rawBytes,
+        imageBytes: finalBytes, // pakai bytes yang sudah diresize
         timestamp: captureTime,
         address: _address,
         weather: _weather,
@@ -754,3 +774,4 @@ class _LayoutPickerSheet extends StatelessWidget {
     }
   }
 }
+```

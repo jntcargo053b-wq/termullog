@@ -1,11 +1,10 @@
 // lib/services/gps_lock_manager.dart
-// - _stationaryCount hanya di-increment untuk sample dengan accuracy <= threshold
-// - Tidak menggunakan _bestFix global untuk lock
-// - Update rawPosition setelah lock jika akurasi membaik
-// - Kalman filter 4D untuk menghaluskan koordinat lock
-// - Weighted centroid untuk lock accuracy
-// - Force geocode saat pertama lock (via return value processSample)
-// - Deteksi pergerakan tidak dihitung dua kali
+// Final production untuk timemark/logistik
+// - Weighted centroid lock (tidak berubah saat ada raw lebih akurat)
+// - Unlock threshold adaptif dengan base dan clamp 8-15m
+// - Rolling window dengan hard cluster reset minimal 12m
+// - Safety clamp accuracy untuk weight calculation
+
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -14,17 +13,14 @@ import 'kalman_filter_4d.dart';
 enum GpsLockState { searching, acquiring, locked }
 
 class LockData {
-  final Position position;           // raw terbaik selama lock (untuk referensi)
-  final Position rawPosition;        // raw terbaik selama lock (untuk referensi)
+  final Position position;           // weighted centroid (stabil, referensi utama)
+  final Position rawPosition;        // best raw sample selama lock (metadata)
   final double accuracy;             // weighted centroid accuracy
   final String quality;
   final double confidence;
   final DateTime lockedAt;
   final bool isFallbackLock;
-
-  /// Koordinat hasil Kalman filter — lebih halus dari raw GPS.
-  /// Gunakan ini untuk display koordinat di UI.
-  final double smoothedLatitude;
+  final double smoothedLatitude;     // hasil Kalman (jika valid) atau centroid
   final double smoothedLongitude;
 
   double get stability => confidence;
@@ -69,8 +65,8 @@ class LockData {
 class GpsLockManager {
   GpsLockState _state = GpsLockState.searching;
   LockData? _lockData;
-  Position? _bestFix;              // all-time best accuracy (fallback display saja)
-  final List<Position> _acquiringSamples = []; // sample akurat dalam fase acquiring saat ini
+  Position? _bestFix;
+  final List<Position> _acquiringSamples = []; // rolling window
   int _stationaryCount = 0;
   double _stationaryProgress = 0.0;
   bool _isMovingFlag = false;
@@ -78,35 +74,42 @@ class GpsLockManager {
   double _lastRawLat = 0.0, _lastRawLon = 0.0;
   DateTime? _lastMovementTime;
 
-  // Kalman filter 4D — aktif selama fase acquiring
   final KalmanFilter4D _kalman = KalmanFilter4D();
   double? _kalmanOriginLat, _kalmanOriginLon;
   DateTime? _kalmanLastUpdate;
 
-  // Parameter lock untuk aplikasi timestamp/logistik (stabil)
-  static const int _samplesBeforeLock = 5;
-  static const double _moveThreshold = 3.0;            // 3m deteksi gerakan (lebih sensitif)
-  static const double _unlockDriftThreshold = 12.0;    // 12m drift baru unlock
-  static const double _unlockAccuracyRequired = 15.0;  // dan akurasi ≤15m
+  // Parameter lock
+  static const int _minSamplesForLock = 7;        // minimal 7 sample stabil
+  static const int _maxWindowSize = 10;            // rolling window maksimal 10
+  static const double _moveThreshold = 3.0;        // 3m deteksi gerakan
+  static const double _unlockDriftBase = 8.0;      // base drift (minimal)
+  static const double _unlockDriftFactor = 1.2;    // faktor adaptif
+  static const double _unlockAccuracyRequired = 20.0;
   static const double _stationaryTimeoutSeconds = 4.0;
 
-  // Adaptive lock threshold — bukan konstanta tetap.
-  // Dihitung ulang tiap kali ada sample baru yang masuk window.
-  // Referensi: urban 12m, suburban 18m, rural 25m.
-  // Formula: max(12, weightedAcc * 1.2) — mengikuti kondisi GPS saat ini.
+  // Adaptive lock threshold: clamp 8-15 meter
   double get _lockAccuracyThreshold {
-    if (_acquiringSamples.isEmpty) return 20.0; // default sebelum ada sample
+    if (_acquiringSamples.isEmpty) return 15.0;
     double sumW = 0.0, sumAcc = 0.0;
     for (final s in _acquiringSamples) {
-      final w = 1.0 / (s.accuracy * s.accuracy);
+      final safeAcc = s.accuracy.clamp(3.0, 100.0);
+      final w = 1.0 / (safeAcc * safeAcc);
       sumW += w;
       sumAcc += s.accuracy * w;
     }
-    final weightedAcc = sumW > 0 ? sumAcc / sumW : 20.0;
-    return (weightedAcc * 1.2).clamp(12.0, 25.0);
+    final weightedAcc = sumW > 0 ? sumAcc / sumW : 15.0;
+    return (weightedAcc * 1.1).clamp(8.0, 15.0);
   }
 
-  // Interval adaptif (ms)
+  // Unlock threshold adaptif dengan base dan clamp
+  double get _unlockDriftThreshold {
+    if (_lockData == null) return _unlockDriftBase;
+    final adaptive = _lockData!.accuracy * _unlockDriftFactor;
+    // Gunakan max(base, adaptive) lalu clamp antara base dan 15
+    return max(_unlockDriftBase, adaptive).clamp(_unlockDriftBase, 15.0);
+  }
+
+  // Interval adaptif
   static const int _intervalSearching = 1000;
   static const int _intervalAcquiring = 800;
   static const int _intervalLockedStationary = 1500;
@@ -119,7 +122,7 @@ class GpsLockManager {
   double get stationaryProgress {
     if (_state == GpsLockState.searching) return 0.0;
     if (_state == GpsLockState.acquiring) {
-      return (_stationaryCount / _samplesBeforeLock).clamp(0.0, 1.0);
+      return (_stationaryCount / _minSamplesForLock).clamp(0.0, 1.0);
     }
     return _stationaryProgress;
   }
@@ -138,8 +141,7 @@ class GpsLockManager {
   }
 
   // --------------------------------------------------------------
-  // Proses setiap sample GPS (dipanggil dari stream)
-  // Mengembalikan true saat baru saja terjadi lock (untuk trigger geocode).
+  // Proses setiap sample GPS
   // --------------------------------------------------------------
   bool processSample(Position newPos) {
     // Update all‑time best fix
@@ -148,19 +150,18 @@ class GpsLockManager {
       if (kDebugMode) debugPrint('GpsLockManager: bestFix acc=${newPos.accuracy.toStringAsFixed(1)}m');
     }
 
-    // Hitung jarak dari previous — dilakukan SEKALI di sini, dipakai oleh semua handler.
+    // Hitung jarak dari previous
     double movedDistance = 0.0;
     if (_prevRawLat != 0.0 && _prevRawLon != 0.0) {
       movedDistance = _haversine(_prevRawLat, _prevRawLon, newPos.latitude, newPos.longitude);
     }
 
-    // Update moving flag berdasarkan movedDistance
+    // Update moving flag
     if (_prevRawLat != 0.0) {
       if (movedDistance > _moveThreshold) {
         _isMovingFlag = true;
         _lastMovementTime = DateTime.now();
         _stationaryProgress = 0.0;
-        _stationaryCount = 0;
       } else {
         if (_isMovingFlag) {
           _isMovingFlag = false;
@@ -172,57 +173,54 @@ class GpsLockManager {
       }
     }
 
-    // Simpan previous sebelum update last
+    // Simpan previous
     _prevRawLat = _lastRawLat;
     _prevRawLon = _lastRawLon;
     _lastRawLat = newPos.latitude;
     _lastRawLon = newPos.longitude;
 
-    // Proses berdasarkan state — pass movedDistance agar tidak dihitung ulang
     return (_state == GpsLockState.locked)
         ? _handleLocked(newPos)
         : _handleAcquiring(newPos, movedDistance);
   }
 
   // --------------------------------------------------------------
-  // Handler saat sudah locked
+  // Handler saat locked
   // --------------------------------------------------------------
   bool _handleLocked(Position newPos) {
     if (_lockData == null) return false;
 
+    // Gunakan smoothed coordinate sebagai referensi lock (posisi stabil)
     final distFromLock = _haversine(
-      _lockData!.rawPosition.latitude, _lockData!.rawPosition.longitude,
+      _lockData!.smoothedLatitude, _lockData!.smoothedLongitude,
       newPos.latitude, newPos.longitude,
     );
 
-    // Hard unlock jika drift signifikan dengan akurasi bagus
+    // Hard unlock jika drift melebihi threshold adaptif dan akurasi baru bagus
     if (distFromLock > _unlockDriftThreshold && newPos.accuracy <= _unlockAccuracyRequired) {
       softUnlock();
-      if (kDebugMode) debugPrint('GpsLockManager: HARD UNLOCK (drift ${distFromLock.toStringAsFixed(1)}m)');
+      if (kDebugMode) debugPrint('GpsLockManager: HARD UNLOCK (drift ${distFromLock.toStringAsFixed(1)}m, threshold $_unlockDriftThreshold)');
       return _handleAcquiring(newPos, distFromLock);
     }
 
-    // Update raw position jika akurasi membaik (tetap pertahankan smoothed coords dari Kalman)
-    if (newPos.accuracy < (_lockData!.accuracy - 2.0)) {
+    // Update raw position saja (metadata) jika akurasi sample baru lebih baik
+    // JANGAN ubah centroid lock (position & smoothed)
+    if (newPos.accuracy < (_lockData!.rawPosition.accuracy - 2.0)) {
       _lockData = _lockData!.copyWith(
-        position: newPos,
         rawPosition: newPos,
-        accuracy: newPos.accuracy,
-        quality: _getQualityFromAccuracy(newPos.accuracy),
-        confidence: _computeConfidence(newPos.accuracy),
-        // smoothedLatitude/Longitude tetap dari lock awal — tidak di-override
+        quality: _getQualityFromAccuracy(_lockData!.accuracy),
+        confidence: _computeConfidence(_lockData!.accuracy),
       );
-      if (kDebugMode) debugPrint('GpsLockManager: improved acc=${newPos.accuracy.toStringAsFixed(1)}m');
+      if (kDebugMode) debugPrint('GpsLockManager: improved raw acc=${newPos.accuracy.toStringAsFixed(1)}m');
     }
     return false;
   }
 
   // --------------------------------------------------------------
-  // Handler untuk searching atau acquiring
-  // movedDistance sudah dihitung di processSample — tidak dihitung ulang.
+  // Handler untuk fase acquiring (rolling window + hard cluster reset)
   // --------------------------------------------------------------
   bool _handleAcquiring(Position newPos, double movedDistance) {
-    // Jika bergerak: reset window, buang state Kalman
+    // Jika bergerak signifikan, reset window (karena lokasi berubah)
     if (_prevRawLat != 0.0 && movedDistance > _moveThreshold) {
       _stationaryCount = 0;
       _acquiringSamples.clear();
@@ -231,19 +229,42 @@ class GpsLockManager {
       return false;
     }
 
-    // Hanya kumpulkan sample yang akurat DAN koordinat tidak bergeser > 3m dari sample sebelumnya.
+    // Filter sample: hanya yang akurasinya <= threshold
     if (newPos.accuracy <= _lockAccuracyThreshold) {
-      final isCoordStable = _acquiringSamples.isEmpty ||
-          _haversine(
-            _acquiringSamples.last.latitude, _acquiringSamples.last.longitude,
-            newPos.latitude, newPos.longitude,
-          ) < 3.0;
+      // Toleransi stabilitas adaptif: clamp(5.0, 8.0)
+      final double coordStableTolerance = (newPos.accuracy * 0.3).clamp(5.0, 8.0);
+      
+      // Cek apakah ini loncatan besar dari sample terakhir
+      bool isHardJump = false;
+      if (_acquiringSamples.isNotEmpty) {
+        final jumpDistance = _haversine(
+          _acquiringSamples.last.latitude, _acquiringSamples.last.longitude,
+          newPos.latitude, newPos.longitude,
+        );
+        // Hard jump threshold: minimal 12 meter (untuk menghindari reset berlebihan)
+        final hardJumpThreshold = max(coordStableTolerance * 2.0, 12.0);
+        if (jumpDistance > hardJumpThreshold) {
+          isHardJump = true;
+          if (kDebugMode) debugPrint('GpsLockManager: HARD CLUSTER RESET (jump ${jumpDistance.toStringAsFixed(1)}m, threshold ${hardJumpThreshold.toStringAsFixed(1)}m)');
+        }
+      }
 
-      if (isCoordStable) {
+      if (isHardJump) {
+        // Reset total cluster: clear window dan start ulang
+        _acquiringSamples.clear();
         _acquiringSamples.add(newPos);
-        _stationaryCount++;
+        _stationaryCount = 1;
+        _resetKalman();
+        _initKalmanIfNeeded(newPos);
+      } else {
+        // Rolling window normal (termasuk jika koordinat tidak stabil tapi dalam toleransi)
+        if (_acquiringSamples.length >= _maxWindowSize) {
+          _acquiringSamples.removeAt(0);
+        }
+        _acquiringSamples.add(newPos);
+        _stationaryCount = _acquiringSamples.length;
 
-        // ── Saran 1: update Kalman filter ──────────────────────────────────
+        // Update Kalman filter hanya jika tidak hard jump
         _initKalmanIfNeeded(newPos);
         final dt = _kalmanLastUpdate != null
             ? DateTime.now().difference(_kalmanLastUpdate!).inMilliseconds / 1000.0
@@ -254,60 +275,70 @@ class GpsLockManager {
         final east = (newPos.longitude - _kalmanOriginLon!) *
             degToMeter * cos(_kalmanOriginLat! * pi / 180.0);
         final north = (newPos.latitude - _kalmanOriginLat!) * degToMeter;
-        // R = variance GPS (accuracy²), clamp agar tidak terlalu kecil
-        final R = (newPos.accuracy * newPos.accuracy).clamp(4.0, 2500.0);
+        final R = (newPos.accuracy.clamp(3.0, 50.0) * newPos.accuracy.clamp(3.0, 50.0)).clamp(9.0, 2500.0);
         _kalman.predictAndUpdate(dt.clamp(0.1, 5.0), east, north, R);
-
-      } else {
-        // Koordinat masih loncat — reset window + Kalman mulai dari posisi baru
-        _acquiringSamples
-          ..clear()
-          ..add(newPos);
-        _stationaryCount = 1;
-        _resetKalman();
-        _initKalmanIfNeeded(newPos);
-        if (kDebugMode) debugPrint('GpsLockManager: coord jump reset (_stationaryCount=1)');
       }
     }
     _state = GpsLockState.acquiring;
 
-    final readyToLock = _stationaryCount >= _samplesBeforeLock &&
+    final readyToLock = _stationaryCount >= _minSamplesForLock &&
         newPos.accuracy <= _lockAccuracyThreshold;
 
     if (readyToLock) {
-      final best = _acquiringSamples.isNotEmpty
-          ? _acquiringSamples.reduce((a, b) => a.accuracy < b.accuracy ? a : b)
-          : newPos;
-
-      // ── Saran 2: weighted centroid accuracy ────────────────────────────────
-      // Bobot = 1/accuracy² — sample dengan akurasi lebih baik mendapat bobot lebih besar
-      double sumW = 0.0, sumAcc = 0.0;
+      // Hitung weighted centroid dari semua sample di window
+      double sumW = 0.0, sumLat = 0.0, sumLon = 0.0, sumAccW = 0.0, sumAcc = 0.0;
       for (final s in _acquiringSamples) {
-        final w = 1.0 / (s.accuracy * s.accuracy);
+        final safeAcc = s.accuracy.clamp(3.0, 100.0);
+        final w = 1.0 / (safeAcc * safeAcc);
         sumW += w;
+        sumLat += s.latitude * w;
+        sumLon += s.longitude * w;
+        sumAccW += w;
         sumAcc += s.accuracy * w;
       }
-      final lockedAccuracy = sumW > 0 ? sumAcc / sumW : best.accuracy;
+      final centroidLat = sumW > 0 ? sumLat / sumW : newPos.latitude;
+      final centroidLon = sumW > 0 ? sumLon / sumW : newPos.longitude;
+      final lockedAccuracy = sumAccW > 0 ? sumAcc / sumAccW : newPos.accuracy;
 
-      // ── Saran 1: koordinat dari Kalman filter ──────────────────────────────
-      double smoothedLat = best.latitude;
-      double smoothedLon = best.longitude;
+      // Best raw (metadata) adalah sample dengan akurasi terbaik
+      final bestRaw = _acquiringSamples.reduce((a, b) => a.accuracy < b.accuracy ? a : b);
+      final centroidPosition = Position(
+        latitude: centroidLat,
+        longitude: centroidLon,
+        accuracy: lockedAccuracy,
+        timestamp: DateTime.now(),
+        altitude: bestRaw.altitude,
+        altitudeAccuracy: bestRaw.altitudeAccuracy,
+        heading: bestRaw.heading,
+        headingAccuracy: bestRaw.headingAccuracy,
+        speed: bestRaw.speed,
+        speedAccuracy: bestRaw.speedAccuracy,
+      );
+
+      // Kalman smoothing
+      double smoothedLat = centroidLat;
+      double smoothedLon = centroidLon;
       if (_kalmanOriginLat != null && _kalman.isHealthy()) {
-        final (state, _) = _kalman.predict(0.0); // snapshot tanpa advance waktu
+        final (state, _) = _kalman.predict(0.0);
         const degToMeter = 111320.0;
         smoothedLat = _kalmanOriginLat! + state[1] / degToMeter;
         smoothedLon = _kalmanOriginLon! +
             state[0] / (degToMeter * cos(_kalmanOriginLat! * pi / 180.0));
-        if (kDebugMode) {
-          final rawDist = _haversine(best.latitude, best.longitude, smoothedLat, smoothedLon);
-          debugPrint('GpsLockManager: Kalman smoothing offset=${rawDist.toStringAsFixed(1)}m');
+
+        final kalmanOffset = _haversine(centroidLat, centroidLon, smoothedLat, smoothedLon);
+        if (kalmanOffset > 8.0) {
+          if (kDebugMode) debugPrint('GpsLockManager: Kalman offset too large (${kalmanOffset.toStringAsFixed(1)}m), using centroid');
+          smoothedLat = centroidLat;
+          smoothedLon = centroidLon;
+        } else if (kDebugMode) {
+          debugPrint('GpsLockManager: Kalman smoothing offset=${kalmanOffset.toStringAsFixed(1)}m');
         }
       }
 
       _acquiringSamples.clear();
       _lockData = LockData(
-        position: best,
-        rawPosition: best,
+        position: centroidPosition,
+        rawPosition: bestRaw,
         accuracy: lockedAccuracy,
         quality: _getQualityFromAccuracy(lockedAccuracy),
         confidence: _computeConfidence(lockedAccuracy),
@@ -320,6 +351,7 @@ class GpsLockManager {
       _stationaryProgress = 1.0;
       if (kDebugMode) {
         debugPrint('GpsLockManager: LOCKED acc=${lockedAccuracy.toStringAsFixed(1)}m '
+            'centroid=(${centroidLat.toStringAsFixed(6)}, ${centroidLon.toStringAsFixed(6)}) '
             'smoothed=(${smoothedLat.toStringAsFixed(6)}, ${smoothedLon.toStringAsFixed(6)})');
       }
       return true;
@@ -328,7 +360,7 @@ class GpsLockManager {
   }
 
   // --------------------------------------------------------------
-  // Soft unlock – hanya lepas lock, tidak menghapus bestFix / raw history
+  // Soft unlock & reset
   // --------------------------------------------------------------
   void softUnlock() {
     if (_state != GpsLockState.locked) return;
@@ -343,7 +375,6 @@ class GpsLockManager {
     if (kDebugMode) debugPrint('GpsLockManager: softUnlock');
   }
 
-  // Reset total (hanya untuk inisialisasi atau error)
   void reset() {
     _state = GpsLockState.searching;
     _lockData = null;

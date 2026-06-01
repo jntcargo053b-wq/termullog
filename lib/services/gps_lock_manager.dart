@@ -72,7 +72,7 @@ class GpsLockManager {
   static const double _stationaryTimeoutSeconds = 4.0;
 
   // Interval adaptif (ms)
-  static const int _intervalSearching = 2500;
+  static const int _intervalSearching = 1000;
   static const int _intervalAcquiring = 1200;
   static const int _intervalLockedStationary = 1500;
   static const int _intervalLockedMoving = 700;

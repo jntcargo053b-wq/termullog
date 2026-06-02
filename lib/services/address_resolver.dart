@@ -21,7 +21,7 @@ class AddressResolver {
   static const double _minDist = 10.0;
   static const double _accImprovementThreshold = 5.0;  // dari 10m → 5m
   static const Duration _cooldown = Duration(seconds: 4); // dari 8s → 4s
-  static const double _minAccuracy = 8.0;               // dari 15m → 8m
+  static const double _minAccuracy = 15.0;               // dari 15m → 8m
 
   // In-memory cache dengan presisi 5 desimal (≈1.1m), konsisten dengan location_weather_service
   static final Map<String, String> _cache = {};

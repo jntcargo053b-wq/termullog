@@ -1,5 +1,6 @@
 // lib/services/address_resolver.dart
-// v4: cache key 5 desimal (≈1.1m), _minDist = 10.0, forceRefresh method.
+// v5: fix alamat meleset — minAccuracy diturunkan ke 8m, cooldown dikurangi ke 4s,
+//     accImprovementThreshold dikurangi ke 5m agar geocoding ulang lebih responsif.
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -13,10 +14,14 @@ class AddressResolver {
   Timer? _debounce;
   DateTime? _lastRequestTime;
 
-  static const double _minDist = 10.0;               // jarak minimal re-geocode (meter)
-  static const double _accImprovementThreshold = 10.0;
-  static const Duration _cooldown = Duration(seconds: 8);
-  static const double _minAccuracy = 15.0;
+  // Fix #3: naikkan threshold minimum accuracy dari 15m ke 8m.
+  // Akurasi GPS 1σ artinya error sebenarnya bisa 2–3× lebih besar.
+  // GPS dengan laporan 14m bisa berarti posisi meleset 40–80m aktual.
+  // Dengan 8m, geocoding hanya jalan saat sinyal sudah cukup konvergen.
+  static const double _minDist = 10.0;
+  static const double _accImprovementThreshold = 5.0;  // dari 10m → 5m
+  static const Duration _cooldown = Duration(seconds: 4); // dari 8s → 4s
+  static const double _minAccuracy = 8.0;               // dari 15m → 8m
 
   // In-memory cache dengan presisi 5 desimal (≈1.1m), konsisten dengan location_weather_service
   static final Map<String, String> _cache = {};

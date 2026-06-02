@@ -350,9 +350,12 @@ class _CameraScreenState extends State<CameraScreen>
           )
         : pos;
 
-    // Trigger geocoding saat lock pertama kali
+    // Fix alamat meleset: force geocoding ulang saat GPS lock pertama kali
+    // Koordinat pre-lock sering masih drift 50–200m, sehingga cache alamat lama
+    // harus dibuang dan diganti dengan koordinat smoothed yang sudah stabil.
     if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
+      _addrResolver.forceRefresh(); // invalidate cache lokal agar geocoding ulang
       LastKnownLocationCache.save(
         position: lockData.rawPosition,
         address: _address,
@@ -366,8 +369,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
+    // Fix alamat meleset: gunakan threshold improvement lebih ketat (5m bukan 15m)
+    // agar geocoding ulang terpicu lebih cepat saat GPS makin akurat
     final accImproved = _lastGeocodedAcc != null &&
-        (_lastGeocodedAcc! - pos.accuracy) >= 15.0;
+        (_lastGeocodedAcc! - pos.accuracy) >= 5.0;
     if (_addrLoading && !accImproved) return;
     if (_addrLoading) _geoReqId++;
 

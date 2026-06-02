@@ -1,19 +1,25 @@
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION – Timestamp/Logistik Camera Screen
-// - GPS lock dengan GpsLockManager (weighted centroid, Kalman, rolling window)
-// - LastKnownPosition filter akurasi ≤20m, usia ≤2 menit, dan timestamp tidak null
-// - Capture gate: hanya jika displayLat tidak null dan akurasi ≤25m
-// - Geocoding dan weather menggunakan smoothed coordinate saat locked (konsisten dengan watermark)
-// - Outlier rejection yang lebih cerdas: tidak menolak recovery GPS yang akurat
-// - Aman terhadap berbagai versi geolocator (menggunakan helper _copyPosition)
-// - Fix Bug #1: WatermarkParams sekarang meneruskan showMiniMap, mapBytes, fontSize,
-//   dateFormat, timeFormat — setting pengguna kini diterapkan saat capture dari kamera
-// - Fix Bug #6: _loadSettings() dimuat lengkap termasuk format tanggal/waktu & minimap
+// PROFESIONAL REBUILD – Timestamp/Logistik Camera Screen
+//
+// Strategi alamat profesional (setara TimeMark):
+//
+// LAYER 1 — Instan (0 detik): Baca LastKnownLocationCache dari sesi sebelumnya.
+//   Alamat langsung tampil tanpa tunggu GPS sama sekali.
+//   Badge "📍 Lokasi Tersimpan" ditampilkan agar user tahu ini dari cache lama.
+//
+// LAYER 2 — Cepat (1–3 detik): Baca Geolocator.getLastKnownPosition() (OS cache).
+//   Kalau lebih baru dan akurasi ≤30m, update koordinat & geocode ulang bila perlu.
+//
+// LAYER 3 — Akurat (5–20 detik): GPS stream aktif, Kalman + centroid lock.
+//   Saat lock terjadi, alamat di-refresh paksa dari koordinat yang sudah stabil.
+//
+// LAYER 4 — Penyempurnaan: Kalau akurasi membaik ≥5m dari geocoding terakhir,
+//   alamat diperbarui otomatis.
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data'; // untuk Uint8List
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -21,6 +27,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -46,7 +53,7 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  // Camera
+  // ── Camera ──────────────────────────────────────────────────────────────
   CameraController? _controller;
   bool _isCameraReady = false;
   bool _isCapturing = false;
@@ -54,31 +61,32 @@ class _CameraScreenState extends State<CameraScreen>
   Completer<void>? _initCompleter;
   bool _torchOn = false;
 
-  // GPS
+  // ── GPS ──────────────────────────────────────────────────────────────────
   final GpsLockManager _gpsLock = GpsLockManager();
   final AddressResolver _addrResolver = AddressResolver();
   StreamSubscription<Position>? _posSub;
   bool _locationActive = false;
 
-  // Data untuk display & watermark
+  // ── Data display & watermark ─────────────────────────────────────────────
   double? _displayLat;
   double? _displayLon;
   double? _displayAcc;
-  String _address = 'Mencari lokasi…';
+  String _address = '';
   String _weather = '';
   bool _addrLoading = false;
   double? _lastGeocodedAcc;
+  bool _isFromCache = false; // true jika alamat masih dari cache lama
 
-  // Status GPS untuk UI chip
+  // ── GPS status chip ───────────────────────────────────────────────────────
   String _gpsStatus = '🟡 Mencari GPS';
   double _gpsConfidence = 0.0;
   bool _isFallback = false;
 
-  // Waktu
+  // ── Clock ─────────────────────────────────────────────────────────────────
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
 
-  // Pengaturan
+  // ── Settings ──────────────────────────────────────────────────────────────
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -86,22 +94,25 @@ class _CameraScreenState extends State<CameraScreen>
   double _opacity = 0.88;
   bool _showBorder = true;
   WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
-
-  // Setting tambahan untuk watermark (Bug #1 fix)
   bool _showMiniMap = false;
   String _fontSize = 'normal';
   String _dateFormat = 'dd/MM/yyyy';
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
 
-  // Outlier filter (lebih cerdas)
+  // ── Outlier filter ────────────────────────────────────────────────────────
   Position? _lastAcceptedRaw;
-  static const double _maxAcceptableAccuracy = 15.0;
+  // Naikkan dari 15m → 25m agar lebih banyak sample masuk ke Kalman/centroid.
+  // Filtering akurat dilakukan oleh GpsLockManager, bukan di sini.
+  static const double _maxAcceptableAccuracy = 25.0;
   static const double _maxJumpDistance = 200.0;
 
-  // LastKnown position filter
-  static const double _maxLastKnownAccuracy = 20.0;
-  static const Duration _maxLastKnownAge = Duration(minutes: 2);
+  // ── LastKnown OS filter ───────────────────────────────────────────────────
+  static const double _maxOsLastKnownAccuracy = 30.0;
+  static const Duration _maxOsLastKnownAge = Duration(minutes: 5);
+
+  // ── Our cache filter (lebih longgar, ini sudah pernah diverifikasi) ────────
+  static const Duration _maxOurCacheAge = Duration(hours: 12);
 
   @override
   void initState() {
@@ -112,40 +123,119 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _boot() async {
+    // LAYER 1: Langsung tampilkan alamat dari cache sesi sebelumnya
+    // Ini yang membuat alamat muncul instan, bahkan sebelum GPS aktif.
+    await _loadOurCache();
+
+    // Proses lain jalan paralel
     await _checkGalleryPermission();
     await _initCamera();
-    await _requestHighAccuracy();
-    await _loadLastKnownPosition();
+    await _requestLocationPermission();
+
+    // LAYER 2: OS last known position (biasanya sudah ada dalam detik)
+    _loadOsLastKnown(); // sengaja tidak di-await agar tidak block kamera
+
+    // LAYER 3: GPS stream aktif
     await _initLocation();
     _startClock();
   }
 
-  Future<void> _checkGalleryPermission() async {
-    if (Platform.isAndroid) {
-      final info = await _deviceAndroidVersion();
-      if (info >= 33) {
-        await Permission.photos.request();
-      } else {
-        await Permission.storage.request();
+  // ── LAYER 1: Cache alamat dari sesi sebelumnya ────────────────────────────
+  Future<void> _loadOurCache() async {
+    try {
+      final cached = await LastKnownLocationCache.load();
+      if (cached == null || !mounted) return;
+
+      final age = DateTime.now().difference(cached.cachedAt);
+      if (age > _maxOurCacheAge) {
+        if (kDebugMode) debugPrint('OurCache: expired (${age.inHours}h)');
+        return;
       }
+      if (cached.address.isEmpty) return;
+
+      if (mounted) {
+        setState(() {
+          _displayLat = cached.latitude;
+          _displayLon = cached.longitude;
+          _displayAcc = cached.accuracy;
+          _address = cached.address;
+          _lastGeocodedAcc = cached.accuracy;
+          if (cached.weather.isNotEmpty) _weather = cached.weather;
+          _gpsStatus = '📍 Lokasi Tersimpan';
+          _isFromCache = true;
+        });
+      }
+      if (kDebugMode) debugPrint('OurCache: loaded "${cached.address}" (${age.inMinutes} menit lalu)');
+    } catch (e) {
+      debugPrint('OurCache load error: $e');
     }
   }
 
-  Future<int> _deviceAndroidVersion() async {
+  // ── LAYER 2: OS last known position ───────────────────────────────────────
+  Future<void> _loadOsLastKnown() async {
     try {
-      final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-      final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-      return androidInfo.version.sdkInt;
-    } catch (_) {
-      return 0;
+      final last = await Geolocator.getLastKnownPosition();
+      if (last == null || !mounted) return;
+
+      if (last.accuracy > _maxOsLastKnownAccuracy) {
+        if (kDebugMode) debugPrint('OsLastKnown: skip, acc ${last.accuracy.toStringAsFixed(0)}m');
+        return;
+      }
+      final ts = last.timestamp;
+      if (ts != null) {
+        final age = DateTime.now().difference(ts);
+        if (age > _maxOsLastKnownAge) {
+          if (kDebugMode) debugPrint('OsLastKnown: skip, stale ${age.inMinutes}min');
+          return;
+        }
+      }
+
+      // Update koordinat jika lebih akurat dari cache kita
+      final currentAcc = _displayAcc ?? 999.0;
+      final improvedCoord = last.accuracy < (currentAcc - 5.0);
+
+      if (mounted) {
+        setState(() {
+          _displayLat = last.latitude;
+          _displayLon = last.longitude;
+          _displayAcc = last.accuracy;
+          if (_address.isEmpty) _gpsStatus = '🕐 Posisi OS';
+          else if (improvedCoord) _gpsStatus = '🕐 Memperbarui…';
+        });
+      }
+
+      // Geocode ulang hanya jika koordinat bergeser cukup jauh dari cache kita
+      // atau kalau kita belum punya alamat sama sekali
+      final shouldRegeocode = _address.isEmpty ||
+          (_displayLat != null && _haversineDistance2(
+            _displayLat!, _displayLon!, last.latitude, last.longitude) > 30.0);
+
+      if (shouldRegeocode) {
+        _addrResolver.forceRefresh();
+        _maybeResolveAddress(last);
+      }
+    } catch (e) {
+      debugPrint('OsLastKnown error: $e');
     }
+  }
+
+  Future<void> _checkGalleryPermission() async {
+    if (Platform.isAndroid) {
+      final v = await _androidSdkVersion();
+      if (v >= 33) await Permission.photos.request();
+      else await Permission.storage.request();
+    }
+  }
+
+  Future<int> _androidSdkVersion() async {
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      return info.version.sdkInt;
+    } catch (_) { return 0; }
   }
 
   Future<void> _initCamera() async {
-    if (_isCameraInit) {
-      await _initCompleter?.future;
-      return;
-    }
+    if (_isCameraInit) { await _initCompleter?.future; return; }
     _isCameraInit = true;
     _initCompleter = Completer();
     try {
@@ -158,10 +248,7 @@ class _CameraScreenState extends State<CameraScreen>
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
       await c.initialize();
-      if (!mounted) {
-        await c.dispose();
-        return;
-      }
+      if (!mounted) { await c.dispose(); return; }
       _controller = c;
       if (mounted) setState(() => _isCameraReady = true);
     } catch (e) {
@@ -172,94 +259,24 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  Future<void> _requestHighAccuracy() async {
-    try {
-      await Geolocator.requestPermission();
-    } catch (_) {}
-  }
-
-  // Helper untuk membuat Position baru dengan field yang aman lintas versi geolocator
-  Position _copyPosition({
-    required Position source,
-    required double lat,
-    required double lon,
-    required double acc,
-    required DateTime timestamp,
-  }) {
-    return Position(
-      latitude: lat,
-      longitude: lon,
-      timestamp: timestamp,
-      accuracy: acc,
-      altitude: source.altitude,
-      altitudeAccuracy: source.altitudeAccuracy,
-      heading: source.heading,
-      headingAccuracy: source.headingAccuracy,
-      speed: source.speed,
-      speedAccuracy: source.speedAccuracy,
-      floor: source.floor,
-      isMocked: source.isMocked,
-    );
-  }
-
-  Future<void> _loadLastKnownPosition() async {
-    try {
-      final last = await Geolocator.getLastKnownPosition();
-      if (last == null || !mounted) return;
-
-      // Filter akurasi
-      if (last.accuracy > _maxLastKnownAccuracy) {
-        if (kDebugMode) debugPrint('LastKnown skipped: accuracy ${last.accuracy.toStringAsFixed(0)}m > $_maxLastKnownAccuracy');
-        return;
-      }
-
-      // Filter timestamp null
-      final timestamp = last.timestamp;
-      if (timestamp == null) {
-        if (kDebugMode) debugPrint('LastKnown skipped: null timestamp');
-        return;
-      }
-
-      // Filter usia
-      final age = DateTime.now().difference(timestamp);
-      if (age > _maxLastKnownAge) {
-        if (kDebugMode) debugPrint('LastKnown skipped: stale timestamp (${age.inMinutes} min)');
-        return;
-      }
-
-      final addr = await _addrResolver.resolve(last);
-      if (!mounted) return;
-      setState(() {
-        _displayLat = last.latitude;
-        _displayLon = last.longitude;
-        _displayAcc = last.accuracy;
-        _gpsStatus = '🕐 Posisi Terakhir';
-        if (addr.isNotEmpty) {
-          _address = addr;
-          _lastGeocodedAcc = last.accuracy;
-        }
-      });
-    } catch (e) {
-      debugPrint('LastKnownPosition error: $e');
-    }
+  Future<void> _requestLocationPermission() async {
+    try { await Geolocator.requestPermission(); } catch (_) {}
   }
 
   Future<void> _initLocation() async {
     if (_locationActive) return;
     _locationActive = true;
     try {
-      // Warm-up
+      // Warm-up: satu fix langsung (lebih cepat dapat koordinat pertama)
       Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.bestForNavigation,
-      ).then((pos) {
-        if (mounted) _onPosition(pos);
-      }).catchError((_) {});
+      ).then((pos) { if (mounted) _onPosition(pos); }).catchError((_) {});
 
-      // Stream GPS produksi: bestForNavigation + distanceFilter 3
+      // Stream produksi
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 3,
+          distanceFilter: 2,  // 2m (lebih sensitif dari sebelumnya 3m)
         ),
       ).listen(_onPosition, onError: (_) {});
     } catch (e) {
@@ -267,34 +284,18 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // Outlier rejection yang lebih cerdas (jangan tolak recovery GPS)
   bool _isValidPosition(Position pos) {
     if (pos.accuracy > _maxAcceptableAccuracy) return false;
-
     if (_lastAcceptedRaw != null) {
-      final distance = _haversineDistance(_lastAcceptedRaw!, pos);
-      // Tolak hanya jika loncatan sangat besar DAN akurasi memburuk
-      if (distance > _maxJumpDistance &&
-          pos.accuracy > (_lastAcceptedRaw!.accuracy + 5)) {
-        if (kDebugMode) {
-          debugPrint('Rejected jump ${distance.toStringAsFixed(0)}m acc=${pos.accuracy.toStringAsFixed(0)}m');
-        }
+      final d = _haversineDistance2(
+        _lastAcceptedRaw!.latitude, _lastAcceptedRaw!.longitude,
+        pos.latitude, pos.longitude,
+      );
+      if (d > _maxJumpDistance && pos.accuracy > (_lastAcceptedRaw!.accuracy + 5)) {
         return false;
       }
     }
     return true;
-  }
-
-  double _haversineDistance(Position a, Position b) {
-    const double R = 6371000;
-    final lat1 = a.latitude * pi / 180;
-    final lat2 = b.latitude * pi / 180;
-    final deltaLat = (b.latitude - a.latitude) * pi / 180;
-    final deltaLon = (b.longitude - a.longitude) * pi / 180;
-    final aVal = sin(deltaLat / 2) * sin(deltaLat / 2) +
-        cos(lat1) * cos(lat2) * sin(deltaLon / 2) * sin(deltaLon / 2);
-    final c = 2 * atan2(sqrt(aVal), sqrt(1 - aVal));
-    return R * c;
   }
 
   void _onPosition(Position pos) {
@@ -306,10 +307,10 @@ class _CameraScreenState extends State<CameraScreen>
     final lockData = _gpsLock.lockData;
     final isLocked = _gpsLock.isLocked;
 
-    // Update UI status chip (konsisten dengan filter akurasi)
     setState(() {
       _gpsConfidence = lockData?.confidence ?? 0;
       _isFallback = lockData?.isFallbackLock ?? false;
+      _isFromCache = false; // koordinat sekarang dari GPS live
       _gpsStatus = isLocked
           ? '🟢 Terkunci'
           : pos.accuracy <= 5
@@ -319,16 +320,13 @@ class _CameraScreenState extends State<CameraScreen>
                   : '🟠 Menstabilkan';
     });
 
-    // Tentukan koordinat untuk display & watermark
     if (isLocked && lockData != null) {
-      // Locked: gunakan smoothed coordinate (stabil)
       _displayLat = lockData.smoothedLatitude;
       _displayLon = lockData.smoothedLongitude;
       _displayAcc = lockData.accuracy;
     } else {
-      // Belum lock: gunakan bestFix jika ada dan cukup akurat
       final best = _gpsLock.bestFix;
-      if (best != null && best.accuracy <= _maxAcceptableAccuracy) {
+      if (best != null && best.accuracy <= 20.0) {
         _displayLat = best.latitude;
         _displayLon = best.longitude;
         _displayAcc = best.accuracy;
@@ -339,23 +337,20 @@ class _CameraScreenState extends State<CameraScreen>
       }
     }
 
-    // Untuk geocoding dan weather, gunakan koordinat yang konsisten dengan watermark
-    final Position sourcePos = (isLocked && lockData != null)
-        ? _copyPosition(
+    final sourcePos = (isLocked && lockData != null)
+        ? _makePosition(
             source: pos,
             lat: lockData.smoothedLatitude,
             lon: lockData.smoothedLongitude,
             acc: lockData.accuracy,
-            timestamp: DateTime.now(),
           )
         : pos;
 
-    // Fix alamat meleset: force geocoding ulang saat GPS lock pertama kali
-    // Koordinat pre-lock sering masih drift 50–200m, sehingga cache alamat lama
-    // harus dibuang dan diganti dengan koordinat smoothed yang sudah stabil.
+    // LAYER 3 & 4: Saat GPS lock pertama kali, paksa geocoding ulang dengan
+    // koordinat yang sudah stabil (fix utama alamat meleset).
     if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
-      _addrResolver.forceRefresh(); // invalidate cache lokal agar geocoding ulang
+      _addrResolver.forceRefresh();
       LastKnownLocationCache.save(
         position: lockData.rawPosition,
         address: _address,
@@ -367,10 +362,25 @@ class _CameraScreenState extends State<CameraScreen>
     _maybeLoadWeather(sourcePos);
   }
 
+  Position _makePosition({
+    required Position source,
+    required double lat,
+    required double lon,
+    required double acc,
+  }) {
+    return Position(
+      latitude: lat, longitude: lon,
+      timestamp: DateTime.now(), accuracy: acc,
+      altitude: source.altitude, altitudeAccuracy: source.altitudeAccuracy,
+      heading: source.heading, headingAccuracy: source.headingAccuracy,
+      speed: source.speed, speedAccuracy: source.speedAccuracy,
+      floor: source.floor, isMocked: source.isMocked,
+    );
+  }
+
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
-    // Fix alamat meleset: gunakan threshold improvement lebih ketat (5m bukan 15m)
-    // agar geocoding ulang terpicu lebih cepat saat GPS makin akurat
+    // Re-geocode jika akurasi membaik ≥5m dari geocoding terakhir
     final accImproved = _lastGeocodedAcc != null &&
         (_lastGeocodedAcc! - pos.accuracy) >= 5.0;
     if (_addrLoading && !accImproved) return;
@@ -384,6 +394,15 @@ class _CameraScreenState extends State<CameraScreen>
         if (addr.isNotEmpty) {
           _address = addr;
           _lastGeocodedAcc = pos.accuracy;
+          _isFromCache = false;
+          // Simpan ke cache agar sesi berikutnya langsung tampil
+          if (_displayLat != null) {
+            LastKnownLocationCache.save(
+              position: pos,
+              address: addr,
+              weather: _weather,
+            );
+          }
         }
         _addrLoading = false;
       });
@@ -398,10 +417,23 @@ class _CameraScreenState extends State<CameraScreen>
     if (_lastWeatherFetch != null &&
         now.difference(_lastWeatherFetch!).inMinutes < 10) return;
     _lastWeatherFetch = now;
-    LocationWeatherService.fetchFromPosition(pos)
-        .then((result) {
+    LocationWeatherService.fetchFromPosition(pos).then((result) {
       if (mounted && result.weather.isNotEmpty) {
         setState(() => _weather = result.weather);
+        // Update cache weather juga
+        if (_displayLat != null && _address.isNotEmpty) {
+          LastKnownLocationCache.save(
+            position: Position(
+              latitude: _displayLat!, longitude: _displayLon!,
+              accuracy: _displayAcc ?? 999, timestamp: DateTime.now(),
+              altitude: 0, altitudeAccuracy: 0,
+              heading: 0, headingAccuracy: 0,
+              speed: 0, speedAccuracy: 0,
+            ),
+            address: _address,
+            weather: result.weather,
+          );
+        }
       }
     }).catchError((_) {});
   }
@@ -422,17 +454,12 @@ class _CameraScreenState extends State<CameraScreen>
     _opacity = await SettingsCache.opacity;
     _showBorder = await SettingsCache.showBorder;
     _layout = await SettingsCache.layout;
-    // Bug #1 & #6 fix: load setting tambahan yang sebelumnya tidak di-load
     _showMiniMap = await SettingsCache.showMiniMap;
     _mapZoomLevel = await SettingsCache.mapZoomLevel;
     _dateFormat = await SettingsCache.dateFormat;
     _timeFormat = await SettingsCache.timeFormat;
     final fontSizeDouble = await SettingsCache.fontSize;
-    _fontSize = fontSizeDouble <= 13
-        ? 'small'
-        : fontSizeDouble >= 20
-            ? 'large'
-            : 'normal';
+    _fontSize = fontSizeDouble <= 13 ? 'small' : fontSizeDouble >= 20 ? 'large' : 'normal';
     if (mounted) setState(() {});
   }
 
@@ -441,42 +468,35 @@ class _CameraScreenState extends State<CameraScreen>
     await _loadSettings();
   }
 
-  // Capture dengan gate akurasi: hanya aktif jika display lat tidak null dan akurasi ≤25m
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
 
     final double acc = _displayAcc ?? 999.0;
     if (_displayLat == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('⏳ GPS belum siap, tunggu sebentar...'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('⏳ GPS belum siap, tunggu sebentar...'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ));
       }
       return;
     }
     if (acc > 25.0) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚠️ GPS masih ±${acc.toStringAsFixed(0)}m >25m. Tunggu lebih akurat.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('⚠️ GPS masih ±${acc.toStringAsFixed(0)}m. Tunggu lebih akurat.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ));
       }
       return;
     }
     if (acc > 15.0 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('📍 GPS ±${acc.toStringAsFixed(0)}m, foto tetap diambil.'),
-          duration: Duration(seconds: 1),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('📍 GPS ±${acc.toStringAsFixed(0)}m, foto tetap diambil.'),
+        duration: const Duration(seconds: 1),
+      ));
     }
 
     HapticFeedback.mediumImpact();
@@ -491,30 +511,26 @@ class _CameraScreenState extends State<CameraScreen>
 
       // Resize ke 1920px
       Uint8List finalBytes = rawBytes;
-      img.Image? originalImg = img.decodeImage(rawBytes);
+      final originalImg = img.decodeImage(rawBytes);
       if (originalImg != null) {
         const int targetWidth = 1920;
         if (originalImg.width > targetWidth) {
-          final double ratio = originalImg.height / originalImg.width;
-          final int targetHeight = (targetWidth * ratio).round();
-          final resized = img.copyResize(originalImg, width: targetWidth, height: targetHeight);
+          final ratio = originalImg.height / originalImg.width;
+          final h = (targetWidth * ratio).round();
+          final resized = img.copyResize(originalImg, width: targetWidth, height: h);
           finalBytes = Uint8List.fromList(img.encodeJpg(resized, quality: imageQuality));
         } else {
           finalBytes = Uint8List.fromList(img.encodeJpg(originalImg, quality: imageQuality));
         }
       }
 
-      // Bug #1 fix: fetch minimap jika setting aktif (sama seperti preview_screen)
+      // Fetch minimap jika aktif
       Uint8List? mapBytes;
-      final hasPosition = _displayLat != null && _displayLon != null;
-      if (_showMiniMap && hasPosition) {
+      if (_showMiniMap && _displayLat != null && _displayLon != null) {
         mapBytes = await LocationWeatherService.fetchMapWithRetry(
-          _displayLat!,
-          _displayLon!,
+          _displayLat!, _displayLon!,
         );
-        if (mapBytes == null || mapBytes.isEmpty) {
-          mapBytes = null;
-        }
+        if (mapBytes != null && mapBytes.isEmpty) mapBytes = null;
       }
 
       final params = WatermarkParams(
@@ -535,7 +551,6 @@ class _CameraScreenState extends State<CameraScreen>
         fontScale: fontScale,
         imageQuality: imageQuality,
         appName: 'TermulLog',
-        // Bug #1 fix: parameter yang sebelumnya tidak diteruskan
         showMiniMap: _showMiniMap,
         mapBytes: mapBytes,
         mapSize: 120,
@@ -553,21 +568,16 @@ class _CameraScreenState extends State<CameraScreen>
       final ts = captureTime.millisecondsSinceEpoch;
       final outPath = '${histDir.path}/termullog_$ts.jpg';
       await File(outPath).writeAsBytes(jpegBytes);
-
       await GallerySaver.saveImage(outPath, albumName: 'TermulLog');
 
-      try {
-        await File(xFile.path).delete();
-      } catch (_) {}
+      try { await File(xFile.path).delete(); } catch (_) {}
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Foto tersimpan ke Galeri'),
-            backgroundColor: Color(0xFF1A2540),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ Foto tersimpan ke Galeri'),
+          backgroundColor: Color(0xFF1A2540),
+          duration: Duration(seconds: 2),
+        ));
       }
     } catch (e) {
       debugPrint('Capture error: $e');
@@ -592,8 +602,7 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (_isCameraInit) return;
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       await _controller?.dispose();
       if (mounted && _controller != null) {
         _controller = null;
@@ -620,36 +629,58 @@ class _CameraScreenState extends State<CameraScreen>
     super.dispose();
   }
 
+  double _haversineDistance2(double lat1, double lon1, double lat2, double lon2) {
+    const R = 6371000.0;
+    final dLat = (lat2 - lat1) * pi / 180.0;
+    final dLon = (lon2 - lon1) * pi / 180.0;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) *
+            sin(dLon / 2) * sin(dLon / 2);
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
+  }
+
   Color _accColor(double? acc) {
     if (acc == null) return Colors.grey;
     if (acc <= 5) return const Color(0xFF3CB86A);
-    if (acc <= 20) return const Color(0xFFFFB820);
+    if (acc <= 15) return const Color(0xFFFFB820);
     return const Color(0xFFE63946);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool previewReady =
-        _controller != null && _controller!.value.isInitialized;
+    final bool previewReady = _controller != null && _controller!.value.isInitialized;
 
     if (!_isCameraReady || !previewReady) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(color: Color(0xFF1E90FF)),
-              SizedBox(height: 16),
-              Text('Menginisialisasi kamera…',
+              const CircularProgressIndicator(color: Color(0xFF1E90FF)),
+              const SizedBox(height: 16),
+              const Text('Menginisialisasi kamera…',
                   style: TextStyle(color: Colors.white54)),
+              // Tampilkan alamat cache bahkan di loading screen
+              if (_address.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    _address,
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       );
     }
 
-    // Capture button hanya aktif jika displayLat tidak null dan akurasi ≤25m
     final canCapture = !_isCapturing &&
         _displayLat != null &&
         (_displayAcc ?? 999) <= 25.0;
@@ -678,6 +709,8 @@ class _CameraScreenState extends State<CameraScreen>
               layout: _layout,
             ),
           ),
+
+          // ── GPS Status chip (kiri atas) ──────────────────────────────────
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -686,9 +719,12 @@ class _CameraScreenState extends State<CameraScreen>
               acc: _displayAcc,
               confidence: _gpsConfidence,
               isFallback: _isFallback,
+              isFromCache: _isFromCache,
               color: _accColor(_displayAcc),
             ),
           ),
+
+          // ── Geocoding progress indicator (kanan atas) ────────────────────
           if (_addrLoading)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
@@ -703,23 +739,35 @@ class _CameraScreenState extends State<CameraScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      width: 10,
-                      height: 10,
+                      width: 10, height: 10,
                       child: CircularProgressIndicator(
                           strokeWidth: 1.5,
                           valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500))),
                     ),
                     SizedBox(width: 6),
-                    Text('Memperbarui…',
+                    Text('Alamat…',
                         style: TextStyle(color: Color(0xFFFF9500), fontSize: 10)),
                   ],
                 ),
               ),
             ),
+
+          // ── Alamat preview bar (di atas bottom bar) ──────────────────────
+          if (_address.isNotEmpty && _showAddress)
+            Positioned(
+              bottom: 110,
+              left: 0,
+              right: 0,
+              child: _AddressPreviewBar(
+                address: _address,
+                isFromCache: _isFromCache,
+                isLoading: _addrLoading,
+              ),
+            ),
+
+          // ── Bottom controls ───────────────────────────────────────────────
           Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
+            bottom: 0, left: 0, right: 0,
             child: Container(
               height: 110,
               padding: EdgeInsets.only(
@@ -794,12 +842,74 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-// GPS Chip Widget
+// ── Address Preview Bar ──────────────────────────────────────────────────────
+class _AddressPreviewBar extends StatelessWidget {
+  final String address;
+  final bool isFromCache;
+  final bool isLoading;
+
+  const _AddressPreviewBar({
+    required this.address,
+    required this.isFromCache,
+    required this.isLoading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xCC000000),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isFromCache
+              ? const Color(0x40FF9500)
+              : const Color(0x401E90FF),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isFromCache ? Icons.history_outlined : Icons.location_on_outlined,
+            size: 13,
+            color: isFromCache ? const Color(0xFFFF9500) : const Color(0xFF1E90FF),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              address,
+              style: TextStyle(
+                color: isFromCache ? const Color(0xFFCC9000) : Colors.white70,
+                fontSize: 11,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (isLoading) ...[
+            const SizedBox(width: 6),
+            const SizedBox(
+              width: 8, height: 8,
+              child: CircularProgressIndicator(
+                  strokeWidth: 1.2,
+                  valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500))),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── GPS Chip ─────────────────────────────────────────────────────────────────
 class _GpsChip extends StatelessWidget {
   final String status;
   final double? acc;
   final double confidence;
   final bool isFallback;
+  final bool isFromCache;
   final Color color;
 
   const _GpsChip({
@@ -807,6 +917,7 @@ class _GpsChip extends StatelessWidget {
     required this.acc,
     required this.confidence,
     required this.isFallback,
+    required this.isFromCache,
     required this.color,
   });
 
@@ -844,7 +955,7 @@ class _GpsChip extends StatelessWidget {
   }
 }
 
-// Layout Picker Bottom Sheet
+// ── Layout Picker Sheet ───────────────────────────────────────────────────────
 class _LayoutPickerSheet extends StatelessWidget {
   final WatermarkLayout current;
   final ValueChanged<WatermarkLayout> onSelect;
@@ -858,23 +969,19 @@ class _LayoutPickerSheet extends StatelessWidget {
       children: [
         const SizedBox(height: 12),
         Container(
-            width: 40,
-            height: 4,
+            width: 40, height: 4,
             decoration: BoxDecoration(
                 color: Colors.white24, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 16),
         const Text('Pilih Gaya Watermark',
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600)),
+                color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         ...WatermarkLayout.values.map((l) {
           final selected = l == current;
           return ListTile(
             leading: Container(
-              width: 36,
-              height: 36,
+              width: 36, height: 36,
               decoration: BoxDecoration(
                 color: selected
                     ? const Color(0xFF1E90FF).withOpacity(0.2)
@@ -884,11 +991,9 @@ class _LayoutPickerSheet extends StatelessWidget {
                     ? Border.all(color: const Color(0xFF1E90FF), width: 1.5)
                     : null,
               ),
-              child: Icon(
-                _iconFor(l),
-                color: selected ? const Color(0xFF1E90FF) : Colors.white38,
-                size: 18,
-              ),
+              child: Icon(_iconFor(l),
+                  color: selected ? const Color(0xFF1E90FF) : Colors.white38,
+                  size: 18),
             ),
             title: Text(l.displayName,
                 style: TextStyle(
@@ -907,16 +1012,11 @@ class _LayoutPickerSheet extends StatelessWidget {
 
   IconData _iconFor(WatermarkLayout l) {
     switch (l) {
-      case WatermarkLayout.timemarkClassic:
-        return Icons.access_time;
-      case WatermarkLayout.timemarkMinimal:
-        return Icons.radio_button_checked;
-      case WatermarkLayout.timemarkCard:
-        return Icons.credit_card;
-      case WatermarkLayout.timemarkHUD:
-        return Icons.track_changes;
-      case WatermarkLayout.timemarkFilm:
-        return Icons.photo_camera_back;
+      case WatermarkLayout.timemarkClassic: return Icons.access_time;
+      case WatermarkLayout.timemarkMinimal: return Icons.radio_button_checked;
+      case WatermarkLayout.timemarkCard: return Icons.credit_card;
+      case WatermarkLayout.timemarkHUD: return Icons.track_changes;
+      case WatermarkLayout.timemarkFilm: return Icons.photo_camera_back;
     }
   }
 }

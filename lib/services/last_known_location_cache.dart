@@ -5,7 +5,7 @@ import 'package:geolocator/geolocator.dart';
 class LastKnownLocationCache {
   static const String _key = 'last_location_cache';
   static const Duration _maxAge = Duration(hours: 12);
-  static const double _maxLoadAccuracy = 20.0;   // hanya simpan/muat jika ≤20m
+  static const double _maxLoadAccuracy = 50.0;   // 🔥 naikkan jadi 50m
 
   static Future<void> save({
     required Position position,
@@ -42,15 +42,11 @@ class LastKnownLocationCache {
     try {
       final Map<String, dynamic> map = jsonDecode(raw);
       final cachedAt = DateTime.parse(map['cachedAt'] as String);
-      final age = DateTime.now().difference(cachedAt);
-      if (age > _maxAge) return null;
-
+      if (DateTime.now().difference(cachedAt) > _maxAge) return null;
       final accuracy = (map['accuracy'] as num).toDouble();
       if (accuracy > _maxLoadAccuracy) return null;
-
       final address = map['address'] as String;
       if (address.isEmpty) return null;
-
       return (
         latitude: (map['latitude'] as num).toDouble(),
         longitude: (map['longitude'] as num).toDouble(),

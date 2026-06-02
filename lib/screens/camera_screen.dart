@@ -6,6 +6,9 @@
 // - Geocoding dan weather menggunakan smoothed coordinate saat locked (konsisten dengan watermark)
 // - Outlier rejection yang lebih cerdas: tidak menolak recovery GPS yang akurat
 // - Aman terhadap berbagai versi geolocator (menggunakan helper _copyPosition)
+// - Fix Bug #1: WatermarkParams sekarang meneruskan showMiniMap, mapBytes, fontSize,
+//   dateFormat, timeFormat — setting pengguna kini diterapkan saat capture dari kamera
+// - Fix Bug #6: _loadSettings() dimuat lengkap termasuk format tanggal/waktu & minimap
 
 import 'dart:async';
 import 'dart:io';
@@ -83,6 +86,13 @@ class _CameraScreenState extends State<CameraScreen>
   double _opacity = 0.88;
   bool _showBorder = true;
   WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
+
+  // Setting tambahan untuk watermark (Bug #1 fix)
+  bool _showMiniMap = false;
+  String _fontSize = 'normal';
+  String _dateFormat = 'dd/MM/yyyy';
+  String _timeFormat = 'HH:mm:ss';
+  int _mapZoomLevel = 15;
 
   // Outlier filter (lebih cerdas)
   Position? _lastAcceptedRaw;
@@ -407,6 +417,17 @@ class _CameraScreenState extends State<CameraScreen>
     _opacity = await SettingsCache.opacity;
     _showBorder = await SettingsCache.showBorder;
     _layout = await SettingsCache.layout;
+    // Bug #1 & #6 fix: load setting tambahan yang sebelumnya tidak di-load
+    _showMiniMap = await SettingsCache.showMiniMap;
+    _mapZoomLevel = await SettingsCache.mapZoomLevel;
+    _dateFormat = await SettingsCache.dateFormat;
+    _timeFormat = await SettingsCache.timeFormat;
+    final fontSizeDouble = await SettingsCache.fontSize;
+    _fontSize = fontSizeDouble <= 13
+        ? 'small'
+        : fontSizeDouble >= 20
+            ? 'large'
+            : 'normal';
     if (mounted) setState(() {});
   }
 
@@ -478,6 +499,19 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
 
+      // Bug #1 fix: fetch minimap jika setting aktif (sama seperti preview_screen)
+      Uint8List? mapBytes;
+      final hasPosition = _displayLat != null && _displayLon != null;
+      if (_showMiniMap && hasPosition) {
+        mapBytes = await LocationWeatherService.fetchMapWithRetry(
+          _displayLat!,
+          _displayLon!,
+        );
+        if (mapBytes == null || mapBytes.isEmpty) {
+          mapBytes = null;
+        }
+      }
+
       final params = WatermarkParams(
         imageBytes: finalBytes,
         timestamp: captureTime,
@@ -496,6 +530,14 @@ class _CameraScreenState extends State<CameraScreen>
         fontScale: fontScale,
         imageQuality: imageQuality,
         appName: 'TermulLog',
+        // Bug #1 fix: parameter yang sebelumnya tidak diteruskan
+        showMiniMap: _showMiniMap,
+        mapBytes: mapBytes,
+        mapSize: 120,
+        mapZoomLevel: _mapZoomLevel,
+        fontSize: _fontSize,
+        dateFormat: _dateFormat,
+        timeFormat: _timeFormat,
       );
 
       final jpegBytes = await WatermarkEngine.process(params);

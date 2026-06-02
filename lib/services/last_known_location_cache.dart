@@ -5,8 +5,7 @@ import 'package:geolocator/geolocator.dart';
 class LastKnownLocationCache {
   static const String _key = 'last_location_cache';
   static const Duration _maxAge = Duration(hours: 12);
-  // Filter akurasi saat load: abaikan cache dengan akurasi > 50 meter
-  static const double _maxLoadAccuracy = 50.0;
+  static const double _maxLoadAccuracy = 20.0;   // hanya simpan/muat jika ≤20m
 
   static Future<void> save({
     required Position position,
@@ -14,7 +13,6 @@ class LastKnownLocationCache {
     required String weather,
   }) async {
     if (address.isEmpty) return;
-    // Jangan simpan jika akurasi buruk (>50m)
     if (position.accuracy > _maxLoadAccuracy) return;
 
     final prefs = await SharedPreferences.getInstance();
@@ -48,7 +46,6 @@ class LastKnownLocationCache {
       if (age > _maxAge) return null;
 
       final accuracy = (map['accuracy'] as num).toDouble();
-      // Filter akurasi – jangan load cache dengan akurasi jelek
       if (accuracy > _maxLoadAccuracy) return null;
 
       final address = map['address'] as String;

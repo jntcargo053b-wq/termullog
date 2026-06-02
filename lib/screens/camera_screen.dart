@@ -1,11 +1,10 @@
 // lib/screens/camera_screen.dart
-// FINAL – Perbaikan sesuai saran TimeMark
-// - _onPosition selalu mengisi display (lock, bestFix, atau raw)
-// - _maxAcceptableAccuracy = 30.0 (tidak terlalu ketat)
-// - _geocodeAccuracyThreshold = 30.0
-// - _takePhoto tidak membatalkan foto jika koordinat sudah ada (hanya warning)
-// - _bootGps pakai LocationAccuracy.medium dengan timeout 5 detik
-// - AddressResolver._minAccuracy = 15.0 (di file terpisah)
+// FINAL – Konfigurasi seperti TimeMark (semua threshold 50m untuk startup cepat)
+// - Geocode langsung dijalankan untuk posisi ≤50m
+// - Cache dan OS last known juga dengan akurasi ≤50m
+// - Tombol shutter tidak menimpa watermark (jarak bottom 140)
+// - Font watermark lebih besar (14,13,12)
+// - Foto bisa diambil meskipun GPS belum siap (canCapture = !_isCapturing)
 
 import 'dart:async';
 import 'dart:io';
@@ -91,11 +90,11 @@ class _CameraScreenState extends State<CameraScreen>
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
 
-  // ── Threshold (kompromi: 30m untuk startup, tidak terlalu ketat) ───────────
-  static const double _maxAcceptableAccuracy = 30.0;    // filter sample GPS
-  static const double _geocodeAccuracyThreshold = 30.0; // trigger geocode
-  static const double _maxOsLastKnownAccuracy = 15.0;
-  static const double _cacheAccuracyThreshold = 30.0;
+  // ── Threshold seperti TimeMark (longgar untuk startup) ────────────────────
+  static const double _maxAcceptableAccuracy = 50.0;    // filter sample GPS
+  static const double _geocodeAccuracyThreshold = 50.0; // trigger geocode
+  static const double _maxOsLastKnownAccuracy = 50.0;   // OS last known
+  static const double _cacheAccuracyThreshold = 50.0;   // simpan cache
   static const Duration _maxOurCacheAge = Duration(hours: 12);
   static const double _maxJumpDistance = 200.0;
 
@@ -133,10 +132,9 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _bootGps() async {
     await _requestLocationPermission();
 
-    // Layer 2a: OS Last Known
     _loadOsLastKnown();
 
-    // Layer 2b: Fused Location (medium, timeout 5 detik)
+    // Fused location dengan medium accuracy (cepat)
     try {
       final fused = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
@@ -148,7 +146,6 @@ class _CameraScreenState extends State<CameraScreen>
       if (kDebugMode) debugPrint('Fused location error: $e');
     }
 
-    // Layer 3: GPS stream akurasi tinggi
     await _initLocation();
   }
 
@@ -281,7 +278,6 @@ class _CameraScreenState extends State<CameraScreen>
     return true;
   }
 
-  // PERBAIKAN 1: _onPosition selalu mengisi display (lock, bestFix, atau raw)
   void _onPosition(Position pos) {
     if (!mounted) return;
     if (!_isValidPosition(pos)) return;
@@ -298,7 +294,7 @@ class _CameraScreenState extends State<CameraScreen>
       _gpsStatus = isLocked ? '🟢 Terkunci' : '📡 Memperbarui lokasi...';
     });
 
-    // 🔥 SELALU ISI DISPLAY (jangan tunggu lock)
+    // SELALU ISI DISPLAY (jangan tunggu lock)
     final bestFix = _gpsLock.bestFix;
     if (isLocked && lockData != null) {
       _displayLat = lockData.smoothedLatitude;
@@ -309,13 +305,12 @@ class _CameraScreenState extends State<CameraScreen>
       _displayLon = bestFix.longitude;
       _displayAcc = bestFix.accuracy;
     } else {
-      // Fallback ke raw stream
       _displayLat = pos.latitude;
       _displayLon = pos.longitude;
       _displayAcc = pos.accuracy;
     }
 
-    // Geocode tanpa menunggu lock (pakai bestFix atau pos)
+    // Geocode tanpa menunggu lock (threshold 50m)
     Position? geocodePos;
     if (isLocked && lockData != null) {
       geocodePos = _makePosition(
@@ -334,7 +329,6 @@ class _CameraScreenState extends State<CameraScreen>
       _maybeResolveAddress(geocodePos);
     }
 
-    // Weather
     final sourcePos = (isLocked && lockData != null)
         ? _makePosition(
             source: pos,
@@ -370,7 +364,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
-    // PERBAIKAN 4: longgarkan threshold (30m)
     if (pos.accuracy > _geocodeAccuracyThreshold) return;
 
     final accImproved = _lastGeocodedAcc != null &&
@@ -473,15 +466,14 @@ class _CameraScreenState extends State<CameraScreen>
     await _loadSettings();
   }
 
-  // PERBAIKAN 6: _takePhoto tidak membatalkan jika koordinat sudah ada
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
 
-    final double acc = _displayAcc ?? 999.0;
+    // 🔥 Foto tetap bisa diambil meskipun GPS belum siap
     if (_displayLat == null || _displayLon == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('⏳ GPS belum siap, tunggu sebentar...'),
+          content: Text('⏳ Menunggu posisi GPS...'),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 2),
         ));
@@ -489,8 +481,8 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    // Warning jika akurasi >30, tapi tetap izinkan foto
-    if (acc > 30.0) {
+    final double acc = _displayAcc ?? 999.0;
+    if (acc > 50.0) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('⚠️ GPS ±${acc.toStringAsFixed(0)}m, hasil mungkin kurang akurat.'),
@@ -679,7 +671,8 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    final canCapture = !_isCapturing && _displayLat != null && _displayLon != null;
+    // 🔥 Foto bisa diambil kapan saja (tombol selalu aktif)
+    final canCapture = !_isCapturing;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -746,9 +739,10 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
+          // 🔥 AddressPreviewBar digeser ke atas (bottom: 140 agar tidak tertimpa shutter)
           if (_address.isNotEmpty && _showAddress)
             Positioned(
-              bottom: 110,
+              bottom: 140,
               left: 0,
               right: 0,
               child: _AddressPreviewBar(
@@ -829,7 +823,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-// ── Address Preview Bar ──────────────────────────────────────────────────────
+// ── Address Preview Bar (tanpa perubahan, hanya naik posisi) ────────────────
 class _AddressPreviewBar extends StatelessWidget {
   final String address;
   final bool isFromCache;
@@ -878,7 +872,7 @@ class _AddressPreviewBar extends StatelessWidget {
   }
 }
 
-// ── GPS Chip ─────────────────────────────────────────────────────────────────
+// ── GPS Chip (sama) ─────────────────────────────────────────────────────────
 class _GpsChip extends StatelessWidget {
   final String status;
   final double? acc;
@@ -920,7 +914,7 @@ class _GpsChip extends StatelessWidget {
   }
 }
 
-// ── Layout Picker Sheet ───────────────────────────────────────────────────────
+// ── Layout Picker Sheet (sama) ──────────────────────────────────────────────
 class _LayoutPickerSheet extends StatelessWidget {
   final WatermarkLayout current;
   final ValueChanged<WatermarkLayout> onSelect;

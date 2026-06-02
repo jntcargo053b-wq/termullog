@@ -350,7 +350,10 @@ class GpsLockManager {
             state[0] / (degToMeter * cos(_kalmanOriginLat! * pi / 180.0));
 
         final kalmanOffset = _haversine(centroidLat, centroidLon, smoothedLat, smoothedLon);
-        if (kalmanOffset > 8.0) {
+        // Fix #4: kurangi toleransi Kalman offset dari 8m → 4m.
+        // Di area padat (gang, perumahan), 8m bisa berarti beda jalan.
+        // Kalau Kalman geser lebih dari 4m dari centroid, pakai centroid langsung.
+        if (kalmanOffset > 4.0) {
           if (kDebugMode) debugPrint('GpsLockManager: Kalman offset too large (${kalmanOffset.toStringAsFixed(1)}m), using centroid');
           smoothedLat = centroidLat;
           smoothedLon = centroidLon;

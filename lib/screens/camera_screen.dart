@@ -1,10 +1,11 @@
 // lib/screens/camera_screen.dart
-// FINAL – Arsitektur seperti Google Maps
-// - Boot paralel (cache, GPS, kamera, permission)
-// - Dual fused location (getLastKnownPosition + getCurrentPosition dengan LocationAccuracy.medium)
-// - Geocode tanpa menunggu GPS lock (threshold 20m)
-// - Cache filter akurasi 20m
-// - Proteksi alamat: tidak ditimpa oleh geocode dengan akurasi lebih buruk
+// FINAL – Perbaikan sesuai saran TimeMark
+// - _onPosition selalu mengisi display (lock, bestFix, atau raw)
+// - _maxAcceptableAccuracy = 30.0 (tidak terlalu ketat)
+// - _geocodeAccuracyThreshold = 30.0
+// - _takePhoto tidak membatalkan foto jika koordinat sudah ada (hanya warning)
+// - _bootGps pakai LocationAccuracy.medium dengan timeout 5 detik
+// - AddressResolver._minAccuracy = 15.0 (di file terpisah)
 
 import 'dart:async';
 import 'dart:io';
@@ -90,11 +91,11 @@ class _CameraScreenState extends State<CameraScreen>
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
 
-  // ── Threshold (longgar seperti Google Maps) ────────────────────────────────
-  static const double _maxAcceptableAccuracy = 20.0;    // filter sample GPS
-  static const double _geocodeAccuracyThreshold = 20.0; // trigger geocode
-  static const double _maxOsLastKnownAccuracy = 15.0;   // OS last known
-  static const double _cacheAccuracyThreshold = 20.0;   // simpan cache jika ≤20m
+  // ── Threshold (kompromi: 30m untuk startup, tidak terlalu ketat) ───────────
+  static const double _maxAcceptableAccuracy = 30.0;    // filter sample GPS
+  static const double _geocodeAccuracyThreshold = 30.0; // trigger geocode
+  static const double _maxOsLastKnownAccuracy = 15.0;
+  static const double _cacheAccuracyThreshold = 30.0;
   static const Duration _maxOurCacheAge = Duration(hours: 12);
   static const double _maxJumpDistance = 200.0;
 
@@ -106,11 +107,10 @@ class _CameraScreenState extends State<CameraScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadSettings();
-    _startupAddressWarmup(); // langsung coba geocode dari OS last known
+    _startupAddressWarmup();
     WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
   }
 
-  // ── WARMUP: geocode instan dari OS last known ─────────────────────────────
   Future<void> _startupAddressWarmup() async {
     try {
       final last = await Geolocator.getLastKnownPosition();
@@ -120,11 +120,10 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
 
-  // ── BOOT PARALEL (seperti Google Maps) ─────────────────────────────────────
   Future<void> _boot() async {
     await Future.wait([
-      _loadOurCache(),            // Layer 1: cache lokal
-      _bootGps(),                 // Layer 2 & 3: OS + fused + stream
+      _loadOurCache(),
+      _bootGps(),
       _checkGalleryPermission(),
       _initCamera(),
     ]);
@@ -134,16 +133,15 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _bootGps() async {
     await _requestLocationPermission();
 
-    // Layer 2a: OS Last Known (instan)
+    // Layer 2a: OS Last Known
     _loadOsLastKnown();
 
-    // Layer 2b: Fused Location (WiFi + cell + GPS cache, <500ms)
+    // Layer 2b: Fused Location (medium, timeout 5 detik)
     try {
       final fused = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium, // PERBAIKAN: balanced -> medium
-        timeLimit: const Duration(seconds: 3),
-      ).timeout(const Duration(seconds: 3));
-      if (mounted && fused.accuracy <= _maxAcceptableAccuracy) {
+        desiredAccuracy: LocationAccuracy.medium,
+      ).timeout(const Duration(seconds: 5));
+      if (mounted && fused.accuracy <= 100.0) {
         _onPosition(fused);
       }
     } catch (e) {
@@ -154,17 +152,11 @@ class _CameraScreenState extends State<CameraScreen>
     await _initLocation();
   }
 
-  // ── LAYER 1: Cache lokal ──────────────────────────────────────────────────
   Future<void> _loadOurCache() async {
     try {
       final cached = await LastKnownLocationCache.load();
       if (cached == null || !mounted) return;
-
-      final age = DateTime.now().difference(cached.cachedAt);
-      if (age > _maxOurCacheAge) {
-        if (kDebugMode) debugPrint('OurCache: expired');
-        return;
-      }
+      if (DateTime.now().difference(cached.cachedAt) > _maxOurCacheAge) return;
       if (cached.address.isEmpty) return;
 
       setState(() {
@@ -178,7 +170,7 @@ class _CameraScreenState extends State<CameraScreen>
         _isFromCache = true;
       });
 
-      // Refresh geocode dari cache jika akurasi cukup
+      // Langsung geocode dari cache
       if (cached.accuracy <= _geocodeAccuracyThreshold) {
         _maybeResolveAddress(Position(
           latitude: cached.latitude,
@@ -190,13 +182,11 @@ class _CameraScreenState extends State<CameraScreen>
           speed: 0, speedAccuracy: 0,
         ));
       }
-      if (kDebugMode) debugPrint('OurCache: loaded "${cached.address}"');
     } catch (e) {
       debugPrint('OurCache error: $e');
     }
   }
 
-  // ── LAYER 2a: OS Last Known ───────────────────────────────────────────────
   Future<void> _loadOsLastKnown() async {
     try {
       final last = await Geolocator.getLastKnownPosition();
@@ -208,7 +198,6 @@ class _CameraScreenState extends State<CameraScreen>
       if (age > const Duration(minutes: 1)) return;
 
       setState(() {
-        // Hanya timpa jika belum punya data live GPS
         if (_displayLat != null && !_isFromCache) return;
         _displayLat = last.latitude;
         _displayLon = last.longitude;
@@ -219,7 +208,6 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
 
-  // ── Permission & Camera ───────────────────────────────────────────────────
   Future<void> _checkGalleryPermission() async {
     if (Platform.isAndroid) {
       final v = await _androidSdkVersion();
@@ -279,7 +267,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ── Outlier filter ────────────────────────────────────────────────────────
   bool _isValidPosition(Position pos) {
     if (pos.accuracy > _maxAcceptableAccuracy) return false;
     if (_lastAcceptedRaw != null) {
@@ -294,7 +281,7 @@ class _CameraScreenState extends State<CameraScreen>
     return true;
   }
 
-  // ── CORE: onPosition (geocode tanpa tunggu lock) ──────────────────────────
+  // PERBAIKAN 1: _onPosition selalu mengisi display (lock, bestFix, atau raw)
   void _onPosition(Position pos) {
     if (!mounted) return;
     if (!_isValidPosition(pos)) return;
@@ -311,21 +298,24 @@ class _CameraScreenState extends State<CameraScreen>
       _gpsStatus = isLocked ? '🟢 Terkunci' : '📡 Memperbarui lokasi...';
     });
 
-    // Update tampilan koordinat
+    // 🔥 SELALU ISI DISPLAY (jangan tunggu lock)
+    final bestFix = _gpsLock.bestFix;
     if (isLocked && lockData != null) {
       _displayLat = lockData.smoothedLatitude;
       _displayLon = lockData.smoothedLongitude;
       _displayAcc = lockData.accuracy;
+    } else if (bestFix != null) {
+      _displayLat = bestFix.latitude;
+      _displayLon = bestFix.longitude;
+      _displayAcc = bestFix.accuracy;
     } else {
-      final best = _gpsLock.bestFix;
-      if (best != null && best.accuracy <= _maxAcceptableAccuracy) {
-        _displayLat = best.latitude;
-        _displayLon = best.longitude;
-        _displayAcc = best.accuracy;
-      }
+      // Fallback ke raw stream
+      _displayLat = pos.latitude;
+      _displayLon = pos.longitude;
+      _displayAcc = pos.accuracy;
     }
 
-    // 🔥 GEOCODE TANPA TUNGGU LOCK (mirip Google Maps)
+    // Geocode tanpa menunggu lock (pakai bestFix atau pos)
     Position? geocodePos;
     if (isLocked && lockData != null) {
       geocodePos = _makePosition(
@@ -334,12 +324,12 @@ class _CameraScreenState extends State<CameraScreen>
         lon: lockData.smoothedLongitude,
         acc: lockData.accuracy,
       );
-    } else {
-      final bestFix = _gpsLock.bestFix;
-      if (bestFix != null && bestFix.accuracy <= _geocodeAccuracyThreshold) {
-        geocodePos = bestFix;
-      }
+    } else if (bestFix != null && bestFix.accuracy <= _geocodeAccuracyThreshold) {
+      geocodePos = bestFix;
+    } else if (pos.accuracy <= _geocodeAccuracyThreshold) {
+      geocodePos = pos;
     }
+
     if (geocodePos != null) {
       _maybeResolveAddress(geocodePos);
     }
@@ -355,7 +345,6 @@ class _CameraScreenState extends State<CameraScreen>
         : pos;
     _maybeLoadWeather(sourcePos);
 
-    // Saat lock terjadi, paksa refresh geocode dengan posisi centroid
     if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
       _addrResolver.forceRefresh();
@@ -379,9 +368,9 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  // ── Geocode dengan proteksi alamat ────────────────────────────────────────
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
+    // PERBAIKAN 4: longgarkan threshold (30m)
     if (pos.accuracy > _geocodeAccuracyThreshold) return;
 
     final accImproved = _lastGeocodedAcc != null &&
@@ -397,13 +386,9 @@ class _CameraScreenState extends State<CameraScreen>
         if (addr.isNotEmpty) {
           final shouldUpdate = _lastGeocodedAcc == null || pos.accuracy <= _lastGeocodedAcc!;
           if (shouldUpdate) {
-            if (kDebugMode) {
-              debugPrint('ADDR_UPDATE: acc=${pos.accuracy.toStringAsFixed(1)}m -> "$addr"');
-            }
             _address = addr;
             _lastGeocodedAcc = pos.accuracy;
             _isFromCache = false;
-            // Simpan cache hanya jika akurasi ≤ threshold
             if (_displayLat != null && _displayLon != null && _displayAcc != null &&
                 _displayAcc! <= _cacheAccuracyThreshold) {
               LastKnownLocationCache.save(
@@ -429,7 +414,6 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
-  // ── Weather ────────────────────────────────────────────────────────────────
   DateTime? _lastWeatherFetch;
   void _maybeLoadWeather(Position pos) {
     final now = DateTime.now();
@@ -489,12 +473,12 @@ class _CameraScreenState extends State<CameraScreen>
     await _loadSettings();
   }
 
-  // ── CAPTURE PHOTO ─────────────────────────────────────────────────────────
+  // PERBAIKAN 6: _takePhoto tidak membatalkan jika koordinat sudah ada
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
 
     final double acc = _displayAcc ?? 999.0;
-    if (_displayLat == null) {
+    if (_displayLat == null || _displayLon == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('⏳ GPS belum siap, tunggu sebentar...'),
@@ -504,21 +488,16 @@ class _CameraScreenState extends State<CameraScreen>
       }
       return;
     }
-    if (acc > _maxAcceptableAccuracy) {
+
+    // Warning jika akurasi >30, tapi tetap izinkan foto
+    if (acc > 30.0) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('⚠️ GPS ±${acc.toStringAsFixed(0)}m. Tunggu lebih akurat (≤ $_maxAcceptableAccuracy m).'),
+          content: Text('⚠️ GPS ±${acc.toStringAsFixed(0)}m, hasil mungkin kurang akurat.'),
           backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
+          duration: const Duration(seconds: 2),
         ));
       }
-      return;
-    }
-    if (acc > 15.0 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('📍 GPS ±${acc.toStringAsFixed(0)}m, foto tetap diambil.'),
-        duration: const Duration(seconds: 1),
-      ));
     }
 
     HapticFeedback.mediumImpact();
@@ -700,9 +679,7 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    final canCapture = !_isCapturing &&
-        _displayLat != null &&
-        (_displayAcc ?? 999) <= _maxAcceptableAccuracy;
+    final canCapture = !_isCapturing && _displayLat != null && _displayLon != null;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -729,7 +706,6 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
-          // GPS Status chip
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -743,7 +719,6 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
-          // Geocoding progress indicator
           if (_addrLoading)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
@@ -771,7 +746,6 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-          // Alamat preview bar
           if (_address.isNotEmpty && _showAddress)
             Positioned(
               bottom: 110,
@@ -784,13 +758,11 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-          // Bottom controls
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(
               height: 110,
-              padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).padding.bottom + 8),
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 8),
               color: const Color(0xCC000000),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -812,9 +784,7 @@ class _CameraScreenState extends State<CameraScreen>
                       height: _isCapturing ? 64 : 72,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: canCapture
-                            ? const Color(0x33FFFFFF)
-                            : Colors.grey.withOpacity(0.2),
+                        color: canCapture ? const Color(0x33FFFFFF) : Colors.grey.withOpacity(0.2),
                         border: Border.all(
                           color: canCapture ? Colors.white : Colors.grey,
                           width: 4,
@@ -823,15 +793,13 @@ class _CameraScreenState extends State<CameraScreen>
                       child: _isCapturing
                           ? const Padding(
                               padding: EdgeInsets.all(18),
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 3),
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
                             )
                           : null,
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.layers_outlined,
-                        color: Colors.white54, size: 28),
+                    icon: const Icon(Icons.layers_outlined, color: Colors.white54, size: 28),
                     onPressed: _showLayoutPicker,
                   ),
                 ],
@@ -866,12 +834,7 @@ class _AddressPreviewBar extends StatelessWidget {
   final String address;
   final bool isFromCache;
   final bool isLoading;
-
-  const _AddressPreviewBar({
-    required this.address,
-    required this.isFromCache,
-    required this.isLoading,
-  });
+  const _AddressPreviewBar({required this.address, required this.isFromCache, required this.isLoading});
 
   @override
   Widget build(BuildContext context) {
@@ -882,9 +845,7 @@ class _AddressPreviewBar extends StatelessWidget {
         color: const Color(0xCC000000),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isFromCache
-              ? const Color(0x40FF9500)
-              : const Color(0x401E90FF),
+          color: isFromCache ? const Color(0x40FF9500) : const Color(0x401E90FF),
           width: 0.5,
         ),
       ),
@@ -909,12 +870,7 @@ class _AddressPreviewBar extends StatelessWidget {
           ),
           if (isLoading) ...[
             const SizedBox(width: 6),
-            const SizedBox(
-              width: 8, height: 8,
-              child: CircularProgressIndicator(
-                  strokeWidth: 1.2,
-                  valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500))),
-            ),
+            const SizedBox(width: 8, height: 8, child: CircularProgressIndicator(strokeWidth: 1.2, valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500)))),
           ],
         ],
       ),
@@ -930,15 +886,7 @@ class _GpsChip extends StatelessWidget {
   final bool isFallback;
   final bool isFromCache;
   final Color color;
-
-  const _GpsChip({
-    required this.status,
-    required this.acc,
-    required this.confidence,
-    required this.isFallback,
-    required this.isFromCache,
-    required this.color,
-  });
+  const _GpsChip({required this.status, required this.acc, required this.confidence, required this.isFallback, required this.isFromCache, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -958,13 +906,11 @@ class _GpsChip extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(status,
-                  style: TextStyle(color: color, fontSize: 10, height: 1.2)),
+              Text(status, style: TextStyle(color: color, fontSize: 10, height: 1.2)),
               if (acc != null)
                 Text(
                   '± ${acc!.toStringAsFixed(0)} m${isFallback ? ' (fallback)' : ''}',
-                  style: TextStyle(
-                      color: color.withOpacity(0.8), fontSize: 9, height: 1.2),
+                  style: TextStyle(color: color.withOpacity(0.8), fontSize: 9, height: 1.2),
                 ),
             ],
           ),
@@ -978,7 +924,6 @@ class _GpsChip extends StatelessWidget {
 class _LayoutPickerSheet extends StatelessWidget {
   final WatermarkLayout current;
   final ValueChanged<WatermarkLayout> onSelect;
-
   const _LayoutPickerSheet({required this.current, required this.onSelect});
 
   @override
@@ -987,14 +932,9 @@ class _LayoutPickerSheet extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 12),
-        Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(
-                color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 16),
-        const Text('Pilih Gaya Watermark',
-            style: TextStyle(
-                color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+        const Text('Pilih Gaya Watermark', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         ...WatermarkLayout.values.map((l) {
           final selected = l == current;
@@ -1002,25 +942,14 @@ class _LayoutPickerSheet extends StatelessWidget {
             leading: Container(
               width: 36, height: 36,
               decoration: BoxDecoration(
-                color: selected
-                    ? const Color(0xFF1E90FF).withOpacity(0.2)
-                    : Colors.white10,
+                color: selected ? const Color(0xFF1E90FF).withOpacity(0.2) : Colors.white10,
                 borderRadius: BorderRadius.circular(8),
-                border: selected
-                    ? Border.all(color: const Color(0xFF1E90FF), width: 1.5)
-                    : null,
+                border: selected ? Border.all(color: const Color(0xFF1E90FF), width: 1.5) : null,
               ),
-              child: Icon(_iconFor(l),
-                  color: selected ? const Color(0xFF1E90FF) : Colors.white38,
-                  size: 18),
+              child: Icon(_iconFor(l), color: selected ? const Color(0xFF1E90FF) : Colors.white38, size: 18),
             ),
-            title: Text(l.displayName,
-                style: TextStyle(
-                    color: selected ? Colors.white : Colors.white70,
-                    fontSize: 14,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400)),
-            subtitle: Text(l.description,
-                style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            title: Text(l.displayName, style: TextStyle(color: selected ? Colors.white : Colors.white70, fontSize: 14, fontWeight: selected ? FontWeight.w600 : FontWeight.w400)),
+            subtitle: Text(l.description, style: const TextStyle(color: Colors.white38, fontSize: 11)),
             onTap: () => onSelect(l),
           );
         }),

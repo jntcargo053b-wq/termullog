@@ -1,90 +1,69 @@
-// lib/services/last_known_location_cache.dart
 import 'dart:convert';
-import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:intl/intl.dart';
-
-class CachedLocation {
-  final double latitude;
-  final double longitude;
-  final double accuracy;
-  final String address;
-  final String weather;
-  final DateTime cachedAt;
-
-  const CachedLocation({
-    required this.latitude,
-    required this.longitude,
-    required this.accuracy,
-    required this.address,
-    required this.weather,
-    required this.cachedAt,
-  });
-
-  String get ageLabel {
-    final diff = DateTime.now().difference(cachedAt);
-    if (diff.inSeconds < 60) return '${diff.inSeconds} detik lalu';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} menit lalu';
-    if (diff.inHours < 24) return '${diff.inHours} jam lalu';
-    return DateFormat('dd/MM HH:mm').format(cachedAt);
-  }
-
-  Map<String, dynamic> toJson() => {
-        'latitude': latitude,
-        'longitude': longitude,
-        'accuracy': accuracy,
-        'address': address,
-        'weather': weather,
-        'cachedAt': cachedAt.toIso8601String(),
-      };
-
-  factory CachedLocation.fromJson(Map<String, dynamic> json) {
-    return CachedLocation(
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-      accuracy: (json['accuracy'] as num).toDouble(),
-      address: json['address'] as String,
-      weather: json['weather'] as String? ?? '',
-      cachedAt: DateTime.parse(json['cachedAt'] as String),
-    );
-  }
-}
+import 'package:geolocator/geolocator.dart';
 
 class LastKnownLocationCache {
-  static const _key = 'last_known_location';
+  static const String _key = 'last_location_cache';
+  static const Duration _maxAge = Duration(hours: 12);
+  // Filter akurasi saat load: abaikan cache dengan akurasi > 50 meter
+  static const double _maxLoadAccuracy = 50.0;
 
   static Future<void> save({
     required Position position,
     required String address,
-    String weather = '',
+    required String weather,
   }) async {
+    if (address.isEmpty) return;
+    // Jangan simpan jika akurasi buruk (>50m)
+    if (position.accuracy > _maxLoadAccuracy) return;
+
     final prefs = await SharedPreferences.getInstance();
-    final entry = CachedLocation(
-      latitude: position.latitude,
-      longitude: position.longitude,
-      accuracy: position.accuracy,
-      address: address,
-      weather: weather,
-      cachedAt: DateTime.now(),
-    );
-    await prefs.setString(_key, jsonEncode(entry.toJson()));
+    final data = {
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+      'accuracy': position.accuracy,
+      'address': address,
+      'weather': weather,
+      'cachedAt': DateTime.now().toIso8601String(),
+    };
+    await prefs.setString(_key, jsonEncode(data));
   }
 
-  static Future<CachedLocation?> load() async {
+  static Future<({
+    double latitude,
+    double longitude,
+    double accuracy,
+    String address,
+    String weather,
+    DateTime cachedAt
+  })?> load() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_key);
     if (raw == null) return null;
 
     try {
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      return CachedLocation.fromJson(json);
-    } catch (_) {
+      final Map<String, dynamic> map = jsonDecode(raw);
+      final cachedAt = DateTime.parse(map['cachedAt'] as String);
+      final age = DateTime.now().difference(cachedAt);
+      if (age > _maxAge) return null;
+
+      final accuracy = (map['accuracy'] as num).toDouble();
+      // Filter akurasi – jangan load cache dengan akurasi jelek
+      if (accuracy > _maxLoadAccuracy) return null;
+
+      final address = map['address'] as String;
+      if (address.isEmpty) return null;
+
+      return (
+        latitude: (map['latitude'] as num).toDouble(),
+        longitude: (map['longitude'] as num).toDouble(),
+        accuracy: accuracy,
+        address: address,
+        weather: map['weather'] as String? ?? '',
+        cachedAt: cachedAt,
+      );
+    } catch (e) {
       return null;
     }
-  }
-
-  static Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
   }
 }

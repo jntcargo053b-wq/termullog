@@ -1,6 +1,3 @@
-// lib/services/address_resolver.dart
-// v5: fix alamat meleset — minAccuracy diturunkan ke 8m, cooldown dikurangi ke 4s,
-//     accImprovementThreshold dikurangi ke 5m agar geocoding ulang lebih responsif.
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -11,21 +8,16 @@ class AddressResolver {
   double? _lastLat, _lastLon;
   double? _lastResolvedAcc;
   bool _pending = false;
-  Timer? _debounce;
+  Timer? _debounceTimer;
   DateTime? _lastRequestTime;
 
-  // Fix #3: naikkan threshold minimum accuracy dari 15m ke 8m.
-  // Akurasi GPS 1σ artinya error sebenarnya bisa 2–3× lebih besar.
-  // GPS dengan laporan 14m bisa berarti posisi meleset 40–80m aktual.
-  // Dengan 8m, geocoding hanya jalan saat sinyal sudah cukup konvergen.
-  static const double _minDist = 10.0;
-  static const double _accImprovementThreshold = 5.0;  // dari 10m → 5m
-  static const Duration _cooldown = Duration(seconds: 4); // dari 8s → 4s
-  static const double _minAccuracy = 15.0;               // dari 15m → 8m
+  static const double _minDist = 15.0;          // tetap 15m, untuk menghindari spam
+  static const double _accImprovementThreshold = 5.0;
+  static const Duration _cooldown = Duration(seconds: 4);
+  static const double _minAccuracy = 50.0;     // 🔥 dinaikkan dari 15 ke 50
 
-  // In-memory cache dengan presisi 5 desimal (≈1.1m), konsisten dengan location_weather_service
   static final Map<String, String> _cache = {};
-  static const int _maxCacheSize = 200;
+  static const int _maxCacheSize = 80;
 
   static String _cacheKey(double lat, double lon) =>
       '${lat.toStringAsFixed(5)},${lon.toStringAsFixed(5)}';
@@ -41,12 +33,13 @@ class AddressResolver {
   static String? _getCache(double lat, double lon) =>
       _cache[_cacheKey(lat, lon)];
 
-  /// Paksa reset cache lokal dan history (dipanggil saat unlock atau perpindahan besar)
   void forceRefresh() {
     _lastLat = null;
     _lastLon = null;
     _lastResolvedAcc = null;
     _lastRequestTime = null;
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
     if (kDebugMode) debugPrint('AddressResolver: forceRefresh');
   }
 
@@ -74,35 +67,41 @@ class AddressResolver {
       }
     }
 
-    _debounce?.cancel();
-    if (_pending) return '';
-    _pending = true;
-    _lastRequestTime = DateTime.now();
-
-    _lastLat = pos.latitude;
-    _lastLon = pos.longitude;
-    _lastResolvedAcc = pos.accuracy;
-
-    try {
-      final result = await LocationWeatherService.fetchFromPosition(pos);
-      if (result.address.isNotEmpty) {
-        _putCache(pos.latitude, pos.longitude, result.address);
+    _debounceTimer?.cancel();
+    final completer = Completer<String>();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      if (_pending) {
+        completer.complete('');
+        return;
       }
-      return result.address;
-    } catch (e) {
-      debugPrint('AddressResolver: $e');
-      return '';
-    } finally {
-      _pending = false;
-    }
+      _pending = true;
+      _lastRequestTime = DateTime.now();
+
+      try {
+        final result = await LocationWeatherService.fetchFromPosition(pos);
+        if (result.address.isNotEmpty) {
+          _lastLat = pos.latitude;
+          _lastLon = pos.longitude;
+          _lastResolvedAcc = pos.accuracy;
+          _putCache(pos.latitude, pos.longitude, result.address);
+        }
+        completer.complete(result.address);
+      } catch (e) {
+        debugPrint('AddressResolver: $e');
+        completer.complete('');
+      } finally {
+        _pending = false;
+        _debounceTimer = null;
+      }
+    });
+
+    return completer.future;
   }
 
   bool _needsUpdate(Position pos) {
     if (_lastLat == null) return true;
-
     final distance = _haversine(_lastLat!, _lastLon!, pos.latitude, pos.longitude);
     if (distance >= _minDist) return true;
-
     if (_lastResolvedAcc != null &&
         (_lastResolvedAcc! - pos.accuracy) >= _accImprovementThreshold) {
       if (kDebugMode) debugPrint('AddressResolver: force refresh acc improvement');
@@ -126,7 +125,8 @@ class AddressResolver {
     _lastLon = null;
     _lastResolvedAcc = null;
     _lastRequestTime = null;
-    _debounce?.cancel();
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
     _pending = false;
   }
 

@@ -1,7 +1,7 @@
 // lib/screens/camera_screen.dart
 // FINAL – Arsitektur seperti Google Maps
 // - Boot paralel (cache, GPS, kamera, permission)
-// - Dual fused location (getLastKnownPosition + getCurrentPosition balanced)
+// - Dual fused location (getLastKnownPosition + getCurrentPosition dengan LocationAccuracy.medium)
 // - Geocode tanpa menunggu GPS lock (threshold 20m)
 // - Cache filter akurasi 20m
 // - Proteksi alamat: tidak ditimpa oleh geocode dengan akurasi lebih buruk
@@ -106,7 +106,7 @@ class _CameraScreenState extends State<CameraScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadSettings();
-    _startupAddressWarmup(); // 🔥 langsung coba geocode dari OS last known
+    _startupAddressWarmup(); // langsung coba geocode dari OS last known
     WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
   }
 
@@ -140,7 +140,7 @@ class _CameraScreenState extends State<CameraScreen>
     // Layer 2b: Fused Location (WiFi + cell + GPS cache, <500ms)
     try {
       final fused = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.balanced,
+        desiredAccuracy: LocationAccuracy.medium, // PERBAIKAN: balanced -> medium
         timeLimit: const Duration(seconds: 3),
       ).timeout(const Duration(seconds: 3));
       if (mounted && fused.accuracy <= _maxAcceptableAccuracy) {

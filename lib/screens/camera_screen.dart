@@ -8,7 +8,7 @@
 //   Badge "📍 Lokasi Tersimpan" ditampilkan agar user tahu ini dari cache lama.
 //
 // LAYER 2 — Cepat (1–3 detik): Baca Geolocator.getLastKnownPosition() (OS cache).
-//   Kalau lebih baru dan akurasi ≤30m, update koordinat & geocode ulang bila perlu.
+//   Kalau lebih baru dan akurasi ≤10m (v2: dari 30m), update koordinat & geocode ulang bila perlu.
 //
 // LAYER 3 — Akurat (5–20 detik): GPS stream aktif, Kalman + centroid lock.
 //   Saat lock terjadi, alamat di-refresh paksa dari koordinat yang sudah stabil.
@@ -102,14 +102,18 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Outlier filter ────────────────────────────────────────────────────────
   Position? _lastAcceptedRaw;
-  // Naikkan dari 15m → 25m agar lebih banyak sample masuk ke Kalman/centroid.
-  // Filtering akurat dilakukan oleh GpsLockManager, bukan di sini.
-  static const double _maxAcceptableAccuracy = 25.0;
+  // v2: 25m → 20m. Filtering kasar sebelum masuk GpsLockManager.
+  // Sample 20–25m jarang memberikan kontribusi positif pada centroid
+  // karena bobotnya (1/acc²) sudah sangat kecil dibanding sample ≤10m.
+  static const double _maxAcceptableAccuracy = 20.0;
   static const double _maxJumpDistance = 200.0;
 
   // ── LastKnown OS filter ───────────────────────────────────────────────────
-  static const double _maxOsLastKnownAccuracy = 30.0;
-  static const Duration _maxOsLastKnownAge = Duration(minutes: 5);
+  // v2: 30m → 10m, 5 menit → 1 menit.
+  // OS last known 30m berumur 5 menit bisa menempatkan posisi 50–100m meleset.
+  // Dengan 10m + 1 menit, hanya dipakai jika GPS OS benar-benar fresh & akurat.
+  static const double _maxOsLastKnownAccuracy = 10.0;
+  static const Duration _maxOsLastKnownAge = Duration(minutes: 1);
 
   // ── Our cache filter (lebih longgar, ini sudah pernah diverifikasi) ────────
   static const Duration _maxOurCacheAge = Duration(hours: 12);
@@ -124,7 +128,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _boot() async {
     // LAYER 1: Langsung tampilkan alamat dari cache sesi sebelumnya
-    // Ini yang membuat alamat muncul instan, bahkan sebelum GPS aktif.
     await _loadOurCache();
 
     // Proses lain jalan paralel
@@ -132,8 +135,8 @@ class _CameraScreenState extends State<CameraScreen>
     await _initCamera();
     await _requestLocationPermission();
 
-    // LAYER 2: OS last known position (biasanya sudah ada dalam detik)
-    _loadOsLastKnown(); // sengaja tidak di-await agar tidak block kamera
+    // LAYER 2: OS last known position
+    _loadOsLastKnown();
 
     // LAYER 3: GPS stream aktif
     await _initLocation();
@@ -190,7 +193,6 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
 
-      // Update koordinat jika lebih akurat dari cache kita
       final currentAcc = _displayAcc ?? 999.0;
       final improvedCoord = last.accuracy < (currentAcc - 5.0);
 
@@ -204,8 +206,6 @@ class _CameraScreenState extends State<CameraScreen>
         });
       }
 
-      // Geocode ulang hanya jika koordinat bergeser cukup jauh dari cache kita
-      // atau kalau kita belum punya alamat sama sekali
       final shouldRegeocode = _address.isEmpty ||
           (_displayLat != null && _haversineDistance2(
             _displayLat!, _displayLon!, last.latitude, last.longitude) > 30.0);
@@ -267,16 +267,14 @@ class _CameraScreenState extends State<CameraScreen>
     if (_locationActive) return;
     _locationActive = true;
     try {
-      // Warm-up: satu fix langsung (lebih cepat dapat koordinat pertama)
       Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.bestForNavigation,
       ).then((pos) { if (mounted) _onPosition(pos); }).catchError((_) {});
 
-      // Stream produksi
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 2,  // 2m (lebih sensitif dari sebelumnya 3m)
+          distanceFilter: 2,
         ),
       ).listen(_onPosition, onError: (_) {});
     } catch (e) {
@@ -310,7 +308,7 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() {
       _gpsConfidence = lockData?.confidence ?? 0;
       _isFallback = lockData?.isFallbackLock ?? false;
-      _isFromCache = false; // koordinat sekarang dari GPS live
+      _isFromCache = false;
       _gpsStatus = isLocked
           ? '🟢 Terkunci'
           : pos.accuracy <= 5
@@ -320,21 +318,20 @@ class _CameraScreenState extends State<CameraScreen>
                   : '🟠 Menstabilkan';
     });
 
+    // PERBAIKAN BUG 2 & 3: Gunakan smoothed lockData jika lock,
+    // selain itu gunakan bestFix (sudah melalui proses acquiring)
     if (isLocked && lockData != null) {
       _displayLat = lockData.smoothedLatitude;
       _displayLon = lockData.smoothedLongitude;
       _displayAcc = lockData.accuracy;
     } else {
       final best = _gpsLock.bestFix;
-      if (best != null && best.accuracy <= 20.0) {
+      if (best != null && best.accuracy <= _maxAcceptableAccuracy) {
         _displayLat = best.latitude;
         _displayLon = best.longitude;
         _displayAcc = best.accuracy;
-      } else if (pos.accuracy <= 20.0) {
-        _displayLat = pos.latitude;
-        _displayLon = pos.longitude;
-        _displayAcc = pos.accuracy;
       }
+      // Tidak ada fallback ke raw stream (pos.latitude) – Bug 2 solved
     }
 
     final sourcePos = (isLocked && lockData != null)
@@ -346,16 +343,10 @@ class _CameraScreenState extends State<CameraScreen>
           )
         : pos;
 
-    // LAYER 3 & 4: Saat GPS lock pertama kali, paksa geocoding ulang dengan
-    // koordinat yang sudah stabil (fix utama alamat meleset).
+    // PERBAIKAN BUG 3: Hanya refresh geocode, jangan simpan cache di sini
     if (justLocked && lockData != null) {
       _lastGeocodedAcc = null;
       _addrResolver.forceRefresh();
-      LastKnownLocationCache.save(
-        position: lockData.rawPosition,
-        address: _address,
-        weather: _weather,
-      );
     }
 
     _maybeResolveAddress(sourcePos);
@@ -380,7 +371,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   int _geoReqId = 0;
   void _maybeResolveAddress(Position pos) {
-    // Re-geocode jika akurasi membaik ≥5m dari geocoding terakhir
     final accImproved = _lastGeocodedAcc != null &&
         (_lastGeocodedAcc! - pos.accuracy) >= 5.0;
     if (_addrLoading && !accImproved) return;
@@ -395,10 +385,18 @@ class _CameraScreenState extends State<CameraScreen>
           _address = addr;
           _lastGeocodedAcc = pos.accuracy;
           _isFromCache = false;
-          // Simpan ke cache agar sesi berikutnya langsung tampil
-          if (_displayLat != null) {
+          // PERBAIKAN BUG 3: Simpan cache hanya setelah geocode berhasil
+          if (_displayLat != null && _displayLon != null && _displayAcc != null && _displayAcc! <= 50.0) {
             LastKnownLocationCache.save(
-              position: pos,
+              position: Position(
+                latitude: _displayLat!,
+                longitude: _displayLon!,
+                accuracy: _displayAcc!,
+                timestamp: DateTime.now(),
+                altitude: 0, altitudeAccuracy: 0,
+                heading: 0, headingAccuracy: 0,
+                speed: 0, speedAccuracy: 0,
+              ),
               address: addr,
               weather: _weather,
             );
@@ -420,12 +418,14 @@ class _CameraScreenState extends State<CameraScreen>
     LocationWeatherService.fetchFromPosition(pos).then((result) {
       if (mounted && result.weather.isNotEmpty) {
         setState(() => _weather = result.weather);
-        // Update cache weather juga
-        if (_displayLat != null && _address.isNotEmpty) {
+        // PERBAIKAN BUG 4: Hanya simpan cache jika accuracy valid (<=50m)
+        if (_displayLat != null && _displayLon != null && _displayAcc != null && _displayAcc! <= 50.0) {
           LastKnownLocationCache.save(
             position: Position(
-              latitude: _displayLat!, longitude: _displayLon!,
-              accuracy: _displayAcc ?? 999, timestamp: DateTime.now(),
+              latitude: _displayLat!,
+              longitude: _displayLon!,
+              accuracy: _displayAcc!,
+              timestamp: DateTime.now(),
               altitude: 0, altitudeAccuracy: 0,
               heading: 0, headingAccuracy: 0,
               speed: 0, speedAccuracy: 0,
@@ -482,10 +482,11 @@ class _CameraScreenState extends State<CameraScreen>
       }
       return;
     }
-    if (acc > 25.0) {
+    // PERBAIKAN BUG 1: gunakan konstanta _maxAcceptableAccuracy
+    if (acc > _maxAcceptableAccuracy) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('⚠️ GPS masih ±${acc.toStringAsFixed(0)}m. Tunggu lebih akurat.'),
+          content: Text('⚠️ GPS masih ±${acc.toStringAsFixed(0)}m. Tunggu lebih akurat (≤ $_maxAcceptableAccuracy m).'),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 2),
         ));
@@ -509,7 +510,6 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
-      // Resize ke 1920px
       Uint8List finalBytes = rawBytes;
       final originalImg = img.decodeImage(rawBytes);
       if (originalImg != null) {
@@ -524,7 +524,6 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
 
-      // Fetch minimap jika aktif
       Uint8List? mapBytes;
       if (_showMiniMap && _displayLat != null && _displayLon != null) {
         mapBytes = await LocationWeatherService.fetchMapWithRetry(
@@ -661,7 +660,6 @@ class _CameraScreenState extends State<CameraScreen>
               const SizedBox(height: 16),
               const Text('Menginisialisasi kamera…',
                   style: TextStyle(color: Colors.white54)),
-              // Tampilkan alamat cache bahkan di loading screen
               if (_address.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Padding(
@@ -683,7 +681,7 @@ class _CameraScreenState extends State<CameraScreen>
 
     final canCapture = !_isCapturing &&
         _displayLat != null &&
-        (_displayAcc ?? 999) <= 25.0;
+        (_displayAcc ?? 999) <= _maxAcceptableAccuracy; // sync dengan konstanta
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -710,7 +708,7 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
-          // ── GPS Status chip (kiri atas) ──────────────────────────────────
+          // GPS Status chip
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -724,7 +722,7 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
-          // ── Geocoding progress indicator (kanan atas) ────────────────────
+          // Geocoding progress indicator
           if (_addrLoading)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
@@ -752,7 +750,7 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-          // ── Alamat preview bar (di atas bottom bar) ──────────────────────
+          // Alamat preview bar
           if (_address.isNotEmpty && _showAddress)
             Positioned(
               bottom: 110,
@@ -765,7 +763,7 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-          // ── Bottom controls ───────────────────────────────────────────────
+          // Bottom controls
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(

@@ -1,11 +1,10 @@
 // lib/screens/camera_screen.dart
-// FINAL – Konfigurasi seperti TimeMark (semua threshold 50m untuk startup cepat)
-// - Geocode langsung dijalankan untuk posisi ≤50m
-// - Cache dan OS last known juga dengan akurasi ≤50m
-// - Tombol shutter tidak menimpa watermark (jarak bottom 140)
-// - Font watermark lebih besar (14,13,12)
-// - Foto bisa diambil meskipun GPS belum siap (canCapture = !_isCapturing)
-
+// FINAL PRODUCTION – Timemark Classic Style
+// - Semua threshold 50m untuk startup cepat
+// - Shutter tidak pernah disabled
+// - Font lebih besar (14,13,12)
+// - Jarak bottom 140 agar watermark tidak tertutup shutter
+// - GPS menggunakan dual position (raw + delivery)
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -24,7 +23,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image/image.dart' as img;
 
 import '../core/constants.dart';
-import '../services/gps_lock_manager.dart';
+import '../services/gps_lock_manager_logistics.dart';
 import '../services/address_resolver.dart';
 import '../services/last_known_location_cache.dart';
 import '../services/location_weather_service.dart';
@@ -52,7 +51,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _torchOn = false;
 
   // ── GPS ──────────────────────────────────────────────────────────────────
-  final GpsLockManager _gpsLock = GpsLockManager();
+  final GpsLockManagerLogistics _gpsLock = GpsLockManagerLogistics();
   final AddressResolver _addrResolver = AddressResolver();
   StreamSubscription<Position>? _posSub;
   bool _locationActive = false;
@@ -289,21 +288,20 @@ class _CameraScreenState extends State<CameraScreen>
 
     setState(() {
       _gpsConfidence = lockData?.confidence ?? 0;
-      _isFallback = lockData?.isFallbackLock ?? false;
+      _isFallback = false;
       _isFromCache = false;
       _gpsStatus = isLocked ? '🟢 Terkunci' : '📡 Memperbarui lokasi...';
     });
 
-    // SELALU ISI DISPLAY (jangan tunggu lock)
-    final bestFix = _gpsLock.bestFix;
+    // Gunakan deliveryPosition (smoothed/cluster) untuk display & geocode
     if (isLocked && lockData != null) {
-      _displayLat = lockData.smoothedLatitude;
-      _displayLon = lockData.smoothedLongitude;
+      _displayLat = lockData.deliveryPosition.latitude;
+      _displayLon = lockData.deliveryPosition.longitude;
       _displayAcc = lockData.accuracy;
-    } else if (bestFix != null) {
-      _displayLat = bestFix.latitude;
-      _displayLon = bestFix.longitude;
-      _displayAcc = bestFix.accuracy;
+    } else if (_gpsLock.bestRaw != null) {
+      _displayLat = _gpsLock.bestRaw!.latitude;
+      _displayLon = _gpsLock.bestRaw!.longitude;
+      _displayAcc = _gpsLock.bestRaw!.accuracy;
     } else {
       _displayLat = pos.latitude;
       _displayLon = pos.longitude;
@@ -315,12 +313,12 @@ class _CameraScreenState extends State<CameraScreen>
     if (isLocked && lockData != null) {
       geocodePos = _makePosition(
         source: pos,
-        lat: lockData.smoothedLatitude,
-        lon: lockData.smoothedLongitude,
+        lat: lockData.deliveryPosition.latitude,
+        lon: lockData.deliveryPosition.longitude,
         acc: lockData.accuracy,
       );
-    } else if (bestFix != null && bestFix.accuracy <= _geocodeAccuracyThreshold) {
-      geocodePos = bestFix;
+    } else if (_gpsLock.bestRaw != null && _gpsLock.bestRaw!.accuracy <= _geocodeAccuracyThreshold) {
+      geocodePos = _gpsLock.bestRaw;
     } else if (pos.accuracy <= _geocodeAccuracyThreshold) {
       geocodePos = pos;
     }
@@ -332,8 +330,8 @@ class _CameraScreenState extends State<CameraScreen>
     final sourcePos = (isLocked && lockData != null)
         ? _makePosition(
             source: pos,
-            lat: lockData.smoothedLatitude,
-            lon: lockData.smoothedLongitude,
+            lat: lockData.deliveryPosition.latitude,
+            lon: lockData.deliveryPosition.longitude,
             acc: lockData.accuracy,
           )
         : pos;

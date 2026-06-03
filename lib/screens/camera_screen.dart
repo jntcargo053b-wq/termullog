@@ -1,10 +1,9 @@
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION – Timemark Classic Style
-// - Semua threshold 50m untuk startup cepat
-// - Shutter tidak pernah disabled
-// - Font lebih besar (14,13,12)
-// - Jarak bottom 140 agar watermark tidak tertutup shutter
-// - GPS menggunakan dual position (raw + delivery)
+// FINAL PRODUCTION – Tuning untuk POD/Logistik
+// - Threshold akurasi diperketat: 18-25m (bukan 50m)
+// - distanceFilter = 3, maxJumpDistance = 60m
+// - Capture gate opsional dengan peringatan jika GPS kurang stabil
+// - Menggunakan GpsLockManagerLogistics (dual position, confidence lock)
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -42,7 +41,7 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  // ── Camera ──────────────────────────────────────────────────────────────
+  // Camera
   CameraController? _controller;
   bool _isCameraReady = false;
   bool _isCapturing = false;
@@ -50,13 +49,13 @@ class _CameraScreenState extends State<CameraScreen>
   Completer<void>? _initCompleter;
   bool _torchOn = false;
 
-  // ── GPS ──────────────────────────────────────────────────────────────────
+  // GPS
   final GpsLockManagerLogistics _gpsLock = GpsLockManagerLogistics();
   final AddressResolver _addrResolver = AddressResolver();
   StreamSubscription<Position>? _posSub;
   bool _locationActive = false;
 
-  // ── Data display & watermark ─────────────────────────────────────────────
+  // Data display & watermark
   double? _displayLat;
   double? _displayLon;
   double? _displayAcc;
@@ -66,16 +65,16 @@ class _CameraScreenState extends State<CameraScreen>
   double? _lastGeocodedAcc;
   bool _isFromCache = false;
 
-  // ── GPS status chip ───────────────────────────────────────────────────────
+  // GPS status chip
   String _gpsStatus = '📍 Lokasi Tersimpan';
   double _gpsConfidence = 0.0;
   bool _isFallback = false;
 
-  // ── Clock ─────────────────────────────────────────────────────────────────
+  // Clock
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
 
-  // ── Settings ──────────────────────────────────────────────────────────────
+  // Settings
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -89,15 +88,14 @@ class _CameraScreenState extends State<CameraScreen>
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
 
-  // ── Threshold seperti TimeMark (longgar untuk startup) ────────────────────
-  static const double _maxAcceptableAccuracy = 50.0;    // filter sample GPS
-  static const double _geocodeAccuracyThreshold = 50.0; // trigger geocode
-  static const double _maxOsLastKnownAccuracy = 50.0;   // OS last known
-  static const double _cacheAccuracyThreshold = 50.0;   // simpan cache
+  // ── Threshold diperketat untuk POD ──────────────────────────────────────
+  static const double _maxAcceptableAccuracy = 20.0;    // filter sample GPS
+  static const double _geocodeAccuracyThreshold = 18.0; // trigger geocode
+  static const double _maxOsLastKnownAccuracy = 25.0;   // OS last known
+  static const double _cacheAccuracyThreshold = 20.0;   // simpan cache
   static const Duration _maxOurCacheAge = Duration(hours: 12);
-  static const double _maxJumpDistance = 200.0;
+  static const double _maxJumpDistance = 60.0;           // lebih ketat
 
-  // ── Outlier filter ────────────────────────────────────────────────────────
   Position? _lastAcceptedRaw;
 
   @override
@@ -130,7 +128,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _bootGps() async {
     await _requestLocationPermission();
-
     _loadOsLastKnown();
 
     // Fused location dengan medium accuracy (cepat)
@@ -166,7 +163,6 @@ class _CameraScreenState extends State<CameraScreen>
         _isFromCache = true;
       });
 
-      // Langsung geocode dari cache
       if (cached.accuracy <= _geocodeAccuracyThreshold) {
         _maybeResolveAddress(Position(
           latitude: cached.latitude,
@@ -216,7 +212,7 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final info = await DeviceInfoPlugin().androidInfo;
       return info.version.sdkInt;
-    } catch (_) { return 0; }
+    } catch (_) => 0;
   }
 
   Future<void> _initCamera() async {
@@ -252,10 +248,11 @@ class _CameraScreenState extends State<CameraScreen>
     if (_locationActive) return;
     _locationActive = true;
     try {
+      // distanceFilter dinaikkan menjadi 3 untuk mengurangi noise
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 2,
+          distanceFilter: 3,
         ),
       ).listen(_onPosition, onError: (_) {});
     } catch (e) {
@@ -308,7 +305,7 @@ class _CameraScreenState extends State<CameraScreen>
       _displayAcc = pos.accuracy;
     }
 
-    // Geocode tanpa menunggu lock (threshold 50m)
+    // Geocode dengan threshold lebih ketat
     Position? geocodePos;
     if (isLocked && lockData != null) {
       geocodePos = _makePosition(
@@ -464,10 +461,10 @@ class _CameraScreenState extends State<CameraScreen>
     await _loadSettings();
   }
 
+  // ── CAPTURE dengan peringatan jika GPS kurang stabil (opsional) ─────────
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
 
-    // 🔥 Foto tetap bisa diambil meskipun GPS belum siap
     if (_displayLat == null || _displayLon == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -480,14 +477,29 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     final double acc = _displayAcc ?? 999.0;
-    if (acc > 50.0) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('⚠️ GPS ±${acc.toStringAsFixed(0)}m, hasil mungkin kurang akurat.'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 2),
-        ));
-      }
+    final bool isGpsReady = _gpsLock.isLocked && acc <= 20.0 && _gpsConfidence >= 0.85;
+
+    if (!isGpsReady) {
+      final shouldContinue = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('GPS Belum Stabil'),
+          content: Text(
+            'Akurasi GPS: ±${acc.toStringAsFixed(0)}m\n'
+            'Confidence: ${(_gpsConfidence * 100).toInt()}%\n\n'
+            'Lanjutkan mengambil foto? Hasil mungkin kurang akurat.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.orange),
+              child: const Text('Tetap Ambil'),
+            ),
+          ],
+        ),
+      );
+      if (shouldContinue != true) return;
     }
 
     HapticFeedback.mediumImpact();
@@ -623,8 +635,7 @@ class _CameraScreenState extends State<CameraScreen>
     final dLat = (lat2 - lat1) * pi / 180.0;
     final dLon = (lon2 - lon1) * pi / 180.0;
     final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) *
-            sin(dLon / 2) * sin(dLon / 2);
+        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) * sin(dLon / 2) * sin(dLon / 2);
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
@@ -648,19 +659,12 @@ class _CameraScreenState extends State<CameraScreen>
             children: [
               const CircularProgressIndicator(color: Color(0xFF1E90FF)),
               const SizedBox(height: 16),
-              const Text('Menginisialisasi kamera…',
-                  style: TextStyle(color: Colors.white54)),
+              const Text('Menginisialisasi kamera…', style: TextStyle(color: Colors.white54)),
               if (_address.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    _address,
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(_address, style: const TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center, maxLines: 2),
                 ),
               ],
             ],
@@ -669,9 +673,7 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    // 🔥 Foto bisa diambil kapan saja (tombol selalu aktif)
     final canCapture = !_isCapturing;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -696,7 +698,6 @@ class _CameraScreenState extends State<CameraScreen>
               layout: _layout,
             ),
           ),
-
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -709,47 +710,30 @@ class _CameraScreenState extends State<CameraScreen>
               color: _accColor(_displayAcc),
             ),
           ),
-
           if (_addrLoading)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               right: 12,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                ),
+                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 10, height: 10,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500))),
-                    ),
+                    SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500)))),
                     SizedBox(width: 6),
-                    Text('Alamat…',
-                        style: TextStyle(color: Color(0xFFFF9500), fontSize: 10)),
+                    Text('Alamat…', style: TextStyle(color: Color(0xFFFF9500), fontSize: 10)),
                   ],
                 ),
               ),
             ),
-
-          // 🔥 AddressPreviewBar digeser ke atas (bottom: 140 agar tidak tertimpa shutter)
           if (_address.isNotEmpty && _showAddress)
             Positioned(
               bottom: 140,
               left: 0,
               right: 0,
-              child: _AddressPreviewBar(
-                address: _address,
-                isFromCache: _isFromCache,
-                isLoading: _addrLoading,
-              ),
+              child: _AddressPreviewBar(address: _address, isFromCache: _isFromCache, isLoading: _addrLoading),
             ),
-
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(
@@ -758,14 +742,9 @@ class _CameraScreenState extends State<CameraScreen>
               color: const Color(0xCC000000),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   IconButton(
-                    icon: Icon(
-                      _torchOn ? Icons.flash_on : Icons.flash_off,
-                      color: _torchOn ? const Color(0xFFFFD95A) : Colors.white54,
-                      size: 28,
-                    ),
+                    icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: _torchOn ? const Color(0xFFFFD95A) : Colors.white54, size: 28),
                     onPressed: _toggleTorch,
                   ),
                   GestureDetector(
@@ -777,16 +756,10 @@ class _CameraScreenState extends State<CameraScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: canCapture ? const Color(0x33FFFFFF) : Colors.grey.withOpacity(0.2),
-                        border: Border.all(
-                          color: canCapture ? Colors.white : Colors.grey,
-                          width: 4,
-                        ),
+                        border: Border.all(color: canCapture ? Colors.white : Colors.grey, width: 4),
                       ),
                       child: _isCapturing
-                          ? const Padding(
-                              padding: EdgeInsets.all(18),
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
-                            )
+                          ? const Padding(padding: EdgeInsets.all(18), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
                           : null,
                     ),
                   ),
@@ -807,8 +780,7 @@ class _CameraScreenState extends State<CameraScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF0A0E1A),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _LayoutPickerSheet(
         current: _layout,
         onSelect: (l) {
@@ -821,7 +793,6 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-// ── Address Preview Bar (tanpa perubahan, hanya naik posisi) ────────────────
 class _AddressPreviewBar extends StatelessWidget {
   final String address;
   final bool isFromCache;
@@ -836,30 +807,13 @@ class _AddressPreviewBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xCC000000),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isFromCache ? const Color(0x40FF9500) : const Color(0x401E90FF),
-          width: 0.5,
-        ),
+        border: Border.all(color: isFromCache ? const Color(0x40FF9500) : const Color(0x401E90FF), width: 0.5),
       ),
       child: Row(
         children: [
-          Icon(
-            isFromCache ? Icons.history_outlined : Icons.location_on_outlined,
-            size: 13,
-            color: isFromCache ? const Color(0xFFFF9500) : const Color(0xFF1E90FF),
-          ),
+          Icon(isFromCache ? Icons.history_outlined : Icons.location_on_outlined, size: 13, color: isFromCache ? const Color(0xFFFF9500) : const Color(0xFF1E90FF)),
           const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              address,
-              style: TextStyle(
-                color: isFromCache ? const Color(0xFFCC9000) : Colors.white70,
-                fontSize: 11,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          Expanded(child: Text(address, style: TextStyle(color: isFromCache ? const Color(0xFFCC9000) : Colors.white70, fontSize: 11), maxLines: 2, overflow: TextOverflow.ellipsis)),
           if (isLoading) ...[
             const SizedBox(width: 6),
             const SizedBox(width: 8, height: 8, child: CircularProgressIndicator(strokeWidth: 1.2, valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500)))),
@@ -870,7 +824,6 @@ class _AddressPreviewBar extends StatelessWidget {
   }
 }
 
-// ── GPS Chip (sama) ─────────────────────────────────────────────────────────
 class _GpsChip extends StatelessWidget {
   final String status;
   final double? acc;
@@ -884,35 +837,23 @@ class _GpsChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
+      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withOpacity(0.4))),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.gps_fixed, size: 11, color: color),
           const SizedBox(width: 5),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(status, style: TextStyle(color: color, fontSize: 10, height: 1.2)),
-              if (acc != null)
-                Text(
-                  '± ${acc!.toStringAsFixed(0)} m${isFallback ? ' (fallback)' : ''}',
-                  style: TextStyle(color: color.withOpacity(0.8), fontSize: 9, height: 1.2),
-                ),
-            ],
-          ),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(status, style: TextStyle(color: color, fontSize: 10, height: 1.2)),
+            if (acc != null)
+              Text('± ${acc!.toStringAsFixed(0)} m${isFallback ? ' (fallback)' : ''}', style: TextStyle(color: color.withOpacity(0.8), fontSize: 9, height: 1.2)),
+          ]),
         ],
       ),
     );
   }
 }
 
-// ── Layout Picker Sheet (sama) ──────────────────────────────────────────────
 class _LayoutPickerSheet extends StatelessWidget {
   final WatermarkLayout current;
   final ValueChanged<WatermarkLayout> onSelect;

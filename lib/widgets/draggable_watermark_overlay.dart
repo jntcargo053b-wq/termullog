@@ -1,9 +1,12 @@
+// lib/widgets/draggable_watermark_overlay.dart
+// Overlay watermark yang bisa di-drag di viewfinder kamera.
+// Menggunakan WatermarkPreviewPainter sebagai renderer.
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/watermark_position.dart';
 import '../core/constants.dart';
-import 'professional_watermark_card.dart';
-import 'unified_watermark_painter.dart';
+import '../watermark/watermark_preview_painter.dart';
 
 class DraggableWatermarkOverlay extends StatefulWidget {
   final Size previewSize;
@@ -44,7 +47,7 @@ class DraggableWatermarkOverlay extends StatefulWidget {
     required this.showBorder,
     required this.fontSize,
     required this.layout,
-    this.initialPosition = WatermarkPosition.initial,
+    required this.initialPosition,
     this.onPositionChanged,
     this.showSnapGuides = true,
   });
@@ -53,240 +56,180 @@ class DraggableWatermarkOverlay extends StatefulWidget {
   State<DraggableWatermarkOverlay> createState() => _DraggableWatermarkOverlayState();
 }
 
-class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> with SingleTickerProviderStateMixin {
+class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay>
+    with SingleTickerProviderStateMixin {
   late WatermarkPosition _position;
-  late AnimationController _snapAnimationController;
   bool _isDragging = false;
-  
-  late double _cachedPainterHeight;
-  late double _cachedCardWidth;
-  late double _cachedCardHeight;
-  late bool _isLandscape;
-  bool _needsCacheUpdate = true;
 
-  static const List<Map<String, dynamic>> _presets = [
-    {'name': 'Bawah Kiri', 'icon': Icons.crop_7_5, 'x': 0.04, 'y': 0.82, 'scale': 1.0},
-    {'name': 'Bawah Tengah', 'icon': Icons.crop_5_4, 'x': 0.5, 'y': 0.82, 'scale': 1.0},
-    {'name': 'Bawah Kanan', 'icon': Icons.crop_7_5, 'x': 0.96, 'y': 0.82, 'scale': 1.0},
-    {'name': 'Atas Kiri', 'icon': Icons.crop_7_5, 'x': 0.04, 'y': 0.08, 'scale': 0.9},
-    {'name': 'Atas Kanan', 'icon': Icons.crop_7_5, 'x': 0.96, 'y': 0.08, 'scale': 0.9},
-    {'name': 'Cinematic', 'icon': Icons.movie, 'x': 0.5, 'y': 0.88, 'scale': 1.2},
+  late AnimationController _snapAnimController;
+
+  // Preset posisi
+  final List<Map<String, dynamic>> _presets = [
+    {'name': 'Bawah Kiri',   'icon': Icons.south_west, 'x': 0.02, 'y': 0.82, 'scale': 1.0},
+    {'name': 'Bawah Kanan',  'icon': Icons.south_east, 'x': 0.50, 'y': 0.82, 'scale': 1.0},
+    {'name': 'Bawah Tengah', 'icon': Icons.south,       'x': 0.25, 'y': 0.82, 'scale': 1.0},
+    {'name': 'Atas Kiri',    'icon': Icons.north_west,  'x': 0.02, 'y': 0.02, 'scale': 1.0},
+    {'name': 'Atas Kanan',   'icon': Icons.north_east,  'x': 0.50, 'y': 0.02, 'scale': 1.0},
   ];
 
   @override
   void initState() {
     super.initState();
     _position = widget.initialPosition;
-    _snapAnimationController = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
-  }
-
-  @override
-  void didUpdateWidget(covariant DraggableWatermarkOverlay oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.fontSize != widget.fontSize ||
-        oldWidget.layout != widget.layout ||
-        oldWidget.address != widget.address ||
-        oldWidget.showCoordinates != widget.showCoordinates ||
-        oldWidget.showAccuracy != widget.showAccuracy ||
-        oldWidget.showAddress != widget.showAddress ||
-        oldWidget.showWeather != widget.showWeather ||
-        oldWidget.previewSize != widget.previewSize) {
-      _needsCacheUpdate = true;
-    }
+    _snapAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    );
   }
 
   @override
   void dispose() {
-    _snapAnimationController.dispose();
+    _snapAnimController.dispose();
     super.dispose();
   }
 
-  void _updatePosition(WatermarkPosition newPos, {bool animate = false}) {
-    if (animate) _snapAnimationController.forward(from: 0.0);
-    setState(() {
-      _position = newPos;
-      _needsCacheUpdate = true;
-    });
-    widget.onPositionChanged?.call(_position);
+  void _updatePosition(WatermarkPosition pos, {bool animate = false}) {
+    setState(() => _position = pos);
+    if (animate) {
+      _snapAnimController.forward(from: 0).then((_) => _snapAnimController.reverse());
+    }
+    widget.onPositionChanged?.call(pos);
   }
 
-  void _updateCacheIfNeeded() {
-    if (!_needsCacheUpdate) return;
-    
-    _isLandscape = widget.previewSize.width > widget.previewSize.height;
-    final baseCardWidth = _isLandscape ? 340 : 320;
-    _cachedCardWidth = (baseCardWidth * _position.scale).clamp(220.0, 480.0);
-    
-    final dummyPainter = UnifiedWatermarkPainter(
-      timestamp: widget.timestamp,
-      hasPosition: widget.hasPosition,
-      lat: widget.lat,
-      lon: widget.lon,
-      acc: widget.acc,
-      address: widget.address,
-      weather: widget.weather,
-      showWeather: widget.showWeather,
-      showAccuracy: widget.showAccuracy,
-      showAddress: widget.showAddress,
-      showCoordinates: widget.showCoordinates,
-      opacity: widget.opacity,
-      showBorder: widget.showBorder,
-      fontSize: widget.fontSize,
-      layout: widget.layout,
-      fontScale: _position.fontScale,
-      cardWidth: _cachedCardWidth,
-      isHighQuality: false,
-      pixelRatio: 1.0,
-    );
-    _cachedPainterHeight = dummyPainter.computeHeight();
-    _cachedCardHeight = _cachedPainterHeight;
-    _needsCacheUpdate = false;
-  }
-
-  WatermarkPosition _applySnap(WatermarkPosition pos, Size screenSize, Size cardSize) {
-    final screenW = screenSize.width;
-    final screenH = screenSize.height;
-    final cardW = cardSize.width;
-    final cardH = cardSize.height;
+  WatermarkPosition _applySnap(WatermarkPosition pos, Size screenSize) {
     double newX = pos.x;
     double newY = pos.y;
-    double left = screenW * pos.x;
-    double top = screenH * pos.y;
+    final double left = screenSize.width * pos.x;
+    final double top = screenSize.height * pos.y;
 
-    final centerX = (screenW - cardW) / 2;
-    if ((left - centerX).abs() < 25) newX = (centerX / screenW).clamp(0.04, 0.96);
+    final double centerX = screenSize.width / 2;
+    if ((left - centerX).abs() < 28) newX = (centerX / screenSize.width).clamp(0.04, 0.96);
 
-    final thirdTop = screenH * 0.33;
-    final thirdBottom = screenH * 0.66;
-    if ((top - thirdTop).abs() < 25) newY = (thirdTop / screenH).clamp(0.04, 0.92);
-    else if ((top - thirdBottom).abs() < 25) newY = (thirdBottom / screenH).clamp(0.04, 0.92);
+    final double thirdY1 = screenSize.height * 0.33;
+    final double thirdY2 = screenSize.height * 0.66;
+    if ((top - thirdY1).abs() < 28) newY = (thirdY1 / screenSize.height).clamp(0.04, 0.92);
+    else if ((top - thirdY2).abs() < 28) newY = (thirdY2 / screenSize.height).clamp(0.04, 0.92);
 
     return pos.copyWith(x: newX, y: newY);
   }
 
   @override
   Widget build(BuildContext context) {
-    _updateCacheIfNeeded();
-    
-    final screenWidth = widget.previewSize.width;
-    final screenHeight = widget.previewSize.height;
-    const double safeMargin = 16;
-    final safeLeft = safeMargin;
-    final safeRight = screenWidth - _cachedCardWidth - safeMargin;
-    final safeTop = safeMargin;
-    final safeBottom = screenHeight - _cachedCardHeight - safeMargin;
-    
-    double left = screenWidth * _position.x;
-    double top = screenHeight * _position.y;
-    left = left.clamp(safeLeft, safeRight);
-    top = top.clamp(safeTop, safeBottom);
+    final double screenW = widget.previewSize.width;
+    final double screenH = widget.previewSize.height;
+
+    // Ukuran card preview – setengah lebar layar, tinggi proporsional
+    final double cardW = (screenW * 0.52 * _position.scale).clamp(200.0, 400.0);
+    final double cardH = cardW * 0.55; // proporsi landscape-friendly
+
+    final double safeMargin = 12.0;
+    double left = (screenW * _position.x).clamp(safeMargin, screenW - cardW - safeMargin);
+    double top  = (screenH * _position.y).clamp(safeMargin, screenH - cardH - safeMargin);
 
     return Stack(
       children: [
+        // Snap guides saat dragging
         if (_isDragging && widget.showSnapGuides)
           IgnorePointer(
             child: RepaintBoundary(
               child: CustomPaint(
-                painter: SnapGuidePainter(screenSize: widget.previewSize, cardRect: Rect.fromLTWH(left, top, _cachedCardWidth, _cachedCardHeight)),
+                painter: SnapGuidePainter(
+                  screenSize: widget.previewSize,
+                  cardRect: Rect.fromLTWH(left, top, cardW, cardH),
+                ),
               ),
             ),
           ),
-        
+
+        // Control buttons (preset & reset)
         Positioned(
           top: 60,
           right: 10,
           child: Column(
             children: [
-              _buildPresetButton(Icons.grid_view, () => _showPresetDialog(context)),
+              _controlBtn(Icons.grid_view, () => _showPresetDialog(context)),
               const SizedBox(height: 8),
-              _buildPresetButton(Icons.center_focus_strong, () {
-                final snapped = _applySnap(_position, widget.previewSize, Size(_cachedCardWidth, _cachedCardHeight));
+              _controlBtn(Icons.center_focus_strong, () {
+                final snapped = _applySnap(_position, widget.previewSize);
                 _updatePosition(snapped, animate: true);
               }),
               const SizedBox(height: 8),
-              _buildPresetButton(Icons.refresh, () => _updatePosition(WatermarkPosition.initial, animate: true)),
+              _controlBtn(Icons.refresh, () =>
+                  _updatePosition(WatermarkPosition.initial, animate: true)),
             ],
           ),
         ),
-        
+
+        // Card yang bisa di-drag
         Positioned(
           left: left,
           top: top,
           child: AnimatedBuilder(
-            animation: _snapAnimationController,
+            animation: _snapAnimController,
             builder: (context, child) {
-              final animationValue = _snapAnimationController.value;
-              final animatedScale = 1.0 - (animationValue * 0.04);
-              return Transform.scale(
-                scale: animatedScale,
-                child: GestureDetector(
-                  onPanStart: (_) => setState(() => _isDragging = true),
-                  onPanUpdate: (details) {
-                    double newLeft = (left + details.delta.dx).clamp(safeLeft, safeRight);
-                    double newTop = (top + details.delta.dy).clamp(safeTop, safeBottom);
-                    _updatePosition(_position.copyWith(x: newLeft / screenWidth, y: newTop / screenHeight));
-                  },
-                  onPanEnd: (_) {
-                    setState(() => _isDragging = false);
-                    final snapped = _applySnap(_position, widget.previewSize, Size(_cachedCardWidth, _cachedCardHeight));
-                    if (snapped != _position) _updatePosition(snapped, animate: true);
-                  },
-                  onScaleUpdate: (details) {
-                    double newScale = (_position.scale * details.scale).clamp(0.5, 2.5);
-                    double newFontScale = (_position.fontScale * details.scale).clamp(0.7, 1.5);
-                    _updatePosition(_position.copyWith(scale: newScale, fontScale: newFontScale));
-                  },
-                  child: ProfessionalWatermarkCard(
-                    position: _position,
-                    screenSize: widget.previewSize,
-                    isLandscape: _isLandscape,
-                    opacity: widget.opacity,
-                    showBorder: widget.showBorder,
-                    child: SizedBox(
-                      width: _cachedCardWidth,
-                      height: _cachedCardHeight,
-                      child: CustomPaint(
-                        painter: UnifiedWatermarkPainter(
-                          timestamp: widget.timestamp,
-                          hasPosition: widget.hasPosition,
-                          lat: widget.lat,
-                          lon: widget.lon,
-                          acc: widget.acc,
-                          address: widget.address,
-                          weather: widget.weather,
-                          showWeather: widget.showWeather,
-                          showAccuracy: widget.showAccuracy,
-                          showAddress: widget.showAddress,
-                          showCoordinates: widget.showCoordinates,
-                          opacity: widget.opacity,
-                          showBorder: widget.showBorder,
-                          fontSize: widget.fontSize,
-                          layout: widget.layout,
-                          fontScale: _position.fontScale,
-                          cardWidth: _cachedCardWidth,
-                          isHighQuality: false,
-                          pixelRatio: MediaQuery.of(context).devicePixelRatio,
-                        ),
-                      ),
+              final s = 1.0 - (_snapAnimController.value * 0.04);
+              return Transform.scale(scale: s, child: child);
+            },
+            child: GestureDetector(
+              onPanStart: (_) => setState(() => _isDragging = true),
+              onPanUpdate: (details) {
+                double nx = ((left + details.delta.dx) / screenW).clamp(0.04, 0.96);
+                double ny = ((top + details.delta.dy) / screenH).clamp(0.04, 0.92);
+                _updatePosition(_position.copyWith(x: nx, y: ny));
+              },
+              onPanEnd: (_) {
+                setState(() => _isDragging = false);
+                final snapped = _applySnap(_position, widget.previewSize);
+                if (snapped != _position) _updatePosition(snapped, animate: true);
+              },
+              onScaleUpdate: (details) {
+                final ns = (_position.scale * details.scale).clamp(0.5, 2.5);
+                final nf = (_position.fontScale * details.scale).clamp(0.7, 1.5);
+                _updatePosition(_position.copyWith(scale: ns, fontScale: nf));
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: cardW,
+                  height: cardH,
+                  child: CustomPaint(
+                    painter: WatermarkPreviewPainter(
+                      timestamp: widget.timestamp,
+                      hasPosition: widget.hasPosition,
+                      lat: widget.lat,
+                      lon: widget.lon,
+                      acc: widget.acc,
+                      address: widget.address,
+                      weather: widget.weather,
+                      showWeather: widget.showWeather,
+                      showAccuracy: widget.showAccuracy,
+                      showAddress: widget.showAddress,
+                      showCoordinates: widget.showCoordinates,
+                      opacity: widget.opacity,
+                      showBorder: widget.showBorder,
+                      layout: widget.layout,
                     ),
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildPresetButton(IconData icon, VoidCallback onTap) {
+  Widget _controlBtn(IconData icon, VoidCallback onTap) {
     return Material(
       color: Colors.black87,
       borderRadius: BorderRadius.circular(30),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(30),
-        child: Container(padding: const EdgeInsets.all(10), child: Icon(icon, color: Colors.white, size: 22)),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          child: Icon(icon, color: Colors.white, size: 22),
+        ),
       ),
     );
   }
@@ -295,15 +238,24 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.black87,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Container(
         padding: const EdgeInsets.all(16),
         child: Wrap(
           children: _presets.map((preset) => ListTile(
-            leading: Icon(preset['icon'], color: Colors.white70),
-            title: Text(preset['name'], style: const TextStyle(color: Colors.white)),
+            leading: Icon(preset['icon'] as IconData, color: Colors.white70),
+            title: Text(preset['name'] as String,
+                style: const TextStyle(color: Colors.white)),
             onTap: () {
-              _updatePosition(_position.copyWith(x: preset['x'], y: preset['y'], scale: preset['scale']), animate: true);
+              _updatePosition(
+                _position.copyWith(
+                  x: preset['x'] as double,
+                  y: preset['y'] as double,
+                  scale: preset['scale'] as double,
+                ),
+                animate: true,
+              );
               Navigator.pop(context);
             },
           )).toList(),
@@ -316,28 +268,37 @@ class _DraggableWatermarkOverlayState extends State<DraggableWatermarkOverlay> w
 class SnapGuidePainter extends CustomPainter {
   final Size screenSize;
   final Rect cardRect;
-  SnapGuidePainter({required this.screenSize, required this.cardRect});
+  const SnapGuidePainter({required this.screenSize, required this.cardRect});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white.withOpacity(0.4)..strokeWidth = 1.5..style = PaintingStyle.stroke;
-    final centerY = screenSize.height / 2;
-    final centerX = screenSize.width / 2;
-    canvas.drawLine(Offset(0, centerY), Offset(screenSize.width, centerY), paint);
-    canvas.drawLine(Offset(centerX, 0), Offset(centerX, screenSize.height), paint);
-    paint.color = Colors.white.withOpacity(0.2);
-    final thirdX1 = screenSize.width / 3, thirdX2 = screenSize.width * 2 / 3;
-    final thirdY1 = screenSize.height / 3, thirdY2 = screenSize.height * 2 / 3;
-    canvas.drawLine(Offset(thirdX1, 0), Offset(thirdX1, screenSize.height), paint);
-    canvas.drawLine(Offset(thirdX2, 0), Offset(thirdX2, screenSize.height), paint);
-    canvas.drawLine(Offset(0, thirdY1), Offset(screenSize.width, thirdY1), paint);
-    canvas.drawLine(Offset(0, thirdY2), Offset(screenSize.width, thirdY2), paint);
-    final highlightPaint = Paint()..color = Colors.blueAccent.withOpacity(0.3)..style = PaintingStyle.fill;
-    canvas.drawRect(cardRect, highlightPaint);
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.35)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    final cx = screenSize.width / 2;
+    final cy = screenSize.height / 2;
+    canvas.drawLine(Offset(0, cy), Offset(screenSize.width, cy), paint);
+    canvas.drawLine(Offset(cx, 0), Offset(cx, screenSize.height), paint);
+
+    paint.color = Colors.white.withOpacity(0.15);
+    for (final frac in [1.0 / 3.0, 2.0 / 3.0]) {
+      canvas.drawLine(Offset(0, screenSize.height * frac),
+          Offset(screenSize.width, screenSize.height * frac), paint);
+      canvas.drawLine(Offset(screenSize.width * frac, 0),
+          Offset(screenSize.width * frac, screenSize.height), paint);
+    }
+
+    canvas.drawRect(
+      cardRect,
+      Paint()
+        ..color = Colors.blueAccent.withOpacity(0.25)
+        ..style = PaintingStyle.fill,
+    );
   }
 
   @override
-  bool shouldRepaint(SnapGuidePainter oldDelegate) {
-    return oldDelegate.screenSize != screenSize || oldDelegate.cardRect != cardRect;
-  }
+  bool shouldRepaint(SnapGuidePainter old) =>
+      old.screenSize != screenSize || old.cardRect != cardRect;
 }

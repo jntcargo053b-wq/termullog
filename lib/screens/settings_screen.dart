@@ -15,7 +15,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
+  WatermarkLayout _layout = WatermarkLayout.podCorporate;
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;

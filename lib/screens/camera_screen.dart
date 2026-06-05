@@ -73,7 +73,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showCoordinates = true;
   double _opacity = 0.88;
   bool _showBorder = true;
-  WatermarkLayout _layout = WatermarkLayout.timemarkClassic;
+  WatermarkLayout _layout = WatermarkLayout.podCorporate;
   bool _showMiniMap = false;
   String _fontSize = 'normal';
   String _dateFormat = 'dd/MM/yyyy';
@@ -807,16 +807,12 @@ class _LayoutPickerSheet extends StatelessWidget {
 
   IconData _iconFor(WatermarkLayout l) {
     switch (l) {
-      case WatermarkLayout.timemarkClassic:
-        return Icons.access_time;
-      case WatermarkLayout.timemarkMinimal:
-        return Icons.radio_button_checked;
-      case WatermarkLayout.timemarkCard:
-        return Icons.credit_card;
-      case WatermarkLayout.timemarkHUD:
-        return Icons.track_changes;
-      case WatermarkLayout.timemarkFilm:
-        return Icons.photo_camera_back;
+      case WatermarkLayout.podCorporate:
+        return Icons.article_rounded;
+      case WatermarkLayout.podDarkField:
+        return Icons.camera_alt_rounded;
+      case WatermarkLayout.podGovern:
+        return Icons.verified_rounded;
     }
   }
 }

@@ -2,7 +2,6 @@
 // ============================================================
 // POD GPS ENGINE — Proof of Delivery Edition
 // ============================================================
-// Arsitektur baru yang menggantikan GpsLockManagerLogistics.
 //
 // Filosofi POD:
 //   1. ANTI-SPOOF: Tolak mock GPS & deteksi anomali koordinat.

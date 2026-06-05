@@ -138,8 +138,8 @@ class SettingsCache {
     if (_layout == null) {
       final saved = _prefs!.getString('layout');
       _layout = WatermarkLayout.values.firstWhere(
-        (e) => e.name == (saved ?? 'timemarkClassic'),
-        orElse: () => WatermarkLayout.timemarkClassic,
+        (e) => e.name == (saved ?? 'podCorporate'),
+        orElse: () => WatermarkLayout.podCorporate,
       );
     }
     return _layout!;

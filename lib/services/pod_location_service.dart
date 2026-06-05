@@ -4,6 +4,13 @@
 // ============================================================
 // Fase 1 (1-3 detik): accuracy ≤ 50m → alamat cepat (kecamatan/kota)
 // Fase 2 (5-8 detik): accuracy ≤ 15m + confidence good → alamat akurat (jalan + RT/RW)
+//
+// Fitur:
+//   - GPS start dari main() agar alamat siap saat kamera dibuka
+//   - Last known position dari SharedPreferences (langsung tampil)
+//   - Grid cache (10m) untuk efisiensi
+//   - Rate limiting dan debounce
+//   - Reset two‑phase flags saat restart
 // ============================================================
 
 import 'dart:async';
@@ -38,7 +45,7 @@ class PodLocationState {
   final bool addressLoading;
   final bool fromCache;
   final double lockProgress;
-  final bool isFastAddress; // NEW: apakah ini alamat cepat atau akurat
+  final bool isFastAddress; // true = alamat cepat (fase 1), false = alamat akurat
 
   const PodLocationState({
     this.lat,
@@ -111,27 +118,27 @@ class PodLocationService {
   static const Duration _weatherUpdateInterval = Duration(minutes: 15);
   static const Duration _geocodeDebounceDuration = Duration(milliseconds: 300);
   
-  // TWO-PHASE THRESHOLDS
-  static const double _fastGeocodeAccuracy = 50.0;   // Phase 1: 1-3 detik
-  static const double _accurateGeocodeAccuracy = 15.0; // Phase 2: 5-8 detik
+  // Two‑phase thresholds
+  static const double _fastGeocodeAccuracy = 50.0;    // Phase 1
+  static const double _accurateGeocodeAccuracy = 15.0; // Phase 2
   
-  static const int _gridResolution = 10000;
+  static const int _gridResolution = 10000; // 10 meter precision
   
-  // Grid cache
-  final Map<String, String> _fastAddressCache = {};   // Cache untuk alamat cepat
-  final Map<String, String> _accurateAddressCache = {}; // Cache untuk alamat akurat
+  // Caches
+  final Map<String, String> _fastAddressCache = {};
+  final Map<String, String> _accurateAddressCache = {};
   static const int _maxCacheSize = 200;
   
-  // Two-phase tracking
-  bool _hasFastGeocode = false;      // Sudah dapat alamat cepat?
-  bool _hasAccurateGeocode = false;  // Sudah dapat alamat akurat?
+  // Two‑phase tracking
+  bool _hasFastGeocode = false;
+  bool _hasAccurateGeocode = false;
   
   // Last known position (persistent)
   static const String _prefLastLat = 'last_known_lat';
   static const String _prefLastLon = 'last_known_lon';
   static const String _prefLastAddress = 'last_known_address';
   
-  // GPS settings
+  // GPS running flag
   bool _isRunning = false;
   
   // ── Public Methods ─────────────────────────────────────────
@@ -168,49 +175,11 @@ class PodLocationService {
       // Start weather timer
       _startWeatherTimer();
       
-      if (kDebugMode) debugPrint('PodLocationService: Started successfully (Two-Phase Geocode)');
+      if (kDebugMode) debugPrint('PodLocationService: Started successfully (Two-Phase)');
     } catch (e) {
       if (kDebugMode) debugPrint('PodLocationService: Start error - $e');
       _isRunning = false;
       rethrow;
-    }
-  }
-
-  /// Load last known position dari SharedPreferences
-  Future<void> _loadLastKnownPosition() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final lastLat = prefs.getDouble(_prefLastLat);
-      final lastLon = prefs.getDouble(_prefLastLon);
-      final lastAddress = prefs.getString(_prefLastAddress);
-      
-      if (lastLat != null && lastLon != null && lastAddress != null && lastAddress.isNotEmpty) {
-        if (kDebugMode) debugPrint('PodLocationService: Loaded last known position: $lastAddress');
-        _stateController.add(
-          currentState.copyWith(
-            lat: lastLat,
-            lon: lastLon,
-            address: lastAddress,
-            fromCache: true,
-            isFastAddress: true,
-          ),
-        );
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('PodLocationService: Load last known error - $e');
-    }
-  }
-
-  /// Save last known position ke SharedPreferences
-  Future<void> _saveLastKnownPosition(double lat, double lon, String address) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble(_prefLastLat, lat);
-      await prefs.setDouble(_prefLastLon, lon);
-      await prefs.setString(_prefLastAddress, address);
-      if (kDebugMode) debugPrint('PodLocationService: Saved last known position');
-    } catch (e) {
-      if (kDebugMode) debugPrint('PodLocationService: Save last known error - $e');
     }
   }
 
@@ -227,11 +196,14 @@ class PodLocationService {
     if (kDebugMode) debugPrint('PodLocationService: Stopped');
   }
 
-  /// Restart GPS (dipanggil saat app resume)
+  /// Restart GPS (dipanggil saat app resume) – reset two‑phase flags
   Future<void> restart() async {
     if (kDebugMode) debugPrint('PodLocationService: Restarting...');
+    
+    // 🔴 Reset two‑phase flags agar geocode bisa dimulai ulang
     _hasFastGeocode = false;
     _hasAccurateGeocode = false;
+    
     await stop();
     _gpsEngine.reset();
     await start();
@@ -317,7 +289,7 @@ class PodLocationService {
     
     final accuracy = lockResult?.accuracy ?? rawPos.accuracy;
     
-    // Update state
+    // Update state (koordinat, akurasi, confidence)
     _stateController.add(
       currentState.copyWith(
         lat: centroid.lat,
@@ -330,20 +302,18 @@ class PodLocationService {
     );
 
     // 🔴 PHASE 1: FAST GEOCODE (accuracy ≤ 50m)
-    // Tampilkan alamat cepat (kecamatan/kota) dalam 1-3 detik
     if (!_hasFastGeocode && accuracy <= _fastGeocodeAccuracy) {
       _hasFastGeocode = true;
-      if (kDebugMode) debugPrint('PodLocationService: 🔴 PHASE 1 - Fast geocode (accuracy=${accuracy.toStringAsFixed(0)}m ≤ ${_fastGeocodeAccuracy.toInt()}m)');
+      if (kDebugMode) debugPrint('PodLocationService: 🔴 PHASE 1 - Fast geocode (accuracy=${accuracy.toStringAsFixed(0)}m)');
       await _resolveAddressWithCache(centroid.lat, centroid.lon, isFastGeocode: true);
     }
     
-    // 🔴 PHASE 2: ACCURATE GEOCODE (accuracy ≤ 15m + confidence good)
-    // Update ke alamat lengkap (jalan + RT/RW) setelah GPS stabil
+    // 🔴 PHASE 2: ACCURATE GEOCODE (accuracy ≤ 15m + confidence good/excellent)
     if (!_hasAccurateGeocode && 
         accuracy <= _accurateGeocodeAccuracy && 
         (engineConfidence == PodConfidence.good || engineConfidence == PodConfidence.excellent)) {
       _hasAccurateGeocode = true;
-      if (kDebugMode) debugPrint('PodLocationService: 🔴 PHASE 2 - Accurate geocode (accuracy=${accuracy.toStringAsFixed(0)}m ≤ ${_accurateGeocodeAccuracy.toInt()}m, confidence=${engineConfidence.label})');
+      if (kDebugMode) debugPrint('PodLocationService: 🔴 PHASE 2 - Accurate geocode (accuracy=${accuracy.toStringAsFixed(0)}m, confidence=${engineConfidence.label})');
       await _resolveAddressWithCache(centroid.lat, centroid.lon, isFastGeocode: false);
     }
 
@@ -366,7 +336,7 @@ class PodLocationService {
     });
   }
 
-  Future<void> _resolveAddressWithCache(double lat, double lon, {bool isFastGeocode = false}) async {
+  Future<void> _resolveAddressWithCache(double lat, double lon, {required bool isFastGeocode}) async {
     final gridKey = _gridKey(lat, lon);
     final cache = isFastGeocode ? _fastAddressCache : _accurateAddressCache;
     
@@ -382,8 +352,7 @@ class PodLocationService {
           isFastAddress: isFastGeocode,
         ),
       );
-      
-      // Save ke last known position jika ini accurate address
+      // Simpan ke last known jika ini alamat akurat
       if (!isFastGeocode && !cachedAddress.contains('GPS:')) {
         await _saveLastKnownPosition(lat, lon, cachedAddress);
       }
@@ -393,7 +362,7 @@ class PodLocationService {
     // Fetch dari resolver
     if (kDebugMode) debugPrint('PodLocationService: ${isFastGeocode ? "FAST" : "ACCURATE"} geocode fetching...');
     
-    // Hanya tampilkan loading indicator untuk accurate geocode
+    // Tampilkan loading hanya untuk accurate geocode
     if (!isFastGeocode) {
       _stateController.add(currentState.copyWith(addressLoading: true));
     }
@@ -401,7 +370,6 @@ class PodLocationService {
     try {
       final address = await PodAddressResolver.resolve(lat, lon);
       
-      // Store in cache
       if (address.isNotEmpty && !address.contains('GPS:')) {
         cache[gridKey] = address;
         
@@ -411,10 +379,10 @@ class PodLocationService {
           for (var key in keysToRemove) {
             cache.remove(key);
           }
-          if (kDebugMode) debugPrint('PodLocationService: Trimmed ${isFastGeocode ? "FAST" : "ACCURATE"} cache to ${cache.length}');
+          if (kDebugMode) debugPrint('PodLocationService: Trimmed ${isFastGeocode ? "FAST" : "ACCURATE"} cache');
         }
         
-        // Save ke last known position jika ini accurate address
+        // Simpan ke last known jika ini alamat akurat
         if (!isFastGeocode) {
           await _saveLastKnownPosition(lat, lon, address);
         }
@@ -433,6 +401,44 @@ class PodLocationService {
       if (!isFastGeocode) {
         _stateController.add(currentState.copyWith(addressLoading: false));
       }
+    }
+  }
+
+  // ── Last Known Position (SharedPreferences) ─────────────────
+  
+  Future<void> _loadLastKnownPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastLat = prefs.getDouble(_prefLastLat);
+      final lastLon = prefs.getDouble(_prefLastLon);
+      final lastAddress = prefs.getString(_prefLastAddress);
+      
+      if (lastLat != null && lastLon != null && lastAddress != null && lastAddress.isNotEmpty) {
+        if (kDebugMode) debugPrint('PodLocationService: Loaded last known: $lastAddress');
+        _stateController.add(
+          currentState.copyWith(
+            lat: lastLat,
+            lon: lastLon,
+            address: lastAddress,
+            fromCache: true,
+            isFastAddress: true,
+          ),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('PodLocationService: Load last known error - $e');
+    }
+  }
+
+  Future<void> _saveLastKnownPosition(double lat, double lon, String address) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_prefLastLat, lat);
+      await prefs.setDouble(_prefLastLon, lon);
+      await prefs.setString(_prefLastAddress, address);
+      if (kDebugMode) debugPrint('PodLocationService: Saved last known position');
+    } catch (e) {
+      if (kDebugMode) debugPrint('PodLocationService: Save last known error - $e');
     }
   }
 
@@ -463,6 +469,7 @@ class PodLocationService {
       if (kDebugMode) debugPrint('PodLocationService: Weather updated - $weather');
     } catch (e) {
       if (kDebugMode) debugPrint('PodLocationService: Weather error - $e');
+      // keep existing weather
     }
   }
 

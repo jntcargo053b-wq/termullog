@@ -1,4 +1,4 @@
-// lib/main.dart — POD Edition
+// lib/main.dart — POD Edition (Minimalis)
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,11 +19,9 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Preload settings dan address cache secara paralel
-  await Future.wait([
-    SettingsCache.preload(),
-    PodAddressResolver.loadPersistentCache(),
-  ]);
+  // Preload settings saja
+  // Address cache akan di-load otomatis saat pertama kali dibutuhkan
+  await SettingsCache.preload();
 
   try {
     CameraRegistry.cameras = await availableCameras();

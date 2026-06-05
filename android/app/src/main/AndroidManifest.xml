@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.termullog.app">
 
     <!-- ==================== PERMISSIONS ==================== -->
 
@@ -10,29 +11,28 @@
     <!-- Camera -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- GPS — FINE + COARSE wajib untuk akurasi tinggi POD -->
+    <!-- GPS – Fine and coarse location (mandatory for high accuracy POD) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Storage -->
+    <!-- Storage – Android 13+ uses READ_MEDIA_IMAGES, older uses READ/WRITE_EXTERNAL_STORAGE -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"
-        tools:replace="android:maxSdkVersion" />
+        android:maxSdkVersion="32" />
 
-    <!-- Foreground service (GPS realtime) -->
+    <!-- Foreground service for continuous GPS tracking -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Notifikasi (Android 13+) -->
+    <!-- Notifications (required for Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- ==================== FEATURES ==================== -->
 
-    <!-- GPS hardware wajib untuk POD -->
+    <!-- GPS hardware is mandatory for POD accuracy -->
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="true" />
@@ -56,8 +56,10 @@
         android:hardwareAccelerated="true"
         android:allowBackup="true"
         android:supportsRtl="true"
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="31">
 
+        <!-- Flutter embedding metadata -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
@@ -88,20 +90,21 @@
 
         </activity>
 
-        <!-- ==================== GPS FOREGROUND SERVICE ==================== -->
-        <!-- Android 12 ke bawah -->
+        <!-- ==================== GPS FOREGROUND SERVICES ==================== -->
+
+        <!-- Geolocator service (Android 12 and below) -->
         <service
             android:name="com.baseflow.geolocator.GeolocatorService"
             android:foregroundServiceType="location"
             android:exported="false" />
 
-        <!-- Android 14+ -->
+        <!-- Geolocator foreground service (Android 14+) -->
         <service
             android:name="com.baseflow.geolocator.GeolocatorForegroundService"
             android:foregroundServiceType="location"
             android:exported="false" />
 
-        <!-- ==================== FILE PROVIDER ==================== -->
+        <!-- ==================== FILE PROVIDER (for sharing images) ==================== -->
 
         <provider
             android:name="androidx.core.content.FileProvider"

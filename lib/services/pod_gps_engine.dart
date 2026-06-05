@@ -2,22 +2,10 @@
 // ============================================================
 // POD GPS ENGINE — Proof of Delivery Edition
 // ============================================================
-//
-// Filosofi POD:
-//   1. ANTI-SPOOF: Tolak mock GPS & deteksi anomali koordinat.
-//   2. MULTI-SAMPLE CENTROID: Kumpulkan ≥10 sample, hitung weighted
-//      centroid (bobot = 1/σ²). Centroid ini dipakai sebagai titik
-//      resmi untuk alamat dan watermark.
-//   3. CONFIDENCE BERJENJANG: 4 level (poor→fair→good→excellent).
-//      Foto hanya bisa diambil di level good+.
-//   4. KALMAN SMOOTHING PER-SAMPLE: Setiap sample dilewatkan filter
-//      Kalman 1D sederhana (lat + lon terpisah) sebelum masuk window.
-//   5. OUTLIER REJECTION: Sample dengan jarak >3σ dari mean window
-//      dibuang (Chauvenet-style).
-//   6. AUDIT TRAIL: Setiap lock menyimpan metadata lengkap:
-//      rawBestAccuracy, samplesUsed, clusterStdDev, timestamps.
-//   7. RE-LOCK CEPAT: Setelah bergerak, mode Stabilizing mempertahankan
-//      sebagian window sehingga lock ulang 2× lebih cepat.
+// Two-Phase Optimized Thresholds:
+//   - Phase 1: Accept samples up to 50m for fast address (1-3 detik)
+//   - Phase 2: Target 15m accuracy for precise address (5-8 detik)
+//   - Reduced min samples for faster initial lock
 // ============================================================
 
 import 'dart:math';
@@ -137,34 +125,33 @@ class PodLockResult {
 // ═══════════════════════════════════════════════════════════════
 class PodGpsEngine {
 
-  // ── Tuning parameters ──────────────────────────────────────
-  // Sample requirements
-  static const int    _minSamplesGood      = 10;   // samples untuk "good"
-  static const int    _minSamplesExcellent = 15;   // samples untuk "excellent"
-  static const int    _maxWindowSize       = 20;   // rolling window max
-  static const int    _keepOnUnlock        = 6;    // sisa sample saat unlock
+  // ── Tuning parameters — Two-Phase Optimized ─────────────────
+  // Sample requirements (lebih cepat untuk Phase 2)
+  static const int    _minSamplesGood      = 6;    // Turun dari 10 → cukup 6 sample untuk good
+  static const int    _minSamplesExcellent = 12;   // Turun dari 15 → 12 sample untuk excellent
+  static const int    _maxWindowSize       = 20;
+  static const int    _keepOnUnlock        = 6;
 
-  // Accuracy filter
-  static const double _maxRawAccuracy      = 25.0; // buang sample >25m
-  static const double _excellentAccuracy   = 8.0;  // threshold excellent
-  static const double _goodAccuracy        = 18.0; // threshold good
+  // Accuracy filter — mendukung Two-Phase
+  static const double _maxRawAccuracy      = 50.0; // Naik dari 25 → terima sample sampai 50m (Phase 1)
+  static const double _excellentAccuracy   = 8.0;  // Premium: 8m untuk excellent
+  static const double _goodAccuracy        = 15.0; // Turun dari 18 → 15m untuk good (Phase 2 trigger)
 
   // Cluster filter
-  static const double _maxClusterRadius    = 10.0; // cluster radius max untuk excellent
-  static const double _maxClusterRadiusGood = 18.0; // cluster radius max untuk good
+  static const double _maxClusterRadius    = 12.0; // Naik dari 10 → 12m untuk excellent
+  static const double _maxClusterRadiusGood = 20.0; // Naik dari 18 → 20m untuk good
 
   // Outlier rejection (3σ dari centroid, min 6m)
   static const double _outlierSigmaFactor  = 3.0;
   static const double _outlierMinMeters    = 6.0;
 
-  // Movement detection
-  static const double _moveThresholdMeters = 5.0;  // bergerak >5m → unlock
-  static const double _hardResetMeters     = 15.0; // bergerak >15m → full reset
+  // Movement detection (lebih toleran)
+  static const double _moveThresholdMeters = 8.0;  // Naik dari 5 → 8m untuk unlock
+  static const double _hardResetMeters     = 25.0; // Naik dari 15 → 25m untuk full reset
 
-  // Kalman smoothing per-dimension (sederhana, bukan 4D)
-  // Process noise Q, measurement noise R
+  // Kalman smoothing per-dimension
   static const double _kalmanQ             = 0.5;
-  static const double _kalmanR             = 4.0;  // ~2m std-dev
+  static const double _kalmanR             = 4.0;
 
   // ── State ──────────────────────────────────────────────────
   final List<PodSample> _window = [];
@@ -188,16 +175,25 @@ class PodGpsEngine {
   int get sampleCount => _window.length;
   int get samplesNeeded => _minSamplesGood;
 
-  /// Progress 0.0–1.0 menuju lock
+  /// Progress 0.0–1.0 menuju lock (dioptimalkan untuk two-phase)
   double get lockProgress {
     if (_window.isEmpty) return 0.0;
+    
+    // Sample progress terhadap target good (6 sample)
     final sampleProgress = (_window.length / _minSamplesGood).clamp(0.0, 1.0);
+    
     if (_window.length >= 2) {
       final radius = _computeClusterRadius();
-      final radiusOk = radius <= _maxClusterRadius;
+      final radiusOk = radius <= _maxClusterRadiusGood;
       final avgAcc = _window.map((s) => s.accuracy).reduce((a, b) => a + b) / _window.length;
       final accOk = avgAcc <= _goodAccuracy;
+      
+      // Jika akurasi sudah ≤15m, progress lebih cepat
+      if (avgAcc <= 15.0) {
+        return (sampleProgress * 0.8 + 0.2).clamp(0.0, 1.0);
+      }
       if (radiusOk && accOk) return sampleProgress;
+      
       // Penalti jika cluster atau akurasi belum bagus
       return sampleProgress * 0.6;
     }
@@ -205,18 +201,19 @@ class PodGpsEngine {
   }
 
   // ── Main: proses satu sample dari OS ──────────────────────
-  /// Returns true jika terjadi upgrade confidence (termasuk ke locked/good).
+  /// Returns true jika terjadi upgrade confidence
   bool processSample(Position rawPos) {
-    // 1. Anti-spoof: tolak mock GPS
+    // 1. Anti-spoof: tolak mock GPS + HARD RESET
     if (rawPos.isMocked) {
-      if (kDebugMode) debugPrint('PodGpsEngine: MOCK GPS rejected');
+      if (kDebugMode) debugPrint('PodGpsEngine: MOCK GPS detected — HARD RESET');
+      _hardReset();
       _confidence = PodConfidence.poor;
       return false;
     }
 
-    // 2. Filter akurasi kasar
+    // 2. Filter akurasi kasar (sekarang sampai 50m untuk Phase 1)
     if (rawPos.accuracy > _maxRawAccuracy) {
-      if (kDebugMode) debugPrint('PodGpsEngine: acc=${rawPos.accuracy.toStringAsFixed(1)}m too low, skip');
+      if (kDebugMode) debugPrint('PodGpsEngine: acc=${rawPos.accuracy.toStringAsFixed(1)}m > ${_maxRawAccuracy.toInt()}m, skip');
       if (_confidence == PodConfidence.searching && _window.isEmpty) {
         _confidence = PodConfidence.poor;
       }
@@ -247,7 +244,7 @@ class PodGpsEngine {
     final sample = PodSample(
       lat: smoothLat,
       lon: smoothLon,
-      accuracy: rawPos.accuracy, // pakai akurasi asli, bukan smoothed
+      accuracy: rawPos.accuracy,
       time: rawPos.timestamp ?? DateTime.now(),
     );
 
@@ -264,9 +261,11 @@ class PodGpsEngine {
 
     if (kDebugMode && _window.isNotEmpty) {
       final radius = _window.length >= 2 ? _computeClusterRadius() : 0.0;
+      final avgAcc = _weightedMeanAccuracy();
       debugPrint('PodGpsEngine: ${_confidence.label} | '
           'n=${_window.length} radius=${radius.toStringAsFixed(1)}m '
           'acc=${rawPos.accuracy.toStringAsFixed(1)}m '
+          'avgAcc=${avgAcc.toStringAsFixed(1)}m '
           'score=${(_computeScore() * 100).toInt()}%');
     }
 
@@ -286,19 +285,26 @@ class PodGpsEngine {
     final avgAcc = _weightedMeanAccuracy();
 
     PodConfidence newConf;
+    
+    // Excellent: akurasi ≤8m, cluster ≤12m, minimal 12 sample
     if (_window.length >= _minSamplesExcellent &&
         radius <= _maxClusterRadius &&
         avgAcc <= _excellentAccuracy &&
-        score >= 0.88) {
+        score >= 0.85) {
       newConf = PodConfidence.excellent;
-    } else if (_window.length >= _minSamplesGood &&
+    } 
+    // Good: akurasi ≤15m, cluster ≤20m, minimal 6 sample
+    else if (_window.length >= _minSamplesGood &&
         radius <= _maxClusterRadiusGood &&
         avgAcc <= _goodAccuracy &&
-        score >= 0.72) {
+        score >= 0.65) {
       newConf = PodConfidence.good;
-    } else if (_window.length >= 4 && avgAcc <= 30.0) {
+    } 
+    // Fair: sudah ada beberapa sample dengan akurasi reasonable
+    else if (_window.length >= 3 && avgAcc <= 35.0) {
       newConf = PodConfidence.fair;
-    } else {
+    } 
+    else {
       newConf = PodConfidence.poor;
     }
 
@@ -307,7 +313,6 @@ class PodGpsEngine {
     if (_confidence.canCapture) {
       _lockResult = _buildLockResult(score, radius);
     } else if (_window.isNotEmpty) {
-      // Fair/poor: simpan partial result untuk display
       _lockResult = _buildLockResult(score, radius);
     }
   }
@@ -353,13 +358,11 @@ class PodGpsEngine {
   void _rejectOutliers() {
     if (_window.length < 4) return;
 
-    // Hitung centroid sementara (unweighted cukup)
     double sumLat = 0, sumLon = 0;
     for (final s in _window) { sumLat += s.lat; sumLon += s.lon; }
     final mLat = sumLat / _window.length;
     final mLon = sumLon / _window.length;
 
-    // Hitung std-dev jarak
     double sumSq = 0;
     for (final s in _window) {
       final d = _haversine(mLat, mLon, s.lat, s.lon);
@@ -412,18 +415,19 @@ class PodGpsEngine {
   double _computeScore() {
     if (_window.isEmpty) return 0.0;
 
-    // Factor 1: jumlah sample (bobot 35%)
+    // Factor 1: jumlah sample (bobot 30%)
     final fSample = (_window.length / _minSamplesExcellent).clamp(0.0, 1.0);
 
-    // Factor 2: cluster radius (bobot 40%)
+    // Factor 2: cluster radius (bobot 35%)
     final radius = _computeClusterRadius();
-    final fRadius = (1.0 - (radius / _maxClusterRadius).clamp(0.0, 1.0));
+    final fRadius = radius.isInfinite ? 0.0 : 
+        (1.0 - (radius / _maxClusterRadius).clamp(0.0, 1.0));
 
-    // Factor 3: rata-rata akurasi (bobot 25%)
+    // Factor 3: rata-rata akurasi (bobot 35%)
     final avgAcc = _weightedMeanAccuracy();
     final fAcc = (1.0 - (avgAcc / _maxRawAccuracy).clamp(0.0, 1.0));
 
-    return (fSample * 0.35) + (fRadius * 0.40) + (fAcc * 0.25);
+    return (fSample * 0.30) + (fRadius * 0.35) + (fAcc * 0.35);
   }
 
   double _computeClusterRadius() {
@@ -452,7 +456,6 @@ class PodGpsEngine {
 
   // ── Reset helpers ─────────────────────────────────────────
   void _softUnlock() {
-    // Pertahankan sebagian sample terbaru agar re-lock lebih cepat
     while (_window.length > _keepOnUnlock) _window.removeAt(0);
     _confidence = PodConfidence.fair;
     _lockResult = null;
@@ -468,7 +471,7 @@ class PodGpsEngine {
 
   void reset() => _hardReset();
 
-  // ── Haversine ─────────────────────────────────────────────
+  // ── Haversine dengan NaN protection ───────────────────────
   static double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371000.0;
     final dLat = (lat2 - lat1) * pi / 180.0;
@@ -476,6 +479,9 @@ class PodGpsEngine {
     final a = sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) *
             sin(dLon / 2) * sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
+    
+    // NaN protection
+    final safeA = a.clamp(0.0, 1.0);
+    return R * 2 * atan2(sqrt(safeA), sqrt(1.0 - safeA));
   }
 }

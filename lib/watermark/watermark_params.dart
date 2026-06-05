@@ -1,6 +1,5 @@
 // lib/watermark/watermark_params.dart
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
 
 class WatermarkParams {
   final Uint8List imageBytes;

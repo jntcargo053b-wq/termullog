@@ -410,7 +410,7 @@ class WatermarkEngine {
     
     final textPainter = TextPainter(
       text: textSpan,
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,  // ← PERBAIKAN: gunakan ui.TextDirection
     );
     
     textPainter.layout();
@@ -424,7 +424,7 @@ class WatermarkEngine {
     );
     final textPainter = TextPainter(
       text: textSpan,
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,  // ← PERBAIKAN: gunakan ui.TextDirection
     );
     textPainter.layout();
     return textPainter.width;

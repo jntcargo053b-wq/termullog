@@ -21,62 +21,69 @@ class WatermarkEngine {
   
   /// Main entry point: add watermark to image
   static Future<Uint8List> process(WatermarkParams params) async {
-    // Decode original image
-    final originalImg = img.decodeImage(params.imageBytes);
-    if (originalImg == null) {
-      throw Exception('Failed to decode image');
+    try {
+      // Decode original image
+      final originalImg = img.decodeImage(params.imageBytes);
+      if (originalImg == null) {
+        throw Exception('Failed to decode image - format tidak didukung');
+      }
+      
+      // Get dimensions
+      final width = originalImg.width;
+      final height = originalImg.height;
+      
+      // Create UI image from bytes
+      final uiImage = await _decodeUiImage(params.imageBytes);
+      
+      // Create recorder for drawing
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()));
+      
+      // Draw original image
+      canvas.drawImage(uiImage, Offset.zero, Paint());
+      
+      // Draw watermark based on layout
+      final layout = WatermarkLayout.values[params.layoutIndex];
+      switch (layout) {
+        case WatermarkLayout.podCorporate:
+          _drawCorporateWatermark(canvas, width, height, params);
+          break;
+        case WatermarkLayout.podDarkField:
+          _drawDarkFieldWatermark(canvas, width, height, params);
+          break;
+        case WatermarkLayout.podGovern:
+          _drawGovernmentWatermark(canvas, width, height, params);
+          break;
+      }
+      
+      // Finalize picture
+      final picture = recorder.endRecording();
+      final uiImageOutput = await picture.toImage(width, height);
+      final byteData = await uiImageOutput.toByteData(format: ui.ImageByteFormat.png);
+      
+      if (byteData == null) {
+        throw Exception('Failed to encode image to PNG');
+      }
+      
+      // Convert to JPEG
+      final jpegImg = img.decodeImage(byteData.buffer.asUint8List());
+      if (jpegImg == null) {
+        throw Exception('Failed to decode processed image');
+      }
+      
+      return Uint8List.fromList(img.encodeJpg(jpegImg, quality: params.imageQuality));
+    } catch (e) {
+      debugPrint('WatermarkEngine.process error: $e');
+      rethrow;
     }
-    
-    // Get dimensions
-    final width = originalImg.width;
-    final height = originalImg.height;
-    
-    // Create UI image from bytes
-    final uiImage = await _decodeUiImage(params.imageBytes);
-    
-    // Create recorder for drawing
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()));
-    
-    // Draw original image
-    canvas.drawImage(uiImage, Offset.zero, Paint());
-    
-    // Draw watermark based on layout
-    final layout = WatermarkLayout.values[params.layoutIndex];
-    switch (layout) {
-      case WatermarkLayout.podCorporate:
-        _drawCorporateWatermark(canvas, width, height, params);
-        break;
-      case WatermarkLayout.podDarkField:
-        _drawDarkFieldWatermark(canvas, width, height, params);
-        break;
-      case WatermarkLayout.podGovern:
-        _drawGovernmentWatermark(canvas, width, height, params);
-        break;
-    }
-    
-    // Finalize picture
-    final picture = recorder.endRecording();
-    final uiImageOutput = await picture.toImage(width, height);
-    final byteData = await uiImageOutput.toByteData(format: ui.ImageByteFormat.png);
-    
-    if (byteData == null) {
-      throw Exception('Failed to encode image');
-    }
-    
-    // Convert to JPEG
-    final jpegImg = img.decodeImage(byteData.buffer.asUint8List());
-    if (jpegImg == null) {
-      throw Exception('Failed to decode processed image');
-    }
-    
-    return Uint8List.fromList(img.encodeJpg(jpegImg, quality: params.imageQuality));
   }
   
   static Future<ui.Image> _decodeUiImage(Uint8List bytes) async {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromList(bytes, (image) {
       completer.complete(image);
+    }, onError: (error, stackTrace) {
+      completer.completeError(error, stackTrace);
     });
     return completer.future;
   }
@@ -410,7 +417,7 @@ class WatermarkEngine {
     
     final textPainter = TextPainter(
       text: textSpan,
-      textDirection: ui.TextDirection.ltr,  // ← PERBAIKAN: gunakan ui.TextDirection
+      textDirection: ui.TextDirection.ltr,
     );
     
     textPainter.layout();
@@ -424,7 +431,7 @@ class WatermarkEngine {
     );
     final textPainter = TextPainter(
       text: textSpan,
-      textDirection: ui.TextDirection.ltr,  // ← PERBAIKAN: gunakan ui.TextDirection
+      textDirection: ui.TextDirection.ltr,
     );
     textPainter.layout();
     return textPainter.width;

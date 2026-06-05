@@ -33,7 +33,7 @@ import 'package:image/image.dart' as img;
 
 import '../core/constants.dart';
 import '../services/pod_location_service.dart';
-import '../services/pod_gps_engine.dart';
+// HAPUS: import '../services/pod_gps_engine.dart'; // Sudah re-export dari pod_location_service
 import '../services/settings_cache.dart';
 import '../watermark/watermark_engine.dart';
 import '../watermark/watermark_params.dart';
@@ -79,6 +79,9 @@ class _CameraScreenState extends State<CameraScreen>
   String _dateFormat = 'dd/MM/yyyy';
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
+
+  // ── UI State ──────────────────────────────────────────────
+  bool _isMapLoading = false;  // Loading indicator untuk mini map
 
   // ── Capture threshold ─────────────────────────────────────
   static const double _hardBlockAccuracy = 35.0;  // hard block > 35m
@@ -202,7 +205,7 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
 
-    // 🔴 KRITIS: FREEZE GPS SNAPSHOT saat shutter ditekan
+    // FREEZE GPS SNAPSHOT saat shutter ditekan
     final gpsSnapshot = _gps;
 
     // Koordinat harus tersedia
@@ -224,7 +227,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (!gpsSnapshot.confidence.canCapture || acc > _warnAccuracy) {
       final label = gpsSnapshot.confidence.label;
       
-      // 🔴 FIXED: Operator precedence untuk confidence score
+      // Operator precedence untuk confidence score
       final confidencePercent = ((gpsSnapshot.lockResult?.confidenceScore ?? 0) * 100).toInt();
       
       final proceed = await showDialog<bool>(
@@ -268,25 +271,20 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
-      // Resize
-      Uint8List finalBytes = rawBytes;
-      final originalImg = img.decodeImage(rawBytes);
-      if (originalImg != null) {
-        const int targetWidth = 1920;
-        if (originalImg.width > targetWidth) {
-          final ratio = originalImg.height / originalImg.width;
-          final h = (targetWidth * ratio).round();
-          final resized = img.copyResize(originalImg, width: targetWidth, height: h);
-          finalBytes = Uint8List.fromList(img.encodeJpg(resized, quality: imageQuality));
-        } else {
-          finalBytes = Uint8List.fromList(img.encodeJpg(originalImg, quality: imageQuality));
-        }
+      // Resize image dengan compute isolate jika memungkinkan
+      Uint8List finalBytes;
+      if (kIsWeb) {
+        finalBytes = await _resizeImageSync(rawBytes, imageQuality);
+      } else {
+        finalBytes = await compute(_resizeImageIsolate, _ResizeParams(rawBytes, imageQuality));
       }
 
-      // Mini map
+      // Mini map dengan loading indicator
       Uint8List? mapBytes;
       if (_showMiniMap && gpsSnapshot.lat != null && gpsSnapshot.lon != null) {
+        if (mounted) setState(() => _isMapLoading = true);
         mapBytes = await _fetchMapBytes(gpsSnapshot.lat!, gpsSnapshot.lon!);
+        if (mounted) setState(() => _isMapLoading = false);
       }
 
       // Gunakan centroid (gpsSnapshot.lat/lon) dari snapshot yang sudah di-freeze
@@ -331,10 +329,42 @@ class _CameraScreenState extends State<CameraScreen>
       _snack('✅ Foto tersimpan ke Galeri', const Color(0xFF1A2540));
     } catch (e) {
       debugPrint('Capture error: $e');
-      _snack('Gagal: $e', Colors.red);
+      final userMessage = _getUserFriendlyErrorMessage(e);
+      _snack(userMessage, Colors.red);
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
+  }
+
+  // Helper untuk resize image (sync version)
+  Future<Uint8List> _resizeImageSync(Uint8List rawBytes, int quality) async {
+    final originalImg = img.decodeImage(rawBytes);
+    if (originalImg == null) return rawBytes;
+    
+    const int targetWidth = 1920;
+    if (originalImg.width <= targetWidth) {
+      return Uint8List.fromList(img.encodeJpg(originalImg, quality: quality));
+    }
+    
+    final ratio = originalImg.height / originalImg.width;
+    final h = (targetWidth * ratio).round();
+    final resized = img.copyResize(originalImg, width: targetWidth, height: h);
+    return Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+  }
+
+  // User-friendly error message
+  String _getUserFriendlyErrorMessage(Object e) {
+    final errorStr = e.toString().toLowerCase();
+    if (errorStr.contains('permission')) {
+      return '📁 Izin penyimpanan ditolak';
+    } else if (errorStr.contains('network') || errorStr.contains('socket')) {
+      return '🌐 Gagal mengambil peta (periksa koneksi)';
+    } else if (errorStr.contains('memory')) {
+      return '💾 Memori tidak cukup, coba restart aplikasi';
+    } else if (errorStr.contains('camera')) {
+      return '📷 Error kamera, coba restart';
+    }
+    return '❌ Gagal: $e';
   }
 
   Future<Uint8List?> _fetchMapBytes(double lat, double lon) async {
@@ -343,16 +373,18 @@ class _CameraScreenState extends State<CameraScreen>
           'https://staticmap.openstreetmap.de/staticmap.php'
           '?center=$lat,$lon&zoom=$_mapZoomLevel&size=240x240&maptype=mapnik');
       
-      // 🔴 FIXED: Tambahkan User-Agent untuk OSM compliance
+      // Tambahkan User-Agent untuk OSM compliance
       final res = await http.get(
         url,
         headers: {
-          'User-Agent': 'TermulLog-POD/2.0 (Android; +https://termullog.example.com)',
+          'User-Agent': 'TermulLog-POD/3.0 (Android; +https://termullog.example.com)',
         },
       ).timeout(const Duration(seconds: 10));
       
       if (res.statusCode == 200) return res.bodyBytes;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Map fetch error: $e');
+    }
     return null;
   }
 
@@ -487,6 +519,15 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
+          // Loading indicator untuk mini map
+          if (_isMapLoading)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: CircularProgressIndicator(color: Color(0xFF1E90FF)),
+              ),
+            ),
+
           // GPS Status Bar (top-left)
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
@@ -608,6 +649,29 @@ class _CameraScreenState extends State<CameraScreen>
       ),
     );
   }
+}
+
+// Parameter untuk isolate
+class _ResizeParams {
+  final Uint8List rawBytes;
+  final int quality;
+  _ResizeParams(this.rawBytes, this.quality);
+}
+
+// Fungsi untuk isolate (harus top-level)
+Future<Uint8List> _resizeImageIsolate(_ResizeParams params) async {
+  final originalImg = img.decodeImage(params.rawBytes);
+  if (originalImg == null) return params.rawBytes;
+  
+  const int targetWidth = 1920;
+  if (originalImg.width <= targetWidth) {
+    return Uint8List.fromList(img.encodeJpg(originalImg, quality: params.quality));
+  }
+  
+  final ratio = originalImg.height / originalImg.width;
+  final h = (targetWidth * ratio).round();
+  final resized = img.copyResize(originalImg, width: targetWidth, height: h);
+  return Uint8List.fromList(img.encodeJpg(resized, quality: params.quality));
 }
 
 // ══════════════════════════════════════════════════════════════

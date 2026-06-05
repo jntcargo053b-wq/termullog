@@ -1,18 +1,20 @@
 // lib/screens/camera_screen.dart
-// FINAL PRODUCTION – POD/Logistik Edition dengan semua bugfix dan tuning
-// - Threshold GPS: maxAcceptableAccuracy 20, geocode 18, OS last known 25, cache 20
-// - Startup GPS filter akurasi ≤35m & fresh <20 detik
-// - Geocode throttle: perpindahan ≥7m atau peningkatan akurasi ≥5m
-// - Weather interval 30 menit, reset saat app resume
-// - Jump filter: loncatan >60m hanya jika akurasi turun ≥2m
-// - Capture readiness: accuracy ≤15m & confidence ≥0.90 (hard block >35m)
-// - Mock GPS detection & penolakan capture
-// - Race condition fixed di _maybeResolveAddress
-// - Parallel load settings untuk startup lebih cepat
-// - Kompatibel Flutter 3.27+ (withValues alpha)
+// ============================================================
+// CAMERA SCREEN — POD (Proof of Delivery) Edition
+// ============================================================
+// GPS sepenuhnya dikelola oleh PodLocationService (singleton).
+// CameraScreen hanya subscribe Stream<PodLocationState> dan
+// merender UI. Tidak ada GPS logic langsung di screen ini.
+//
+// Alur capture:
+//   1. Cek confidence >= good (atau dialog konfirmasi jika fair)
+//   2. Hard-block jika accuracy > 35m
+//   3. Mock GPS ditolak
+//   4. Watermark menggunakan centroid dari lockResult
+// ============================================================
+
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
@@ -20,22 +22,21 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:gallery_saver_plus/gallery_saver.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 
 import '../core/constants.dart';
-import '../services/gps_lock_manager_logistics.dart';
-import '../services/address_resolver.dart';
-import '../services/last_known_location_cache.dart';
-import '../services/location_weather_service.dart';
+import '../services/pod_location_service.dart';
+import '../services/pod_gps_engine.dart';
 import '../services/settings_cache.dart';
 import '../watermark/watermark_engine.dart';
 import '../watermark/watermark_params.dart';
 import '../watermark/watermark_preview_painter.dart';
+import '../widgets/pod_gps_bar.dart';
 
 class CameraScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -47,7 +48,7 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  // Camera
+  // ── Camera ────────────────────────────────────────────────
   CameraController? _controller;
   bool _isCameraReady = false;
   bool _isCapturing = false;
@@ -55,36 +56,15 @@ class _CameraScreenState extends State<CameraScreen>
   Completer<void>? _initCompleter;
   bool _torchOn = false;
 
-  // GPS
-  final GpsLockManagerLogistics _gpsLock = GpsLockManagerLogistics();
-  final AddressResolver _addrResolver = AddressResolver();
-  StreamSubscription<Position>? _posSub;
-  bool _locationActive = false;
+  // ── GPS State (dari PodLocationService) ───────────────────
+  PodLocationState _gps = const PodLocationState();
+  StreamSubscription<PodLocationState>? _gpsSub;
 
-  // Data display & watermark
-  double? _displayLat;
-  double? _displayLon;
-  double? _displayAcc;
-  String _address = '';
-  String _weather = '';
-  bool _addrLoading = false;
-  double? _lastGeocodedAcc;
-  bool _isFromCache = false;
-
-  // Geocode throttling: posisi terakhir yang berhasil di-geocode
-  double? _lastGeocodedLat;
-  double? _lastGeocodedLon;
-
-  // GPS status chip
-  String _gpsStatus = '📍 Lokasi Tersimpan';
-  double _gpsConfidence = 0.0;
-  bool _isFallback = false;
-
-  // Clock
+  // ── Clock ─────────────────────────────────────────────────
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
 
-  // Settings
+  // ── Settings ──────────────────────────────────────────────
   bool _showWeather = true;
   bool _showAccuracy = true;
   bool _showAddress = true;
@@ -98,140 +78,72 @@ class _CameraScreenState extends State<CameraScreen>
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
 
-  // Threshold POD/Logistik (diperketat)
-  static const double _maxAcceptableAccuracy = 20.0;    // filter sample GPS
-  static const double _geocodeAccuracyThreshold = 18.0; // trigger geocode
-  static const double _maxOsLastKnownAccuracy = 25.0;   // OS last known
-  static const double _cacheAccuracyThreshold = 20.0;   // simpan cache
-  static const Duration _maxOurCacheAge = Duration(hours: 12);
-  static const double _maxJumpDistance = 60.0;          // loncatan maksimal
+  // ── Capture threshold ─────────────────────────────────────
+  static const double _hardBlockAccuracy = 35.0;  // hard block > 35m
+  static const double _warnAccuracy = 20.0;        // warning prompt > 20m
 
-  Position? _lastAcceptedRaw;
+  // ═══════════════════════════════════════════════════════════
+  // Lifecycle
+  // ═══════════════════════════════════════════════════════════
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadSettingsAsync(); // parallel load
-    _startupAddressWarmup();
+    _loadSettingsAsync();
     WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
-  }
-
-  Future<void> _startupAddressWarmup() async {
-    try {
-      final last = await Geolocator.getLastKnownPosition();
-      if (last != null && mounted && last.accuracy <= _maxOsLastKnownAccuracy) {
-        _maybeResolveAddress(last);
-      }
-    } catch (_) {}
   }
 
   Future<void> _boot() async {
     await Future.wait([
-      _loadOurCache(),
-      _bootGps(),
       _checkGalleryPermission(),
       _initCamera(),
     ]);
     _startClock();
+    _subscribeGps();
+    await PodLocationService.instance.start();
   }
 
-  Future<void> _bootGps() async {
-    await _requestLocationPermission();
-    _loadOsLastKnown();
+  void _subscribeGps() {
+    _gpsSub = PodLocationService.instance.stream.listen((state) {
+      if (!mounted) return;
+      setState(() => _gps = state);
+    });
+    // Ambil state saat ini segera
+    setState(() => _gps = PodLocationService.instance.currentState);
+  }
 
-    // Fused location dengan medium accuracy – filter akurasi ≤35m & fresh
-    try {
-      final fused = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      ).timeout(const Duration(seconds: 5));
-      if (mounted &&
-          fused.accuracy <= 35.0 &&
-          (fused.timestamp == null ||
-              DateTime.now().difference(fused.timestamp!).inSeconds < 20)) {
-        _onPosition(fused);
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (_isCameraInit) return;
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      await _controller?.dispose();
+      if (mounted && _controller != null) {
+        _controller = null;
+        setState(() => _isCameraReady = false);
       }
-    } catch (e) {
-      if (kDebugMode) debugPrint('Fused location error: $e');
-    }
-
-    await _initLocation();
-  }
-
-  Future<void> _loadOurCache() async {
-    try {
-      final cached = await LastKnownLocationCache.load();
-      if (cached == null || !mounted) return;
-      if (DateTime.now().difference(cached.cachedAt) > _maxOurCacheAge) return;
-      if (cached.address.isEmpty) return;
-
-      setState(() {
-        _displayLat = cached.latitude;
-        _displayLon = cached.longitude;
-        _displayAcc = cached.accuracy;
-        _address = cached.address;
-        _lastGeocodedAcc = cached.accuracy;
-        _weather = cached.weather;
-        _gpsStatus = '📍 Lokasi Tersimpan';
-        _isFromCache = true;
-        _lastGeocodedLat = cached.latitude;
-        _lastGeocodedLon = cached.longitude;
-      });
-
-      if (cached.accuracy <= _geocodeAccuracyThreshold) {
-        _maybeResolveAddress(Position(
-          latitude: cached.latitude,
-          longitude: cached.longitude,
-          accuracy: cached.accuracy,
-          timestamp: DateTime.now(),
-          altitude: 0, altitudeAccuracy: 0,
-          heading: 0, headingAccuracy: 0,
-          speed: 0, speedAccuracy: 0,
-        ));
-      }
-    } catch (e) {
-      debugPrint('OurCache error: $e');
+    } else if (state == AppLifecycleState.resumed) {
+      await _initCamera();
+      await _reloadSettings();
+      // Restart GPS stream (cuaca stale setelah resume)
+      await PodLocationService.instance.restart();
     }
   }
 
-  Future<void> _loadOsLastKnown() async {
-    try {
-      final last = await Geolocator.getLastKnownPosition();
-      if (last == null || !mounted) return;
-      if (last.accuracy > _maxOsLastKnownAccuracy) return;
-      final age = last.timestamp != null
-          ? DateTime.now().difference(last.timestamp!)
-          : Duration.zero;
-      if (age > const Duration(minutes: 1)) return;
-
-      // Jangan override posisi live yang sudah lebih baik
-      if (_displayLat != null && !_isFromCache) return;
-      setState(() {
-        _displayLat = last.latitude;
-        _displayLon = last.longitude;
-        _displayAcc = last.accuracy;
-        if (_address.isEmpty) _gpsStatus = '📡 Memperbarui lokasi...';
-      });
-      _maybeResolveAddress(last);
-    } catch (_) {}
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _clockTimer?.cancel();
+    _gpsSub?.cancel();
+    _controller?.dispose();
+    // JANGAN dispose PodLocationService di sini — ini singleton
+    super.dispose();
   }
 
-  Future<void> _checkGalleryPermission() async {
-    if (Platform.isAndroid) {
-      final v = await _androidSdkVersion();
-      if (v >= 33) await Permission.photos.request();
-      else await Permission.storage.request();
-    }
-  }
-
-  Future<int> _androidSdkVersion() async {
-    try {
-      final info = await DeviceInfoPlugin().androidInfo;
-      return info.version.sdkInt;
-    } catch (_) {
-      return 0;
-    }
-  }
+  // ═══════════════════════════════════════════════════════════
+  // Camera
+  // ═══════════════════════════════════════════════════════════
 
   Future<void> _initCamera() async {
     if (_isCameraInit) { await _initCompleter?.future; return; }
@@ -258,317 +170,77 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  Future<void> _requestLocationPermission() async {
-    try { await Geolocator.requestPermission(); } catch (_) {}
+  Future<void> _checkGalleryPermission() async {
+    if (Platform.isAndroid) {
+      final v = await _androidSdkVersion();
+      if (v >= 33) await Permission.photos.request();
+      else await Permission.storage.request();
+    }
   }
 
-  Future<void> _initLocation() async {
-    if (_locationActive) return;
-    _locationActive = true;
+  Future<int> _androidSdkVersion() async {
     try {
-      _posSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 3,
-        ),
-      ).listen(_onPosition, onError: (_) {});
-    } catch (e) {
-      debugPrint('Location stream error: $e');
-    }
+      final info = await DeviceInfoPlugin().androidInfo;
+      return info.version.sdkInt;
+    } catch (_) { return 0; }
   }
 
-  bool _isValidPosition(Position pos) {
-    // Tolak mock GPS
-    if (pos.isMocked) return false;
-    if (pos.accuracy > _maxAcceptableAccuracy) return false;
-    if (_lastAcceptedRaw != null) {
-      final d = _haversineDistance2(
-        _lastAcceptedRaw!.latitude, _lastAcceptedRaw!.longitude,
-        pos.latitude, pos.longitude,
-      );
-      if (d > _maxJumpDistance) {
-        // Hanya terima loncatan besar jika akurasi meningkat signifikan (≥2m)
-        final isBetter = pos.accuracy < (_lastAcceptedRaw!.accuracy - 2.0);
-        if (!isBetter) return false;
-      }
-    }
-    return true;
-  }
+  // ═══════════════════════════════════════════════════════════
+  // Capture
+  // ═══════════════════════════════════════════════════════════
 
-  void _onPosition(Position pos) {
-    if (!mounted) return;
-    // Tolak mock GPS dan update status
-    if (pos.isMocked) {
-      setState(() {
-        _gpsStatus = '⚠️ Mock GPS terdeteksi';
-      });
-      return;
-    }
-
-    if (!_isValidPosition(pos)) return;
-    _lastAcceptedRaw = pos;
-
-    final justLocked = _gpsLock.processSample(pos);
-    final lockData = _gpsLock.lockData;
-    final isLocked = _gpsLock.isLocked;
-
-    setState(() {
-      _gpsConfidence = lockData?.confidence ?? 0;
-      _isFallback = false;
-      _isFromCache = false;
-      _gpsStatus = isLocked ? '🟢 Terkunci' : '📡 Memperbarui lokasi...';
-    });
-
-    // Gunakan deliveryPosition (smoothed/cluster) untuk display & geocode
-    if (isLocked && lockData != null) {
-      _displayLat = lockData.deliveryPosition.latitude;
-      _displayLon = lockData.deliveryPosition.longitude;
-      _displayAcc = lockData.accuracy;
-    } else if (_gpsLock.bestRaw != null) {
-      _displayLat = _gpsLock.bestRaw!.latitude;
-      _displayLon = _gpsLock.bestRaw!.longitude;
-      _displayAcc = _gpsLock.bestRaw!.accuracy;
-    } else {
-      _displayLat = pos.latitude;
-      _displayLon = pos.longitude;
-      _displayAcc = pos.accuracy;
-    }
-
-    // Geocode dengan throttle
-    Position? geocodePos;
-    if (isLocked && lockData != null) {
-      geocodePos = _makePosition(
-        source: pos,
-        lat: lockData.deliveryPosition.latitude,
-        lon: lockData.deliveryPosition.longitude,
-        acc: lockData.accuracy,
-      );
-    } else if (_gpsLock.bestRaw != null && _gpsLock.bestRaw!.accuracy <= _geocodeAccuracyThreshold) {
-      geocodePos = _gpsLock.bestRaw;
-    } else if (pos.accuracy <= _geocodeAccuracyThreshold) {
-      geocodePos = pos;
-    }
-
-    if (justLocked && lockData != null) {
-      _lastGeocodedAcc = null;
-      _addrResolver.forceRefresh();
-      final refreshPos = geocodePos ?? (isLocked && lockData != null
-          ? _makePosition(
-              source: pos,
-              lat: lockData.deliveryPosition.latitude,
-              lon: lockData.deliveryPosition.longitude,
-              acc: lockData.accuracy,
-            )
-          : pos);
-      _maybeResolveAddress(refreshPos);
-    } else if (geocodePos != null) {
-      _maybeResolveAddress(geocodePos);
-    }
-
-    final sourcePos = (isLocked && lockData != null)
-        ? _makePosition(
-            source: pos,
-            lat: lockData.deliveryPosition.latitude,
-            lon: lockData.deliveryPosition.longitude,
-            acc: lockData.accuracy,
-          )
-        : pos;
-    _maybeLoadWeather(sourcePos);
-  }
-
-  Position _makePosition({
-    required Position source,
-    required double lat,
-    required double lon,
-    required double acc,
-  }) {
-    return Position(
-      latitude: lat, longitude: lon,
-      timestamp: DateTime.now(), accuracy: acc,
-      altitude: source.altitude, altitudeAccuracy: source.altitudeAccuracy,
-      heading: source.heading, headingAccuracy: source.headingAccuracy,
-      speed: source.speed, speedAccuracy: source.speedAccuracy,
-      floor: source.floor, isMocked: source.isMocked,
-    );
-  }
-
-  int _geoReqId = 0;
-  void _maybeResolveAddress(Position pos) {
-    if (pos.accuracy > _geocodeAccuracyThreshold) return;
-
-    // Throttle geocode: minimal perpindahan 7m atau peningkatan akurasi ≥5m
-    if (_lastGeocodedLat != null && _lastGeocodedLon != null) {
-      final distance = _haversineDistance2(
-        _lastGeocodedLat!,
-        _lastGeocodedLon!,
-        pos.latitude,
-        pos.longitude,
-      );
-      final accImproved = _lastGeocodedAcc != null &&
-          (_lastGeocodedAcc! - pos.accuracy) >= 5.0;
-
-      if (distance < 7.0 && !accImproved && _address.isNotEmpty) {
-        return;
-      }
-    }
-
-    final accImproved = _lastGeocodedAcc != null &&
-        (_lastGeocodedAcc! - pos.accuracy) >= 5.0;
-    if (_addrLoading && !accImproved) return;
-
-    final id = ++_geoReqId;
-    _addrLoading = true;
-
-    _addrResolver.resolve(pos).then((addr) {
-      if (!mounted || id != _geoReqId) return;
-      setState(() {
-        if (addr.isNotEmpty) {
-          final shouldUpdate = _lastGeocodedAcc == null || pos.accuracy <= _lastGeocodedAcc!;
-          if (shouldUpdate) {
-            _address = addr;
-            _lastGeocodedAcc = pos.accuracy;
-            _lastGeocodedLat = pos.latitude;
-            _lastGeocodedLon = pos.longitude;
-            _isFromCache = false;
-            if (_displayLat != null && _displayLon != null && _displayAcc != null &&
-                _displayAcc! <= _cacheAccuracyThreshold) {
-              LastKnownLocationCache.save(
-                position: Position(
-                  latitude: _displayLat!,
-                  longitude: _displayLon!,
-                  accuracy: _displayAcc!,
-                  timestamp: DateTime.now(),
-                  altitude: 0, altitudeAccuracy: 0,
-                  heading: 0, headingAccuracy: 0,
-                  speed: 0, speedAccuracy: 0,
-                ),
-                address: addr,
-                weather: _weather,
-              );
-            }
-          }
-        }
-        _addrLoading = false;
-      });
-    }).catchError((_) {
-      if (mounted) setState(() => _addrLoading = false);
-    });
-  }
-
-  DateTime? _lastWeatherFetch;
-  void _maybeLoadWeather(Position pos) {
-    final now = DateTime.now();
-    if (_lastWeatherFetch != null &&
-        now.difference(_lastWeatherFetch!).inMinutes < 30) return;
-    _lastWeatherFetch = now;
-    LocationWeatherService.fetchFromPosition(pos).then((result) {
-      if (mounted && result.weather.isNotEmpty) {
-        setState(() => _weather = result.weather);
-        if (_displayLat != null && _displayLon != null && _displayAcc != null &&
-            _displayAcc! <= _cacheAccuracyThreshold) {
-          LastKnownLocationCache.save(
-            position: Position(
-              latitude: _displayLat!,
-              longitude: _displayLon!,
-              accuracy: _displayAcc!,
-              timestamp: DateTime.now(),
-              altitude: 0, altitudeAccuracy: 0,
-              heading: 0, headingAccuracy: 0,
-              speed: 0, speedAccuracy: 0,
-            ),
-            address: _address,
-            weather: result.weather,
-          );
-        }
-      }
-    }).catchError((_) {});
-  }
-
-  void _startClock() {
-    _clockTimer?.cancel();
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
-    });
-  }
-
-  Future<void> _loadSettingsAsync() async {
-    await Future.wait([
-      SettingsCache.preload(),
-    ]);
-    // Ambil semua setting secara paralel (getters akan memicu preload sekali)
-    await Future.wait([
-      SettingsCache.showWeather.then((v) => _showWeather = v),
-      SettingsCache.showAccuracy.then((v) => _showAccuracy = v),
-      SettingsCache.showAddress.then((v) => _showAddress = v),
-      SettingsCache.showCoordinates.then((v) => _showCoordinates = v),
-      SettingsCache.opacity.then((v) => _opacity = v),
-      SettingsCache.showBorder.then((v) => _showBorder = v),
-      SettingsCache.layout.then((v) => _layout = v),
-      SettingsCache.showMiniMap.then((v) => _showMiniMap = v),
-      SettingsCache.mapZoomLevel.then((v) => _mapZoomLevel = v),
-      SettingsCache.dateFormat.then((v) => _dateFormat = v),
-      SettingsCache.timeFormat.then((v) => _timeFormat = v),
-      SettingsCache.fontSize.then((v) => _fontSize = v <= 13 ? 'small' : v >= 20 ? 'large' : 'normal'),
-    ]);
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _reloadSettings() async {
-    SettingsCache.invalidate();
-    await _loadSettingsAsync();
-  }
-
-  // Capture dengan kondisi ketat: accuracy ≤15m & confidence ≥0.90, hard block >35m
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
 
-    if (_displayLat == null || _displayLon == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('⏳ Menunggu posisi GPS...'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ));
-      }
+    final loc = _gps;
+
+    // Koordinat harus tersedia
+    if (loc.lat == null || loc.lon == null) {
+      _snack('⏳ Menunggu posisi GPS…', Colors.orange);
       return;
     }
 
-    final double acc = _displayAcc ?? 999.0;
-    // Hard block jika akurasi > 35m
-    if (acc > 35.0) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('❌ Akurasi GPS terlalu rendah (>35m). Tidak dapat mengambil foto.'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ));
-      }
+    final acc = loc.accuracy ?? 999.0;
+
+    // Hard block
+    if (acc > _hardBlockAccuracy) {
+      _snack('❌ Akurasi GPS terlalu rendah (±${acc.toStringAsFixed(0)}m > ${_hardBlockAccuracy.toInt()}m). '
+          'Tunggu sampai sinyal lebih baik.', Colors.red);
       return;
     }
 
-    final bool isGpsReady = _gpsLock.isLocked && acc <= 15.0 && _gpsConfidence >= 0.90;
-
-    if (!isGpsReady) {
-      final shouldContinue = await showDialog<bool>(
+    // Konfirmasi jika belum good
+    if (!loc.confidence.canCapture || acc > _warnAccuracy) {
+      final label = loc.confidence.label;
+      final proceed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('GPS Belum Stabil'),
+          backgroundColor: const Color(0xFF0A0E1A),
+          title: const Text('GPS Belum Stabil',
+              style: TextStyle(color: Colors.white)),
           content: Text(
-            'Akurasi GPS: ±${acc.toStringAsFixed(0)}m\n'
-            'Confidence: ${(_gpsConfidence * 100).toInt()}%\n\n'
-            'Lanjutkan mengambil foto? Hasil mungkin kurang akurat.',
+            'Status: $label\n'
+            'Akurasi: ±${acc.toStringAsFixed(0)} m\n'
+            'Confidence: ${(loc.lockResult?.confidenceScore ?? 0 * 100).toInt()}%\n\n'
+            'Foto mungkin memiliki lokasi kurang akurat.\nLanjutkan?',
+            style: const TextStyle(color: Colors.white70),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Batal',
+                  style: TextStyle(color: Colors.white54)),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: TextButton.styleFrom(foregroundColor: Colors.orange),
+              style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFFF9500)),
               child: const Text('Tetap Ambil'),
             ),
           ],
         ),
       );
-      if (shouldContinue != true) return;
+      if (proceed != true) return;
     }
 
     HapticFeedback.mediumImpact();
@@ -581,6 +253,7 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
+      // Resize
       Uint8List finalBytes = rawBytes;
       final originalImg = img.decodeImage(rawBytes);
       if (originalImg != null) {
@@ -595,19 +268,18 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
 
+      // Mini map
       Uint8List? mapBytes;
-      if (_showMiniMap && _displayLat != null && _displayLon != null) {
-        mapBytes = await LocationWeatherService.fetchMapWithRetry(
-          _displayLat!, _displayLon!,
-        );
-        if (mapBytes != null && mapBytes.isEmpty) mapBytes = null;
+      if (_showMiniMap && loc.lat != null && loc.lon != null) {
+        mapBytes = await _fetchMapBytes(loc.lat!, loc.lon!);
       }
 
+      // Gunakan centroid (loc.lat/lon) bukan raw GPS
       final params = WatermarkParams(
         imageBytes: finalBytes,
         timestamp: captureTime,
-        address: _address,
-        weather: _weather,
+        address: loc.address,
+        weather: loc.weather,
         layoutIndex: _layout.index,
         showWeather: _showWeather,
         showAccuracy: _showAccuracy,
@@ -615,9 +287,9 @@ class _CameraScreenState extends State<CameraScreen>
         showCoordinates: _showCoordinates,
         opacity: _opacity,
         showBorder: _showBorder,
-        lat: _displayLat,
-        lon: _displayLon,
-        acc: _displayAcc,
+        lat: loc.lat,
+        lon: loc.lon,
+        acc: loc.accuracy,
         fontScale: fontScale,
         imageQuality: imageQuality,
         appName: 'TermulLog',
@@ -639,27 +311,71 @@ class _CameraScreenState extends State<CameraScreen>
       final outPath = '${histDir.path}/termullog_$ts.jpg';
       await File(outPath).writeAsBytes(jpegBytes);
       await GallerySaver.saveImage(outPath, albumName: 'TermulLog');
-
       try { await File(xFile.path).delete(); } catch (_) {}
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('✅ Foto tersimpan ke Galeri'),
-          backgroundColor: Color(0xFF1A2540),
-          duration: Duration(seconds: 2),
-        ));
-      }
+      _snack('✅ Foto tersimpan ke Galeri', const Color(0xFF1A2540));
     } catch (e) {
       debugPrint('Capture error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal: $e'), backgroundColor: Colors.red),
-        );
-      }
+      _snack('Gagal: $e', Colors.red);
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
   }
+
+  Future<Uint8List?> _fetchMapBytes(double lat, double lon) async {
+    try {
+      final url = Uri.parse(
+          'https://staticmap.openstreetmap.de/staticmap.php'
+          '?center=$lat,$lon&zoom=$_mapZoomLevel&size=240x240&maptype=mapnik');
+      final res = await http.get(url).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) return res.bodyBytes;
+    } catch (_) {}
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Settings
+  // ═══════════════════════════════════════════════════════════
+
+  Future<void> _loadSettingsAsync() async {
+    await SettingsCache.preload();
+    await Future.wait([
+      SettingsCache.showWeather.then((v) => _showWeather = v),
+      SettingsCache.showAccuracy.then((v) => _showAccuracy = v),
+      SettingsCache.showAddress.then((v) => _showAddress = v),
+      SettingsCache.showCoordinates.then((v) => _showCoordinates = v),
+      SettingsCache.opacity.then((v) => _opacity = v),
+      SettingsCache.showBorder.then((v) => _showBorder = v),
+      SettingsCache.layout.then((v) => _layout = v),
+      SettingsCache.showMiniMap.then((v) => _showMiniMap = v),
+      SettingsCache.mapZoomLevel.then((v) => _mapZoomLevel = v),
+      SettingsCache.dateFormat.then((v) => _dateFormat = v),
+      SettingsCache.timeFormat.then((v) => _timeFormat = v),
+      SettingsCache.fontSize.then((v) =>
+          _fontSize = v <= 13 ? 'small' : v >= 20 ? 'large' : 'normal'),
+    ]);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _reloadSettings() async {
+    SettingsCache.invalidate();
+    await _loadSettingsAsync();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Clock
+  // ═══════════════════════════════════════════════════════════
+
+  void _startClock() {
+    _clockTimer?.cancel();
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Torch
+  // ═══════════════════════════════════════════════════════════
 
   Future<void> _toggleTorch() async {
     try {
@@ -669,58 +385,27 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (_) {}
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) async {
-    if (_isCameraInit) return;
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
-      await _controller?.dispose();
-      if (mounted && _controller != null) {
-        _controller = null;
-        setState(() => _isCameraReady = false);
-      }
-      await _posSub?.cancel();
-      _posSub = null;
-      _locationActive = false;
-    } else if (state == AppLifecycleState.resumed) {
-      // Reset weather cache agar cuaca tidak stale
-      _lastWeatherFetch = null;
-      _addrResolver.reset();
-      await _initCamera();
-      await _initLocation();
-      await _reloadSettings();
-    }
+  // ═══════════════════════════════════════════════════════════
+  // Helpers
+  // ═══════════════════════════════════════════════════════════
+
+  void _snack(String msg, Color bg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: bg,
+      duration: const Duration(seconds: 2),
+    ));
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _clockTimer?.cancel();
-    _posSub?.cancel();
-    _controller?.dispose();
-    _addrResolver.dispose();
-    super.dispose();
-  }
-
-  double _haversineDistance2(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371000.0;
-    final dLat = (lat2 - lat1) * pi / 180.0;
-    final dLon = (lon2 - lon1) * pi / 180.0;
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) *
-            sin(dLon / 2) * sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
-  }
-
-  Color _accColor(double? acc) {
-    if (acc == null) return Colors.grey;
-    if (acc <= 5) return const Color(0xFF3CB86A);
-    if (acc <= 15) return const Color(0xFFFFB820);
-    return const Color(0xFFE63946);
-  }
+  // ═══════════════════════════════════════════════════════════
+  // Build
+  // ═══════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
-    final bool previewReady = _controller != null && _controller!.value.isInitialized;
+    final bool previewReady =
+        _controller != null && _controller!.value.isInitialized;
 
     if (!_isCameraReady || !previewReady) {
       return Scaffold(
@@ -731,12 +416,18 @@ class _CameraScreenState extends State<CameraScreen>
             children: [
               const CircularProgressIndicator(color: Color(0xFF1E90FF)),
               const SizedBox(height: 16),
-              const Text('Menginisialisasi kamera…', style: TextStyle(color: Colors.white54)),
-              if (_address.isNotEmpty) ...[
-                const SizedBox(height: 24),
+              const Text('Menginisialisasi kamera…',
+                  style: TextStyle(color: Colors.white54)),
+              if (_gps.address.isNotEmpty) ...[
+                const SizedBox(height: 20),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(_address, style: const TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center, maxLines: 2),
+                  child: Text(
+                    _gps.address,
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                  ),
                 ),
               ],
             ],
@@ -745,22 +436,24 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    final canCapture = !_isCapturing;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Camera preview
           CameraPreview(_controller!),
+
+          // Watermark preview overlay
           CustomPaint(
             painter: WatermarkPreviewPainter(
               timestamp: _now,
-              hasPosition: _displayLat != null,
-              lat: _displayLat,
-              lon: _displayLon,
-              acc: _displayAcc,
-              address: _address,
-              weather: _weather,
+              hasPosition: _gps.lat != null,
+              lat: _gps.lat,
+              lon: _gps.lon,
+              acc: _gps.accuracy,
+              address: _gps.address,
+              weather: _gps.weather,
               showWeather: _showWeather,
               showAccuracy: _showAccuracy,
               showAddress: _showAddress,
@@ -770,73 +463,84 @@ class _CameraScreenState extends State<CameraScreen>
               layout: _layout,
             ),
           ),
+
+          // GPS Status Bar (top-left)
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
-            child: _GpsChip(
-              status: _gpsStatus,
-              acc: _displayAcc,
-              confidence: _gpsConfidence,
-              isFallback: _isFallback,
-              isFromCache: _isFromCache,
-              color: _accColor(_displayAcc),
+            child: PodGpsBar(
+              confidence: _gps.confidence,
+              accuracy: _gps.accuracy,
+              lockProgress: _gps.lockProgress,
+              fromCache: _gps.fromCache,
+              addressLoading: _gps.addressLoading,
             ),
           ),
-          if (_addrLoading)
+
+          // Address preview bar
+          if (_gps.address.isNotEmpty && _showAddress)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              right: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500)))),
-                    SizedBox(width: 6),
-                    Text('Alamat…', style: TextStyle(color: Color(0xFFFF9500), fontSize: 10)),
-                  ],
-                ),
-              ),
-            ),
-          if (_address.isNotEmpty && _showAddress)
-            Positioned(
-              bottom: 140,
+              bottom: 130,
               left: 0,
               right: 0,
-              child: _AddressPreviewBar(address: _address, isFromCache: _isFromCache, isLoading: _addrLoading),
+              child: _AddressBar(
+                address: _gps.address,
+                fromCache: _gps.fromCache,
+                isLoading: _gps.addressLoading,
+              ),
             ),
+
+          // Bottom controls
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(
               height: 110,
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 8),
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom + 8),
               color: const Color(0xCC000000),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Torch
                   IconButton(
-                    icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: _torchOn ? const Color(0xFFFFD95A) : Colors.white54, size: 28),
+                    icon: Icon(
+                      _torchOn ? Icons.flash_on : Icons.flash_off,
+                      color: _torchOn
+                          ? const Color(0xFFFFD95A)
+                          : Colors.white54,
+                      size: 28,
+                    ),
                     onPressed: _toggleTorch,
                   ),
+
+                  // Shutter button
                   GestureDetector(
-                    onTap: canCapture ? _takePhoto : null,
+                    onTap: _isCapturing ? null : _takePhoto,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 120),
                       width: _isCapturing ? 64 : 72,
                       height: _isCapturing ? 64 : 72,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: canCapture ? const Color(0x33FFFFFF) : Colors.grey.withOpacity(0.2),
-                        border: Border.all(color: canCapture ? Colors.white : Colors.grey, width: 4),
+                        color: _shutterColor(),
+                        border: Border.all(
+                          color: _shutterBorderColor(),
+                          width: 4,
+                        ),
                       ),
                       child: _isCapturing
-                          ? const Padding(padding: EdgeInsets.all(18), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+                          ? const Padding(
+                              padding: EdgeInsets.all(18),
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 3))
                           : null,
                     ),
                   ),
+
+                  // Layout picker
                   IconButton(
-                    icon: const Icon(Icons.layers_outlined, color: Colors.white54, size: 28),
+                    icon: const Icon(Icons.layers_outlined,
+                        color: Colors.white54, size: 28),
                     onPressed: _showLayoutPicker,
                   ),
                 ],
@@ -848,11 +552,29 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  Color _shutterColor() {
+    if (_isCapturing) return Colors.grey.withOpacity(0.2);
+    if (_gps.confidence == PodConfidence.excellent) {
+      return const Color(0x22AAFFAA);
+    }
+    return const Color(0x33FFFFFF);
+  }
+
+  Color _shutterBorderColor() {
+    if (_isCapturing) return Colors.grey;
+    if (_gps.confidence == PodConfidence.excellent) {
+      return const Color(0xFF3CB86A);
+    }
+    if (_gps.confidence == PodConfidence.good) return Colors.white;
+    return Colors.white54;
+  }
+
   void _showLayoutPicker() {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF0A0E1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _LayoutPickerSheet(
         current: _layout,
         onSelect: (l) {
@@ -865,61 +587,63 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-class _AddressPreviewBar extends StatelessWidget {
+// ══════════════════════════════════════════════════════════════
+// Helpers / Sub-widgets
+// ══════════════════════════════════════════════════════════════
+
+class _AddressBar extends StatelessWidget {
   final String address;
-  final bool isFromCache;
+  final bool fromCache;
   final bool isLoading;
-  const _AddressPreviewBar({required this.address, required this.isFromCache, required this.isLoading});
+  const _AddressBar({
+    required this.address,
+    required this.fromCache,
+    required this.isLoading,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final color =
+        fromCache ? const Color(0xFFCC9000) : Colors.white70;
+    final borderColor =
+        fromCache ? const Color(0x40FF9500) : const Color(0x401E90FF);
+    final icon =
+        fromCache ? Icons.history_outlined : Icons.location_on_outlined;
+    final iconColor =
+        fromCache ? const Color(0xFFFF9500) : const Color(0xFF1E90FF);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: const Color(0xCC000000),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isFromCache ? const Color(0x40FF9500) : const Color(0x401E90FF), width: 0.5),
+        border: Border.all(color: borderColor, width: 0.5),
       ),
       child: Row(
         children: [
-          Icon(isFromCache ? Icons.history_outlined : Icons.location_on_outlined, size: 13, color: isFromCache ? const Color(0xFFFF9500) : const Color(0xFF1E90FF)),
+          Icon(icon, size: 13, color: iconColor),
           const SizedBox(width: 6),
-          Expanded(child: Text(address, style: TextStyle(color: isFromCache ? const Color(0xFFCC9000) : Colors.white70, fontSize: 11), maxLines: 2, overflow: TextOverflow.ellipsis)),
+          Expanded(
+            child: Text(
+              address,
+              style: TextStyle(color: color, fontSize: 11),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           if (isLoading) ...[
             const SizedBox(width: 6),
-            const SizedBox(width: 8, height: 8, child: CircularProgressIndicator(strokeWidth: 1.2, valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500)))),
+            const SizedBox(
+              width: 8,
+              height: 8,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.2,
+                valueColor:
+                    AlwaysStoppedAnimation(Color(0xFFFF9500)),
+              ),
+            ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _GpsChip extends StatelessWidget {
-  final String status;
-  final double? acc;
-  final double confidence;
-  final bool isFallback;
-  final bool isFromCache;
-  final Color color;
-  const _GpsChip({required this.status, required this.acc, required this.confidence, required this.isFallback, required this.isFromCache, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withValues(alpha: 0.4))),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.gps_fixed, size: 11, color: color),
-          const SizedBox(width: 5),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(status, style: TextStyle(color: color, fontSize: 10, height: 1.2)),
-            if (acc != null)
-              Text('± ${acc!.toStringAsFixed(0)} m${isFallback ? ' (fallback)' : ''}', style: TextStyle(color: color.withValues(alpha: 0.8), fontSize: 9, height: 1.2)),
-          ]),
         ],
       ),
     );
@@ -929,7 +653,8 @@ class _GpsChip extends StatelessWidget {
 class _LayoutPickerSheet extends StatelessWidget {
   final WatermarkLayout current;
   final ValueChanged<WatermarkLayout> onSelect;
-  const _LayoutPickerSheet({required this.current, required this.onSelect});
+  const _LayoutPickerSheet(
+      {required this.current, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
@@ -937,24 +662,54 @@ class _LayoutPickerSheet extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 12),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2)),
+        ),
         const SizedBox(height: 16),
-        const Text('Pilih Gaya Watermark', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+        const Text('Pilih Gaya Watermark',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         ...WatermarkLayout.values.map((l) {
           final selected = l == current;
           return ListTile(
             leading: Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFF1E90FF).withOpacity(0.2) : Colors.white10,
+                color: selected
+                    ? const Color(0xFF1E90FF).withOpacity(0.2)
+                    : Colors.white10,
                 borderRadius: BorderRadius.circular(8),
-                border: selected ? Border.all(color: const Color(0xFF1E90FF), width: 1.5) : null,
+                border: selected
+                    ? Border.all(
+                        color: const Color(0xFF1E90FF), width: 1.5)
+                    : null,
               ),
-              child: Icon(_iconFor(l), color: selected ? const Color(0xFF1E90FF) : Colors.white38, size: 18),
+              child: Icon(_iconFor(l),
+                  color: selected
+                      ? const Color(0xFF1E90FF)
+                      : Colors.white38,
+                  size: 18),
             ),
-            title: Text(l.displayName, style: TextStyle(color: selected ? Colors.white : Colors.white70, fontSize: 14, fontWeight: selected ? FontWeight.w600 : FontWeight.w400)),
-            subtitle: Text(l.description, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            title: Text(
+              l.displayName,
+              style: TextStyle(
+                color: selected ? Colors.white : Colors.white70,
+                fontSize: 14,
+                fontWeight:
+                    selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            subtitle: Text(l.description,
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 11)),
             onTap: () => onSelect(l),
           );
         }),
@@ -965,11 +720,16 @@ class _LayoutPickerSheet extends StatelessWidget {
 
   IconData _iconFor(WatermarkLayout l) {
     switch (l) {
-      case WatermarkLayout.timemarkClassic: return Icons.access_time;
-      case WatermarkLayout.timemarkMinimal: return Icons.radio_button_checked;
-      case WatermarkLayout.timemarkCard: return Icons.credit_card;
-      case WatermarkLayout.timemarkHUD: return Icons.track_changes;
-      case WatermarkLayout.timemarkFilm: return Icons.photo_camera_back;
+      case WatermarkLayout.timemarkClassic:
+        return Icons.access_time;
+      case WatermarkLayout.timemarkMinimal:
+        return Icons.radio_button_checked;
+      case WatermarkLayout.timemarkCard:
+        return Icons.credit_card;
+      case WatermarkLayout.timemarkHUD:
+        return Icons.track_changes;
+      case WatermarkLayout.timemarkFilm:
+        return Icons.photo_camera_back;
     }
   }
 }

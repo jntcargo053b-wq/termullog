@@ -32,7 +32,7 @@ class WatermarkEngine {
       final width = originalImg.width;
       final height = originalImg.height;
       
-      // Create UI image from bytes
+      // Create UI image from bytes (with error handling)
       final uiImage = await _decodeUiImage(params.imageBytes);
       
       // Create recorder for drawing
@@ -78,14 +78,17 @@ class WatermarkEngine {
     }
   }
   
+  // Fixed: remove onError parameter (not supported)
   static Future<ui.Image> _decodeUiImage(Uint8List bytes) async {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromList(bytes, (image) {
       completer.complete(image);
-    }, onError: (error, stackTrace) {
-      completer.completeError(error, stackTrace);
     });
-    return completer.future;
+    // Add timeout to avoid hanging on corrupted images
+    return completer.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => throw Exception('Image decoding timeout'),
+    );
   }
   
   // ═══════════════════════════════════════════════════════════════

@@ -52,10 +52,9 @@ class PodAddressResolver {
   // ── HTTP Client dengan User-Agent ──────────────────────────
   static http.Client _client = http.Client();
   static bool _closed = false;
-  static final Object _clientLock = Object();
   
   // User-Agent untuk compliance OSM
-  static const String _userAgent = 'TermulLog-POD/2.0 (Android; +https://termullog.example.com)';
+  static const String _userAgent = 'TermulLog-POD/3.0 (Android; +https://termullog.example.com)';
   
   // ── Exact-coordinate cache (LRU, 5 desimal = ~1.1m) ─────
   static final LinkedHashMap<String, _CacheEntry> _exactCache = LinkedHashMap();
@@ -91,14 +90,10 @@ class PodAddressResolver {
     caseSensitive: false,
   );
   
-  // ── Helper untuk akses HTTP Client yang thread-safe ────────
+  // ── Helper untuk akses HTTP Client (thread-safe di Dart) ───
   static Future<T> _withClient<T>(Future<T> Function(http.Client client) operation) async {
-    http.Client client;
-    synchronized(_clientLock) {
-      if (_closed) throw StateError('PodAddressResolver is closed');
-      client = _client;
-    }
-    return await operation(client);
+    if (_closed) throw StateError('PodAddressResolver is closed');
+    return await operation(_client);
   }
   
   static bool _isPlusCode(String? s) {
@@ -576,19 +571,15 @@ class PodAddressResolver {
   
   // ── Public Methods for Service Management ─────────────────
   static void close() {
-    synchronized(_clientLock) {
-      if (_closed) return;
-      _closed = true;
-      _client.close();
-    }
+    if (_closed) return;
+    _closed = true;
+    _client.close();
   }
   
   static void reopen() {
-    synchronized(_clientLock) {
-      if (!_closed) return;
-      _client = http.Client();
-      _closed = false;
-    }
+    if (!_closed) return;
+    _client = http.Client();
+    _closed = false;
   }
   
   /// Clear all caches (for testing or force refresh)
@@ -608,11 +599,4 @@ class PodAddressResolver {
       'nearbyCache': _nearbyCache.length,
     };
   }
-}
-
-// Simple synchronized helper untuk Dart
-// Note: Untuk production, lebih baik gunakan package 'synchronized'
-void synchronized(Object lock, void Function() block) {
-  // Simple implementation - in production use package:synchronized
-  block();
 }

@@ -33,7 +33,6 @@ import 'package:image/image.dart' as img;
 
 import '../core/constants.dart';
 import '../services/pod_location_service.dart';
-// HAPUS: import '../services/pod_gps_engine.dart'; // Sudah re-export dari pod_location_service
 import '../services/settings_cache.dart';
 import '../watermark/watermark_engine.dart';
 import '../watermark/watermark_params.dart';
@@ -106,13 +105,12 @@ class _CameraScreenState extends State<CameraScreen>
     ]);
     _startClock();
     _subscribeGps();
-    await PodLocationService.instance.start();
+    // GPS sudah start dari main.dart, tidak perlu start ulang
   }
 
   void _subscribeGps() {
     // Ambil state saat ini segera sebelum subscribe
     _gps = PodLocationService.instance.currentState;
-    
     _gpsSub = PodLocationService.instance.stream.listen((state) {
       if (!mounted) return;
       setState(() => _gps = state);
@@ -132,7 +130,6 @@ class _CameraScreenState extends State<CameraScreen>
     } else if (state == AppLifecycleState.resumed) {
       await _initCamera();
       await _reloadSettings();
-      // Restart GPS stream (cuaca stale setelah resume)
       await PodLocationService.instance.restart();
     }
   }
@@ -143,7 +140,6 @@ class _CameraScreenState extends State<CameraScreen>
     _clockTimer?.cancel();
     _gpsSub?.cancel();
     _controller?.dispose();
-    // JANGAN dispose PodLocationService di sini — ini singleton
     super.dispose();
   }
 
@@ -186,8 +182,11 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _checkGalleryPermission() async {
     if (Platform.isAndroid) {
       final v = await _androidSdkVersion();
-      if (v >= 33) await Permission.photos.request();
-      else await Permission.storage.request();
+      if (v >= 33) {
+        await Permission.photos.request();
+      } else {
+        await Permission.storage.request();
+      }
     }
   }
 
@@ -203,12 +202,14 @@ class _CameraScreenState extends State<CameraScreen>
   // ═══════════════════════════════════════════════════════════
 
   Future<void> _takePhoto() async {
-    if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
+    if (_isCapturing || _controller == null || !_controller!.value.isInitialized) {
+      _snack('Kamera belum siap', Colors.orange);
+      return;
+    }
 
     // FREEZE GPS SNAPSHOT saat shutter ditekan
     final gpsSnapshot = _gps;
 
-    // Koordinat harus tersedia
     if (gpsSnapshot.lat == null || gpsSnapshot.lon == null) {
       _snack('⏳ Menunggu posisi GPS…', Colors.orange);
       return;
@@ -226,8 +227,6 @@ class _CameraScreenState extends State<CameraScreen>
     // Konfirmasi jika belum good
     if (!gpsSnapshot.confidence.canCapture || acc > _warnAccuracy) {
       final label = gpsSnapshot.confidence.label;
-      
-      // Operator precedence untuk confidence score
       final confidencePercent = ((gpsSnapshot.lockResult?.confidenceScore ?? 0) * 100).toInt();
       
       final proceed = await showDialog<bool>(
@@ -271,12 +270,19 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
-      // Resize image dengan compute isolate jika memungkinkan
-      Uint8List finalBytes;
-      if (kIsWeb) {
-        finalBytes = await _resizeImageSync(rawBytes, imageQuality);
-      } else {
-        finalBytes = await compute(_resizeImageIsolate, _ResizeParams(rawBytes, imageQuality));
+      // Resize image (tanpa isolate untuk menghindari error)
+      Uint8List finalBytes = rawBytes;
+      final originalImg = img.decodeImage(rawBytes);
+      if (originalImg != null) {
+        const int targetWidth = 1920;
+        if (originalImg.width > targetWidth) {
+          final ratio = originalImg.height / originalImg.width;
+          final h = (targetWidth * ratio).round();
+          final resized = img.copyResize(originalImg, width: targetWidth, height: h);
+          finalBytes = Uint8List.fromList(img.encodeJpg(resized, quality: imageQuality));
+        } else {
+          finalBytes = Uint8List.fromList(img.encodeJpg(originalImg, quality: imageQuality));
+        }
       }
 
       // Mini map dengan loading indicator
@@ -287,7 +293,6 @@ class _CameraScreenState extends State<CameraScreen>
         if (mounted) setState(() => _isMapLoading = false);
       }
 
-      // Gunakan centroid (gpsSnapshot.lat/lon) dari snapshot yang sudah di-freeze
       final params = WatermarkParams(
         imageBytes: finalBytes,
         timestamp: captureTime,
@@ -323,10 +328,20 @@ class _CameraScreenState extends State<CameraScreen>
       final ts = captureTime.millisecondsSinceEpoch;
       final outPath = '${histDir.path}/termullog_$ts.jpg';
       await File(outPath).writeAsBytes(jpegBytes);
-      await GallerySaver.saveImage(outPath, albumName: 'TermulLog');
-      try { await File(xFile.path).delete(); } catch (_) {}
 
-      _snack('✅ Foto tersimpan ke Galeri', const Color(0xFF1A2540));
+      // Simpan ke galeri dengan fallback
+      try {
+        final saved = await GallerySaver.saveImage(outPath, albumName: 'TermulLog');
+        if (saved == true) {
+          _snack('✅ Foto tersimpan ke Galeri', const Color(0xFF1A2540));
+        } else {
+          _snack('✅ Foto tersimpan di folder internal', const Color(0xFF1A2540));
+        }
+      } catch (e) {
+        _snack('✅ Foto tersimpan di internal (galeri error)', const Color(0xFF1A2540));
+      }
+      
+      try { await File(xFile.path).delete(); } catch (_) {}
     } catch (e) {
       debugPrint('Capture error: $e');
       final userMessage = _getUserFriendlyErrorMessage(e);
@@ -336,35 +351,13 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // Helper untuk resize image (sync version)
-  Future<Uint8List> _resizeImageSync(Uint8List rawBytes, int quality) async {
-    final originalImg = img.decodeImage(rawBytes);
-    if (originalImg == null) return rawBytes;
-    
-    const int targetWidth = 1920;
-    if (originalImg.width <= targetWidth) {
-      return Uint8List.fromList(img.encodeJpg(originalImg, quality: quality));
-    }
-    
-    final ratio = originalImg.height / originalImg.width;
-    final h = (targetWidth * ratio).round();
-    final resized = img.copyResize(originalImg, width: targetWidth, height: h);
-    return Uint8List.fromList(img.encodeJpg(resized, quality: quality));
-  }
-
-  // User-friendly error message
   String _getUserFriendlyErrorMessage(Object e) {
     final errorStr = e.toString().toLowerCase();
-    if (errorStr.contains('permission')) {
-      return '📁 Izin penyimpanan ditolak';
-    } else if (errorStr.contains('network') || errorStr.contains('socket')) {
-      return '🌐 Gagal mengambil peta (periksa koneksi)';
-    } else if (errorStr.contains('memory')) {
-      return '💾 Memori tidak cukup, coba restart aplikasi';
-    } else if (errorStr.contains('camera')) {
-      return '📷 Error kamera, coba restart';
-    }
-    return '❌ Gagal: $e';
+    if (errorStr.contains('permission')) return '📁 Izin penyimpanan ditolak';
+    if (errorStr.contains('network') || errorStr.contains('socket')) return '🌐 Gagal mengambil peta (periksa koneksi)';
+    if (errorStr.contains('memory')) return '💾 Memori tidak cukup, coba restart aplikasi';
+    if (errorStr.contains('camera')) return '📷 Error kamera, coba restart';
+    return '❌ Gagal: ${e.toString().split('\n').first}';
   }
 
   Future<Uint8List?> _fetchMapBytes(double lat, double lon) async {
@@ -373,7 +366,6 @@ class _CameraScreenState extends State<CameraScreen>
           'https://staticmap.openstreetmap.de/staticmap.php'
           '?center=$lat,$lon&zoom=$_mapZoomLevel&size=240x240&maptype=mapnik');
       
-      // Tambahkan User-Agent untuk OSM compliance
       final res = await http.get(
         url,
         headers: {
@@ -496,10 +488,8 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Camera preview
           CameraPreview(_controller!),
 
-          // Watermark preview overlay
           CustomPaint(
             painter: WatermarkPreviewPainter(
               timestamp: _now,
@@ -519,7 +509,6 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
-          // Loading indicator untuk mini map
           if (_isMapLoading)
             Container(
               color: Colors.black54,
@@ -528,7 +517,6 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-          // GPS Status Bar (top-left)
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -541,7 +529,6 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
-          // Address preview bar
           if (_gps.address.isNotEmpty && _showAddress)
             Positioned(
               bottom: 130,
@@ -551,10 +538,10 @@ class _CameraScreenState extends State<CameraScreen>
                 address: _gps.address,
                 fromCache: _gps.fromCache,
                 isLoading: _gps.addressLoading,
+                isFastAddress: _gps.isFastAddress,
               ),
             ),
 
-          // Bottom controls
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(
@@ -565,7 +552,6 @@ class _CameraScreenState extends State<CameraScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Torch
                   IconButton(
                     icon: Icon(
                       _torchOn ? Icons.flash_on : Icons.flash_off,
@@ -577,7 +563,6 @@ class _CameraScreenState extends State<CameraScreen>
                     onPressed: _toggleTorch,
                   ),
 
-                  // Shutter button
                   GestureDetector(
                     onTap: _isCapturing ? null : _takePhoto,
                     child: AnimatedContainer(
@@ -601,7 +586,6 @@ class _CameraScreenState extends State<CameraScreen>
                     ),
                   ),
 
-                  // Layout picker
                   IconButton(
                     icon: const Icon(Icons.layers_outlined,
                         color: Colors.white54, size: 28),
@@ -651,53 +635,37 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-// Parameter untuk isolate
-class _ResizeParams {
-  final Uint8List rawBytes;
-  final int quality;
-  _ResizeParams(this.rawBytes, this.quality);
-}
-
-// Fungsi untuk isolate (harus top-level)
-Future<Uint8List> _resizeImageIsolate(_ResizeParams params) async {
-  final originalImg = img.decodeImage(params.rawBytes);
-  if (originalImg == null) return params.rawBytes;
-  
-  const int targetWidth = 1920;
-  if (originalImg.width <= targetWidth) {
-    return Uint8List.fromList(img.encodeJpg(originalImg, quality: params.quality));
-  }
-  
-  final ratio = originalImg.height / originalImg.width;
-  final h = (targetWidth * ratio).round();
-  final resized = img.copyResize(originalImg, width: targetWidth, height: h);
-  return Uint8List.fromList(img.encodeJpg(resized, quality: params.quality));
-}
-
 // ══════════════════════════════════════════════════════════════
-// Helpers / Sub-widgets
+// Address Bar (dengan indikator fast vs accurate)
 // ══════════════════════════════════════════════════════════════
 
 class _AddressBar extends StatelessWidget {
   final String address;
   final bool fromCache;
   final bool isLoading;
+  final bool isFastAddress;
+
   const _AddressBar({
     required this.address,
     required this.fromCache,
     required this.isLoading,
+    this.isFastAddress = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        fromCache ? const Color(0xFFCC9000) : Colors.white70;
-    final borderColor =
-        fromCache ? const Color(0x40FF9500) : const Color(0x401E90FF);
-    final icon =
-        fromCache ? Icons.history_outlined : Icons.location_on_outlined;
-    final iconColor =
-        fromCache ? const Color(0xFFFF9500) : const Color(0xFF1E90FF);
+    final color = fromCache 
+        ? const Color(0xFFCC9000) 
+        : (isFastAddress ? Colors.cyan.shade300 : Colors.white70);
+    final borderColor = fromCache 
+        ? const Color(0x40FF9500) 
+        : (isFastAddress ? const Color(0x401E90FF) : const Color(0x401E90FF));
+    final icon = fromCache 
+        ? Icons.history_outlined 
+        : (isFastAddress ? Icons.speed_outlined : Icons.location_on_outlined);
+    final iconColor = fromCache 
+        ? const Color(0xFFFF9500) 
+        : (isFastAddress ? const Color(0xFF00BCD4) : const Color(0xFF1E90FF));
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
@@ -712,11 +680,22 @@ class _AddressBar extends StatelessWidget {
           Icon(icon, size: 13, color: iconColor),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(
-              address,
-              style: TextStyle(color: color, fontSize: 11),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isFastAddress && !fromCache && !isLoading)
+                  const Text(
+                    '⏳ Memperbarui alamat akurat...',
+                    style: TextStyle(color: Colors.cyan, fontSize: 9),
+                  ),
+                Text(
+                  address,
+                  style: TextStyle(color: color, fontSize: 11),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
           if (isLoading) ...[
@@ -726,8 +705,7 @@ class _AddressBar extends StatelessWidget {
               height: 8,
               child: CircularProgressIndicator(
                 strokeWidth: 1.2,
-                valueColor:
-                    AlwaysStoppedAnimation(Color(0xFFFF9500)),
+                valueColor: AlwaysStoppedAnimation(Color(0xFFFF9500)),
               ),
             ),
           ],
@@ -736,6 +714,10 @@ class _AddressBar extends StatelessWidget {
     );
   }
 }
+
+// ══════════════════════════════════════════════════════════════
+// Layout Picker Sheet
+// ══════════════════════════════════════════════════════════════
 
 class _LayoutPickerSheet extends StatelessWidget {
   final WatermarkLayout current;

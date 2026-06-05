@@ -2,60 +2,24 @@
 // ============================================================
 // POD LOCATION SERVICE — Proof of Delivery Edition
 // ============================================================
-// Arsitektur GPS Singleton yang mengelola:
-//   1. FusedLocationProviderClient (Android) / CLLocationManager (iOS)
-//   2. PodGpsEngine untuk multi-sample centroid & confidence
-//   3. Address resolver dengan caching & fallback chain
-//   4. Weather service (Open-Meteo)
-//   5. State streaming ke seluruh aplikasi
-//
-// Fitur POD:
-//   - Anti-spoof: hard reset pada mock GPS
-//   - Conditional geocode: hanya saat confidence good/excellent
-//   - Grid cache untuk reverse geocode (10m x 10m)
-//   - Kalman smoothing + outlier rejection
-//   - Audit trail lengkap untuk setiap lock
-// ============================================================
 
 import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:rxdart/rxdart.dart';
 
 import 'pod_gps_engine.dart';
 import 'pod_address_resolver.dart';
 import 'weather_service.dart';
 import 'settings_cache.dart';
 
+// Re-export PodConfidence dari pod_gps_engine
+export 'pod_gps_engine.dart' show PodConfidence, PodConfidenceLabel, PodLockResult;
+
 // ═══════════════════════════════════════════════════════════════
-// STATE OBJECTS
+// STATE OBJECT
 // ═══════════════════════════════════════════════════════════════
-
-/// Confidence level enum (re-exported from pod_gps_engine)
-enum PodConfidence {
-  searching,  // Belum ada data
-  poor,       // Ada data, tapi belum stabil
-  fair,       // Cukup untuk preview, tidak untuk capture
-  good,       // OK untuk capture
-  excellent,  // High-confidence POD
-}
-
-extension PodConfidenceLabel on PodConfidence {
-  String get label {
-    switch (this) {
-      case PodConfidence.searching: return '🔍 Mencari…';
-      case PodConfidence.poor:      return '📡 Sinyal Lemah';
-      case PodConfidence.fair:      return '⚡ Stabilisasi…';
-      case PodConfidence.good:      return '✅ Siap Foto';
-      case PodConfidence.excellent: return '🎯 Terkunci';
-    }
-  }
-
-  bool get canCapture => this == PodConfidence.good || this == PodConfidence.excellent;
-  bool get isLocked   => this == PodConfidence.excellent;
-}
 
 /// State lengkap lokasi untuk UI
 class PodLocationState {
@@ -127,12 +91,25 @@ class PodLocationService {
   Timer? _weatherTimer;
   Timer? _geocodeDebounce;
 
-  // ── State Management ───────────────────────────────────────
-  final _stateController = BehaviorSubject<PodLocationState>.seeded(
-    const PodLocationState(),
-  );
-  Stream<PodLocationState> get stream => _stateController.stream;
-  PodLocationState get currentState => _stateController.value;
+  // ── State Management (tanpa rxdart) ───────────────────────
+  PodLocationState _currentState = const PodLocationState();
+  final List<void Function(PodLocationState)> _listeners = [];
+  
+  Stream<PodLocationState> get stream {
+    final controller = StreamController<PodLocationState>.broadcast();
+    controller.add(_currentState);
+    _listeners.add(controller.add);
+    return controller.stream;
+  }
+  
+  PodLocationState get currentState => _currentState;
+  
+  void _emitState(PodLocationState newState) {
+    _currentState = newState;
+    for (final listener in List.from(_listeners)) {
+      listener(newState);
+    }
+  }
 
   // ── Configuration ──────────────────────────────────────────
   static const Duration _weatherUpdateInterval = Duration(minutes: 15);
@@ -151,7 +128,6 @@ class PodLocationService {
   
   // GPS settings
   bool _isRunning = false;
-  bool _isStarted = false;
   
   // ── Public Methods ─────────────────────────────────────────
 
@@ -168,7 +144,7 @@ class PodLocationService {
       // Request permission
       final permission = await _checkPermissions();
       if (!permission) {
-        _stateController.add(
+        _emitState(
           currentState.copyWith(
             confidence: PodConfidence.poor,
             address: 'Izin lokasi ditolak',
@@ -251,7 +227,6 @@ class PodLocationService {
     const locationSettings = LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
       distanceFilter: 2,  // Update setiap 2 meter
-      timeLimit: 500,      // Atau 500ms
     );
 
     _positionStream = Geolocator.getPositionStream(
@@ -271,7 +246,7 @@ class PodLocationService {
     if (rawPos.isMocked) {
       if (kDebugMode) debugPrint('PodLocationService: MOCK GPS detected — HARD RESET');
       _gpsEngine.reset();
-      _stateController.add(
+      _emitState(
         currentState.copyWith(
           confidence: PodConfidence.poor,
           address: 'GPS Mock terdeteksi',
@@ -295,7 +270,7 @@ class PodLocationService {
     final accuracy = lockResult?.accuracy ?? rawPos.accuracy;
     
     // Update state
-    _stateController.add(
+    _emitState(
       currentState.copyWith(
         lat: centroid.lat,
         lon: centroid.lon,
@@ -353,7 +328,7 @@ class PodLocationService {
     // Grid cache hit
     if (_geocodeGridCache.containsKey(gridKey)) {
       if (kDebugMode) debugPrint('PodLocationService: Grid cache HIT for $gridKey');
-      _stateController.add(
+      _emitState(
         currentState.copyWith(
           address: _geocodeGridCache[gridKey]!,
           fromCache: true,
@@ -367,7 +342,7 @@ class PodLocationService {
     
     // Fetch from resolver
     if (kDebugMode) debugPrint('PodLocationService: Geocode fetching...');
-    _stateController.add(currentState.copyWith(addressLoading: true));
+    _emitState(currentState.copyWith(addressLoading: true));
     
     try {
       final address = await PodAddressResolver.resolve(lat, lon);
@@ -388,7 +363,7 @@ class PodLocationService {
         }
       }
       
-      _stateController.add(
+      _emitState(
         currentState.copyWith(
           address: address,
           fromCache: false,
@@ -397,7 +372,7 @@ class PodLocationService {
       );
     } catch (e) {
       if (kDebugMode) debugPrint('PodLocationService: Geocode error - $e');
-      _stateController.add(currentState.copyWith(addressLoading: false));
+      _emitState(currentState.copyWith(addressLoading: false));
     }
   }
 
@@ -423,7 +398,7 @@ class PodLocationService {
   Future<void> _updateWeather(double lat, double lon) async {
     try {
       final weather = await _weatherService.fetchWeather(lat, lon);
-      _stateController.add(currentState.copyWith(weather: weather));
+      _emitState(currentState.copyWith(weather: weather));
       _lastWeatherUpdate = DateTime.now();
       if (kDebugMode) debugPrint('PodLocationService: Weather updated - $weather');
     } catch (e) {
@@ -438,7 +413,7 @@ class PodLocationService {
     _weatherTimer?.cancel();
     _positionStream?.cancel();
     _geocodeDebounce?.cancel();
-    _stateController.close();
+    _listeners.clear();
     PodAddressResolver.close();
     if (kDebugMode) debugPrint('PodLocationService: Disposed');
   }

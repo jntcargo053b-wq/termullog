@@ -11,11 +11,13 @@
 //   2. Hard-block jika accuracy > 35m
 //   3. Mock GPS ditolak
 //   4. Watermark menggunakan centroid dari lockResult
+//   5. GPS snapshot di-freeze saat shutter untuk konsistensi
 // ============================================================
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -105,12 +107,13 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   void _subscribeGps() {
+    // Ambil state saat ini segera sebelum subscribe
+    _gps = PodLocationService.instance.currentState;
+    
     _gpsSub = PodLocationService.instance.stream.listen((state) {
       if (!mounted) return;
       setState(() => _gps = state);
     });
-    // Ambil state saat ini segera
-    setState(() => _gps = PodLocationService.instance.currentState);
   }
 
   @override
@@ -146,7 +149,10 @@ class _CameraScreenState extends State<CameraScreen>
   // ═══════════════════════════════════════════════════════════
 
   Future<void> _initCamera() async {
-    if (_isCameraInit) { await _initCompleter?.future; return; }
+    if (_isCameraInit) { 
+      await _initCompleter?.future; 
+      return; 
+    }
     _isCameraInit = true;
     _initCompleter = Completer();
     try {
@@ -159,14 +165,18 @@ class _CameraScreenState extends State<CameraScreen>
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
       await c.initialize();
-      if (!mounted) { await c.dispose(); return; }
+      if (!mounted) { 
+        await c.dispose(); 
+        return; 
+      }
       _controller = c;
       if (mounted) setState(() => _isCameraReady = true);
+      _initCompleter?.complete();
     } catch (e) {
       debugPrint('Camera init error: $e');
+      _initCompleter?.completeError(e);
     } finally {
       _isCameraInit = false;
-      _initCompleter?.complete();
     }
   }
 
@@ -192,15 +202,16 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _takePhoto() async {
     if (_isCapturing || _controller == null || !_controller!.value.isInitialized) return;
 
-    final loc = _gps;
+    // 🔴 KRITIS: FREEZE GPS SNAPSHOT saat shutter ditekan
+    final gpsSnapshot = _gps;
 
     // Koordinat harus tersedia
-    if (loc.lat == null || loc.lon == null) {
+    if (gpsSnapshot.lat == null || gpsSnapshot.lon == null) {
       _snack('⏳ Menunggu posisi GPS…', Colors.orange);
       return;
     }
 
-    final acc = loc.accuracy ?? 999.0;
+    final acc = gpsSnapshot.accuracy ?? 999.0;
 
     // Hard block
     if (acc > _hardBlockAccuracy) {
@@ -210,8 +221,12 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     // Konfirmasi jika belum good
-    if (!loc.confidence.canCapture || acc > _warnAccuracy) {
-      final label = loc.confidence.label;
+    if (!gpsSnapshot.confidence.canCapture || acc > _warnAccuracy) {
+      final label = gpsSnapshot.confidence.label;
+      
+      // 🔴 FIXED: Operator precedence untuk confidence score
+      final confidencePercent = ((gpsSnapshot.lockResult?.confidenceScore ?? 0) * 100).toInt();
+      
       final proceed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -220,8 +235,8 @@ class _CameraScreenState extends State<CameraScreen>
               style: TextStyle(color: Colors.white)),
           content: Text(
             'Status: $label\n'
-            'Akurasi: ±${acc.toStringAsFixed(0)} m\n'
-            'Confidence: ${(loc.lockResult?.confidenceScore ?? 0 * 100).toInt()}%\n\n'
+            'Akurasi: ±${acc.toStringAsFixed(0)}m\n'
+            'Confidence: $confidencePercent%\n\n'
             'Foto mungkin memiliki lokasi kurang akurat.\nLanjutkan?',
             style: const TextStyle(color: Colors.white70),
           ),
@@ -270,16 +285,16 @@ class _CameraScreenState extends State<CameraScreen>
 
       // Mini map
       Uint8List? mapBytes;
-      if (_showMiniMap && loc.lat != null && loc.lon != null) {
-        mapBytes = await _fetchMapBytes(loc.lat!, loc.lon!);
+      if (_showMiniMap && gpsSnapshot.lat != null && gpsSnapshot.lon != null) {
+        mapBytes = await _fetchMapBytes(gpsSnapshot.lat!, gpsSnapshot.lon!);
       }
 
-      // Gunakan centroid (loc.lat/lon) bukan raw GPS
+      // Gunakan centroid (gpsSnapshot.lat/lon) dari snapshot yang sudah di-freeze
       final params = WatermarkParams(
         imageBytes: finalBytes,
         timestamp: captureTime,
-        address: loc.address,
-        weather: loc.weather,
+        address: gpsSnapshot.address,
+        weather: gpsSnapshot.weather,
         layoutIndex: _layout.index,
         showWeather: _showWeather,
         showAccuracy: _showAccuracy,
@@ -287,9 +302,9 @@ class _CameraScreenState extends State<CameraScreen>
         showCoordinates: _showCoordinates,
         opacity: _opacity,
         showBorder: _showBorder,
-        lat: loc.lat,
-        lon: loc.lon,
-        acc: loc.accuracy,
+        lat: gpsSnapshot.lat,
+        lon: gpsSnapshot.lon,
+        acc: gpsSnapshot.accuracy,
         fontScale: fontScale,
         imageQuality: imageQuality,
         appName: 'TermulLog',
@@ -327,7 +342,15 @@ class _CameraScreenState extends State<CameraScreen>
       final url = Uri.parse(
           'https://staticmap.openstreetmap.de/staticmap.php'
           '?center=$lat,$lon&zoom=$_mapZoomLevel&size=240x240&maptype=mapnik');
-      final res = await http.get(url).timeout(const Duration(seconds: 10));
+      
+      // 🔴 FIXED: Tambahkan User-Agent untuk OSM compliance
+      final res = await http.get(
+        url,
+        headers: {
+          'User-Agent': 'TermulLog-POD/2.0 (Android; +https://termullog.example.com)',
+        },
+      ).timeout(const Duration(seconds: 10));
+      
       if (res.statusCode == 200) return res.bodyBytes;
     } catch (_) {}
     return null;

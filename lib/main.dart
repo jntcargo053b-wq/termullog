@@ -7,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'core/camera_registry.dart';
 import 'services/settings_cache.dart';
 import 'services/pod_address_resolver.dart';
+import 'services/pod_location_service.dart'; // ✅ Tambahkan import
 import 'ui/app.dart';
 
 void main() async {
@@ -19,9 +20,14 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Preload settings saja
-  // Address cache akan di-load otomatis saat pertama kali dibutuhkan
+  // Preload settings
   await SettingsCache.preload();
+
+  // 🔴 START GPS SEJAK AWAL (alamat siap saat kamera dibuka)
+  // Tidak perlu await agar tidak menghambat UI
+  PodLocationService.instance.start().catchError((e) {
+    debugPrint('❌ Gagal start GPS: $e');
+  });
 
   try {
     CameraRegistry.cameras = await availableCameras();

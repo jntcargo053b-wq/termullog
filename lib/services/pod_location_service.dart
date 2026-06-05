@@ -8,6 +8,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:rxdart/rxdart.dart';
 
 import 'pod_gps_engine.dart';
 import 'pod_address_resolver.dart';
@@ -91,25 +92,12 @@ class PodLocationService {
   Timer? _weatherTimer;
   Timer? _geocodeDebounce;
 
-  // ── State Management (tanpa rxdart) ───────────────────────
-  PodLocationState _currentState = const PodLocationState();
-  final List<void Function(PodLocationState)> _listeners = [];
-  
-  Stream<PodLocationState> get stream {
-    final controller = StreamController<PodLocationState>.broadcast();
-    controller.add(_currentState);
-    _listeners.add(controller.add);
-    return controller.stream;
-  }
-  
-  PodLocationState get currentState => _currentState;
-  
-  void _emitState(PodLocationState newState) {
-    _currentState = newState;
-    for (final listener in List.from(_listeners)) {
-      listener(newState);
-    }
-  }
+  // ── State Management ───────────────────────────────────────
+  final _stateController = BehaviorSubject<PodLocationState>.seeded(
+    const PodLocationState(),
+  );
+  Stream<PodLocationState> get stream => _stateController.stream;
+  PodLocationState get currentState => _stateController.value;
 
   // ── Configuration ──────────────────────────────────────────
   static const Duration _weatherUpdateInterval = Duration(minutes: 15);
@@ -144,7 +132,7 @@ class PodLocationService {
       // Request permission
       final permission = await _checkPermissions();
       if (!permission) {
-        _emitState(
+        _stateController.add(
           currentState.copyWith(
             confidence: PodConfidence.poor,
             address: 'Izin lokasi ditolak',
@@ -246,7 +234,7 @@ class PodLocationService {
     if (rawPos.isMocked) {
       if (kDebugMode) debugPrint('PodLocationService: MOCK GPS detected — HARD RESET');
       _gpsEngine.reset();
-      _emitState(
+      _stateController.add(
         currentState.copyWith(
           confidence: PodConfidence.poor,
           address: 'GPS Mock terdeteksi',
@@ -270,7 +258,7 @@ class PodLocationService {
     final accuracy = lockResult?.accuracy ?? rawPos.accuracy;
     
     // Update state
-    _emitState(
+    _stateController.add(
       currentState.copyWith(
         lat: centroid.lat,
         lon: centroid.lon,
@@ -328,7 +316,7 @@ class PodLocationService {
     // Grid cache hit
     if (_geocodeGridCache.containsKey(gridKey)) {
       if (kDebugMode) debugPrint('PodLocationService: Grid cache HIT for $gridKey');
-      _emitState(
+      _stateController.add(
         currentState.copyWith(
           address: _geocodeGridCache[gridKey]!,
           fromCache: true,
@@ -342,7 +330,7 @@ class PodLocationService {
     
     // Fetch from resolver
     if (kDebugMode) debugPrint('PodLocationService: Geocode fetching...');
-    _emitState(currentState.copyWith(addressLoading: true));
+    _stateController.add(currentState.copyWith(addressLoading: true));
     
     try {
       final address = await PodAddressResolver.resolve(lat, lon);
@@ -363,7 +351,7 @@ class PodLocationService {
         }
       }
       
-      _emitState(
+      _stateController.add(
         currentState.copyWith(
           address: address,
           fromCache: false,
@@ -372,7 +360,7 @@ class PodLocationService {
       );
     } catch (e) {
       if (kDebugMode) debugPrint('PodLocationService: Geocode error - $e');
-      _emitState(currentState.copyWith(addressLoading: false));
+      _stateController.add(currentState.copyWith(addressLoading: false));
     }
   }
 
@@ -398,7 +386,7 @@ class PodLocationService {
   Future<void> _updateWeather(double lat, double lon) async {
     try {
       final weather = await _weatherService.fetchWeather(lat, lon);
-      _emitState(currentState.copyWith(weather: weather));
+      _stateController.add(currentState.copyWith(weather: weather));
       _lastWeatherUpdate = DateTime.now();
       if (kDebugMode) debugPrint('PodLocationService: Weather updated - $weather');
     } catch (e) {
@@ -413,7 +401,7 @@ class PodLocationService {
     _weatherTimer?.cancel();
     _positionStream?.cancel();
     _geocodeDebounce?.cancel();
-    _listeners.clear();
+    _stateController.close();
     PodAddressResolver.close();
     if (kDebugMode) debugPrint('PodLocationService: Disposed');
   }

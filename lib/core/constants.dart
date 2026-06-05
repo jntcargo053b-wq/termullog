@@ -1,6 +1,8 @@
 // lib/core/constants.dart
 // TermulLog – Proof of Delivery Edition
 
+import 'package:image/image.dart' as img;
+
 // ============================================================
 // WATERMARK LAYOUT (Enum) — 3 style profesional POD
 // ============================================================
@@ -48,6 +50,6 @@ const int kLogoMaxWidth    = 160;
 const int kLogoMaxHeight   = 60;
 
 // ============================================================
-// WARNA WATERMARK (img package RGBA)
+// WARNA WATERMARK (img package RGBA) — untuk wm_helpers.dart
 // ============================================================
-// (Tidak perlu di-import di sini; gunakan literal di engine)
+final img.Color kColorShadow = img.ColorRgba8(0, 0, 0, 140);

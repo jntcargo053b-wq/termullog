@@ -236,48 +236,66 @@ class WatermarkEngine {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYOUT 3 — Timemark Clean
-  // Branding pojok kanan atas, jam besar + bar vertikal + alamat bawah
-  // Style bersih transparan di bawah foto
+  // LAYOUT 3 — Timemark Clean (floating card rounded)
+  // Card transparan mengambang di atas foto, tidak menutup full-width
   // ═══════════════════════════════════════════════════════════════
   static void _drawTimemarkClean(Canvas c, double W, double H, double sc, WatermarkParams p) {
-    final double panelH = 200 * sc;
-    final double panelY = H - panelH;
-    final double padL = 24 * sc;
+    final cardWidth = W * 0.72;
+    final cardHeight = 220 * sc;
 
-    // Panel gelap bawah
-    c.drawRect(Rect.fromLTWH(0, panelY, W, panelH),
-        Paint()..color = Color.fromRGBO(10, 10, 20, p.opacity.clamp(0.78, 0.94)));
+    final cardX = 24 * sc;
+    final cardY = H - cardHeight - (30 * sc);
 
-    // Branding pojok kanan atas foto
-    _tp('Termullog', 24 * sc, 28 * sc, const Color(0xFFF5C518),
-        bold: true, x: W - 210 * sc).paint(c);
-    _tp('Camera', 15 * sc, 58 * sc, Colors.white70, x: W - 210 * sc).paint(c);
+    final cardRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(cardX, cardY, cardWidth, cardHeight),
+      Radius.circular(24 * sc),
+    );
+
+    // Background card semi-transparan
+    c.drawRRect(
+      cardRect,
+      Paint()..color = Colors.black.withOpacity(0.40),
+    );
+
+    // Border halus
+    c.drawRRect(
+      cardRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5 * sc
+        ..color = Colors.white.withOpacity(0.15),
+    );
+
+    final double padL = cardX + 18 * sc;
 
     // ─── Jam besar ───
     final String timeStr = DateFormat('HH:mm').format(p.timestamp);
-    _tp(timeStr, 64 * sc, panelY + 14 * sc, Colors.white, bold: true, x: padL).paint(c);
+    _tp(timeStr, 64 * sc, cardY + 14 * sc, Colors.white, bold: true, x: padL).paint(c);
 
-    // Bar vertikal aksen
-    c.drawRect(Rect.fromLTWH(padL + 160 * sc, panelY + 14 * sc, 3 * sc, 70 * sc),
-        Paint()..color = const Color(0xFFF5C518));
+    // Bar vertikal aksen kuning
+    c.drawRect(
+      Rect.fromLTWH(padL + 160 * sc, cardY + 14 * sc, 3 * sc, 70 * sc),
+      Paint()..color = const Color(0xFFF5C518),
+    );
 
     // Tanggal & hari
     final double dateX = padL + 175 * sc;
     _tp(DateFormat('dd MMMM yyyy').format(p.timestamp),
-        18 * sc, panelY + 22 * sc, Colors.white70, x: dateX).paint(c);
+        18 * sc, cardY + 22 * sc, Colors.white70, x: dateX).paint(c);
     _tp(DateFormat('EEEE', 'id_ID').format(p.timestamp),
-        16 * sc, panelY + 48 * sc, Colors.white54, x: dateX).paint(c);
+        16 * sc, cardY + 48 * sc, Colors.white54, x: dateX).paint(c);
 
     // Garis pemisah
-    c.drawRect(Rect.fromLTWH(padL, panelY + 92 * sc, W - padL * 2, 1 * sc),
-        Paint()..color = Colors.white24);
+    c.drawRect(
+      Rect.fromLTWH(padL, cardY + 92 * sc, cardWidth - 36 * sc, 1 * sc),
+      Paint()..color = Colors.white24,
+    );
 
     // Alamat
-    double infoY = panelY + 104 * sc;
+    double infoY = cardY + 104 * sc;
     if (p.showAddress && p.address.isNotEmpty) {
       _tp(p.address, 16 * sc, infoY, Colors.white70,
-          x: padL, maxW: W - padL * 2).paint(c);
+          x: padL, maxW: cardWidth - 36 * sc).paint(c);
       infoY += 26 * sc;
     }
 
@@ -293,16 +311,24 @@ class WatermarkEngine {
       _tp(p.weather, 14 * sc, infoY, const Color(0xFF80CBC4), x: padL).paint(c);
     }
 
-    // Kode verifikasi footer
+    // Kode verifikasi + branding pojok kanan bawah card
     final String verCode = _verCode(p);
-    final double footerY = H - 38 * sc;
-    c.drawRect(Rect.fromLTWH(0, footerY, W, 1 * sc),
-        Paint()..color = Colors.white12);
-    _tp('🛡 Kode Foto: $verCode', 12 * sc, footerY + 8 * sc, Colors.white38, x: padL).paint(c);
+    _tp('🛡 Kode: $verCode', 12 * sc, cardY + cardHeight - 38 * sc,
+        Colors.white38, x: padL).paint(c);
+
+    _tp('Termullog', 18 * sc, cardY + cardHeight - 46 * sc,
+        const Color(0xFFF5C518), bold: true, x: cardX + cardWidth - 160 * sc).paint(c);
+    _tp('Camera', 13 * sc, cardY + cardHeight - 24 * sc,
+        Colors.white54, x: cardX + cardWidth - 160 * sc).paint(c);
 
     if (p.showBorder) {
-      c.drawRect(Rect.fromLTWH(0, panelY, W, 3 * sc),
-          Paint()..color = const Color(0xFFF5C518));
+      c.drawRRect(
+        cardRect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3 * sc
+          ..color = const Color(0xFFF5C518),
+      );
     }
   }
 

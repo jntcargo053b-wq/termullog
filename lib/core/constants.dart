@@ -1,42 +1,42 @@
 // lib/core/constants.dart
-// TermulLog – Proof of Delivery Edition
+// TermulLog – Timemark Style Edition
 
 import 'package:image/image.dart' as img;
 
 // ============================================================
-// WATERMARK LAYOUT (Enum) — 3 style profesional POD
+// WATERMARK LAYOUT (Enum) — 3 style Timemark
 // ============================================================
 enum WatermarkLayout {
-  podCorporate,   // Corporate: panel putih bawah, logo, data terstruktur
-  podDarkField,   // Dark Field: overlay gelap, accent cyan, gaya lapangan
-  podGovern,      // Government: strip biru tua formal, cap verifikasi
+  podCorporate,   // Timemark Light: panel putih, badge nama, jam biru besar
+  podDarkField,   // Timemark Dark: panel gelap, jam putih besar, alamat lengkap
+  podGovern,      // Timemark Clean: branding pojok atas, panel gelap minimalis
 }
 
 extension WatermarkLayoutExtension on WatermarkLayout {
   String get displayName {
     switch (this) {
-      case WatermarkLayout.podCorporate: return 'Corporate Report';
-      case WatermarkLayout.podDarkField: return 'Dark Field';
-      case WatermarkLayout.podGovern:    return 'Government';
+      case WatermarkLayout.podCorporate: return 'Timemark Light';
+      case WatermarkLayout.podDarkField: return 'Timemark Dark';
+      case WatermarkLayout.podGovern:    return 'Timemark Clean';
     }
   }
 
   String get description {
     switch (this) {
       case WatermarkLayout.podCorporate:
-        return 'Panel putih bersih di bawah foto. Header logo, data terstruktur, hash verifikasi.';
+        return 'Panel putih bawah. Badge nama, jam biru besar, branding kuning kanan.';
       case WatermarkLayout.podDarkField:
-        return 'Overlay gelap transparan. Accent cyan modern. Ideal untuk foto outdoor/lapangan.';
+        return 'Panel gelap full-width. Jam putih besar, alamat lengkap, kode verifikasi.';
       case WatermarkLayout.podGovern:
-        return 'Strip biru tua formal. Teks structured. Cocok untuk dokumen resmi/pemerintahan.';
+        return 'Branding pojok kanan atas. Panel gelap minimalis dengan bar kuning.';
     }
   }
 
   String get iconLabel {
     switch (this) {
-      case WatermarkLayout.podCorporate: return 'CORP';
-      case WatermarkLayout.podDarkField: return 'FIELD';
-      case WatermarkLayout.podGovern:    return 'GOV';
+      case WatermarkLayout.podCorporate: return 'LIGHT';
+      case WatermarkLayout.podDarkField: return 'DARK';
+      case WatermarkLayout.podGovern:    return 'CLEAN';
     }
   }
 }
@@ -50,6 +50,6 @@ const int kLogoMaxWidth    = 160;
 const int kLogoMaxHeight   = 60;
 
 // ============================================================
-// WARNA WATERMARK (img package RGBA) — untuk wm_helpers.dart
+// WARNA WATERMARK (img package RGBA)
 // ============================================================
 final img.Color kColorShadow = img.ColorRgba8(0, 0, 0, 140);

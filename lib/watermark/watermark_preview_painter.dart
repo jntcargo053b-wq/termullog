@@ -1,7 +1,11 @@
 // lib/watermark/watermark_preview_painter.dart
-// Preview overlay di viewfinder kamera (Flutter Canvas, bukan image package)
-// Harus CEPAT – dipanggil setiap frame clock (1 detik)
+// ============================================================
+// WATERMARK PREVIEW PAINTER — Timemark Style Edition
+// Live overlay di viewfinder kamera. Dipanggil setiap detik.
+// Scale disesuaikan dengan ukuran layar (bukan foto).
+// ============================================================
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -44,354 +48,304 @@ class WatermarkPreviewPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double W = size.width;
     final double H = size.height;
-    // referensi 390px (layar phone normal)
-    final double pr = (W / 1080.0).clamp(0.3, 1.2);
+    // Preview di layar: referensi 390px lebar layar phone
+    final double sc = (W / 390.0).clamp(0.7, 2.0);
 
     switch (layout) {
       case WatermarkLayout.podCorporate:
-        _drawCorporate(canvas, W, H, pr);
+        _drawTimemarkLight(canvas, W, H, sc);
         break;
       case WatermarkLayout.podDarkField:
-        _drawDarkField(canvas, W, H, pr);
+        _drawTimemarkDark(canvas, W, H, sc);
         break;
       case WatermarkLayout.podGovern:
-        _drawGovernment(canvas, W, H, pr);
+        _drawTimemarkClean(canvas, W, H, sc);
         break;
     }
   }
 
   // ─────────────────────────────────────────────────────────────
-  // CORPORATE preview
+  // LAYOUT 1 — Timemark Light (panel putih bawah)
   // ─────────────────────────────────────────────────────────────
-  void _drawCorporate(Canvas canvas, double W, double H, double pr) {
-    final double headerH = 36 * pr;
-    final double rowH    = 18 * pr;
-    int rowCount = 2; // timestamp + date selalu ada
-    if (showCoordinates && hasPosition) rowCount += 2;
-    if (showAccuracy && acc != null)    rowCount++;
-    if (showAddress && address.isNotEmpty) rowCount++;
-    if (showWeather && weather.isNotEmpty) rowCount++;
-
-    final double panelH = headerH + 8 * pr + rowCount * rowH + 8 * pr + 22 * pr;
+  void _drawTimemarkLight(Canvas canvas, double W, double H, double sc) {
+    final double panelH = _lightPanelHeight(sc);
     final double panelY = H - panelH;
+    final double padL = 14 * sc;
 
-    // Panel background
+    // Panel putih
     canvas.drawRect(
       Rect.fromLTWH(0, panelY, W, panelH),
-      Paint()..color = const Color(0xFFF8FAFF),
+      Paint()..color = Colors.white.withOpacity(opacity.clamp(0.88, 1.0)),
     );
 
-    // Header
+    // Aksen kuning kiri
     canvas.drawRect(
-      Rect.fromLTWH(0, panelY, W, headerH),
-      Paint()..color = const Color(0xFF0D2B5E),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(0, panelY, 4 * pr, headerH),
-      Paint()..color = const Color(0xFF4A90E2),
+      Rect.fromLTWH(0, panelY, 6 * sc, 72 * sc),
+      Paint()..color = const Color(0xFFF5C518),
     );
 
-    _text(canvas, 'TERMULLOG', 14 * pr, panelY + 7 * pr, const Color(0xFFFFFFFF),
-        bold: true, letterSpacing: 2.0);
-    _textRight(canvas, W, 'PROOF OF DELIVERY', 8 * pr, panelY + 12 * pr,
-        const Color(0xFF90B4E8), W * 0.5);
+    // ─── Baris 1: badge kuning + jam + brand ───
+    final double row1Y = panelY + 10 * sc;
+    final double badgeW = 100 * sc;
+    final double badgeH = 46 * sc;
 
-    // Divider
-    canvas.drawRect(
-      Rect.fromLTWH(0, panelY + headerH, W, 1 * pr),
-      Paint()..color = const Color(0xFFDDE4F0),
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(padL, row1Y, badgeW, badgeH),
+        Radius.circular(8 * sc),
+      ),
+      Paint()..color = const Color(0xFFF5C518),
     );
+    _t(canvas, 'termullog', 14 * sc, row1Y + 14 * sc,
+        const Color(0xFF1A1A1A), bold: true, x: padL + badgeW / 2, centerX: true);
 
-    // Rows
-    final double padL = 12 * pr;
-    double ry = panelY + headerH + 8 * pr;
+    // Jam besar
+    _t(canvas, DateFormat('HH:mm').format(timestamp),
+        36 * sc, row1Y, const Color(0xFF1565C0), bold: true,
+        x: padL + badgeW + 14 * sc);
 
-    _labelValue(canvas, 'TIME', DateFormat('HH:mm:ss').format(timestamp),
-        padL, ry, pr, valueColor: const Color(0xFF1A2B4A), bold: true);
-    ry += rowH;
-    _labelValue(canvas, 'DATE', DateFormat('dd MMMM yyyy').format(timestamp),
-        padL, ry, pr);
-    ry += rowH;
+    // Brand kanan
+    _t(canvas, 'Termullog', 16 * sc, row1Y + 4 * sc,
+        const Color(0xFFF5C518), bold: true, x: W - 120 * sc);
+    _t(canvas, 'Camera', 10 * sc, row1Y + 24 * sc,
+        Colors.black87, x: W - 120 * sc);
 
+    // ─── Divider ───
+    final double divY = panelY + 68 * sc;
+    canvas.drawRect(Rect.fromLTWH(0, divY, W, 1 * sc),
+        Paint()..color = const Color(0xFFE0E0E0));
+
+    double ry = divY + 8 * sc;
+
+    // Tanggal
+    _t(canvas, DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(timestamp),
+        13 * sc, ry, const Color(0xFF222222), bold: true, x: padL);
+    ry += 20 * sc;
+
+    // Koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      _labelValue(canvas, 'LAT',
-          '${lat!.abs().toStringAsFixed(5)}° ${lat! >= 0 ? 'N' : 'S'}',
-          padL, ry, pr, valueColor: const Color(0xFF1565C0), bold: true);
-      ry += rowH;
-      _labelValue(canvas, 'LON',
-          '${lon!.abs().toStringAsFixed(5)}° ${lon! >= 0 ? 'E' : 'W'}',
-          padL, ry, pr, valueColor: const Color(0xFF1565C0), bold: true);
-      ry += rowH;
+      final coord =
+          '${lat!.abs().toStringAsFixed(6)}°${lat! < 0 ? 'S' : 'N'}, '
+          '${lon!.abs().toStringAsFixed(6)}°${lon! < 0 ? 'W' : 'E'}';
+      _t(canvas, coord, 11 * sc, ry, const Color(0xFF555555), x: padL);
+      ry += 18 * sc;
     }
 
-    if (showAccuracy && acc != null) {
-      final Color ac = acc! <= 5
-          ? const Color(0xFF2E7D32)
-          : acc! <= 20
-              ? const Color(0xFFE65100)
-              : const Color(0xFFC62828);
-      _labelValue(canvas, 'ACC', '± ${acc!.toStringAsFixed(1)} m', padL, ry, pr,
-          valueColor: ac);
-      ry += rowH;
-    }
-
+    // Alamat
     if (showAddress && address.isNotEmpty) {
-      _labelValue(canvas, 'ADDR', _trunc(address, 38), padL, ry, pr);
-      ry += rowH;
+      _t(canvas, _trunc(address, 52), 10 * sc, ry, const Color(0xFF777777),
+          x: padL, maxW: W - padL * 2 - 40 * sc);
+      ry += 16 * sc;
     }
 
+    // Weather
     if (showWeather && weather.isNotEmpty) {
-      _labelValue(canvas, 'WX', weather, padL, ry, pr,
-          valueColor: const Color(0xFF006064));
-      ry += rowH;
+      _t(canvas, weather, 10 * sc, ry, const Color(0xFF006064), x: padL);
+      ry += 16 * sc;
     }
 
-    // Footer hash preview
-    final double footerY = H - 22 * pr;
-    canvas.drawRect(
-      Rect.fromLTWH(0, footerY, W, 1 * pr),
-      Paint()..color = const Color(0xFFDDE4F0),
-    );
-    _text(canvas, '# ${_previewHash()}', 7 * pr, footerY + 5 * pr,
-        const Color(0xFFAAAFBF), letterSpacing: 1.0);
+    // Footer shield
+    final double ftY = H - 28 * sc;
+    canvas.drawRect(Rect.fromLTWH(0, ftY, W, 1 * sc),
+        Paint()..color = const Color(0xFFDDDDDD));
+    _t(canvas, '🛡 Termullog menjamin keaslian waktu',
+        8 * sc, ftY + 6 * sc, const Color(0xFF999999), x: padL);
 
-    // Border atas
     if (showBorder) {
-      canvas.drawRect(
-        Rect.fromLTWH(0, panelY, W, 2.5 * pr),
-        Paint()..color = const Color(0xFF4A90E2),
-      );
+      canvas.drawRect(Rect.fromLTWH(0, panelY, W, 3 * sc),
+          Paint()..color = const Color(0xFFF5C518));
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // DARK FIELD preview
-  // ─────────────────────────────────────────────────────────────
-  void _drawDarkField(Canvas canvas, double W, double H, double pr) {
-    final double cardW = (W * 0.55).clamp(200.0, 320.0);
-    final double rowH  = 18 * pr;
-    int rowCount = 1; // koordinat/address
-    if (showCoordinates && hasPosition) rowCount++;
-    if (showAccuracy && acc != null)    rowCount++;
-    if (showAddress && address.isNotEmpty) rowCount++;
-    if (showWeather && weather.isNotEmpty) rowCount++;
-
-    final double cardH = 48 * pr + 12 * pr + rowCount * rowH + 12 * pr + 14 * pr;
-    final double margin = 14 * pr;
-    final double cx = margin;
-    final double cy = H - cardH - margin;
-    final double bgAlpha = opacity.clamp(0.65, 0.94);
-
-    // Background card
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx, cy, cardW, cardH),
-        Radius.circular(12 * pr),
-      ),
-      Paint()..color = Color.fromRGBO(6, 14, 28, bgAlpha),
-    );
-
-    // Accent strip kiri
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx, cy + 12 * pr, 3 * pr, cardH - 24 * pr),
-        Radius.circular(2 * pr),
-      ),
-      Paint()..color = const Color(0xFF00D4FF),
-    );
-
-    if (showBorder) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(cx, cy, cardW, cardH),
-          Radius.circular(12 * pr),
-        ),
-        Paint()
-          ..color = const Color(0x3500D4FF)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.0 * pr,
-      );
-    }
-
-    final double tx = cx + 14 * pr;
-    double ty = cy + 8 * pr;
-
-    // Waktu besar
-    _text(canvas, DateFormat('HH:mm:ss').format(timestamp), 22 * pr, ty,
-        Colors.white, bold: true);
-    ty += 30 * pr;
-
-    // Tanggal cyan
-    _text(canvas, DateFormat('dd MMMM yyyy').format(timestamp), 10 * pr, ty,
-        const Color(0xFF00D4FF));
-    ty += 14 * pr;
-
-    // Divider
-    canvas.drawLine(
-      Offset(tx, ty), Offset(cx + cardW - 12 * pr, ty),
-      Paint()..color = const Color(0x2500D4FF)..strokeWidth = 1.0 * pr,
-    );
-    ty += 10 * pr;
-
-    if (showCoordinates && hasPosition && lat != null && lon != null) {
-      _text(canvas,
-          '${lat!.abs().toStringAsFixed(5)}° ${lat! >= 0 ? 'N' : 'S'}  '
-          '${lon!.abs().toStringAsFixed(5)}° ${lon! >= 0 ? 'E' : 'W'}',
-          9.5 * pr, ty, const Color(0xFF4AC8FF));
-      ty += rowH;
-    }
-
-    if (showAccuracy && acc != null) {
-      final Color ac = acc! <= 5
-          ? const Color(0xFF66BB6A)
-          : acc! <= 20
-              ? const Color(0xFFFF9800)
-              : const Color(0xFFEF5350);
-      _text(canvas, '± ${acc!.toStringAsFixed(1)} m', 9.5 * pr, ty, ac);
-      ty += rowH;
-    }
-
-    if (showAddress && address.isNotEmpty) {
-      _text(canvas, _trunc(address, 32), 9 * pr, ty, const Color(0xFF8ABADF));
-      ty += rowH;
-    }
-
-    if (showWeather && weather.isNotEmpty) {
-      _text(canvas, weather, 9 * pr, ty, const Color(0xFF00B8A0));
-    }
+  double _lightPanelHeight(double sc) {
+    double h = 68 * sc + 8 * sc; // header + div
+    h += 20 * sc; // tanggal
+    if (showCoordinates && hasPosition) h += 18 * sc;
+    if (showAddress && address.isNotEmpty) h += 16 * sc;
+    if (showWeather && weather.isNotEmpty) h += 16 * sc;
+    h += 28 * sc; // footer
+    return h.clamp(120 * sc, 220 * sc);
   }
 
   // ─────────────────────────────────────────────────────────────
-  // GOVERNMENT preview
+  // LAYOUT 2 — Timemark Dark (panel gelap full-width)
   // ─────────────────────────────────────────────────────────────
-  void _drawGovernment(Canvas canvas, double W, double H, double pr) {
-    final double headerH = 38 * pr;
-    final double rowH    = 18 * pr;
-    int rowCount = 2;
-    if (showCoordinates && hasPosition) rowCount += 2;
-    if (showAccuracy && acc != null)    rowCount++;
-    if (showAddress && address.isNotEmpty) rowCount++;
-    if (showWeather && weather.isNotEmpty) rowCount++;
-
-    // 2 kolom: hitung tinggi berdasarkan setengah rows
-    final int half = (rowCount / 2).ceil();
-    final double panelH = headerH + 8 * pr + half * rowH + 8 * pr + 24 * pr;
+  void _drawTimemarkDark(Canvas canvas, double W, double H, double sc) {
+    final double panelH = _darkPanelHeight(sc);
     final double panelY = H - panelH;
+    final double padL = 18 * sc;
 
-    // Background
+    // Panel gelap
     canvas.drawRect(
       Rect.fromLTWH(0, panelY, W, panelH),
-      Paint()..color = const Color(0xFFF5F7FC),
+      Paint()..color = Color.fromRGBO(18, 18, 18, opacity.clamp(0.82, 0.96)),
     );
 
-    // Header biru tua
-    canvas.drawRect(
-      Rect.fromLTWH(0, panelY, W, headerH),
-      Paint()..color = const Color(0xFF1A237E),
+    // Garis kuning atas
+    canvas.drawRect(Rect.fromLTWH(0, panelY, W, 2.5 * sc),
+        Paint()..color = const Color(0xFFF5C518));
+
+    // Branding pojok kanan atas (dalam foto, atas panel)
+    _t(canvas, 'Termullog', 16 * sc, panelY - 60 * sc,
+        const Color(0xFFF5C518), bold: true, x: W - 130 * sc);
+    _t(canvas, 'Foto 100% akurat', 9 * sc, panelY - 40 * sc,
+        Colors.white70, x: W - 130 * sc);
+
+    // ─── Jam besar ───
+    _t(canvas, DateFormat('HH:mm').format(timestamp),
+        46 * sc, panelY + 12 * sc, Colors.white, bold: true, x: padL);
+
+    // Separator vertikal
+    final double sepX = padL + 115 * sc;
+    canvas.drawLine(
+      Offset(sepX, panelY + 14 * sc),
+      Offset(sepX, panelY + 70 * sc),
+      Paint()..color = Colors.white38..strokeWidth = 1.5 * sc,
     );
 
-    // Gold strip kiri
-    canvas.drawRect(
-      Rect.fromLTWH(0, panelY, 5 * pr, headerH),
-      Paint()..color = const Color(0xFFFFD700),
-    );
+    // Tanggal + hari
+    final double dateX = sepX + 12 * sc;
+    _t(canvas, DateFormat('dd MMMM yyyy').format(timestamp),
+        13 * sc, panelY + 20 * sc, Colors.white, x: dateX);
+    _t(canvas, DateFormat('EEEE', 'id_ID').format(timestamp),
+        12 * sc, panelY + 42 * sc, Colors.white60, x: dateX);
 
-    _text(canvas, 'TERMULLOG', 13 * pr, panelY + 7 * pr, Colors.white,
-        bold: true, letterSpacing: 3.0);
-    _textRight(canvas, W, '✓ VERIFIED DOCUMENT', 8 * pr, panelY + 13 * pr,
-        const Color(0xFFFFD700), W * 0.5);
+    double infoY = panelY + 80 * sc;
 
-    canvas.drawRect(
-      Rect.fromLTWH(0, panelY + headerH, W, 1 * pr),
-      Paint()..color = const Color(0xFFCDD4E8),
-    );
-
-    // Kolom kiri
-    final double padL = 12 * pr;
-    double ry = panelY + headerH + 8 * pr;
-
-    _labelValue(canvas, 'TIME', DateFormat('HH:mm:ss').format(timestamp),
-        padL, ry, pr, valueColor: const Color(0xFF1A2050), bold: true);
-    ry += rowH;
-    _labelValue(canvas, 'DATE', DateFormat('dd MMMM yyyy').format(timestamp),
-        padL, ry, pr);
-    ry += rowH;
-
-    if (showCoordinates && hasPosition && lat != null && lon != null) {
-      _labelValue(canvas, 'LAT',
-          '${lat!.abs().toStringAsFixed(5)}° ${lat! >= 0 ? 'N' : 'S'}',
-          padL, ry, pr, valueColor: const Color(0xFF1565C0));
-      ry += rowH;
-    }
-
-    // Kolom kanan
-    double ry2 = panelY + headerH + 8 * pr;
-    final double colX = W / 2 + padL;
-
-    if (showCoordinates && hasPosition && lon != null) {
-      _labelValue(canvas, 'LON',
-          '${lon!.abs().toStringAsFixed(5)}° ${lon! >= 0 ? 'E' : 'W'}',
-          colX, ry2, pr, valueColor: const Color(0xFF1565C0));
-      ry2 += rowH;
-    }
-
-    if (showAccuracy && acc != null) {
-      final Color ac = acc! <= 5
-          ? const Color(0xFF2E7D32)
-          : acc! <= 20
-              ? const Color(0xFFE65100)
-              : const Color(0xFFC62828);
-      _labelValue(canvas, 'ACC', '± ${acc!.toStringAsFixed(1)} m', colX, ry2, pr,
-          valueColor: ac);
-      ry2 += rowH;
-    }
-
+    // Alamat
     if (showAddress && address.isNotEmpty) {
-      _labelValue(canvas, 'ADDR', _trunc(address, 22), colX, ry2, pr);
-      ry2 += rowH;
+      _t(canvas, address, 12 * sc, infoY, Colors.white,
+          x: padL, maxW: W - padL * 2);
+      infoY += 20 * sc;
+    }
+
+    // Koordinat
+    if (showCoordinates && hasPosition && lat != null && lon != null) {
+      final coord =
+          '${lat!.abs().toStringAsFixed(6)}°${lat! < 0 ? 'S' : 'N'}, '
+          '${lon!.abs().toStringAsFixed(6)}°${lon! < 0 ? 'W' : 'E'}';
+      _t(canvas, coord, 10 * sc, infoY, Colors.white54, x: padL);
+      infoY += 16 * sc;
     }
 
     if (showWeather && weather.isNotEmpty) {
-      _labelValue(canvas, 'WX', weather, colX, ry2, pr,
-          valueColor: const Color(0xFF006064));
+      _t(canvas, weather, 10 * sc, infoY, const Color(0xFF80CBC4), x: padL);
     }
 
-    // Garis pemisah kolom
-    canvas.drawLine(
-      Offset(W / 2, panelY + headerH + 6 * pr),
-      Offset(W / 2, H - 24 * pr - 6 * pr),
-      Paint()..color = const Color(0xFFCDD4E8)..strokeWidth = 0.8 * pr,
+    // Footer kode
+    final String kode = _previewCode();
+    final double ftY = H - 26 * sc;
+    canvas.drawRect(Rect.fromLTWH(0, ftY, W, 1 * sc),
+        Paint()..color = Colors.white12);
+    _t(canvas, '🛡 Kode Foto: ', 8 * sc, ftY + 6 * sc, Colors.white38, x: padL);
+    _t(canvas, kode, 8 * sc, ftY + 6 * sc, Colors.white,
+        bold: true, x: padL + 80 * sc);
+  }
+
+  double _darkPanelHeight(double sc) {
+    double h = 80 * sc;
+    if (showAddress && address.isNotEmpty) h += 20 * sc;
+    if (showCoordinates && hasPosition) h += 16 * sc;
+    if (showWeather && weather.isNotEmpty) h += 16 * sc;
+    h += 26 * sc; // footer
+    return h.clamp(110 * sc, 200 * sc);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // LAYOUT 3 — Timemark Clean (branding atas + panel gelap bawah)
+  // ─────────────────────────────────────────────────────────────
+  void _drawTimemarkClean(Canvas canvas, double W, double H, double sc) {
+    final double panelH = _cleanPanelHeight(sc);
+    final double panelY = H - panelH;
+    final double padL = 16 * sc;
+
+    // Panel gelap
+    canvas.drawRect(
+      Rect.fromLTWH(0, panelY, W, panelH),
+      Paint()..color = Color.fromRGBO(10, 10, 20, opacity.clamp(0.78, 0.94)),
     );
+
+    // Branding kanan atas foto
+    _t(canvas, 'Termullog', 15 * sc, 24 * sc,
+        const Color(0xFFF5C518), bold: true, x: W - 130 * sc);
+    _t(canvas, 'Camera', 10 * sc, 44 * sc, Colors.white60, x: W - 130 * sc);
+
+    // Jam besar
+    _t(canvas, DateFormat('HH:mm').format(timestamp),
+        40 * sc, panelY + 12 * sc, Colors.white, bold: true, x: padL);
+
+    // Bar vertikal kuning
+    canvas.drawRect(
+      Rect.fromLTWH(padL + 100 * sc, panelY + 12 * sc, 2.5 * sc, 52 * sc),
+      Paint()..color = const Color(0xFFF5C518),
+    );
+
+    final double dateX = padL + 110 * sc;
+    _t(canvas, DateFormat('dd MMMM yyyy').format(timestamp),
+        12 * sc, panelY + 18 * sc, Colors.white70, x: dateX);
+    _t(canvas, DateFormat('EEEE', 'id_ID').format(timestamp),
+        11 * sc, panelY + 36 * sc, Colors.white38, x: dateX);
+
+    // Divider
+    canvas.drawRect(Rect.fromLTWH(padL, panelY + 70 * sc, W - padL * 2, 1 * sc),
+        Paint()..color = Colors.white12);
+
+    double infoY = panelY + 78 * sc;
+
+    if (showAddress && address.isNotEmpty) {
+      _t(canvas, _trunc(address, 55), 11 * sc, infoY, Colors.white70,
+          x: padL, maxW: W - padL * 2);
+      infoY += 18 * sc;
+    }
+
+    if (showCoordinates && hasPosition && lat != null && lon != null) {
+      final coord =
+          '${lat!.abs().toStringAsFixed(6)}°${lat! < 0 ? 'S' : 'N'}, '
+          '${lon!.abs().toStringAsFixed(6)}°${lon! < 0 ? 'W' : 'E'}';
+      _t(canvas, coord, 10 * sc, infoY, Colors.white38, x: padL);
+      infoY += 16 * sc;
+    }
+
+    if (showWeather && weather.isNotEmpty) {
+      _t(canvas, weather, 10 * sc, infoY, const Color(0xFF80CBC4), x: padL);
+    }
 
     // Footer
-    final double footerY = H - 24 * pr;
-    canvas.drawRect(
-      Rect.fromLTWH(0, footerY, W, 1 * pr),
-      Paint()..color = const Color(0xFFCDD4E8),
-    );
-    _text(canvas, 'REF: ${_previewHash()}', 7 * pr, footerY + 6 * pr,
-        const Color(0xFF8090B8), letterSpacing: 1.0);
+    final double ftY = H - 24 * sc;
+    canvas.drawRect(Rect.fromLTWH(0, ftY, W, 1 * sc),
+        Paint()..color = Colors.white12);
+    _t(canvas, '🛡 Kode: ${_previewCode()}', 7 * sc, ftY + 5 * sc,
+        Colors.white24, x: padL);
 
     if (showBorder) {
-      canvas.drawRect(
-        Rect.fromLTWH(0, panelY, W, 3 * pr),
-        Paint()..color = const Color(0xFFFFD700),
-      );
+      canvas.drawRect(Rect.fromLTWH(0, panelY, W, 2.5 * sc),
+          Paint()..color = const Color(0xFFF5C518));
     }
   }
 
+  double _cleanPanelHeight(double sc) {
+    double h = 70 * sc + 8 * sc;
+    if (showAddress && address.isNotEmpty) h += 18 * sc;
+    if (showCoordinates && hasPosition) h += 16 * sc;
+    if (showWeather && weather.isNotEmpty) h += 16 * sc;
+    h += 24 * sc;
+    return h.clamp(100 * sc, 180 * sc);
+  }
+
   // ─────────────────────────────────────────────────────────────
-  // Shared helpers
+  // Helpers
   // ─────────────────────────────────────────────────────────────
-  void _text(
+  void _t(
     Canvas canvas,
     String text,
     double size,
     double y,
     Color color, {
     bool bold = false,
-    double letterSpacing = 0.0,
-    double x = 14.0,
+    double letterSpacing = 0,
+    double x = 14,
+    double? maxW,
+    bool centerX = false,
   }) {
     final tp = TextPainter(
       text: TextSpan(
@@ -404,83 +358,24 @@ class WatermarkPreviewPainter extends CustomPainter {
         ),
       ),
       textDirection: ui.TextDirection.ltr,
-      maxLines: 1,
+      maxLines: 2,
       ellipsis: '…',
     );
-    tp.layout(maxWidth: 10000);
-    tp.paint(canvas, Offset(x, y));
+    tp.layout(maxWidth: maxW ?? 9999);
+    final double px = centerX ? x - tp.width / 2 : x;
+    tp.paint(canvas, Offset(px, y));
   }
 
-  void _textRight(Canvas canvas, double W, String text, double size, double y,
-      Color color, double maxW) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(color: color, fontSize: size),
-      ),
-      textDirection: ui.TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    );
-    tp.layout(maxWidth: maxW);
-    tp.paint(canvas, Offset(W - tp.width - 14, y));
-  }
+  String _trunc(String s, int maxLen) =>
+      s.length <= maxLen ? s : '${s.substring(0, maxLen - 1)}…';
 
-  void _labelValue(
-    Canvas canvas,
-    String label,
-    String value,
-    double x,
-    double y,
-    double pr, {
-    Color? valueColor,
-    bool bold = false,
-  }) {
-    // Label kecil abu
-    final lp = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: const Color(0xFF8090B0),
-          fontSize: 7 * pr,
-          letterSpacing: 0.5,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    );
-    lp.layout();
-    lp.paint(canvas, Offset(x, y));
-
-    // Value
-    final vp = TextPainter(
-      text: TextSpan(
-        text: value,
-        style: TextStyle(
-          color: valueColor ?? const Color(0xFF1A2050),
-          fontSize: 9.5 * pr,
-          fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    );
-    vp.layout(maxWidth: 200 * pr);
-    vp.paint(canvas, Offset(x + 52 * pr, y));
-  }
-
-  String _trunc(String s, int maxLen) {
-    if (s.length <= maxLen) return s;
-    return '${s.substring(0, maxLen - 1)}…';
-  }
-
-  String _previewHash() {
+  String _previewCode() {
     int h = 0x811C9DC5;
-    for (final c in timestamp.millisecondsSinceEpoch.toString().codeUnits) {
-      h ^= c;
+    for (final ch in timestamp.millisecondsSinceEpoch.toString().codeUnits) {
+      h ^= ch;
       h = (h * 0x01000193) & 0xFFFFFFFF;
     }
-    return h.toRadixString(16).toUpperCase().padLeft(8, '0');
+    return h.toRadixString(36).toUpperCase().padLeft(12, '0').substring(0, 12);
   }
 
   @override

@@ -44,12 +44,17 @@ class WatermarkEngine {
 
       final picture = recorder.endRecording();
       final uiOut = await picture.toImage(W, H);
-      final byteData = await uiOut.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) throw Exception('Failed to encode PNG');
-
-      final jpegImg = img.decodeImage(byteData.buffer.asUint8List());
-      if (jpegImg == null) throw Exception('Failed to decode processed image');
-      return Uint8List.fromList(img.encodeJpg(jpegImg, quality: params.imageQuality));
+      // Ambil raw RGBA langsung — skip PNG encode/decode yang tidak perlu.
+      // rawRgba menghasilkan channel order RGBA, sesuai default img.Image v4.
+      final byteData = await uiOut.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (byteData == null) throw Exception('Failed to get raw RGBA');
+      final imgOut = img.Image.fromBytes(
+        width: W,
+        height: H,
+        bytes: byteData.buffer,
+        numChannels: 4,
+      );
+      return Uint8List.fromList(img.encodeJpg(imgOut, quality: params.imageQuality));
     } catch (e) {
       debugPrint('WatermarkEngine.process error: $e');
       rethrow;

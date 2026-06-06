@@ -71,7 +71,7 @@ class WatermarkEngine {
   // ═══════════════════════════════════════════════════════════════
   static void _drawTimemarkLight(Canvas c, double W, double H, double sc, WatermarkParams p) {
     const double refW = 1080.0;
-    final double panelH = 220 * sc;
+    final double panelH = _lightPanelHeight(sc, p);
     final double panelY = H - panelH;
 
     // Panel putih semi-transparan
@@ -166,7 +166,7 @@ class WatermarkEngine {
   // Branding "Timemark" pojok kanan atas
   // ═══════════════════════════════════════════════════════════════
   static void _drawTimemarkDark(Canvas c, double W, double H, double sc, WatermarkParams p) {
-    final double panelH = 260 * sc;
+    final double panelH = _darkPanelHeight(sc, p);
     final double panelY = H - panelH;
     final double padL = 30 * sc;
 
@@ -236,66 +236,48 @@ class WatermarkEngine {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYOUT 3 — Timemark Clean (floating card rounded)
-  // Card transparan mengambang di atas foto, tidak menutup full-width
+  // LAYOUT 3 — Timemark Clean
+  // Branding pojok kanan atas, jam besar + bar vertikal + alamat bawah
+  // Style bersih transparan di bawah foto
   // ═══════════════════════════════════════════════════════════════
   static void _drawTimemarkClean(Canvas c, double W, double H, double sc, WatermarkParams p) {
-    final cardWidth = W * 0.72;
-    final cardHeight = 220 * sc;
+    final double panelH = _cleanPanelHeight(sc, p);
+    final double panelY = H - panelH;
+    final double padL = 24 * sc;
 
-    final cardX = 24 * sc;
-    final cardY = H - cardHeight - (30 * sc);
+    // Panel gelap bawah
+    c.drawRect(Rect.fromLTWH(0, panelY, W, panelH),
+        Paint()..color = Color.fromRGBO(10, 10, 20, p.opacity.clamp(0.78, 0.94)));
 
-    final cardRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(cardX, cardY, cardWidth, cardHeight),
-      Radius.circular(24 * sc),
-    );
-
-    // Background card semi-transparan
-    c.drawRRect(
-      cardRect,
-      Paint()..color = Colors.black.withOpacity(0.40),
-    );
-
-    // Border halus
-    c.drawRRect(
-      cardRect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5 * sc
-        ..color = Colors.white.withOpacity(0.15),
-    );
-
-    final double padL = cardX + 18 * sc;
+    // Branding pojok kanan atas foto
+    _tp('Termullog', 24 * sc, 28 * sc, const Color(0xFFF5C518),
+        bold: true, x: W - 210 * sc).paint(c);
+    _tp('Camera', 15 * sc, 58 * sc, Colors.white70, x: W - 210 * sc).paint(c);
 
     // ─── Jam besar ───
     final String timeStr = DateFormat('HH:mm').format(p.timestamp);
-    _tp(timeStr, 64 * sc, cardY + 14 * sc, Colors.white, bold: true, x: padL).paint(c);
+    _tp(timeStr, 64 * sc, panelY + 14 * sc, Colors.white, bold: true, x: padL).paint(c);
 
-    // Bar vertikal aksen kuning
-    c.drawRect(
-      Rect.fromLTWH(padL + 160 * sc, cardY + 14 * sc, 3 * sc, 70 * sc),
-      Paint()..color = const Color(0xFFF5C518),
-    );
+    // Bar vertikal aksen
+    c.drawRect(Rect.fromLTWH(padL + 160 * sc, panelY + 14 * sc, 3 * sc, 70 * sc),
+        Paint()..color = const Color(0xFFF5C518));
 
     // Tanggal & hari
     final double dateX = padL + 175 * sc;
     _tp(DateFormat('dd MMMM yyyy').format(p.timestamp),
-        18 * sc, cardY + 22 * sc, Colors.white70, x: dateX).paint(c);
+        18 * sc, panelY + 22 * sc, Colors.white70, x: dateX).paint(c);
     _tp(DateFormat('EEEE', 'id_ID').format(p.timestamp),
-        16 * sc, cardY + 48 * sc, Colors.white54, x: dateX).paint(c);
+        16 * sc, panelY + 48 * sc, Colors.white54, x: dateX).paint(c);
 
     // Garis pemisah
-    c.drawRect(
-      Rect.fromLTWH(padL, cardY + 92 * sc, cardWidth - 36 * sc, 1 * sc),
-      Paint()..color = Colors.white24,
-    );
+    c.drawRect(Rect.fromLTWH(padL, panelY + 92 * sc, W - padL * 2, 1 * sc),
+        Paint()..color = Colors.white24);
 
     // Alamat
-    double infoY = cardY + 104 * sc;
+    double infoY = panelY + 104 * sc;
     if (p.showAddress && p.address.isNotEmpty) {
       _tp(p.address, 16 * sc, infoY, Colors.white70,
-          x: padL, maxW: cardWidth - 36 * sc).paint(c);
+          x: padL, maxW: W - padL * 2).paint(c);
       infoY += 26 * sc;
     }
 
@@ -311,25 +293,63 @@ class WatermarkEngine {
       _tp(p.weather, 14 * sc, infoY, const Color(0xFF80CBC4), x: padL).paint(c);
     }
 
-    // Kode verifikasi + branding pojok kanan bawah card
+    // Kode verifikasi footer
     final String verCode = _verCode(p);
-    _tp('🛡 Kode: $verCode', 12 * sc, cardY + cardHeight - 38 * sc,
-        Colors.white38, x: padL).paint(c);
-
-    _tp('Termullog', 18 * sc, cardY + cardHeight - 46 * sc,
-        const Color(0xFFF5C518), bold: true, x: cardX + cardWidth - 160 * sc).paint(c);
-    _tp('Camera', 13 * sc, cardY + cardHeight - 24 * sc,
-        Colors.white54, x: cardX + cardWidth - 160 * sc).paint(c);
+    final double footerY = H - 38 * sc;
+    c.drawRect(Rect.fromLTWH(0, footerY, W, 1 * sc),
+        Paint()..color = Colors.white12);
+    _tp('🛡 Kode Foto: $verCode', 12 * sc, footerY + 8 * sc, Colors.white38, x: padL).paint(c);
 
     if (p.showBorder) {
-      c.drawRRect(
-        cardRect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3 * sc
-          ..color = const Color(0xFFF5C518),
-      );
+      c.drawRect(Rect.fromLTWH(0, panelY, W, 3 * sc),
+          Paint()..color = const Color(0xFFF5C518));
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // DYNAMIC PANEL HEIGHT CALCULATORS
+  // Mirrors preview logic so final image never has empty whitespace.
+  // ═══════════════════════════════════════════════════════════════
+
+  /// Layout 1 — Timemark Light
+  /// Base structure: badge+time row (90*sc) + divider + date row (44*sc)
+  /// Optional: coordinates (30*sc), address (24*sc), weather (20*sc)
+  /// Footer strip always present (40*sc)
+  static double _lightPanelHeight(double sc, WatermarkParams p) {
+    double h = 90 * sc; // header block (badge + jam)
+    h += 44 * sc;       // divider + tanggal
+    if (p.showCoordinates && p.lat != null && p.lon != null) h += 30 * sc;
+    if (p.showAddress && p.address.isNotEmpty) h += 24 * sc;
+    if (p.showWeather && p.weather.isNotEmpty) h += 20 * sc;
+    h += 40 * sc; // footer strip
+    return h.clamp(140 * sc, 220 * sc);
+  }
+
+  /// Layout 2 — Timemark Dark
+  /// Base structure: jam+tanggal block (126*sc = 18+108)
+  /// Optional: address (30*sc), coordinates (24*sc), weather (20*sc)
+  /// Footer strip always present (42*sc)
+  static double _darkPanelHeight(double sc, WatermarkParams p) {
+    double h = 126 * sc; // jam besar + tanggal/hari block
+    if (p.showAddress && p.address.isNotEmpty) h += 30 * sc;
+    if (p.showCoordinates && p.lat != null && p.lon != null) h += 24 * sc;
+    if (p.showWeather && p.weather.isNotEmpty) h += 20 * sc;
+    h += 42 * sc; // footer strip
+    return h.clamp(160 * sc, 260 * sc);
+  }
+
+  /// Layout 3 — Timemark Clean
+  /// Base structure: jam+tanggal block (92*sc) + divider (12*sc)
+  /// Optional: address (26*sc), coordinates (22*sc), weather (20*sc)
+  /// Footer strip always present (38*sc)
+  static double _cleanPanelHeight(double sc, WatermarkParams p) {
+    double h = 92 * sc; // jam besar + tanggal/hari
+    h += 12 * sc;       // garis pemisah + padding atas info
+    if (p.showAddress && p.address.isNotEmpty) h += 26 * sc;
+    if (p.showCoordinates && p.lat != null && p.lon != null) h += 22 * sc;
+    if (p.showWeather && p.weather.isNotEmpty) h += 20 * sc;
+    h += 38 * sc; // footer strip
+    return h.clamp(120 * sc, 200 * sc);
   }
 
   // ═══════════════════════════════════════════════════════════════

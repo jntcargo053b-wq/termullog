@@ -50,13 +50,14 @@ class WatermarkEngine {
         onTimeout: () => throw Exception('Image decode timeout'));
   }
 
+  /// Layout final: panel kiri bawah, badge dinamis, logo dinamis, dukungan akurasi, alamat, cuaca
   static void _drawReferenceLayout(Canvas c, double W, double H, double sc, double fontScale, WatermarkParams p) {
     final double panelH = _calculatePanelHeight(sc, fontScale, p);
     final double panelX = 20 * sc;
     final double targetY = H - panelH - 120 * sc;
     final double panelY = targetY.clamp(20 * sc, H - panelH - 20 * sc);
-    
     final double panelW = 560 * sc;
+
     final RRect panelRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(panelX, panelY, panelW, panelH),
       Radius.circular(12 * sc),
@@ -73,23 +74,39 @@ class WatermarkEngine {
     double currentX = panelX + 16 * sc;
     double currentY = panelY + 16 * sc;
 
-    // Badge Nama
-    final double badgeW = 150 * sc;
+    // --- Badge dinamis (lebar sesuai teks) ---
+    final String appName = p.appName.isNotEmpty ? p.appName : 'termullog';
+    final double badgeFontSize = 32 * sc * fontScale;
+    final namePainter = TextPainter(
+      text: TextSpan(text: appName, style: TextStyle(fontSize: badgeFontSize, fontWeight: FontWeight.w700)),
+      textDirection: ui.TextDirection.ltr,
+    )..layout();
+    final double badgePadding = 24 * sc;
+    final double badgeW = (namePainter.width + badgePadding).clamp(120 * sc, 300 * sc);
     final double badgeH = 80 * sc;
+
     final RRect badgeRRect = RRect.fromRectAndRadius(
         Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(8 * sc));
     c.drawRRect(badgeRRect, Paint()..color = const Color(0xFFFFC107));
-    _tp(p.appName.isNotEmpty ? p.appName : 'termullog',
-        32 * sc * fontScale, currentY + 18 * sc, Colors.black87,
-        bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW).paint(c);
+    _tp(appName, badgeFontSize, currentY + 18 * sc, Colors.black87,
+        bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 8 * sc).paint(c);
 
-    // Jam
+    // --- Jam ---
     final String timeStr = DateFormat(p.timeFormat.isNotEmpty ? p.timeFormat : 'HH:mm').format(p.timestamp);
+    final double timeX = currentX + badgeW + 16 * sc;
     _tp(timeStr, 80 * sc * fontScale, currentY - 4 * sc, const Color(0xFF1A237E),
-        bold: true, x: currentX + badgeW + 16 * sc).paint(c);
+        bold: true, x: timeX).paint(c);
 
-    // Logo default (tanpa kondisi showLogo/logoType)
-    _drawMiniLogo(c, currentX + badgeW + 260 * sc, currentY + 15 * sc, sc);
+    // --- Logo dinamis (posisi setelah jam) ---
+    if (p.showLogo) {
+      final timePainter = TextPainter(
+        text: TextSpan(text: timeStr, style: TextStyle(fontSize: 80 * sc * fontScale, fontWeight: FontWeight.w700)),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      final double logoX = timeX + timePainter.width + 20 * sc;
+      final double safeLogoX = logoX.clamp(timeX, panelX + panelW - 156 * sc);
+      _drawSelectedLogo(c, safeLogoX, currentY + 15 * sc, sc, p.logoType);
+    }
 
     currentY += 100 * sc;
 
@@ -103,7 +120,7 @@ class WatermarkEngine {
     _tp(dateStr, 28 * sc * fontScale, currentY, Colors.black87, bold: true, x: currentX).paint(c);
     currentY += 50 * sc;
 
-    // Koordinat
+    // Koordinat (dengan arah N/S/E/W yang benar)
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final String latDir = p.lat! >= 0 ? 'N' : 'S';
       final String lonDir = p.lon! >= 0 ? 'E' : 'W';
@@ -118,7 +135,7 @@ class WatermarkEngine {
       currentY += 40 * sc;
     }
 
-    // Alamat
+    // Alamat (multi-line)
     if (p.showAddress && p.address.isNotEmpty) {
       _tp(p.address, 20 * sc * fontScale, currentY, Colors.grey[700]!, x: currentX, maxW: panelW - 32 * sc, maxLines: 3).paint(c);
       final tp = TextPainter(
@@ -135,23 +152,23 @@ class WatermarkEngine {
       currentY += 35 * sc;
     }
 
-    // Footer assurance
+    // Footer
     _tp('🛡 Timemark menjamin keaslian waktu', 20 * sc * fontScale, currentY,
         Colors.grey[600]!, x: currentX).paint(c);
 
-    // Kode verifikasi vertikal
+    // Kode verifikasi vertikal (di kanan, sejajar tengah panel)
     final String verCode = _verCode(p);
     final double verCenterY = panelY + panelH / 2;
     _drawVerticalText(c, '© $verCode Timemark Verified', 18 * sc * fontScale,
         W - 45 * sc, verCenterY, Colors.white.withOpacity(0.8), sc);
 
-    // Branding pojok kanan bawah
+    // Branding "Timemark Camera" di kanan bawah
     _tp('Timemark', 28 * sc * fontScale, H - 100 * sc, Colors.white, x: W - 240 * sc, bold: true).paint(c);
     _tp('Camera', 22 * sc * fontScale, H - 65 * sc, Colors.white70, x: W - 240 * sc).paint(c);
   }
 
   static double _calculatePanelHeight(double sc, double fontScale, WatermarkParams p) {
-    double h = 16 * sc + 100 * sc + 25 * sc + 50 * sc;
+    double h = 16 * sc + 100 * sc + 25 * sc + 50 * sc; // padding + badge/jam + divider + tanggal
     if (p.showCoordinates && p.lat != null) h += 45 * sc;
     if (p.showAccuracy && p.acc != null) h += 40 * sc;
     if (p.showAddress && p.address.isNotEmpty) {
@@ -163,9 +180,18 @@ class WatermarkEngine {
       h += tp.height + 15 * sc;
     }
     if (p.showWeather && p.weather.isNotEmpty) h += 35 * sc;
-    h += 45 * sc;
-    h += 16 * sc;
+    h += 45 * sc; // footer
+    h += 16 * sc; // bottom padding
     return h;
+  }
+
+  static void _drawSelectedLogo(Canvas c, double x, double y, double sc, String? type) {
+    if (type == 'next_van' || type == null) {
+      _drawMiniLogo(c, x, y, sc);
+    } else if (type == 'timemark_icon') {
+      _drawTimemarkIcon(c, x + 40 * sc, y + 30 * sc, 30 * sc);
+    }
+    // tambahkan tipe logo lain di sini
   }
 
   static void _drawMiniLogo(Canvas c, double x, double y, double sc) {
@@ -174,6 +200,21 @@ class WatermarkEngine {
     final Paint vanPaint = Paint()..color = Colors.orange;
     c.drawRect(Rect.fromLTWH(x + 10 * sc, y + 20 * sc, 30 * sc, 20 * sc), vanPaint);
     _tp('NEXT', 14 * sc, y + 25 * sc, Colors.black, bold: true, x: x + 50 * sc).paint(c);
+  }
+
+  static void _drawTimemarkIcon(Canvas c, double cx, double cy, double radius) {
+    final Paint p = Paint()..color = const Color(0xFFFFC107)..style = PaintingStyle.fill;
+    c.drawCircle(Offset(cx, cy), radius, p);
+    final Paint checkPaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = radius * 0.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final path = Path()
+      ..moveTo(cx - radius * 0.4, cy)
+      ..lineTo(cx - radius * 0.1, cy + radius * 0.3)
+      ..lineTo(cx + radius * 0.5, cy - radius * 0.3);
+    c.drawPath(path, checkPaint);
   }
 
   static void _drawVerticalText(Canvas c, String text, double size, double x, double centerY, Color color, double sc) {
@@ -204,13 +245,29 @@ class WatermarkEngine {
 }
 
 class _TPH {
-  final String text; final double size, y, x; final Color color; final bool bold;
-  final double letterSpacing; final double? maxW; final bool centerX; final int maxLines;
+  final String text;
+  final double size, y, x;
+  final Color color;
+  final bool bold;
+  final double letterSpacing;
+  final double? maxW;
+  final bool centerX;
+  final int maxLines;
+
   _TPH(this.text, this.size, this.y, this.color,
       {this.bold = false, this.letterSpacing = 0, this.x = 16, this.maxW, this.centerX = false, this.maxLines = 2});
+
   void paint(Canvas c) {
     final tp = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontWeight: bold ? FontWeight.w700 : FontWeight.w500, letterSpacing: letterSpacing)),
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+          letterSpacing: letterSpacing,
+        ),
+      ),
       textDirection: ui.TextDirection.ltr,
       maxLines: maxLines,
       ellipsis: '…',

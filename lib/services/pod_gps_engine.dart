@@ -1,24 +1,28 @@
 // lib/services/pod_gps_engine.dart
 // ============================================================
-// POD GPS ENGINE — Proof of Delivery Edition
+// POD GPS ENGINE — Simple & Fast
 // ============================================================
-// Two-Phase Optimized Thresholds:
-//   - Phase 1: Accept samples up to 50m for fast address (1-3 detik)
-//   - Phase 2: Target 15m accuracy for precise address (5-8 detik)
-//   - Reduced min samples for faster initial lock
+// Spec:
+//   accuracy threshold : 20m
+//   hard timeout       : 10 detik
+//   target samples     : 5
+//   provider           : fused
+//   startup            : lastKnownPosition
+//   distanceFilter     : 0 saat acquiring, 5 setelah locked
 // ============================================================
 
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
-// ── Confidence level ─────────────────────────────────────────
+// ── Confidence ───────────────────────────────────────────────
 enum PodConfidence {
   searching,  // Belum ada data
-  poor,       // Ada data, tapi belum stabil
-  fair,       // Cukup untuk preview, tidak untuk capture
+  poor,       // Ada sinyal, akurasi jelek
+  fair,       // Cukup untuk preview
   good,       // OK untuk capture
-  excellent,  // High-confidence POD
+  excellent,  // Terkunci presisi
 }
 
 extension PodConfidenceLabel on PodConfidence {
@@ -36,49 +40,34 @@ extension PodConfidenceLabel on PodConfidence {
   bool get isLocked   => this == PodConfidence.excellent;
 }
 
-// ── Satu snapshot GPS yang sudah divalidasi ───────────────────
+// ── Sample ───────────────────────────────────────────────────
 class PodSample {
   final double lat;
   final double lon;
-  final double accuracy;   // meter, dari OS
-  final double weight;     // 1 / (accuracy^2), pre-computed
+  final double accuracy;
   final DateTime time;
 
-  PodSample({
+  const PodSample({
     required this.lat,
     required this.lon,
     required this.accuracy,
     required this.time,
-  }) : weight = 1.0 / (accuracy.clamp(1.0, 200.0) * accuracy.clamp(1.0, 200.0));
+  });
 }
 
-// ── Hasil lock resmi untuk ditulis ke watermark / audit ──────
+// ── Lock Result ──────────────────────────────────────────────
 class PodLockResult {
-  /// Titik stabil (weighted centroid) → dipakai untuk geocode & watermark
   final double centroidLat;
   final double centroidLon;
-
-  /// Akurasi representatif (weighted mean accuracy)
   final double accuracy;
-
-  /// Nilai confidence numerik 0–1
   final double confidenceScore;
-
-  /// Level confidence enum
   final PodConfidence confidence;
-
-  /// Sample terbaik (akurasi paling kecil) → disimpan sebagai raw audit
   final PodSample bestRaw;
-
-  /// Statistik window
   final int samplesUsed;
-  final double clusterStdDevMeters;  // std-dev dari centroid, dalam meter
-  final double clusterRadiusMeters;  // radius maksimum dari centroid
-
-  /// Waktu lock
+  final double clusterStdDevMeters;
+  final double clusterRadiusMeters;
   final DateTime lockedAt;
 
-  /// Label singkat untuk UI
   String get qualityLabel {
     if (confidence == PodConfidence.excellent) return 'Excellent';
     if (confidence == PodConfidence.good)      return 'Good';
@@ -104,384 +93,275 @@ class PodLockResult {
     double? confidenceScore,
     PodConfidence? confidence,
     PodSample? bestRaw,
-  }) {
-    return PodLockResult(
-      centroidLat: centroidLat,
-      centroidLon: centroidLon,
-      accuracy: accuracy ?? this.accuracy,
-      confidenceScore: confidenceScore ?? this.confidenceScore,
-      confidence: confidence ?? this.confidence,
-      bestRaw: bestRaw ?? this.bestRaw,
-      samplesUsed: samplesUsed,
-      clusterStdDevMeters: clusterStdDevMeters,
-      clusterRadiusMeters: clusterRadiusMeters,
-      lockedAt: lockedAt,
-    );
-  }
+  }) => PodLockResult(
+    centroidLat: centroidLat,
+    centroidLon: centroidLon,
+    accuracy: accuracy ?? this.accuracy,
+    confidenceScore: confidenceScore ?? this.confidenceScore,
+    confidence: confidence ?? this.confidence,
+    bestRaw: bestRaw ?? this.bestRaw,
+    samplesUsed: samplesUsed,
+    clusterStdDevMeters: clusterStdDevMeters,
+    clusterRadiusMeters: clusterRadiusMeters,
+    lockedAt: lockedAt,
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// PodGpsEngine — MAIN CLASS
+// PodGpsEngine
 // ═══════════════════════════════════════════════════════════════
 class PodGpsEngine {
 
-  // ── Tuning parameters — Two-Phase Optimized ─────────────────
-  // Sample requirements (lebih cepat untuk Phase 2)
-  static const int    _minSamplesGood      = 6;    // Turun dari 10 → cukup 6 sample untuk good
-  static const int    _minSamplesExcellent = 12;   // Turun dari 15 → 12 sample untuk excellent
-  static const int    _maxWindowSize       = 20;
-  static const int    _keepOnUnlock        = 6;
+  // ── Tuning ──────────────────────────────────────────────────
+  static const double _accuracyThreshold  = 20.0;  // terima sample ≤ 20m
+  static const int    _targetSamples      = 5;     // 5 sample → locked
+  static const int    _maxWindow          = 10;    // simpan max 10 sample
+  static const Duration _hardTimeout      = Duration(seconds: 10);
 
-  // Accuracy filter — mendukung Two-Phase
-  static const double _maxRawAccuracy      = 50.0; // Naik dari 25 → terima sample sampai 50m (Phase 1)
-  static const double _excellentAccuracy   = 8.0;  // Premium: 8m untuk excellent
-  static const double _goodAccuracy        = 15.0; // Turun dari 18 → 15m untuk good (Phase 2 trigger)
+  // distanceFilter: 0 saat acquiring, 5 setelah locked
+  // (diatur oleh pod_location_service saat subscribe stream)
+  static const double distanceFilterAcquiring = 0.0;
+  static const double distanceFilterLocked     = 5.0;
 
-  // Cluster filter
-  static const double _maxClusterRadius    = 12.0; // Naik dari 10 → 12m untuk excellent
-  static const double _maxClusterRadiusGood = 20.0; // Naik dari 18 → 20m untuk good
+  // Movement detection
+  static const double _moveThreshold  = 15.0;  // soft unlock
+  static const double _resetThreshold = 30.0;  // hard reset
 
-  // Outlier rejection (3σ dari centroid, min 6m)
-  static const double _outlierSigmaFactor  = 3.0;
-  static const double _outlierMinMeters    = 6.0;
-
-  // Movement detection (lebih toleran)
-  static const double _moveThresholdMeters = 8.0;  // Naik dari 5 → 8m untuk unlock
-  static const double _hardResetMeters     = 25.0; // Naik dari 15 → 25m untuk full reset
-
-  // Kalman smoothing per-dimension
-  static const double _kalmanQ             = 0.5;
-  static const double _kalmanR             = 4.0;
-
-  // ── State ──────────────────────────────────────────────────
+  // ── State ───────────────────────────────────────────────────
   final List<PodSample> _window = [];
-  PodLockResult? _lockResult;
-  PodConfidence _confidence = PodConfidence.searching;
+  PodLockResult?  _lockResult;
+  PodConfidence   _confidence = PodConfidence.searching;
+  Timer?          _timeoutTimer;
 
-  // Kalman state per-dimensi
-  double _kfLat = 0.0, _kfLon = 0.0;
-  double _kfPLat = 1.0, _kfPLon = 1.0;
-  bool _kfInitialized = false;
+  double  _lastLat = 0, _lastLon = 0;
+  bool    _posInit = false;
+  bool    _locked  = false;
 
-  // Movement tracking
-  double _lastLat = 0.0, _lastLon = 0.0;
-  bool _positionInitialized = false;
+  // ── Public getters ──────────────────────────────────────────
+  PodConfidence  get confidence  => _confidence;
+  PodLockResult? get lockResult  => _lockResult;
+  bool           get canCapture  => _confidence.canCapture;
+  bool           get isLocked    => _locked;
+  int            get sampleCount => _window.length;
+  int            get samplesNeeded => _targetSamples;
 
-  // ── Public getters ─────────────────────────────────────────
-  PodConfidence get confidence => _confidence;
-  PodLockResult? get lockResult => _lockResult;
-  bool get canCapture => _confidence.canCapture;
-  bool get isLocked => _confidence == PodConfidence.excellent;
-  int get sampleCount => _window.length;
-  int get samplesNeeded => _minSamplesGood;
-
-  /// Progress 0.0–1.0 menuju lock (dioptimalkan untuk two-phase)
   double get lockProgress {
     if (_window.isEmpty) return 0.0;
-    
-    // Sample progress terhadap target good (6 sample)
-    final sampleProgress = (_window.length / _minSamplesGood).clamp(0.0, 1.0);
-    
-    if (_window.length >= 2) {
-      final radius = _computeClusterRadius();
-      final radiusOk = radius <= _maxClusterRadiusGood;
-      final avgAcc = _window.map((s) => s.accuracy).reduce((a, b) => a + b) / _window.length;
-      final accOk = avgAcc <= _goodAccuracy;
-      
-      // Jika akurasi sudah ≤15m, progress lebih cepat
-      if (avgAcc <= 15.0) {
-        return (sampleProgress * 0.8 + 0.2).clamp(0.0, 1.0);
-      }
-      if (radiusOk && accOk) return sampleProgress;
-      
-      // Penalti jika cluster atau akurasi belum bagus
-      return sampleProgress * 0.6;
-    }
-    return sampleProgress * 0.3;
+    return (_window.length / _targetSamples).clamp(0.0, 1.0);
   }
 
-  // ── Main: proses satu sample dari OS ──────────────────────
-  /// Returns true jika terjadi upgrade confidence
-  bool processSample(Position rawPos) {
-    // 1. Anti-spoof: tolak mock GPS + HARD RESET
-    if (rawPos.isMocked) {
-      if (kDebugMode) debugPrint('PodGpsEngine: MOCK GPS detected — HARD RESET');
-      _hardReset();
+  // ── Proses satu sample dari OS ──────────────────────────────
+  bool processSample(Position raw) {
+    // Mock GPS → tolak
+    if (raw.isMocked) {
+      if (kDebugMode) debugPrint('PodGpsEngine: mock GPS, skip');
+      return false;
+    }
+
+    // Filter akurasi
+    if (raw.accuracy > _accuracyThreshold) {
+      if (kDebugMode) {
+        debugPrint('PodGpsEngine: acc=${raw.accuracy.toStringAsFixed(1)}m > ${_accuracyThreshold}m, skip');
+      }
+      if (_confidence == PodConfidence.searching) _confidence = PodConfidence.poor;
+      return false;
+    }
+
+    // Cek pergerakan
+    if (_posInit) {
+      final moved = _haversine(_lastLat, _lastLon, raw.latitude, raw.longitude);
+      if (moved >= _resetThreshold) {
+        _hardReset();
+        if (kDebugMode) debugPrint('PodGpsEngine: hard reset, moved ${moved.toStringAsFixed(1)}m');
+      } else if (moved >= _moveThreshold && _locked) {
+        _softUnlock();
+        if (kDebugMode) debugPrint('PodGpsEngine: soft unlock, moved ${moved.toStringAsFixed(1)}m');
+      }
+    }
+
+    _lastLat = raw.latitude;
+    _lastLon = raw.longitude;
+    _posInit = true;
+
+    // Tambah ke window
+    _window.add(PodSample(
+      lat: raw.latitude,
+      lon: raw.longitude,
+      accuracy: raw.accuracy,
+      time: raw.timestamp ?? DateTime.now(),
+    ));
+    if (_window.length > _maxWindow) _window.removeAt(0);
+
+    // Start timeout saat sample pertama masuk
+    _timeoutTimer ??= Timer(_hardTimeout, _onTimeout);
+
+    // Evaluasi
+    final prev = _confidence;
+    _evaluate();
+    return _confidence.index > prev.index;
+  }
+
+  // ── Timeout handler ─────────────────────────────────────────
+  void _onTimeout() {
+    if (_locked) return; // sudah lock, tidak perlu timeout action
+
+    // Paksa accept dengan data terbaik yang ada, meski belum 5 sampel
+    if (_window.isNotEmpty) {
+      if (kDebugMode) debugPrint('PodGpsEngine: timeout — force accept ${_window.length} samples');
+      _forceLock();
+    } else {
       _confidence = PodConfidence.poor;
-      return false;
+      if (kDebugMode) debugPrint('PodGpsEngine: timeout — no samples');
     }
-
-    // 2. Filter akurasi kasar (sekarang sampai 50m untuk Phase 1)
-    if (rawPos.accuracy > _maxRawAccuracy) {
-      if (kDebugMode) debugPrint('PodGpsEngine: acc=${rawPos.accuracy.toStringAsFixed(1)}m > ${_maxRawAccuracy.toInt()}m, skip');
-      if (_confidence == PodConfidence.searching && _window.isEmpty) {
-        _confidence = PodConfidence.poor;
-      }
-      return false;
-    }
-
-    // 3. Kalman smoothing (per-dimensi)
-    final (smoothLat, smoothLon) = _kalmanUpdate(rawPos.latitude, rawPos.longitude, rawPos.accuracy);
-
-    // 4. Deteksi pergerakan
-    final movedMeters = _positionInitialized
-        ? _haversine(_lastLat, _lastLon, smoothLat, smoothLon)
-        : 0.0;
-
-    _lastLat = smoothLat;
-    _lastLon = smoothLon;
-    _positionInitialized = true;
-
-    if (movedMeters >= _hardResetMeters) {
-      _hardReset();
-      if (kDebugMode) debugPrint('PodGpsEngine: HARD RESET (moved ${movedMeters.toStringAsFixed(1)}m)');
-    } else if (movedMeters >= _moveThresholdMeters && _confidence.canCapture) {
-      _softUnlock();
-      if (kDebugMode) debugPrint('PodGpsEngine: SOFT UNLOCK (moved ${movedMeters.toStringAsFixed(1)}m)');
-    }
-
-    // 5. Tambah sample ke window
-    final sample = PodSample(
-      lat: smoothLat,
-      lon: smoothLon,
-      accuracy: rawPos.accuracy,
-      time: rawPos.timestamp ?? DateTime.now(),
-    );
-
-    _window.add(sample);
-    if (_window.length > _maxWindowSize) _window.removeAt(0);
-
-    // 6. Outlier rejection setelah cukup sample
-    if (_window.length >= 5) _rejectOutliers();
-
-    // 7. Evaluasi confidence
-    final prevConf = _confidence;
-    _evaluateConfidence();
-    final upgraded = _confidence.index > prevConf.index;
-
-    if (kDebugMode && _window.isNotEmpty) {
-      final radius = _window.length >= 2 ? _computeClusterRadius() : 0.0;
-      final avgAcc = _weightedMeanAccuracy();
-      debugPrint('PodGpsEngine: ${_confidence.label} | '
-          'n=${_window.length} radius=${radius.toStringAsFixed(1)}m '
-          'acc=${rawPos.accuracy.toStringAsFixed(1)}m '
-          'avgAcc=${avgAcc.toStringAsFixed(1)}m '
-          'score=${(_computeScore() * 100).toInt()}%');
-    }
-
-    return upgraded;
   }
 
-  // ── Evaluasi dan bangun lockResult ────────────────────────
-  void _evaluateConfidence() {
+  void _forceLock() {
+    // Ambil sample dengan akurasi terbaik
+    _window.sort((a, b) => a.accuracy.compareTo(b.accuracy));
+    final best = _window.first;
+
+    _confidence = PodConfidence.good;
+    _locked = true;
+    _lockResult = _buildResult(0.6);
+    if (kDebugMode) {
+      debugPrint('PodGpsEngine: force lock acc=${best.accuracy.toStringAsFixed(1)}m');
+    }
+  }
+
+  // ── Evaluasi confidence ─────────────────────────────────────
+  void _evaluate() {
     if (_window.isEmpty) {
       _confidence = PodConfidence.searching;
-      _lockResult = null;
       return;
     }
 
-    final score = _computeScore();
-    final radius = _computeClusterRadius();
-    final avgAcc = _weightedMeanAccuracy();
+    final avgAcc = _avgAccuracy();
+    final n = _window.length;
 
     PodConfidence newConf;
-    
-    // Excellent: akurasi ≤8m, cluster ≤12m, minimal 12 sample
-    if (_window.length >= _minSamplesExcellent &&
-        radius <= _maxClusterRadius &&
-        avgAcc <= _excellentAccuracy &&
-        score >= 0.85) {
+
+    if (n >= _targetSamples && avgAcc <= 10.0) {
       newConf = PodConfidence.excellent;
-    } 
-    // Good: akurasi ≤15m, cluster ≤20m, minimal 6 sample
-    else if (_window.length >= _minSamplesGood &&
-        radius <= _maxClusterRadiusGood &&
-        avgAcc <= _goodAccuracy &&
-        score >= 0.65) {
+      _locked = true;
+    } else if (n >= _targetSamples && avgAcc <= _accuracyThreshold) {
       newConf = PodConfidence.good;
-    } 
-    // Fair: sudah ada beberapa sample dengan akurasi reasonable
-    else if (_window.length >= 3 && avgAcc <= 35.0) {
+      _locked = true;
+    } else if (n >= 2 && avgAcc <= _accuracyThreshold) {
       newConf = PodConfidence.fair;
-    } 
-    else {
+    } else {
       newConf = PodConfidence.poor;
     }
 
     _confidence = newConf;
 
-    if (_confidence.canCapture) {
-      _lockResult = _buildLockResult(score, radius);
-    } else if (_window.isNotEmpty) {
-      _lockResult = _buildLockResult(score, radius);
+    if (_confidence.canCapture || _window.isNotEmpty) {
+      _lockResult = _buildResult(_score());
+    }
+
+    if (_locked) {
+      _timeoutTimer?.cancel();
+      _timeoutTimer = null;
+    }
+
+    if (kDebugMode) {
+      debugPrint('PodGpsEngine: ${_confidence.label} | '
+          'n=$n avgAcc=${avgAcc.toStringAsFixed(1)}m locked=$_locked');
     }
   }
 
-  PodLockResult _buildLockResult(double score, double radius) {
-    // Weighted centroid
-    double sumW = 0, sumLat = 0, sumLon = 0, sumAcc = 0;
-    PodSample? bestRaw;
-    for (final s in _window) {
-      sumW   += s.weight;
-      sumLat += s.lat * s.weight;
-      sumLon += s.lon * s.weight;
-      sumAcc += s.accuracy * s.weight;
-      if (bestRaw == null || s.accuracy < bestRaw.accuracy) bestRaw = s;
-    }
-    final cLat = sumLat / sumW;
-    final cLon = sumLon / sumW;
-    final wAcc = sumAcc / sumW;
+  // ── Build result ────────────────────────────────────────────
+  PodLockResult _buildResult(double score) {
+    double sumLat = 0, sumLon = 0, sumAcc = 0;
+    PodSample? best;
 
-    // Std-dev dari centroid (dalam meter)
-    double sumSq = 0;
+    for (final s in _window) {
+      sumLat += s.lat;
+      sumLon += s.lon;
+      sumAcc += s.accuracy;
+      if (best == null || s.accuracy < best.accuracy) best = s;
+    }
+
+    final n = _window.length;
+    final cLat = sumLat / n;
+    final cLon = sumLon / n;
+    final avgAcc = sumAcc / n;
+
+    // Std-dev dan radius dari centroid
+    double sumSq = 0, maxD = 0;
     for (final s in _window) {
       final d = _haversine(cLat, cLon, s.lat, s.lon);
       sumSq += d * d;
+      if (d > maxD) maxD = d;
     }
-    final stdDev = sqrt(sumSq / _window.length);
+    final stdDev = n > 1 ? sqrt(sumSq / n) : 0.0;
 
     return PodLockResult(
       centroidLat: cLat,
       centroidLon: cLon,
-      accuracy: wAcc,
+      accuracy: avgAcc,
       confidenceScore: score,
       confidence: _confidence,
-      bestRaw: bestRaw!,
-      samplesUsed: _window.length,
+      bestRaw: best!,
+      samplesUsed: n,
       clusterStdDevMeters: stdDev,
-      clusterRadiusMeters: radius,
+      clusterRadiusMeters: maxD,
       lockedAt: DateTime.now(),
     );
   }
 
-  // ── Outlier rejection (Chauvenet 3σ) ─────────────────────
-  void _rejectOutliers() {
-    if (_window.length < 4) return;
-
-    double sumLat = 0, sumLon = 0;
-    for (final s in _window) { sumLat += s.lat; sumLon += s.lon; }
-    final mLat = sumLat / _window.length;
-    final mLon = sumLon / _window.length;
-
-    double sumSq = 0;
-    for (final s in _window) {
-      final d = _haversine(mLat, mLon, s.lat, s.lon);
-      sumSq += d * d;
-    }
-    final stdDev = sqrt(sumSq / _window.length);
-    final threshold = max(_outlierSigmaFactor * stdDev, _outlierMinMeters);
-
-    final before = _window.length;
-    _window.removeWhere((s) {
-      final d = _haversine(mLat, mLon, s.lat, s.lon);
-      return d > threshold;
-    });
-
-    if (kDebugMode && _window.length < before) {
-      debugPrint('PodGpsEngine: outlier removed ${before - _window.length} samples '
-          '(threshold=${threshold.toStringAsFixed(1)}m)');
-    }
-  }
-
-  // ── Kalman 1D per-dimensi ─────────────────────────────────
-  (double, double) _kalmanUpdate(double lat, double lon, double accuracy) {
-    if (!_kfInitialized) {
-      _kfLat = lat;
-      _kfLon = lon;
-      _kfPLat = accuracy * accuracy;
-      _kfPLon = accuracy * accuracy;
-      _kfInitialized = true;
-      return (lat, lon);
-    }
-
-    final R = accuracy * accuracy;
-
-    // Lat
-    _kfPLat += _kalmanQ;
-    final kLat = _kfPLat / (_kfPLat + max(R, _kalmanR));
-    _kfLat += kLat * (lat - _kfLat);
-    _kfPLat *= (1 - kLat);
-
-    // Lon
-    _kfPLon += _kalmanQ;
-    final kLon = _kfPLon / (_kfPLon + max(R, _kalmanR));
-    _kfLon += kLon * (lon - _kfLon);
-    _kfPLon *= (1 - kLon);
-
-    return (_kfLat, _kfLon);
-  }
-
-  // ── Score komposit ────────────────────────────────────────
-  double _computeScore() {
+  // ── Score 0–1 ───────────────────────────────────────────────
+  double _score() {
     if (_window.isEmpty) return 0.0;
-
-    // Factor 1: jumlah sample (bobot 30%)
-    final fSample = (_window.length / _minSamplesExcellent).clamp(0.0, 1.0);
-
-    // Factor 2: cluster radius (bobot 35%)
-    final radius = _computeClusterRadius();
-    final fRadius = radius.isInfinite ? 0.0 : 
-        (1.0 - (radius / _maxClusterRadius).clamp(0.0, 1.0));
-
-    // Factor 3: rata-rata akurasi (bobot 35%)
-    final avgAcc = _weightedMeanAccuracy();
-    final fAcc = (1.0 - (avgAcc / _maxRawAccuracy).clamp(0.0, 1.0));
-
-    return (fSample * 0.30) + (fRadius * 0.35) + (fAcc * 0.35);
+    final fSample = (_window.length / _targetSamples).clamp(0.0, 1.0);
+    final fAcc    = (1.0 - (_avgAccuracy() / _accuracyThreshold).clamp(0.0, 1.0));
+    return fSample * 0.5 + fAcc * 0.5;
   }
 
-  double _computeClusterRadius() {
-    if (_window.length < 2) return double.infinity;
-    double sumLat = 0, sumLon = 0;
-    for (final s in _window) { sumLat += s.lat; sumLon += s.lon; }
-    final cLat = sumLat / _window.length;
-    final cLon = sumLon / _window.length;
-    double maxDist = 0;
-    for (final s in _window) {
-      final d = _haversine(cLat, cLon, s.lat, s.lon);
-      if (d > maxDist) maxDist = d;
-    }
-    return maxDist;
-  }
-
-  double _weightedMeanAccuracy() {
+  double _avgAccuracy() {
     if (_window.isEmpty) return 999.0;
-    double sumW = 0, sumAcc = 0;
-    for (final s in _window) {
-      sumW += s.weight;
-      sumAcc += s.accuracy * s.weight;
-    }
-    return sumAcc / sumW;
+    return _window.map((s) => s.accuracy).reduce((a, b) => a + b) / _window.length;
   }
 
-  // ── Reset helpers ─────────────────────────────────────────
+  // ── Soft unlock ─────────────────────────────────────────────
   void _softUnlock() {
-    while (_window.length > _keepOnUnlock) _window.removeAt(0);
+    _locked = false;
     _confidence = PodConfidence.fair;
     _lockResult = null;
+    // Simpan 3 sample terakhir
+    while (_window.length > 3) _window.removeAt(0);
+    // Restart timeout
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(_hardTimeout, _onTimeout);
   }
 
+  // ── Hard reset ──────────────────────────────────────────────
   void _hardReset() {
     _window.clear();
     _lockResult = null;
+    _locked = false;
     _confidence = PodConfidence.searching;
-    _kfInitialized = false;
-    _positionInitialized = false;
+    _posInit = false;
+    _timeoutTimer?.cancel();
+    _timeoutTimer = null;
   }
 
-  void reset() => _hardReset();
+  void reset() {
+    _hardReset();
+  }
 
-  // ── Haversine dengan NaN protection ───────────────────────
+  void dispose() {
+    _timeoutTimer?.cancel();
+    _timeoutTimer = null;
+  }
+
+  // ── Haversine ───────────────────────────────────────────────
   static double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371000.0;
     final dLat = (lat2 - lat1) * pi / 180.0;
     final dLon = (lon2 - lon1) * pi / 180.0;
     final a = sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1 * pi / 180.0) * cos(lat2 * pi / 180.0) *
-            sin(dLon / 2) * sin(dLon / 2);
-    
-    // NaN protection
-    final safeA = a.clamp(0.0, 1.0);
-    return R * 2 * atan2(sqrt(safeA), sqrt(1.0 - safeA));
+        sin(dLon / 2) * sin(dLon / 2);
+    return R * 2 * atan2(sqrt(a.clamp(0.0, 1.0)), sqrt(1.0 - a.clamp(0.0, 1.0)));
   }
 }

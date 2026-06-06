@@ -15,6 +15,8 @@ import 'watermark_params.dart';
 import 'watermark_layout.dart';
 
 class WatermarkEngine {
+  /// Memproses gambar dengan menambahkan watermark berdasarkan parameter.
+  /// Mengembalikan Uint8List gambar JPEG yang sudah diberi watermark.
   static Future<Uint8List> process(WatermarkParams params) async {
     try {
       final originalImg = img.decodeImage(params.imageBytes);
@@ -22,7 +24,9 @@ class WatermarkEngine {
 
       final W = originalImg.width;
       final H = originalImg.height;
-      final double sc = (W / 1080.0).clamp(0.8, 4.0);
+      // Batas atas 2.5 — mencegah panel dan teks terlalu besar di foto resolusi tinggi.
+      // Pada W=4000px, sc=3.7 (lama) menghasilkan panel ~800px; sc=2.5 → ~540px.
+      final double sc = (W / 1080.0).clamp(0.8, 2.5);
 
       final uiImage = await _decodeUiImage(params.imageBytes);
       final recorder = ui.PictureRecorder();
@@ -75,7 +79,6 @@ class WatermarkEngine {
   // Kode verifikasi vertikal sisi kanan
   // ═══════════════════════════════════════════════════════════════
   static void _drawTimemarkLight(Canvas c, double W, double H, double sc, WatermarkParams p) {
-    const double refW = 1080.0;
     final double panelH = _lightPanelHeight(sc, p);
     final double panelY = H - panelH;
 
@@ -110,7 +113,7 @@ class WatermarkEngine {
     final double brandX = W - 200 * sc;
     _tp('Termullog', 26 * sc, row1Y + 8 * sc, const Color(0xFFF5C518),
         bold: true, x: brandX).paint(c);
-    _tp('Camera', 16 * sc, row1Y + 38 * sc, const Color(0xFFFFFFFF),
+    _tp('Camera', 16 * sc, row1Y + 38 * sc, const Color(0xFF222222),
         x: brandX).paint(c);
 
     // ─── Baris 2: Tanggal ───
@@ -136,7 +139,7 @@ class WatermarkEngine {
     // ─── Baris 4: Alamat (jika aktif) ───
     if (p.showAddress && p.address.isNotEmpty) {
       _tp(p.address, 15 * sc, row3Y, const Color(0xFF666666),
-          x: padL, maxW: W - padL * 2 - 80 * sc).paint(c);
+          x: padL, maxW: W - padL * 2 - 80 * sc, maxLines: 3).paint(c);
       row3Y += 24 * sc;
     }
 
@@ -154,8 +157,10 @@ class WatermarkEngine {
 
     // ─── Kode verifikasi vertikal sisi kanan ───
     final String verCode = _verCode(p);
+    // topY adalah titik teratas teks setelah rotasi. Clamp agar tidak keluar canvas atas/bawah.
+    final double verTopLight = (H - panelH / 2).clamp(40 * sc, H - 40 * sc);
     _drawVerticalText(c, '© $verCode  Termullog Verified',
-        13 * sc, W - 22 * sc, H - panelH / 2, const Color(0xFF888888), sc);
+        13 * sc, W - 22 * sc, verTopLight, const Color(0xFF888888), sc);
 
     // Border atas panel (kuning tipis)
     if (p.showBorder) {
@@ -184,15 +189,20 @@ class WatermarkEngine {
         Paint()..color = const Color(0xFFF5C518));
 
     // ─── Branding pojok kanan atas foto (di luar panel) ───
-    _tp('Termullog', 26 * sc, panelY - 100 * sc, const Color(0xFFF5C518),
+    // Clamp agar tidak keluar canvas atas pada foto kecil.
+    final double brandY1 = (panelY - 100 * sc).clamp(16 * sc, panelY - 36 * sc);
+    final double brandY2 = (panelY - 64 * sc).clamp(brandY1 + 30 * sc, panelY - 8 * sc);
+    _tp('Termullog', 26 * sc, brandY1, const Color(0xFFF5C518),
         bold: true, x: W - 220 * sc).paint(c);
-    _tp('Foto 100% akurat', 16 * sc, panelY - 64 * sc, Colors.white,
+    _tp('Foto 100% akurat', 16 * sc, brandY2, Colors.white,
         x: W - 220 * sc).paint(c);
 
     // ─── Kode verifikasi vertikal sisi kanan ───
     final String verCode = _verCode(p);
+    // panelY - panelH*0.3 bisa negatif pada foto pendek. Clamp ke batas aman.
+    final double verTopDark = (panelY - panelH * 0.3).clamp(40 * sc, H - 40 * sc);
     _drawVerticalText(c, '© $verCode  Termullog Verified',
-        13 * sc, W - 22 * sc, panelY - panelH * 0.3, const Color(0xFFAAAAAA), sc);
+        13 * sc, W - 22 * sc, verTopDark, const Color(0xFFAAAAAA), sc);
 
     // ─── Jam besar kiri ───
     final String timeStr = DateFormat('HH:mm').format(p.timestamp);
@@ -214,7 +224,7 @@ class WatermarkEngine {
     double addrY = panelY + 126 * sc;
     if (p.showAddress && p.address.isNotEmpty) {
       _tp(p.address, 18 * sc, addrY, Colors.white,
-          x: padL, maxW: W - padL * 2).paint(c);
+          x: padL, maxW: W - padL * 2, maxLines: 3).paint(c);
       addrY += 30 * sc;
     }
 
@@ -282,7 +292,7 @@ class WatermarkEngine {
     double infoY = panelY + 104 * sc;
     if (p.showAddress && p.address.isNotEmpty) {
       _tp(p.address, 16 * sc, infoY, Colors.white70,
-          x: padL, maxW: W - padL * 2).paint(c);
+          x: padL, maxW: W - padL * 2, maxLines: 3).paint(c);
       infoY += 26 * sc;
     }
 
@@ -387,9 +397,11 @@ class WatermarkEngine {
     double x = 16,
     double? maxW,
     bool centerX = false,
+    int maxLines = 2,
   }) =>
       _TPH(text, size, y, color,
-          bold: bold, letterSpacing: letterSpacing, x: x, maxW: maxW, centerX: centerX);
+          bold: bold, letterSpacing: letterSpacing, x: x, maxW: maxW,
+          centerX: centerX, maxLines: maxLines);
 
   static String _verCode(WatermarkParams p) {
     int h = 0x811C9DC5;
@@ -409,10 +421,11 @@ class _TPH {
   final double letterSpacing;
   final double? maxW;
   final bool centerX;
+  final int maxLines;
 
   _TPH(this.text, this.size, this.y, this.color,
       {this.bold = false, this.letterSpacing = 0, this.x = 16,
-       this.maxW, this.centerX = false});
+       this.maxW, this.centerX = false, this.maxLines = 2});
 
   void paint(Canvas c) {
     final tp = TextPainter(
@@ -426,7 +439,7 @@ class _TPH {
         ),
       ),
       textDirection: ui.TextDirection.ltr,
-      maxLines: 2,
+      maxLines: maxLines,
       ellipsis: '…',
     );
     tp.layout(maxWidth: maxW ?? 9999);

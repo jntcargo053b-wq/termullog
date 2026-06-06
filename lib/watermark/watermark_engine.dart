@@ -36,7 +36,12 @@ class WatermarkEngine {
       canvas.drawImage(uiImage, Offset.zero, Paint());
 
       _drawReferenceLayout(
-        canvas, W, H, sc, fontScale, params,
+        canvas,
+        W.toDouble(),  // <- konversi ke double
+        H.toDouble(),  // <- konversi ke double
+        sc,
+        fontScale,
+        params,
         customBadgeImage: customBadgeImage,
         customLogoImage: customLogoImage,
       );
@@ -65,7 +70,6 @@ class WatermarkEngine {
         onTimeout: () => throw Exception('Image decode timeout'));
   }
 
-  /// Convert bytes to ui.Image, returns null on timeout or error
   static Future<ui.Image?> _bytesToUiImage(Uint8List bytes) async {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromList(bytes, completer.complete);

@@ -45,7 +45,7 @@ class WatermarkPreviewPainter extends CustomPainter {
     final double W = size.width;
     final double H = size.height;
     // referensi 390px (layar phone normal)
-    final double pr = (W / 390).clamp(0.6, 1.6);
+    final double pr = (W / 1080.0).clamp(0.3, 1.2);
 
     switch (layout) {
       case WatermarkLayout.podCorporate:

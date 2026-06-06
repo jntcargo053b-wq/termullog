@@ -20,11 +20,26 @@ class WatermarkEngine {
       final double fontScale = params.fontScale.clamp(0.5, 2.0);
 
       final uiImage = await _decodeUiImage(params.imageBytes);
+      
+      // Preload custom badge and logo images (if any)
+      ui.Image? customBadgeImage;
+      if (params.badgeType == 'custom' && params.customBadgeBytes != null) {
+        customBadgeImage = await _bytesToUiImage(params.customBadgeBytes!);
+      }
+      ui.Image? customLogoImage;
+      if (params.logoType == 'custom' && params.customLogoBytes != null) {
+        customLogoImage = await _bytesToUiImage(params.customLogoBytes!);
+      }
+
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, W.toDouble(), H.toDouble()));
       canvas.drawImage(uiImage, Offset.zero, Paint());
 
-      _drawReferenceLayout(canvas, W.toDouble(), H.toDouble(), sc, fontScale, params);
+      _drawReferenceLayout(
+        canvas, W, H, sc, fontScale, params,
+        customBadgeImage: customBadgeImage,
+        customLogoImage: customLogoImage,
+      );
 
       final picture = recorder.endRecording();
       final uiOut = await picture.toImage(W, H);
@@ -50,15 +65,29 @@ class WatermarkEngine {
         onTimeout: () => throw Exception('Image decode timeout'));
   }
 
-  /// Layout final dengan dukungan custom badge & logo
-  static void _drawReferenceLayout(Canvas c, double W, double H, double sc, double fontScale, WatermarkParams p) {
+  /// Convert bytes to ui.Image, returns null on timeout or error
+  static Future<ui.Image?> _bytesToUiImage(Uint8List bytes) async {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(bytes, completer.complete);
+    try {
+      return await completer.future.timeout(const Duration(seconds: 2));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static void _drawReferenceLayout(
+    Canvas c,
+    double W, double H, double sc, double fontScale, WatermarkParams p, {
+    ui.Image? customBadgeImage,
+    ui.Image? customLogoImage,
+  }) {
     final double panelH = _calculatePanelHeight(sc, fontScale, p);
     final double panelX = 20 * sc;
     final double targetY = H - panelH - 120 * sc;
     final double panelY = targetY.clamp(20 * sc, H - panelH - 20 * sc);
     final double panelW = 560 * sc;
 
-    // Panel background
     final RRect panelRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(panelX, panelY, panelW, panelH),
       Radius.circular(12 * sc),
@@ -75,32 +104,35 @@ class WatermarkEngine {
     double currentX = panelX + 16 * sc;
     double currentY = panelY + 16 * sc;
 
-    // --- BADGE (dinamis / custom) ---
+    // --- BADGE ---
     final String appName = p.appName.isNotEmpty ? p.appName : 'termullog';
     final double badgeFontSize = 32 * sc * fontScale;
     double badgeW;
-    double badgeH = 80 * sc;
+    final double badgeH = 80 * sc;
 
-    if (p.badgeType == 'custom' && p.customBadgeBytes != null) {
-      // Gunakan gambar custom sebagai badge
-      badgeW = 150 * sc; // lebar tetap, bisa disesuaikan
-      final ui.Image? customBadge = await _bytesToUiImage(p.customBadgeBytes!);
-      if (customBadge != null) {
-        final Rect badgeRect = Rect.fromLTWH(currentX, currentY, badgeW, badgeH);
-        c.drawImageRect(customBadge, Rect.fromLTWH(0, 0, customBadge.width.toDouble(), customBadge.height.toDouble()), badgeRect, Paint());
-      } else {
-        // fallback ke badge teks
-        _drawDefaultBadge(c, currentX, currentY, badgeW, badgeH, appName, badgeFontSize);
-      }
+    if (p.badgeType == 'custom' && customBadgeImage != null) {
+      badgeW = 150 * sc;
+      final Rect badgeRect = Rect.fromLTWH(currentX, currentY, badgeW, badgeH);
+      c.drawImageRect(
+        customBadgeImage,
+        Rect.fromLTWH(0, 0, customBadgeImage.width.toDouble(), customBadgeImage.height.toDouble()),
+        badgeRect,
+        Paint(),
+      );
     } else {
-      // Badge default kuning dengan teks
       final namePainter = TextPainter(
         text: TextSpan(text: appName, style: TextStyle(fontSize: badgeFontSize, fontWeight: FontWeight.w700)),
         textDirection: ui.TextDirection.ltr,
       )..layout();
       final double badgePadding = 24 * sc;
       badgeW = (namePainter.width + badgePadding).clamp(120 * sc, 300 * sc);
-      _drawDefaultBadge(c, currentX, currentY, badgeW, badgeH, appName, badgeFontSize);
+      final RRect badgeRRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(currentX, currentY, badgeW, badgeH),
+        Radius.circular(8 * sc),
+      );
+      c.drawRRect(badgeRRect, Paint()..color = const Color(0xFFFFC107));
+      _tp(appName, badgeFontSize, currentY + 18 * sc, Colors.black87,
+          bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 8 * sc).paint(c);
     }
 
     // --- JAM ---
@@ -109,7 +141,7 @@ class WatermarkEngine {
     _tp(timeStr, 80 * sc * fontScale, currentY - 4 * sc, const Color(0xFF1A237E),
         bold: true, x: timeX).paint(c);
 
-    // --- LOGO (dinamis) ---
+    // --- LOGO ---
     if (p.showLogo) {
       final timePainter = TextPainter(
         text: TextSpan(text: timeStr, style: TextStyle(fontSize: 80 * sc * fontScale, fontWeight: FontWeight.w700)),
@@ -117,7 +149,7 @@ class WatermarkEngine {
       )..layout();
       double logoX = timeX + timePainter.width + 20 * sc;
       final double safeLogoX = logoX.clamp(timeX, panelX + panelW - 156 * sc);
-      _drawSelectedLogo(c, safeLogoX, currentY + 15 * sc, sc, p);
+      _drawSelectedLogo(c, safeLogoX, currentY + 15 * sc, sc, p, customLogoImage);
     }
 
     currentY += 100 * sc;
@@ -164,7 +196,7 @@ class WatermarkEngine {
       currentY += 35 * sc;
     }
 
-    // Footer assurance
+    // Footer
     _tp('🛡 Timemark menjamin keaslian waktu', 20 * sc * fontScale, currentY,
         Colors.grey[600]!, x: currentX).paint(c);
 
@@ -179,22 +211,17 @@ class WatermarkEngine {
     _tp('Camera', 22 * sc * fontScale, H - 65 * sc, Colors.white70, x: W - 240 * sc).paint(c);
   }
 
-  static void _drawDefaultBadge(Canvas c, double x, double y, double w, double h, String text, double fontSize) {
-    final RRect badgeRRect = RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(8));
-    c.drawRRect(badgeRRect, Paint()..color = const Color(0xFFFFC107));
-    _tp(text, fontSize, y + 18, Colors.black87,
-        bold: true, x: x + w / 2, centerX: true, maxW: w - 8).paint(c);
-  }
-
-  static Future<ui.Image?> _bytesToUiImage(Uint8List bytes) async {
-    final Completer<ui.Image> completer = Completer();
-    ui.decodeImageFromList(bytes, completer.complete);
-    return completer.future.timeout(const Duration(seconds: 2), onTimeout: () => null);
-  }
-
-  static void _drawSelectedLogo(Canvas c, double x, double y, double sc, WatermarkParams p) {
-    if (p.logoType == 'custom' && p.customLogoBytes != null) {
-      _drawCustomLogo(c, x, y, sc, p.customLogoBytes!);
+  static void _drawSelectedLogo(Canvas c, double x, double y, double sc, WatermarkParams p, ui.Image? customLogoImage) {
+    if (p.logoType == 'custom' && customLogoImage != null) {
+      final double logoW = 140 * sc;
+      final double logoH = 60 * sc;
+      final Rect dstRect = Rect.fromLTWH(x, y, logoW, logoH);
+      c.drawImageRect(
+        customLogoImage,
+        Rect.fromLTWH(0, 0, customLogoImage.width.toDouble(), customLogoImage.height.toDouble()),
+        dstRect,
+        Paint(),
+      );
     } else if (p.logoType == 'timemark_icon') {
       _drawTimemarkIcon(c, x + 40 * sc, y + 30 * sc, 30 * sc);
     } else {
@@ -203,7 +230,7 @@ class WatermarkEngine {
     }
   }
 
-  static void _drawMiniLogo(Canvas c, double x, double y, double sc) async {
+  static void _drawMiniLogo(Canvas c, double x, double y, double sc) {
     final Paint p = Paint()..color = Colors.white;
     c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, 140 * sc, 60 * sc), Radius.circular(8 * sc)), p);
     final Paint vanPaint = Paint()..color = Colors.orange;
@@ -224,19 +251,6 @@ class WatermarkEngine {
       ..lineTo(cx - radius * 0.1, cy + radius * 0.3)
       ..lineTo(cx + radius * 0.5, cy - radius * 0.3);
     c.drawPath(path, checkPaint);
-  }
-
-  static void _drawCustomLogo(Canvas c, double x, double y, double sc, Uint8List logoBytes) async {
-    final ui.Image? logo = await _bytesToUiImage(logoBytes);
-    if (logo != null) {
-      final double logoW = 140 * sc;
-      final double logoH = 60 * sc;
-      final Rect dstRect = Rect.fromLTWH(x, y, logoW, logoH);
-      c.drawImageRect(logo, Rect.fromLTWH(0, 0, logo.width.toDouble(), logo.height.toDouble()), dstRect, Paint());
-    } else {
-      // fallback
-      _drawMiniLogo(c, x, y, sc);
-    }
   }
 
   static double _calculatePanelHeight(double sc, double fontScale, WatermarkParams p) {

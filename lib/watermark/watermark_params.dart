@@ -27,6 +27,13 @@ class WatermarkParams {
   final String dateFormat;
   final String timeFormat;
   
+  // Custom Badge & Logo Support
+  final bool showLogo;
+  final String? logoType; // 'next_van', 'timemark_icon', or 'custom'
+  final Uint8List? customLogoBytes;
+  final String? badgeType; // 'default' (yellow) or 'custom'
+  final Uint8List? customBadgeBytes;
+  
   const WatermarkParams({
     required this.imageBytes,
     required this.timestamp,
@@ -52,5 +59,10 @@ class WatermarkParams {
     required this.fontSize,
     required this.dateFormat,
     required this.timeFormat,
+    this.showLogo = true,
+    this.logoType,
+    this.customLogoBytes,
+    this.badgeType,
+    this.customBadgeBytes,
   });
 }

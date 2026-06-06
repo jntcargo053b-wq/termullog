@@ -252,84 +252,128 @@ class WatermarkPreviewPainter extends CustomPainter {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // LAYOUT 3 — Timemark Clean (branding atas + panel gelap bawah)
+  // LAYOUT 3 — Timemark Clean (floating card rounded)
   // ─────────────────────────────────────────────────────────────
   void _drawTimemarkClean(Canvas canvas, double W, double H, double sc) {
-    final double panelH = _cleanPanelHeight(sc);
-    final double panelY = H - panelH;
-    final double padL = 16 * sc;
+    final cardWidth = W * 0.78;
+    final cardHeight = 145 * sc;
 
-    // Panel gelap
-    canvas.drawRect(
-      Rect.fromLTWH(0, panelY, W, panelH),
-      Paint()..color = Color.fromRGBO(10, 10, 20, opacity.clamp(0.78, 0.94)),
+    final cardX = 14 * sc;
+    final cardY = H - cardHeight - (24 * sc);
+
+    final cardRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(cardX, cardY, cardWidth, cardHeight),
+      Radius.circular(18 * sc),
     );
 
-    // Branding kanan atas foto
-    _t(canvas, 'Termullog', 15 * sc, 24 * sc,
-        const Color(0xFFF5C518), bold: true, x: W - 130 * sc);
-    _t(canvas, 'Camera', 10 * sc, 44 * sc, Colors.white60, x: W - 130 * sc);
+    // Background card semi-transparan
+    canvas.drawRRect(
+      cardRect,
+      Paint()..color = Colors.black.withOpacity(0.42),
+    );
+
+    // Border halus
+    canvas.drawRRect(
+      cardRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = Colors.white.withOpacity(0.15),
+    );
+
+    final padL = cardX + (14 * sc);
 
     // Jam besar
-    _t(canvas, DateFormat('HH:mm').format(timestamp),
-        40 * sc, panelY + 12 * sc, Colors.white, bold: true, x: padL);
+    _t(
+      canvas,
+      DateFormat('HH:mm').format(timestamp),
+      36 * sc,
+      cardY + 12 * sc,
+      Colors.white,
+      bold: true,
+      x: padL,
+    );
 
     // Bar vertikal kuning
     canvas.drawRect(
-      Rect.fromLTWH(padL + 100 * sc, panelY + 12 * sc, 2.5 * sc, 52 * sc),
+      Rect.fromLTWH(padL + 90 * sc, cardY + 12 * sc, 2 * sc, 42 * sc),
       Paint()..color = const Color(0xFFF5C518),
     );
 
-    final double dateX = padL + 110 * sc;
-    _t(canvas, DateFormat('dd MMMM yyyy').format(timestamp),
-        12 * sc, panelY + 18 * sc, Colors.white70, x: dateX);
-    _t(canvas, DateFormat('EEEE', 'id_ID').format(timestamp),
-        11 * sc, panelY + 36 * sc, Colors.white38, x: dateX);
+    // Tanggal & hari
+    _t(
+      canvas,
+      DateFormat('dd MMMM yyyy').format(timestamp),
+      12 * sc,
+      cardY + 18 * sc,
+      Colors.white,
+      x: padL + 102 * sc,
+    );
+    _t(
+      canvas,
+      DateFormat('EEEE', 'id_ID').format(timestamp),
+      11 * sc,
+      cardY + 36 * sc,
+      Colors.white70,
+      x: padL + 102 * sc,
+    );
 
-    // Divider
-    canvas.drawRect(Rect.fromLTWH(padL, panelY + 70 * sc, W - padL * 2, 1 * sc),
-        Paint()..color = Colors.white12);
-
-    double infoY = panelY + 78 * sc;
+    double infoY = cardY + 62 * sc;
 
     if (showAddress && address.isNotEmpty) {
-      _t(canvas, _trunc(address, 55), 11 * sc, infoY, Colors.white70,
-          x: padL, maxW: W - padL * 2);
+      _t(
+        canvas,
+        address,
+        10 * sc,
+        infoY,
+        Colors.white,
+        x: padL,
+        maxW: cardWidth - 28 * sc,
+      );
       infoY += 18 * sc;
     }
 
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord =
-          '${lat!.abs().toStringAsFixed(6)}°${lat! < 0 ? 'S' : 'N'}, '
-          '${lon!.abs().toStringAsFixed(6)}°${lon! < 0 ? 'W' : 'E'}';
-      _t(canvas, coord, 10 * sc, infoY, Colors.white38, x: padL);
+      _t(
+        canvas,
+        '${lat!.toStringAsFixed(6)}, ${lon!.toStringAsFixed(6)}',
+        9 * sc,
+        infoY,
+        Colors.white70,
+        x: padL,
+      );
       infoY += 16 * sc;
     }
 
     if (showWeather && weather.isNotEmpty) {
-      _t(canvas, weather, 10 * sc, infoY, const Color(0xFF80CBC4), x: padL);
+      _t(
+        canvas,
+        weather,
+        9 * sc,
+        infoY,
+        const Color(0xFF80CBC4),
+        x: padL,
+      );
     }
 
-    // Footer
-    final double ftY = H - 24 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, ftY, W, 1 * sc),
-        Paint()..color = Colors.white12);
-    _t(canvas, '🛡 Kode: ${_previewCode()}', 7 * sc, ftY + 5 * sc,
-        Colors.white24, x: padL);
-
-    if (showBorder) {
-      canvas.drawRect(Rect.fromLTWH(0, panelY, W, 2.5 * sc),
-          Paint()..color = const Color(0xFFF5C518));
-    }
-  }
-
-  double _cleanPanelHeight(double sc) {
-    double h = 70 * sc + 8 * sc;
-    if (showAddress && address.isNotEmpty) h += 18 * sc;
-    if (showCoordinates && hasPosition) h += 16 * sc;
-    if (showWeather && weather.isNotEmpty) h += 16 * sc;
-    h += 24 * sc;
-    return h.clamp(100 * sc, 180 * sc);
+    // Branding pojok kanan bawah card
+    _t(
+      canvas,
+      'Termullog',
+      12 * sc,
+      cardY + cardHeight - 26 * sc,
+      const Color(0xFFF5C518),
+      bold: true,
+      x: cardX + cardWidth - 95 * sc,
+    );
+    _t(
+      canvas,
+      'Camera',
+      9 * sc,
+      cardY + cardHeight - 12 * sc,
+      Colors.white70,
+      x: cardX + cardWidth - 95 * sc,
+    );
   }
 
   // ─────────────────────────────────────────────────────────────

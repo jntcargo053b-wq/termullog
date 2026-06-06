@@ -1,4 +1,5 @@
 // lib/watermark/watermark_preview_painter.dart
+import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -18,7 +19,7 @@ class WatermarkPreviewPainter extends CustomPainter {
   final bool showCoordinates;
   final double opacity;
   final bool showBorder;
-  final WatermarkLayout layout;
+  final WatermarkLayout layout; // tidak dipakai, tapi dipertahankan untuk kompatibilitas
 
   const WatermarkPreviewPainter({
     required this.timestamp,
@@ -39,189 +40,169 @@ class WatermarkPreviewPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double W = size.width;
-    final double H = size.height;
-    final double sc = (W / 390.0).clamp(0.7, 2.0);
-    switch (layout) {
-      case WatermarkLayout.podCorporate:
-        _drawTimemarkLight(canvas, W, H, sc);
-        break;
-      case WatermarkLayout.podDarkField:
-        _drawTimemarkDark(canvas, W, H, sc);
-        break;
-      case WatermarkLayout.podGovern:
-        _drawTimemarkClean(canvas, W, H, sc);
-        break;
-    }
+    final W = size.width;
+    final H = size.height;
+    final sc = (W / 390.0).clamp(0.7, 2.0); // untuk preview, skala berdasarkan lebar layar
+    _drawReferenceLayout(canvas, W, H, sc);
   }
 
-  void _drawTimemarkLight(Canvas canvas, double W, double H, double sc) {
-    final double panelH = _lightPanelHeight(sc);
-    final double panelY = H - panelH;
-    final double padL = 14 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, panelY, W, panelH),
-        Paint()..color = Colors.white.withOpacity(opacity.clamp(0.88, 1.0)));
-    canvas.drawRect(Rect.fromLTWH(0, panelY, 6 * sc, 72 * sc), Paint()..color = const Color(0xFFF5C518));
-    final double row1Y = panelY + 10 * sc;
-    final double badgeW = 100 * sc;
-    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(padL, row1Y, badgeW, 46 * sc), Radius.circular(8 * sc)),
-        Paint()..color = const Color(0xFFF5C518));
-    _t(canvas, 'termullog', 14 * sc, row1Y + 14 * sc, const Color(0xFF1A1A1A), bold: true, x: padL + badgeW / 2, centerX: true);
-    _t(canvas, DateFormat('HH:mm').format(timestamp), 36 * sc, row1Y, const Color(0xFF1565C0), bold: true, x: padL + badgeW + 14 * sc);
-    _t(canvas, 'Termullog', 16 * sc, row1Y + 4 * sc, const Color(0xFFF5C518), bold: true, x: W - 120 * sc);
-    _t(canvas, 'Camera', 10 * sc, row1Y + 24 * sc, Colors.black87, x: W - 120 * sc);
-    final double divY = panelY + 68 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, divY, W, 1 * sc), Paint()..color = const Color(0xFFE0E0E0));
-    double ry = divY + 8 * sc;
-    _t(canvas, DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(timestamp), 13 * sc, ry, const Color(0xFF222222), bold: true, x: padL);
-    ry += 20 * sc;
+  /// Layout yang sama dengan watermark_engine.dart (tanpa logo dinamis)
+  void _drawReferenceLayout(Canvas c, double W, double H, double sc) {
+    // Hitung tinggi panel (versi sederhana untuk preview)
+    final double panelH = _calculatePreviewPanelHeight(sc);
+    final double panelX = 20 * sc;
+    final double targetY = H - panelH - 120 * sc;
+    final double panelY = targetY.clamp(20 * sc, H - panelH - 20 * sc);
+    final double panelW = 560 * sc;
+
+    // Panel background
+    final RRect panelRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(panelX, panelY, panelW, panelH),
+      Radius.circular(12 * sc),
+    );
+    c.drawRRect(panelRect, Paint()..color = Colors.white.withOpacity(opacity.clamp(0.7, 1.0)));
+
+    if (showBorder) {
+      c.drawRRect(panelRect, Paint()
+        ..color = Colors.orange
+        ..strokeWidth = 2 * sc
+        ..style = PaintingStyle.stroke);
+    }
+
+    double currentX = panelX + 16 * sc;
+    double currentY = panelY + 16 * sc;
+
+    // Badge nama (hardcoded "termullog" untuk preview)
+    final double badgeW = 150 * sc;
+    final double badgeH = 80 * sc;
+    final RRect badgeRRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(8 * sc));
+    c.drawRRect(badgeRRect, Paint()..color = const Color(0xFFFFC107));
+    _t(c, 'termullog', 32 * sc, currentY + 18 * sc, Colors.black87,
+        bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW);
+
+    // Jam besar
+    final String timeStr = DateFormat('HH:mm').format(timestamp);
+    _t(c, timeStr, 80 * sc, currentY - 4 * sc, const Color(0xFF1A237E),
+        bold: true, x: currentX + badgeW + 16 * sc);
+
+    // Logo NEXT (sederhana, tidak perlu digambar terlalu detail, cukup teks saja)
+    _drawSimpleLogo(c, currentX + badgeW + 260 * sc, currentY + 15 * sc, sc);
+
+    currentY += 100 * sc;
+
+    // Divider
+    c.drawLine(Offset(currentX, currentY), Offset(panelX + panelW - 16 * sc, currentY),
+        Paint()..color = Colors.grey.withOpacity(0.3)..strokeWidth = 2 * sc);
+    currentY += 25 * sc;
+
+    // Tanggal
+    final String dateStr = DateFormat('EEEE, d MMMM yyyy', 'id_ID').format(timestamp);
+    _t(c, dateStr, 28 * sc, currentY, Colors.black87, bold: true, x: currentX);
+    currentY += 50 * sc;
+
+    // Koordinat
     if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord = '${lat!.abs().toStringAsFixed(6)}°${lat! < 0 ? 'S' : 'N'}, ${lon!.abs().toStringAsFixed(6)}°${lon! < 0 ? 'W' : 'E'}';
-      _t(canvas, coord, 11 * sc, ry, const Color(0xFF555555), x: padL);
-      ry += 18 * sc;
-      if (showAccuracy && acc != null) {
-        _t(canvas, '±${acc!.toStringAsFixed(1)} m', 9 * sc, ry, const Color(0xFF888888), x: padL);
-        ry += 14 * sc;
-      }
+      final String latDir = lat! >= 0 ? 'N' : 'S';
+      final String lonDir = lon! >= 0 ? 'E' : 'W';
+      final String coord = '${lat!.abs().toStringAsFixed(6)}°$latDir, ${lon!.abs().toStringAsFixed(6)}°$lonDir';
+      _t(c, coord, 24 * sc, currentY, Colors.grey[700]!, x: currentX);
+      currentY += 45 * sc;
     }
+
+    // Akurasi
+    if (showAccuracy && acc != null) {
+      _t(c, 'Accuracy: ±${acc!.toStringAsFixed(1)} m', 20 * sc, currentY, Colors.grey[600]!, x: currentX);
+      currentY += 40 * sc;
+    }
+
+    // Alamat
     if (showAddress && address.isNotEmpty) {
-      _t(canvas, _trunc(address, 52), 10 * sc, ry, const Color(0xFF777777), x: padL, maxW: W - padL * 2 - 40 * sc);
-      ry += 16 * sc;
+      _t(c, address, 20 * sc, currentY, Colors.grey[700]!, x: currentX, maxW: panelW - 32 * sc, maxLines: 3);
+      final tp = TextPainter(
+        text: TextSpan(text: address, style: TextStyle(fontSize: 20 * sc)),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 3,
+      )..layout(maxWidth: panelW - 32 * sc);
+      currentY += tp.height + 15 * sc;
     }
+
+    // Cuaca
     if (showWeather && weather.isNotEmpty) {
-      _t(canvas, weather, 10 * sc, ry, const Color(0xFF006064), x: padL);
+      _t(c, weather, 20 * sc, currentY, const Color(0xFF00796B), x: currentX);
+      currentY += 35 * sc;
     }
-    final double ftY = H - 28 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, ftY, W, 1 * sc), Paint()..color = const Color(0xFFDDDDDD));
-    _t(canvas, '🛡 Termullog menjamin keaslian waktu', 8 * sc, ftY + 6 * sc, const Color(0xFF999999), x: padL);
-    if (showBorder) canvas.drawRect(Rect.fromLTWH(0, panelY, W, 3 * sc), Paint()..color = const Color(0xFFF5C518));
+
+    // Footer
+    _t(c, '🛡 Timemark menjamin keaslian waktu', 20 * sc, currentY, Colors.grey[600]!, x: currentX);
+
+    // Kode verifikasi vertikal (di kanan)
+    final String verCode = _previewVerCode();
+    final double verCenterY = panelY + panelH / 2;
+    _drawVerticalText(c, '© $verCode Timemark Verified', 18 * sc, W - 45 * sc, verCenterY, Colors.white.withOpacity(0.8));
+
+    // Branding pojok kanan bawah
+    _t(c, 'Timemark', 28 * sc, H - 100 * sc, Colors.white, bold: true, x: W - 240 * sc);
+    _t(c, 'Camera', 22 * sc, H - 65 * sc, Colors.white70, x: W - 240 * sc);
   }
 
-  void _drawTimemarkDark(Canvas canvas, double W, double H, double sc) {
-    final double panelH = _darkPanelHeight(sc);
-    final double panelY = H - panelH;
-    final double padL = 18 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, panelY, W, panelH),
-        Paint()..color = Color.fromRGBO(18, 18, 18, opacity.clamp(0.82, 0.96)));
-    canvas.drawRect(Rect.fromLTWH(0, panelY, W, 2.5 * sc), Paint()..color = const Color(0xFFF5C518));
-    _t(canvas, 'Termullog', 16 * sc, panelY - 60 * sc, const Color(0xFFF5C518), bold: true, x: W - 130 * sc);
-    _t(canvas, 'Foto 100% akurat', 9 * sc, panelY - 40 * sc, Colors.white70, x: W - 130 * sc);
-    _t(canvas, DateFormat('HH:mm').format(timestamp), 46 * sc, panelY + 12 * sc, Colors.white, bold: true, x: padL);
-    final double sepX = padL + 115 * sc;
-    canvas.drawLine(Offset(sepX, panelY + 14 * sc), Offset(sepX, panelY + 70 * sc),
-        Paint()..color = Colors.white38..strokeWidth = 1.5 * sc);
-    final double dateX = sepX + 12 * sc;
-    _t(canvas, DateFormat('dd MMMM yyyy').format(timestamp), 13 * sc, panelY + 20 * sc, Colors.white, x: dateX);
-    _t(canvas, DateFormat('EEEE', 'id_ID').format(timestamp), 12 * sc, panelY + 42 * sc, Colors.white60, x: dateX);
-    double infoY = panelY + 80 * sc;
+  double _calculatePreviewPanelHeight(double sc) {
+    // Perhitungan sederhana untuk preview (tanpa fontScale)
+    double h = 16 * sc + 100 * sc + 25 * sc + 50 * sc;
+    if (showCoordinates && hasPosition && lat != null) h += 45 * sc;
+    if (showAccuracy && acc != null) h += 40 * sc;
     if (showAddress && address.isNotEmpty) {
-      _t(canvas, address, 12 * sc, infoY, Colors.white, x: padL, maxW: W - padL * 2);
-      infoY += 20 * sc;
+      final tp = TextPainter(
+        text: TextSpan(text: address, style: TextStyle(fontSize: 20 * sc)),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 3,
+      )..layout(maxWidth: (560 - 32) * sc);
+      h += tp.height + 15 * sc;
     }
-    if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord = '${lat!.abs().toStringAsFixed(6)}°${lat! < 0 ? 'S' : 'N'}, ${lon!.abs().toStringAsFixed(6)}°${lon! < 0 ? 'W' : 'E'}';
-      _t(canvas, coord, 10 * sc, infoY, Colors.white54, x: padL);
-      infoY += 16 * sc;
-      if (showAccuracy && acc != null) {
-        _t(canvas, '±${acc!.toStringAsFixed(1)} m', 9 * sc, infoY, Colors.white38, x: padL);
-        infoY += 14 * sc;
-      }
-    }
-    if (showWeather && weather.isNotEmpty) {
-      _t(canvas, weather, 10 * sc, infoY, const Color(0xFF80CBC4), x: padL);
-    }
-    final String kode = _previewCode();
-    final double ftY = H - 26 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, ftY, W, 1 * sc), Paint()..color = Colors.white12);
-    _t(canvas, '🛡 Kode Foto: ', 8 * sc, ftY + 6 * sc, Colors.white38, x: padL);
-    _t(canvas, kode, 8 * sc, ftY + 6 * sc, Colors.white, bold: true, x: padL + 80 * sc);
+    if (showWeather && weather.isNotEmpty) h += 35 * sc;
+    h += 45 * sc + 16 * sc;
+    return h.clamp(120 * sc, 300 * sc);
   }
 
-  void _drawTimemarkClean(Canvas canvas, double W, double H, double sc) {
-    final double panelH = _cleanPanelHeight(sc);
-    final double panelY = H - panelH;
-    final double padL = 16 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, panelY, W, panelH),
-        Paint()..color = Color.fromRGBO(10, 10, 20, opacity.clamp(0.78, 0.94)));
-    _t(canvas, 'Termullog', 15 * sc, 24 * sc, const Color(0xFFF5C518), bold: true, x: W - 130 * sc);
-    _t(canvas, 'Camera', 10 * sc, 44 * sc, Colors.white60, x: W - 130 * sc);
-    _t(canvas, DateFormat('HH:mm').format(timestamp), 40 * sc, panelY + 12 * sc, Colors.white, bold: true, x: padL);
-    canvas.drawRect(Rect.fromLTWH(padL + 100 * sc, panelY + 12 * sc, 2.5 * sc, 52 * sc), Paint()..color = const Color(0xFFF5C518));
-    final double dateX = padL + 110 * sc;
-    _t(canvas, DateFormat('dd MMMM yyyy').format(timestamp), 12 * sc, panelY + 18 * sc, Colors.white70, x: dateX);
-    _t(canvas, DateFormat('EEEE', 'id_ID').format(timestamp), 11 * sc, panelY + 36 * sc, Colors.white38, x: dateX);
-    canvas.drawRect(Rect.fromLTWH(padL, panelY + 70 * sc, W - padL * 2, 1 * sc), Paint()..color = Colors.white12);
-    double infoY = panelY + 78 * sc;
-    if (showAddress && address.isNotEmpty) {
-      _t(canvas, _trunc(address, 55), 11 * sc, infoY, Colors.white70, x: padL, maxW: W - padL * 2);
-      infoY += 18 * sc;
-    }
-    if (showCoordinates && hasPosition && lat != null && lon != null) {
-      final coord = '${lat!.abs().toStringAsFixed(6)}°${lat! < 0 ? 'S' : 'N'}, ${lon!.abs().toStringAsFixed(6)}°${lon! < 0 ? 'W' : 'E'}';
-      _t(canvas, coord, 10 * sc, infoY, Colors.white38, x: padL);
-      infoY += 16 * sc;
-      if (showAccuracy && acc != null) {
-        _t(canvas, '±${acc!.toStringAsFixed(1)} m', 9 * sc, infoY, Colors.white24, x: padL);
-        infoY += 14 * sc;
-      }
-    }
-    if (showWeather && weather.isNotEmpty) {
-      _t(canvas, weather, 10 * sc, infoY, const Color(0xFF80CBC4), x: padL);
-    }
-    final double ftY = H - 24 * sc;
-    canvas.drawRect(Rect.fromLTWH(0, ftY, W, 1 * sc), Paint()..color = Colors.white12);
-    _t(canvas, '🛡 Kode: ${_previewCode()}', 7 * sc, ftY + 5 * sc, Colors.white24, x: padL);
-    if (showBorder) canvas.drawRect(Rect.fromLTWH(0, panelY, W, 2.5 * sc), Paint()..color = const Color(0xFFF5C518));
+  void _drawSimpleLogo(Canvas c, double x, double y, double sc) {
+    // Versi sederhana untuk preview: hanya kotak putih + teks "NEXT"
+    final Paint p = Paint()..color = Colors.white;
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, 140 * sc, 60 * sc), Radius.circular(8 * sc)), p);
+    _t(c, 'NEXT', 20 * sc, y + 20 * sc, Colors.black, bold: true, x: x + 50 * sc, centerX: true);
   }
 
-  double _lightPanelHeight(double sc) {
-    double h = 68 * sc + 8 * sc + 20 * sc; // header + divider + tanggal
-    if (showCoordinates && hasPosition) {
-      h += 18 * sc;
-      if (showAccuracy && acc != null) h += 14 * sc;
-    }
-    if (showAddress && address.isNotEmpty) h += 16 * sc;
-    if (showWeather && weather.isNotEmpty) h += 16 * sc;
-    h += 28 * sc; // footer
-    return h.clamp(120 * sc, 220 * sc);
-  }
-  double _darkPanelHeight(double sc) {
-    double h = 80 * sc;
-    if (showAddress && address.isNotEmpty) h += 20 * sc;
-    if (showCoordinates && hasPosition) {
-      h += 16 * sc;
-      if (showAccuracy && acc != null) h += 14 * sc;
-    }
-    if (showWeather && weather.isNotEmpty) h += 16 * sc;
-    h += 26 * sc;
-    return h.clamp(110 * sc, 200 * sc);
-  }
-  double _cleanPanelHeight(double sc) {
-    double h = 70 * sc + 8 * sc;
-    if (showAddress && address.isNotEmpty) h += 18 * sc;
-    if (showCoordinates && hasPosition) {
-      h += 16 * sc;
-      if (showAccuracy && acc != null) h += 14 * sc;
-    }
-    if (showWeather && weather.isNotEmpty) h += 16 * sc;
-    h += 24 * sc;
-    return h.clamp(100 * sc, 180 * sc);
+  void _drawVerticalText(Canvas c, String text, double size, double x, double centerY, Color color) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, letterSpacing: 1.2, fontWeight: FontWeight.w500)),
+      textDirection: ui.TextDirection.ltr,
+    )..layout();
+    c.save();
+    c.translate(x, centerY + tp.width / 2);
+    c.rotate(-pi / 2);
+    tp.paint(c, Offset.zero);
+    c.restore();
   }
 
   void _t(Canvas canvas, String text, double size, double y, Color color,
-      {bool bold = false, double letterSpacing = 0, double x = 14, double? maxW, bool centerX = false}) {
+      {bool bold = false, double x = 16, double? maxW, bool centerX = false, int maxLines = 2}) {
     final tp = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontWeight: bold ? FontWeight.w700 : FontWeight.w500, letterSpacing: letterSpacing)),
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
       textDirection: ui.TextDirection.ltr,
-      maxLines: 2,
+      maxLines: maxLines,
       ellipsis: '…',
-    );
-    tp.layout(maxWidth: maxW ?? 9999);
-    final double px = centerX ? x - tp.width / 2 : x;
-    tp.paint(canvas, Offset(px, y));
+    )..layout(maxWidth: maxW ?? 9999);
+    final double paintX = centerX ? x - tp.width / 2 : x;
+    tp.paint(canvas, Offset(paintX, y));
   }
-  String _trunc(String s, int maxLen) => s.length <= maxLen ? s : '${s.substring(0, maxLen - 1)}…';
-  String _previewCode() {
+
+  String _previewVerCode() {
     int h = 0x811C9DC5;
     for (final ch in timestamp.millisecondsSinceEpoch.toString().codeUnits) {
       h ^= ch;
@@ -231,12 +212,19 @@ class WatermarkPreviewPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(WatermarkPreviewPainter old) =>
-      old.timestamp != timestamp ||
-      old.hasPosition != hasPosition ||
-      old.layout != layout ||
-      old.address != address ||
-      old.opacity != opacity ||
-      old.showAccuracy != showAccuracy ||
-      old.acc != acc;
+  bool shouldRepaint(WatermarkPreviewPainter old) {
+    return old.timestamp != timestamp ||
+        old.hasPosition != hasPosition ||
+        old.lat != lat ||
+        old.lon != lon ||
+        old.acc != acc ||
+        old.address != address ||
+        old.weather != weather ||
+        old.showWeather != showWeather ||
+        old.showAccuracy != showAccuracy ||
+        old.showAddress != showAddress ||
+        old.showCoordinates != showCoordinates ||
+        old.opacity != opacity ||
+        old.showBorder != showBorder;
+  }
 }

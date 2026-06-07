@@ -3,11 +3,12 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'watermark_layout.dart'; // tambahkan import
 
 /// Live preview painter yang identik dengan layout WatermarkEngine.
 class WatermarkPreviewPainter extends CustomPainter {
   final DateTime timestamp;
-  final bool hasPosition; // untuk kompatibilitas dengan camera_screen
+  final bool hasPosition;
   final double? lat;
   final double? lon;
   final double? acc;
@@ -24,6 +25,7 @@ class WatermarkPreviewPainter extends CustomPainter {
   final double fontScale;
   final String dateFormat;
   final String timeFormat;
+  final WatermarkLayout layout; // tambahan, meskipun tidak digunakan
 
   const WatermarkPreviewPainter({
     required this.timestamp,
@@ -44,6 +46,7 @@ class WatermarkPreviewPainter extends CustomPainter {
     required this.fontScale,
     required this.dateFormat,
     required this.timeFormat,
+    required this.layout,
   });
 
   @override
@@ -270,6 +273,7 @@ class WatermarkPreviewPainter extends CustomPainter {
         oldDelegate.appName != appName ||
         oldDelegate.fontScale != fontScale ||
         oldDelegate.dateFormat != dateFormat ||
-        oldDelegate.timeFormat != timeFormat;
+        oldDelegate.timeFormat != timeFormat ||
+        oldDelegate.layout != layout;
   }
 }

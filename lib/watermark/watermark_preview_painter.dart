@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 /// Live preview painter yang identik dengan layout WatermarkEngine.
 class WatermarkPreviewPainter extends CustomPainter {
   final DateTime timestamp;
+  final bool hasPosition; // untuk kompatibilitas dengan camera_screen
   final double? lat;
   final double? lon;
   final double? acc;
@@ -26,6 +27,7 @@ class WatermarkPreviewPainter extends CustomPainter {
 
   const WatermarkPreviewPainter({
     required this.timestamp,
+    required this.hasPosition,
     required this.lat,
     required this.lon,
     required this.acc,
@@ -252,6 +254,7 @@ class WatermarkPreviewPainter extends CustomPainter {
   @override
   bool shouldRepaint(WatermarkPreviewPainter oldDelegate) {
     return oldDelegate.timestamp != timestamp ||
+        oldDelegate.hasPosition != hasPosition ||
         oldDelegate.lat != lat ||
         oldDelegate.lon != lon ||
         oldDelegate.acc != acc ||

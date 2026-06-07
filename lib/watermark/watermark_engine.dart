@@ -9,7 +9,7 @@ import 'package:intl/intl.dart';
 import 'watermark_params.dart';
 
 class WatermarkEngine {
-  /// Proses final untuk foto (hasil JPEG)
+  /// Final high-quality process for photos (JPEG output)
   static Future<Uint8List> process(WatermarkParams params) async {
     try {
       final originalImg = img.decodeImage(params.imageBytes);
@@ -18,7 +18,6 @@ class WatermarkEngine {
       final H = originalImg.height;
       final double sc = (W / 1080.0).clamp(0.8, 2.5);
       final double fontScale = params.fontScale.clamp(0.5, 2.0);
-
       final uiImage = await _decodeUiImage(params.imageBytes);
       
       ui.Image? customLogo;
@@ -53,7 +52,7 @@ class WatermarkEngine {
     }
   }
 
-  /// Preview proporsional (untuk live view)
+  /// Proportional preview (for live camera view or editor)
   static Future<ui.Image> preview(WatermarkParams params, {double? width, double? height}) async {
     try {
       final uiImage = await _decodeUiImage(params.imageBytes);
@@ -63,7 +62,7 @@ class WatermarkEngine {
       final canvasW = width ?? originalW;
       final canvasH = height ?? originalH;
       
-      // Skala agar gambar muat di canvas (contain)
+      // Calculate 'contain' scale and offsets
       final scale = min(canvasW / originalW, canvasH / originalH);
       final offsetX = (canvasW - originalW * scale) / 2;
       final offsetY = (canvasH - originalH * scale) / 2;
@@ -83,14 +82,14 @@ class WatermarkEngine {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, canvasW, canvasH));
       
-      // Gambar background
+      // Draw background with transformation
       canvas.save();
       canvas.translate(offsetX, offsetY);
       canvas.scale(scale, scale);
       canvas.drawImage(uiImage, Offset.zero, Paint());
       canvas.restore();
       
-      // Gambar watermark (dengan transformasi yang sama)
+      // Draw watermark with same transformation to maintain proportions
       canvas.save();
       canvas.translate(offsetX, offsetY);
       canvas.scale(scale, scale);
@@ -112,7 +111,7 @@ class WatermarkEngine {
         onTimeout: () => throw Exception('Image decode timeout'));
   }
 
-  /// Layout utama (synchronous, tidak async)
+  /// Main layout (synchronous rendering logic)
   static void _drawReferenceLayout(
     Canvas c, double W, double H, double sc, double fontScale,
     WatermarkParams p, ui.Image? customLogo, ui.Image? customBadge
@@ -120,7 +119,7 @@ class WatermarkEngine {
     final double innerPadding = 24 * sc;
     final double headerSpacing = 24 * sc;
 
-    // Hitung lebar badge
+    // Calculate Badge Width
     final String appName = p.appName.isNotEmpty ? p.appName : 'termullog';
     final double badgeFontSize = 32 * sc * fontScale;
     final namePainter = TextPainter(
@@ -131,7 +130,7 @@ class WatermarkEngine {
     final double badgeW = (namePainter.width + badgePadding).clamp(140 * sc, 350 * sc);
     final double badgeH = 85 * sc;
 
-    // Hitung lebar jam
+    // Calculate Time Width
     final String timeStr = DateFormat(p.timeFormat.isNotEmpty ? p.timeFormat : 'HH:mm').format(p.timestamp);
     final double timeFontSize = 85 * sc * fontScale;
     final timePainter = TextPainter(
@@ -142,16 +141,17 @@ class WatermarkEngine {
     final double logoW = 150 * sc;
     final double logoH = 65 * sc;
 
-    // Lebar panel dinamis
+    // Dynamic Panel Width
     double headerW = badgeW + headerSpacing + timePainter.width;
     if (p.showLogo) headerW += headerSpacing + logoW;
     final double panelW = (headerW + innerPadding * 2).clamp(600 * sc, W - 48 * sc);
+
     final double panelH = _calculatePanelHeight(sc, fontScale, p, panelW, innerPadding);
     final double panelX = 24 * sc;
     final double targetY = H - panelH - 120 * sc;
     final double panelY = targetY.clamp(24 * sc, H - panelH - 24 * sc);
 
-    // Gambar panel dengan opacity
+    // Draw Panel Background
     final RRect panelRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(panelX, panelY, panelW, panelH),
       Radius.circular(16 * sc),
@@ -168,6 +168,7 @@ class WatermarkEngine {
     double currentX = panelX + innerPadding;
     double currentY = panelY + innerPadding;
 
+    // --- Header Section ---
     // Badge
     if (p.badgeType == 'custom' && customBadge != null) {
       c.drawImageRect(
@@ -184,9 +185,11 @@ class WatermarkEngine {
           bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 12 * sc).paint(c);
     }
 
+    // Time
     currentX += badgeW + headerSpacing;
     _tp(timeStr, timeFontSize, currentY - 4 * sc, const Color(0xFF1A237E), bold: true, x: currentX).paint(c);
 
+    // Logo
     if (p.showLogo) {
       currentX += timePainter.width + headerSpacing;
       final double safeLogoX = currentX.clamp(panelX, panelX + panelW - logoW - innerPadding);
@@ -199,14 +202,16 @@ class WatermarkEngine {
     // Divider
     c.drawLine(Offset(currentX, currentY), Offset(panelX + panelW - innerPadding, currentY),
         Paint()..color = Colors.grey.withOpacity(0.2)..strokeWidth = 2 * sc);
+    
     currentY += 32 * sc;
 
-    // Tanggal
+    // --- Content Section ---
+    // Date
     final String dateStr = DateFormat(p.dateFormat.isNotEmpty ? p.dateFormat : 'EEEE, d MMMM yyyy', 'id_ID').format(p.timestamp);
     _tp(dateStr, 30 * sc * fontScale, currentY, Colors.black87, bold: true, x: currentX).paint(c);
     currentY += 55 * sc;
 
-    // Koordinat
+    // Coordinates
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final String latDir = p.lat! >= 0 ? 'N' : 'S';
       final String lonDir = p.lon! >= 0 ? 'E' : 'W';
@@ -215,13 +220,13 @@ class WatermarkEngine {
       currentY += 50 * sc;
     }
 
-    // Akurasi
+    // Accuracy
     if (p.showAccuracy && p.acc != null) {
       _tp('Accuracy: ±${p.acc!.toStringAsFixed(1)} m', 22 * sc * fontScale, currentY, Colors.grey[600]!, x: currentX).paint(c);
       currentY += 45 * sc;
     }
 
-    // Alamat
+    // Address
     if (p.showAddress && p.address.isNotEmpty) {
       final tp = TextPainter(
         text: TextSpan(text: p.address, style: TextStyle(fontSize: 22 * sc * fontScale)),
@@ -233,7 +238,7 @@ class WatermarkEngine {
       currentY += tp.height + 20 * sc;
     }
 
-    // Cuaca
+    // Weather
     if (p.showWeather && p.weather.isNotEmpty) {
       _tp(p.weather, 22 * sc * fontScale, currentY, const Color(0xFF00796B), x: currentX).paint(c);
       currentY += 40 * sc;
@@ -242,13 +247,13 @@ class WatermarkEngine {
     // Footer
     _tp('🛡 Timemark menjamin keaslian waktu', 22 * sc * fontScale, currentY, Colors.grey[600]!, x: currentX).paint(c);
 
-    // Kode verifikasi vertikal
+    // Vertical Verification Code
     final String verCode = _verCode(p);
     final double verCenterY = panelY + panelH / 2;
     _drawVerticalText(c, '© $verCode Timemark Verified', 20 * sc * fontScale,
         W - 50 * sc, verCenterY, Colors.white.withOpacity(0.8), sc);
 
-    // Branding bawah kanan
+    // Bottom Branding
     _tp('Timemark', 32 * sc * fontScale, H - 110 * sc, Colors.white, x: W - 260 * sc, bold: true).paint(c);
     _tp('Camera', 24 * sc * fontScale, H - 70 * sc, Colors.white70, x: W - 260 * sc).paint(c);
   }

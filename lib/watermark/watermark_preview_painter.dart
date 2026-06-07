@@ -90,6 +90,7 @@ class WatermarkPreviewPainter extends CustomPainter {
     final RRect badgeRRect = RRect.fromRectAndRadius(
         Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(10 * sc));
     c.drawRRect(badgeRRect, Paint()..color = const Color(0xFFFFC107).withOpacity(params.opacity.clamp(0.6, 1.0)));
+    
     _drawText(c, appName, badgeFontSize, currentY + (badgeH - namePainter.height) / 2, Colors.black87,
         bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 12 * sc);
 
@@ -110,6 +111,7 @@ class WatermarkPreviewPainter extends CustomPainter {
     // Divider
     c.drawLine(Offset(currentX, currentY), Offset(panelX + panelW - innerPadding, currentY),
         Paint()..color = Colors.grey.withOpacity(0.2)..strokeWidth = 2 * sc);
+    
     currentY += 32 * sc;
 
     // Date
@@ -134,14 +136,13 @@ class WatermarkPreviewPainter extends CustomPainter {
 
     // Address
     if (params.showAddress && params.address.isNotEmpty) {
-      _drawText(c, params.address, 22 * sc * fontScale, currentY, Colors.grey[700]!,
-          x: currentX, maxW: panelW - (innerPadding * 2), maxLines: 3);
-      // Estimate height (simple)
       final tp = TextPainter(
         text: TextSpan(text: params.address, style: TextStyle(fontSize: 22 * sc * fontScale)),
         textDirection: ui.TextDirection.ltr,
         maxLines: 3,
       )..layout(maxWidth: panelW - (innerPadding * 2));
+      _drawText(c, params.address, 22 * sc * fontScale, currentY, Colors.grey[700]!,
+          x: currentX, maxW: panelW - (innerPadding * 2), maxLines: 3);
       currentY += tp.height + 20 * sc;
     }
 
@@ -185,6 +186,7 @@ class WatermarkPreviewPainter extends CustomPainter {
   void _drawPreviewLogo(Canvas c, double x, double y, double sc) {
     final Paint p = Paint()..color = Colors.white.withOpacity(params.opacity.clamp(0.6, 1.0));
     c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, 150 * sc, 65 * sc), Radius.circular(8 * sc)), p);
+    
     _drawText(c, 'NEXT', 18 * sc, y + 24 * sc, Colors.black.withOpacity(params.opacity.clamp(0.6, 1.0)),
         bold: true, x: x + 55 * sc, centerX: true);
   }

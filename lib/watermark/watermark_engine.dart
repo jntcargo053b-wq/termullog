@@ -62,7 +62,6 @@ class WatermarkEngine {
       final canvasW = width ?? originalW;
       final canvasH = height ?? originalH;
       
-      // Calculate 'contain' scale and offsets
       final scale = min(canvasW / originalW, canvasH / originalH);
       final offsetX = (canvasW - originalW * scale) / 2;
       final offsetY = (canvasH - originalH * scale) / 2;
@@ -82,14 +81,12 @@ class WatermarkEngine {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, canvasW, canvasH));
       
-      // Draw background with transformation
       canvas.save();
       canvas.translate(offsetX, offsetY);
       canvas.scale(scale, scale);
       canvas.drawImage(uiImage, Offset.zero, Paint());
       canvas.restore();
       
-      // Draw watermark with same transformation to maintain proportions
       canvas.save();
       canvas.translate(offsetX, offsetY);
       canvas.scale(scale, scale);
@@ -111,65 +108,76 @@ class WatermarkEngine {
         onTimeout: () => throw Exception('Image decode timeout'));
   }
 
-  /// Main layout (synchronous rendering logic)
+  /// Main layout with Deep Blue & Amber Branding and semicolon time format
   static void _drawReferenceLayout(
     Canvas c, double W, double H, double sc, double fontScale,
     WatermarkParams p, ui.Image? customLogo, ui.Image? customBadge
   ) {
-    final double innerPadding = 24 * sc;
-    final double headerSpacing = 24 * sc;
+    // --- Branding Colors ---
+    const Color brandPrimary = Color(0xFF0D47A1); // Deep Blue
+    const Color brandAccent = Color(0xFFFFB300);  // Amber
+    const Color textPrimary = Color(0xFF212121);
+    const Color textSecondary = Color(0xFF757575);
 
-    // Calculate Badge Width
-    final String appName = p.appName.isNotEmpty ? p.appName : 'termullog';
-    final double badgeFontSize = 32 * sc * fontScale;
-    final namePainter = TextPainter(
-      text: TextSpan(text: appName, style: TextStyle(fontSize: badgeFontSize, fontWeight: FontWeight.w700)),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    final double badgePadding = 32 * sc;
-    final double badgeW = (namePainter.width + badgePadding).clamp(140 * sc, 350 * sc);
-    final double badgeH = 85 * sc;
+    // --- Spacing Constants ---
+    final double panelPaddingHorizontal = 32 * sc;
+    final double panelPaddingVertical = 28 * sc;
+    final double headerSpacing = 32 * sc;
+    final double contentVerticalGap = 24 * sc;
+    final double dividerPadding = 32 * sc;
 
-    // Calculate Time Width
-    final String timeStr = DateFormat(p.timeFormat.isNotEmpty ? p.timeFormat : 'HH:mm').format(p.timestamp);
-    final double timeFontSize = 85 * sc * fontScale;
+    // 1. Measure Time (Custom Format: HH;mm)
+    final String timeStr = DateFormat('HH;mm').format(p.timestamp);
+    final double timeFontSize = 92 * sc * fontScale;
     final timePainter = TextPainter(
       text: TextSpan(text: timeStr, style: TextStyle(fontSize: timeFontSize, fontWeight: FontWeight.w700)),
       textDirection: ui.TextDirection.ltr,
     )..layout();
 
+    // 2. Measure Badge
+    final String appName = p.appName.isNotEmpty ? p.appName : 'termullog';
+    final double badgeFontSize = 34 * sc * fontScale;
+    final namePainter = TextPainter(
+      text: TextSpan(text: appName, style: TextStyle(fontSize: badgeFontSize, fontWeight: FontWeight.w700)),
+      textDirection: ui.TextDirection.ltr,
+    )..layout();
+    final double badgePaddingH = 36 * sc;
+    final double badgePaddingV = 16 * sc;
+    final double badgeW = (namePainter.width + badgePaddingH).clamp(160 * sc, 400 * sc);
+    final double badgeH = (namePainter.height + badgePaddingV).clamp(90 * sc, 110 * sc);
+
     final double logoW = 150 * sc;
     final double logoH = 65 * sc;
 
-    // Dynamic Panel Width
-    double headerW = badgeW + headerSpacing + timePainter.width;
-    if (p.showLogo) headerW += headerSpacing + logoW;
-    final double panelW = (headerW + innerPadding * 2).clamp(600 * sc, W - 48 * sc);
+    // 3. Dynamic Panel Width
+    double headerRowW = badgeW + headerSpacing + timePainter.width;
+    if (p.showLogo) headerRowW += headerSpacing + logoW;
+    final double panelW = (headerRowW + panelPaddingHorizontal * 2).clamp(700 * sc, W - 64 * sc);
 
-    final double panelH = _calculatePanelHeight(sc, fontScale, p, panelW, innerPadding);
-    final double panelX = 24 * sc;
+    final double panelH = _calculatePanelHeight(sc, fontScale, p, panelW, panelPaddingVertical, contentVerticalGap, dividerPadding);
+    final double panelX = 32 * sc;
     final double targetY = H - panelH - 120 * sc;
-    final double panelY = targetY.clamp(24 * sc, H - panelH - 24 * sc);
+    final double panelY = targetY.clamp(32 * sc, H - panelH - 32 * sc);
 
     // Draw Panel Background
     final RRect panelRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(panelX, panelY, panelW, panelH),
-      Radius.circular(16 * sc),
+      Radius.circular(20 * sc),
     );
     c.drawRRect(panelRect, Paint()..color = Colors.white.withOpacity(p.opacity.clamp(0.4, 0.9)));
 
     if (p.showBorder) {
       c.drawRRect(panelRect, Paint()
-        ..color = Colors.orange.withOpacity(p.opacity.clamp(0.4, 1.0))
+        ..color = brandAccent.withOpacity(p.opacity.clamp(0.4, 1.0))
         ..strokeWidth = 3 * sc
         ..style = PaintingStyle.stroke);
     }
 
-    double currentX = panelX + innerPadding;
-    double currentY = panelY + innerPadding;
+    double currentX = panelX + panelPaddingHorizontal;
+    double currentY = panelY + panelPaddingVertical;
 
     // --- Header Section ---
-    // Badge
+    // A. Badge
     if (p.badgeType == 'custom' && customBadge != null) {
       c.drawImageRect(
         customBadge,
@@ -179,103 +187,108 @@ class WatermarkEngine {
       );
     } else {
       final RRect badgeRRect = RRect.fromRectAndRadius(
-          Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(10 * sc));
-      c.drawRRect(badgeRRect, Paint()..color = const Color(0xFFFFC107).withOpacity(p.opacity.clamp(0.6, 1.0)));
-      _tp(appName, badgeFontSize, currentY + (badgeH - namePainter.height) / 2, Colors.black87,
-          bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 12 * sc).paint(c);
+          Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(12 * sc));
+      c.drawRRect(badgeRRect, Paint()..color = brandAccent.withOpacity(p.opacity.clamp(0.6, 1.0)));
+      _tp(appName, badgeFontSize, currentY + (badgeH - namePainter.height) / 2, textPrimary,
+          bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 16 * sc).paint(c);
     }
 
-    // Time
+    // B. Time
     currentX += badgeW + headerSpacing;
-    _tp(timeStr, timeFontSize, currentY - 4 * sc, const Color(0xFF1A237E), bold: true, x: currentX).paint(c);
+    _tp(timeStr, timeFontSize, currentY - 4 * sc, brandPrimary, bold: true, x: currentX).paint(c);
 
-    // Logo
+    // C. Logo
     if (p.showLogo) {
       currentX += timePainter.width + headerSpacing;
-      final double safeLogoX = currentX.clamp(panelX, panelX + panelW - logoW - innerPadding);
-      _drawSelectedLogo(c, safeLogoX, currentY + 12 * sc, sc, p.logoType, customLogo, logoW, logoH, p.opacity);
+      final double safeLogoX = currentX.clamp(panelX + panelPaddingHorizontal, panelX + panelW - logoW - panelPaddingHorizontal);
+      _drawSelectedLogo(c, safeLogoX, currentY + 14 * sc, sc, p.logoType, customLogo, logoW, logoH, p.opacity, brandAccent);
     }
 
-    currentY += 110 * sc;
-    currentX = panelX + innerPadding;
+    currentY += badgeH + contentVerticalGap;
+    currentX = panelX + panelPaddingHorizontal;
 
     // Divider
-    c.drawLine(Offset(currentX, currentY), Offset(panelX + panelW - innerPadding, currentY),
-        Paint()..color = Colors.grey.withOpacity(0.2)..strokeWidth = 2 * sc);
-    
-    currentY += 32 * sc;
+    currentY += dividerPadding / 2;
+    c.drawLine(Offset(currentX, currentY), Offset(panelX + panelW - panelPaddingHorizontal, currentY),
+        Paint()..color = textSecondary.withOpacity(0.2)..strokeWidth = 2 * sc);
+    currentY += dividerPadding / 2;
 
     // --- Content Section ---
     // Date
     final String dateStr = DateFormat(p.dateFormat.isNotEmpty ? p.dateFormat : 'EEEE, d MMMM yyyy', 'id_ID').format(p.timestamp);
-    _tp(dateStr, 30 * sc * fontScale, currentY, Colors.black87, bold: true, x: currentX).paint(c);
-    currentY += 55 * sc;
+    _tp(dateStr, 32 * sc * fontScale, currentY, textPrimary, bold: true, x: currentX).paint(c);
+    currentY += 60 * sc;
 
     // Coordinates
     if (p.showCoordinates && p.lat != null && p.lon != null) {
       final String latDir = p.lat! >= 0 ? 'N' : 'S';
       final String lonDir = p.lon! >= 0 ? 'E' : 'W';
       final String coord = '${p.lat!.abs().toStringAsFixed(6)}°$latDir, ${p.lon!.abs().toStringAsFixed(6)}°$lonDir';
-      _tp(coord, 26 * sc * fontScale, currentY, Colors.grey[700]!, x: currentX).paint(c);
-      currentY += 50 * sc;
+      _tp(coord, 28 * sc * fontScale, currentY, textSecondary, x: currentX).paint(c);
+      currentY += 55 * sc;
     }
 
     // Accuracy
     if (p.showAccuracy && p.acc != null) {
-      _tp('Accuracy: ±${p.acc!.toStringAsFixed(1)} m', 22 * sc * fontScale, currentY, Colors.grey[600]!, x: currentX).paint(c);
-      currentY += 45 * sc;
+      _tp('Accuracy: ±${p.acc!.toStringAsFixed(1)} m', 24 * sc * fontScale, currentY, textSecondary, x: currentX).paint(c);
+      currentY += 50 * sc;
     }
 
     // Address
     if (p.showAddress && p.address.isNotEmpty) {
       final tp = TextPainter(
-        text: TextSpan(text: p.address, style: TextStyle(fontSize: 22 * sc * fontScale)),
+        text: TextSpan(text: p.address, style: TextStyle(fontSize: 24 * sc * fontScale)),
         textDirection: ui.TextDirection.ltr,
         maxLines: 3,
-      )..layout(maxWidth: panelW - (innerPadding * 2));
-      _tp(p.address, 22 * sc * fontScale, currentY, Colors.grey[700]!, x: currentX,
-          maxW: panelW - (innerPadding * 2), maxLines: 3).paint(c);
+      )..layout(maxWidth: panelW - (panelPaddingHorizontal * 2));
+      _tp(p.address, 24 * sc * fontScale, currentY, textSecondary, x: currentX,
+          maxW: panelW - (panelPaddingHorizontal * 2), maxLines: 3).paint(c);
       currentY += tp.height + 20 * sc;
     }
 
     // Weather
     if (p.showWeather && p.weather.isNotEmpty) {
-      _tp(p.weather, 22 * sc * fontScale, currentY, const Color(0xFF00796B), x: currentX).paint(c);
-      currentY += 40 * sc;
+      _tp(p.weather, 24 * sc * fontScale, currentY, const Color(0xFF00796B), x: currentX).paint(c);
+      currentY += 45 * sc;
     }
 
     // Footer
-    _tp('🛡 Timemark menjamin keaslian waktu', 22 * sc * fontScale, currentY, Colors.grey[600]!, x: currentX).paint(c);
+    _tp('🛡 Timemark menjamin keaslian waktu', 24 * sc * fontScale, currentY, textSecondary, x: currentX).paint(c);
 
     // Vertical Verification Code
     final String verCode = _verCode(p);
     final double verCenterY = panelY + panelH / 2;
-    _drawVerticalText(c, '© $verCode Timemark Verified', 20 * sc * fontScale,
-        W - 50 * sc, verCenterY, Colors.white.withOpacity(0.8), sc);
+    _drawVerticalText(c, '© $verCode Timemark Verified', 22 * sc * fontScale,
+        W - 55 * sc, verCenterY, Colors.white.withOpacity(0.8), sc);
 
     // Bottom Branding
-    _tp('Timemark', 32 * sc * fontScale, H - 110 * sc, Colors.white, x: W - 260 * sc, bold: true).paint(c);
-    _tp('Camera', 24 * sc * fontScale, H - 70 * sc, Colors.white70, x: W - 260 * sc).paint(c);
+    _tp('Timemark', 36 * sc * fontScale, H - 120 * sc, Colors.white, x: W - 280 * sc, bold: true).paint(c);
+    _tp('Camera', 26 * sc * fontScale, H - 75 * sc, Colors.white70, x: W - 280 * sc).paint(c);
   }
 
-  static double _calculatePanelHeight(double sc, double fontScale, WatermarkParams p, double panelW, double innerPadding) {
-    double h = innerPadding + 110 * sc + 32 * sc + 55 * sc;
-    if (p.showCoordinates && p.lat != null) h += 50 * sc;
-    if (p.showAccuracy && p.acc != null) h += 45 * sc;
+  static double _calculatePanelHeight(double sc, double fontScale, WatermarkParams p, double panelW, double verticalPadding, double contentGap, double dividerPadding) {
+    double h = verticalPadding * 2;
+    h += 90 * sc; // Estimated badge height
+    h += contentGap;
+    h += dividerPadding;
+    
+    h += 60 * sc; // Date
+    if (p.showCoordinates && p.lat != null) h += 55 * sc;
+    if (p.showAccuracy && p.acc != null) h += 50 * sc;
     if (p.showAddress && p.address.isNotEmpty) {
       final tp = TextPainter(
-        text: TextSpan(text: p.address, style: TextStyle(fontSize: 22 * sc * fontScale)),
+        text: TextSpan(text: p.address, style: TextStyle(fontSize: 24 * sc * fontScale)),
         textDirection: ui.TextDirection.ltr,
         maxLines: 3,
-      )..layout(maxWidth: panelW - (innerPadding * 2));
+      )..layout(maxWidth: panelW - (32 * sc * 2));
       h += tp.height + 20 * sc;
     }
-    if (p.showWeather && p.weather.isNotEmpty) h += 40 * sc;
-    h += 50 * sc + innerPadding;
+    if (p.showWeather && p.weather.isNotEmpty) h += 45 * sc;
+    h += 60 * sc; // Footer height contribution
     return h;
   }
 
-  static void _drawSelectedLogo(Canvas c, double x, double y, double sc, String? type, ui.Image? customLogo, double w, double h, double opacity) {
+  static void _drawSelectedLogo(Canvas c, double x, double y, double sc, String? type, ui.Image? customLogo, double w, double h, double opacity, Color accentColor) {
     if (type == 'custom' && customLogo != null) {
       c.drawImageRect(
         customLogo,
@@ -284,22 +297,22 @@ class WatermarkEngine {
         Paint(),
       );
     } else if (type == 'timemark_icon') {
-      _drawTimemarkIcon(c, x + 40 * sc, y + 30 * sc, 30 * sc);
+      _drawTimemarkIcon(c, x + 40 * sc, y + 30 * sc, 30 * sc, accentColor);
     } else {
-      _drawMiniLogo(c, x, y, sc, w, h, opacity);
+      _drawMiniLogo(c, x, y, sc, w, h, opacity, accentColor);
     }
   }
 
-  static void _drawMiniLogo(Canvas c, double x, double y, double sc, double w, double h, double opacity) {
+  static void _drawMiniLogo(Canvas c, double x, double y, double sc, double w, double h, double opacity, Color accentColor) {
     final Paint p = Paint()..color = Colors.white.withOpacity(opacity.clamp(0.6, 1.0));
     c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(8 * sc)), p);
-    final Paint vanPaint = Paint()..color = Colors.orange.withOpacity(opacity.clamp(0.6, 1.0));
+    final Paint vanPaint = Paint()..color = accentColor.withOpacity(opacity.clamp(0.6, 1.0));
     c.drawRect(Rect.fromLTWH(x + 10 * sc, y + 18 * sc, 35 * sc, 24 * sc), vanPaint);
     _tp('NEXT', 16 * sc, y + 22 * sc, Colors.black.withOpacity(opacity.clamp(0.6, 1.0)), bold: true, x: x + 55 * sc).paint(c);
   }
 
-  static void _drawTimemarkIcon(Canvas c, double cx, double cy, double radius) {
-    final Paint p = Paint()..color = const Color(0xFFFFC107)..style = PaintingStyle.fill;
+  static void _drawTimemarkIcon(Canvas c, double cx, double cy, double radius, Color color) {
+    final Paint p = Paint()..color = color..style = PaintingStyle.fill;
     c.drawCircle(Offset(cx, cy), radius, p);
     final Paint checkPaint = Paint()
       ..color = Colors.black

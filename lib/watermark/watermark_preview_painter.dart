@@ -3,9 +3,10 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'watermark_layout.dart'; // tambahkan import
+import 'watermark_layout.dart';
 
 /// Live preview painter yang identik dengan layout WatermarkEngine.
+/// Menggunakan nilai default yang sama dengan engine (tanpa perlu parameter tambahan).
 class WatermarkPreviewPainter extends CustomPainter {
   final DateTime timestamp;
   final bool hasPosition;
@@ -20,12 +21,7 @@ class WatermarkPreviewPainter extends CustomPainter {
   final bool showCoordinates;
   final double opacity;
   final bool showBorder;
-  final bool showLogo;
-  final String appName;
-  final double fontScale;
-  final String dateFormat;
-  final String timeFormat;
-  final WatermarkLayout layout; // tambahan, meskipun tidak digunakan
+  final WatermarkLayout layout; // tidak digunakan, tapi kompatibilitas
 
   const WatermarkPreviewPainter({
     required this.timestamp,
@@ -41,11 +37,6 @@ class WatermarkPreviewPainter extends CustomPainter {
     required this.showCoordinates,
     required this.opacity,
     required this.showBorder,
-    required this.showLogo,
-    required this.appName,
-    required this.fontScale,
-    required this.dateFormat,
-    required this.timeFormat,
     required this.layout,
   });
 
@@ -53,18 +44,25 @@ class WatermarkPreviewPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final W = size.width;
     final H = size.height;
+    // Skala preview berdasarkan lebar layar, sama dengan engine (referensi 1080)
     final double sc = (W / 1080.0).clamp(0.4, 1.2);
-    final double fontScale = this.fontScale.clamp(0.5, 2.0);
+    final double fontScale = 1.0; // preview tanpa scaling tambahan
 
     _drawReferenceLayout(canvas, W, H, sc, fontScale);
   }
 
+  /// Layout persis seperti WatermarkEngine._drawReferenceLayout
   void _drawReferenceLayout(Canvas c, double W, double H, double sc, double fontScale) {
+    // Default values sama dengan engine
+    const String appName = 'termullog';
+    const bool showLogo = true;
+    const String dateFormat = '';    // akan pakai default engine
+    const String timeFormat = '';    // akan pakai default engine
+
     final double innerPadding = 24 * sc;
     final double headerSpacing = 24 * sc;
 
     // Badge
-    final String appName = this.appName.isNotEmpty ? this.appName : 'termullog';
     final double badgeFontSize = 32 * sc * fontScale;
     final namePainter = TextPainter(
       text: TextSpan(text: appName, style: TextStyle(fontSize: badgeFontSize, fontWeight: FontWeight.w700)),
@@ -112,7 +110,7 @@ class WatermarkPreviewPainter extends CustomPainter {
     double currentX = panelX + innerPadding;
     double currentY = panelY + innerPadding;
 
-    // Badge (default style)
+    // Badge
     final RRect badgeRRect = RRect.fromRectAndRadius(
         Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(10 * sc));
     c.drawRRect(badgeRRect, Paint()..color = const Color(0xFFFFC107).withOpacity(opacity.clamp(0.6, 1.0)));
@@ -269,11 +267,6 @@ class WatermarkPreviewPainter extends CustomPainter {
         oldDelegate.showCoordinates != showCoordinates ||
         oldDelegate.opacity != opacity ||
         oldDelegate.showBorder != showBorder ||
-        oldDelegate.showLogo != showLogo ||
-        oldDelegate.appName != appName ||
-        oldDelegate.fontScale != fontScale ||
-        oldDelegate.dateFormat != dateFormat ||
-        oldDelegate.timeFormat != timeFormat ||
         oldDelegate.layout != layout;
   }
 }

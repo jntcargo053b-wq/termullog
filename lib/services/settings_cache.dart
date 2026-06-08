@@ -5,6 +5,7 @@
 // - Whitelist validation untuk setiap value yang dibaca
 // - Kompatibel dengan camera_screen.dart v9
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../models/watermark_position.dart';
@@ -32,6 +33,8 @@ class SettingsCache {
   static bool? _useHighAccuracy;
   static bool? _autoSave;
   static WatermarkPosition? _watermarkPosition;
+  static String? _appName;
+  static Uint8List? _customLogoBytes;
 
   // Whitelist valid values
   static const Set<String> _validMapSizes = {'small', 'medium', 'large'};
@@ -43,7 +46,7 @@ class SettingsCache {
     'showMiniMap', 'mapSize', 'mapZoomLevel', 'showAddress', 'showCoordinates',
     'opacity', 'showBorder', 'fontSize', 'layout', 'showWeather', 'showAccuracy',
     'dateFormat', 'timeFormat', 'themeMode', 'imageQuality', 'keepScreenOn',
-    'useHighAccuracy', 'autoSave', 'watermark_position',
+    'useHighAccuracy', 'autoSave', 'watermark_position', 'appName', 'customLogoBytes',
     // Legacy keys (migration cleanup)
     'show_mini_map', 'map_size', 'map_zoom_level', 'show_address', 'show_coordinates',
     'show_weather', 'show_accuracy', 'date_format', 'time_format', 'theme_mode',
@@ -84,6 +87,7 @@ class SettingsCache {
     _keepScreenOn ??= _prefs!.getBool('keepScreenOn') ?? true;
     _useHighAccuracy ??= _prefs!.getBool('useHighAccuracy') ?? true;
     _autoSave ??= _prefs!.getBool('autoSave') ?? false;
+    _appName ??= _prefs!.getString('appName') ?? 'TermulLog';
   }
 
   // ==========================================================================
@@ -195,7 +199,38 @@ class SettingsCache {
     await preload(); _autoSave = value; await _prefs!.setBool('autoSave', value);
   }
 
-  // ==========================================================================
+  static Future<String> get appName async { await preload(); return _appName!; }
+  static Future<void> setAppName(String value) async {
+    await preload();
+    final trimmed = value.trim().isEmpty ? 'TermulLog' : value.trim();
+    _appName = trimmed;
+    await _prefs!.setString('appName', trimmed);
+  }
+
+  static Future<Uint8List?> getCustomLogoBytes() async {
+    await preload();
+    if (_customLogoBytes != null) return _customLogoBytes;
+    final b64 = _prefs!.getString('customLogoBytes');
+    if (b64 == null || b64.isEmpty) return null;
+    try {
+      _customLogoBytes = base64Decode(b64);
+      return _customLogoBytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> setCustomLogoBytes(Uint8List? bytes) async {
+    await preload();
+    _customLogoBytes = bytes;
+    if (bytes == null) {
+      await _prefs!.remove('customLogoBytes');
+    } else {
+      await _prefs!.setString('customLogoBytes', base64Encode(bytes));
+    }
+  }
+
+    // ==========================================================================
   // WATERMARK POSITION (full persistence dengan cache)
   // ==========================================================================
   static Future<WatermarkPosition> loadWatermarkPosition() async {
@@ -261,7 +296,7 @@ class SettingsCache {
     _showWeather = null; _showAccuracy = null; _dateFormat = null;
     _timeFormat = null; _themeMode = null; _imageQuality = null;
     _keepScreenOn = null; _useHighAccuracy = null; _autoSave = null;
-    _watermarkPosition = null;
+    _watermarkPosition = null; _appName = null; _customLogoBytes = null;
   }
 
   static void invalidate() {

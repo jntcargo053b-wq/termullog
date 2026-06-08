@@ -19,6 +19,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import '../services/location_weather_service.dart';
 import '../services/settings_cache.dart';
 import '../watermark/watermark_engine.dart';
+import '../watermark/watermark_params.dart';
 
 enum SaveStatus { idle, saving, saved, error }
 
@@ -221,7 +222,9 @@ class _PreviewScreenState extends State<PreviewScreen>
 
       // ── 5. CREATE WATERMARK PARAMS ────────────────────────────────
       _processingStep.value = 'Membuat watermark...';
-      final params = WatermarkEngine.createParams(
+      final appName = await SettingsCache.appName;
+      final customLogoBytes = await SettingsCache.getCustomLogoBytes();
+      final params = WatermarkParams(
         imageBytes: bytes,
         timestamp: timestamp,
         layoutIndex: layout.index,
@@ -241,13 +244,18 @@ class _PreviewScreenState extends State<PreviewScreen>
         opacity: opacity,
         showBorder: showBorder,
         fontSize: fontSizeStr,
+        fontScale: fontSizeDouble <= 13 ? 0.85 : fontSizeDouble >= 20 ? 1.2 : 1.0,
         imageQuality: imageQuality,
         dateFormat: dateFormat,
         timeFormat: timeFormat,
+        appName: appName,
+        showLogo: true,
+        logoType: customLogoBytes != null ? 'custom' : null,
+        customLogoBytes: customLogoBytes,
       );
 
       // ── 6. PROCESS WATERMARK ──────────────────────────────────────
-      final processedBytes = await WatermarkEngine.applyFromMapAsync(params.toMap());
+      final processedBytes = await WatermarkEngine.process(params);
 
       // ── 7. SAVE TO PERMANENT HISTORY ──────────────────────────────
       _processingStep.value = 'Menyimpan file...';

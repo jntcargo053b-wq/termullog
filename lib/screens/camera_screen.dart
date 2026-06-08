@@ -88,6 +88,8 @@ class _CameraScreenState extends State<CameraScreen>
   WatermarkLayout _layout = WatermarkLayout.podCorporate;
   bool _showMiniMap = false;
   String _fontSize = 'normal';
+  String _appName = 'TermulLog';
+  Uint8List? _customLogoBytes;
   String _dateFormat = 'dd/MM/yyyy';
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
@@ -311,7 +313,10 @@ class _CameraScreenState extends State<CameraScreen>
         acc: gpsSnapshot.accuracy,
         fontScale: fontScale,
         imageQuality: imageQuality,
-        appName: 'TermulLog',
+        appName: _appName,
+        showLogo: true,
+        logoType: _customLogoBytes != null ? 'custom' : null,
+        customLogoBytes: _customLogoBytes,
         showMiniMap: _showMiniMap,
         mapBytes: mapBytes,
         mapSize: 120,
@@ -398,6 +403,8 @@ class _CameraScreenState extends State<CameraScreen>
       SettingsCache.timeFormat.then((v) => _timeFormat = v),
       SettingsCache.fontSize.then((v) =>
           _fontSize = v <= 13 ? 'small' : v >= 20 ? 'large' : 'normal'),
+      SettingsCache.appName.then((v) => _appName = v),
+      SettingsCache.getCustomLogoBytes().then((v) => _customLogoBytes = v),
     ]);
     if (mounted) setState(() {});
   }

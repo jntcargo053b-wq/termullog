@@ -108,7 +108,7 @@ class WatermarkEngine {
         onTimeout: () => throw Exception('Image decode timeout'));
   }
 
-  /// Main layout with Deep Blue & Amber Branding and semicolon time format
+  /// Main layout with Deep Blue & Amber Branding and sync with WatermarkParams
   static void _drawReferenceLayout(
     Canvas c, double W, double H, double sc, double fontScale,
     WatermarkParams p, ui.Image? customLogo, ui.Image? customBadge
@@ -127,7 +127,7 @@ class WatermarkEngine {
     final double dividerPadding = 32 * sc;
 
     // 1. Measure Time
-    final String timeStr = DateFormat('HH:mm:ss').format(p.timestamp);
+    final String timeStr = DateFormat(p.timeFormat.isNotEmpty ? p.timeFormat : 'HH:mm:ss').format(p.timestamp);
     final double timeFontSize = 92 * sc * fontScale;
     final timePainter = TextPainter(
       text: TextSpan(text: timeStr, style: TextStyle(fontSize: timeFontSize, fontWeight: FontWeight.w700)),

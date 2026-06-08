@@ -45,6 +45,9 @@ dependencies:
   # Additional dependencies untuk POD
   rxdart: ^0.27.7
 
+  # Image picker (logo custom di settings)
+  image_picker: ^1.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

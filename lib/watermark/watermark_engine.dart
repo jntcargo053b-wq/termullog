@@ -3,10 +3,31 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'watermark_params.dart';
+
+
+// ── Isolate support ──────────────────────────────────────────────────────────
+class _EncodeParams {
+  final int width;
+  final int height;
+  final Uint8List rgbaBytes;
+  final int quality;
+  const _EncodeParams(this.width, this.height, this.rgbaBytes, this.quality);
+}
+
+Uint8List _encodeJpgIsolate(_EncodeParams p) {
+  final image = img.Image.fromBytes(
+    width: p.width,
+    height: p.height,
+    bytes: p.rgbaBytes.buffer,
+    numChannels: 4,
+  );
+  return Uint8List.fromList(img.encodeJpg(image, quality: p.quality));
+}
 
 class WatermarkEngine {
   /// Final high-quality process for photos (JPEG output)
@@ -39,13 +60,10 @@ class WatermarkEngine {
       final uiOut = await picture.toImage(W, H);
       final byteData = await uiOut.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (byteData == null) throw Exception('Failed to get raw RGBA');
-      final imgOut = img.Image.fromBytes(
-        width: W,
-        height: H,
-        bytes: byteData.buffer,
-        numChannels: 4,
+      return await compute(
+        _encodeJpgIsolate,
+        _EncodeParams(W, H, byteData.buffer.asUint8List(), params.imageQuality),
       );
-      return Uint8List.fromList(img.encodeJpg(imgOut, quality: params.imageQuality));
     } catch (e) {
       debugPrint('WatermarkEngine.process error: $e');
       rethrow;

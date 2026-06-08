@@ -126,8 +126,8 @@ class WatermarkEngine {
     final double contentVerticalGap = 24 * sc;
     final double dividerPadding = 32 * sc;
 
-    // 1. Measure Time (Custom Format: HH;mm)
-    final String timeStr = DateFormat('HH;mm').format(p.timestamp);
+    // 1. Measure Time
+    final String timeStr = DateFormat('HH:mm:ss').format(p.timestamp);
     final double timeFontSize = 92 * sc * fontScale;
     final timePainter = TextPainter(
       text: TextSpan(text: timeStr, style: TextStyle(fontSize: timeFontSize, fontWeight: FontWeight.w700)),

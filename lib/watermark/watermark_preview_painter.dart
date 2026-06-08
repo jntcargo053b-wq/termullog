@@ -3,78 +3,43 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'watermark_layout.dart';
+import 'watermark_params.dart';
 
-/// Live preview painter that matches the exact layout of WatermarkEngine.
-/// Now supports both custom logos and custom badges for full brand consistency during preview.
+/// Live preview painter matching WatermarkEngine layout including Mini Map support.
 class WatermarkPreviewPainter extends CustomPainter {
-  final DateTime timestamp;
-  final bool hasPosition;
-  final double? lat;
-  final double? lon;
-  final double? acc;
-  final String address;
-  final String weather;
-  final bool showWeather;
-  final bool showAccuracy;
-  final bool showAddress;
-  final bool showCoordinates;
-  final double opacity;
-  final bool showBorder;
-  final WatermarkLayout layout;
+  final WatermarkParams params;
+  final double previewWidth;
+  final double previewHeight;
   
-  // Custom Branding Support
-  final String appName;
-  final bool showLogo;
-  final String? logoType; // 'next_van', 'timemark_icon', or 'custom'
-  final ui.Image? customLogo; // Pre-decoded logo for immediate preview
-  final String? badgeType; // 'default' or 'custom'
-  final ui.Image? customBadge; // Pre-decoded badge for immediate preview
-  final String dateFormat;
-  final String timeFormat;
+  // Pre-decoded assets for preview performance
+  final ui.Image? customLogo;
+  final ui.Image? customBadge;
+  final ui.Image? mapImage; // Pre-decoded static map image for preview
 
   const WatermarkPreviewPainter({
-    required this.timestamp,
-    required this.hasPosition,
-    required this.lat,
-    required this.lon,
-    required this.acc,
-    required this.address,
-    required this.weather,
-    required this.showWeather,
-    required this.showAccuracy,
-    required this.showAddress,
-    required this.showCoordinates,
-    required this.opacity,
-    required this.showBorder,
-    required this.layout,
-    this.appName = 'termullog',
-    this.showLogo = true,
-    this.logoType,
+    required this.params,
+    required this.previewWidth,
+    required this.previewHeight,
     this.customLogo,
-    this.badgeType,
     this.customBadge,
-    this.dateFormat = '',
-    this.timeFormat = '',
+    this.mapImage,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final W = size.width;
-    final H = size.height;
-    
-    // Scale preview based on screen width, identical to engine logic
+    final W = previewWidth;
+    final H = previewHeight;
+
     final double sc = (W / 1080.0).clamp(0.4, 1.2);
-    final double fontScale = 1.0;
+    final double fontScale = params.fontScale.clamp(0.5, 2.0);
 
     _drawReferenceLayout(canvas, W, H, sc, fontScale);
   }
 
-  /// Layout matching the Deep Blue & Amber branding of the high-quality engine.
   void _drawReferenceLayout(Canvas c, double W, double H, double sc, double fontScale) {
     // --- Branding Colors ---
-    const Color brandPrimary = Color(0xFF0D47A1); // Deep Blue
-    const Color brandAccent = Color(0xFFFFB300);  // Amber
+    const Color brandPrimary = Color(0xFF0D47A1); 
+    const Color brandAccent = Color(0xFFFFB300);  
     const Color textPrimary = Color(0xFF212121);
     const Color textSecondary = Color(0xFF757575);
 
@@ -86,14 +51,15 @@ class WatermarkPreviewPainter extends CustomPainter {
     final double dividerPadding = 32 * sc;
 
     // 1. Measure Time
-    final String timeStr = DateFormat(timeFormat.isNotEmpty ? timeFormat : 'HH:mm').format(timestamp);
+    final String timeStr = DateFormat(params.timeFormat.isNotEmpty ? params.timeFormat : 'HH:mm:ss').format(params.timestamp);
     final double timeFontSize = 92 * sc * fontScale;
     final timePainter = TextPainter(
       text: TextSpan(text: timeStr, style: TextStyle(fontSize: timeFontSize, fontWeight: FontWeight.w700)),
       textDirection: ui.TextDirection.ltr,
     )..layout();
 
-    // 2. Measure Badge / Name
+    // 2. Measure Badge
+    final String appName = params.appName.isNotEmpty ? params.appName : 'termullog';
     final double badgeFontSize = 34 * sc * fontScale;
     final namePainter = TextPainter(
       text: TextSpan(text: appName, style: TextStyle(fontSize: badgeFontSize, fontWeight: FontWeight.w700)),
@@ -108,10 +74,19 @@ class WatermarkPreviewPainter extends CustomPainter {
     final double logoW = 150 * sc;
     final double logoH = 65 * sc;
 
-    // 3. Dynamic Panel Width
+    // 3. Dynamic Panel Width (Considers Map if present)
     double headerRowW = badgeW + headerSpacing + timePainter.width;
-    if (showLogo) headerRowW += headerSpacing + logoW;
-    final double panelW = (headerRowW + panelPaddingHorizontal * 2).clamp(700 * sc, W - 64 * sc);
+    if (params.showLogo) headerRowW += headerSpacing + logoW;
+    
+    // Mini Map Dimension
+    double mapW = 0;
+    if (params.showMiniMap) {
+      mapW = params.mapSize.toDouble() * sc;
+    }
+
+    final double basePanelW = (headerRowW + panelPaddingHorizontal * 2).clamp(700 * sc, W - 64 * sc);
+    // If map is active, we ensure the panel is wide enough or let map sit within bounds
+    final double panelW = params.showMiniMap ? max(basePanelW, mapW + panelPaddingHorizontal * 2) : basePanelW;
 
     // 4. Calculate dynamic panel height
     final double panelH = _calculatePanelHeight(sc, fontScale, panelW, panelPaddingVertical, contentVerticalGap, dividerPadding);
@@ -124,11 +99,11 @@ class WatermarkPreviewPainter extends CustomPainter {
       Rect.fromLTWH(panelX, panelY, panelW, panelH),
       Radius.circular(20 * sc),
     );
-    c.drawRRect(panelRect, Paint()..color = Colors.white.withOpacity(opacity.clamp(0.4, 0.9)));
+    c.drawRRect(panelRect, Paint()..color = Colors.white.withOpacity(params.opacity.clamp(0.4, 0.95)));
 
-    if (showBorder) {
+    if (params.showBorder) {
       c.drawRRect(panelRect, Paint()
-        ..color = brandAccent.withOpacity(opacity.clamp(0.4, 1.0))
+        ..color = brandAccent.withOpacity(params.opacity.clamp(0.4, 1.0))
         ..strokeWidth = 3 * sc
         ..style = PaintingStyle.stroke);
     }
@@ -137,36 +112,39 @@ class WatermarkPreviewPainter extends CustomPainter {
     double currentY = panelY + panelPaddingVertical;
 
     // --- Header Section ---
-    
-    // A. Badge (Supports Custom Assets)
-    if (badgeType == 'custom' && customBadge != null) {
-      paintImage(
-        canvas: c,
-        rect: Rect.fromLTWH(currentX, currentY, badgeW, badgeH),
-        image: customBadge!,
-        fit: BoxFit.fill,
-      );
+    if (params.badgeType == 'custom' && customBadge != null) {
+      c.drawImageRect(customBadge!, Rect.fromLTWH(0, 0, customBadge!.width.toDouble(), customBadge!.height.toDouble()), Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Paint());
     } else {
-      final RRect badgeRRect = RRect.fromRectAndRadius(
-          Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(12 * sc));
-      c.drawRRect(badgeRRect, Paint()..color = brandAccent.withOpacity(opacity.clamp(0.6, 1.0)));
-      _drawText(c, appName, badgeFontSize, currentY + (badgeH - namePainter.height) / 2, textPrimary,
-          bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 16 * sc);
+      final RRect badgeRRect = RRect.fromRectAndRadius(Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(12 * sc));
+      c.drawRRect(badgeRRect, Paint()..color = brandAccent.withOpacity(params.opacity.clamp(0.6, 1.0)));
+      _drawText(c, appName, badgeFontSize, currentY + (badgeH - namePainter.height) / 2, textPrimary, bold: true, x: currentX + badgeW / 2, centerX: true, maxW: badgeW - 16 * sc);
     }
 
-    // B. Time
     currentX += badgeW + headerSpacing;
     _drawText(c, timeStr, timeFontSize, currentY - 4 * sc, brandPrimary, bold: true, x: currentX);
 
-    // C. Logo (Supports Custom Assets)
-    if (showLogo) {
+    if (params.showLogo) {
       currentX += timePainter.width + headerSpacing;
       final double safeLogoX = currentX.clamp(panelX + panelPaddingHorizontal, panelX + panelW - logoW - panelPaddingHorizontal);
-      _drawPreviewLogo(c, safeLogoX, currentY + 14 * sc, sc, logoW, logoH, opacity, brandAccent);
+      _drawPreviewLogo(c, safeLogoX, currentY + 14 * sc, sc, logoW, logoH, params.opacity, brandAccent);
     }
 
     currentY += badgeH + contentVerticalGap;
     currentX = panelX + panelPaddingHorizontal;
+
+    // --- Map Section ---
+    if (params.showMiniMap && mapImage != null) {
+      final double mapH = mapW; // Square map for preview
+      c.drawImageRect(
+        mapImage!,
+        Rect.fromLTWH(0, 0, mapImage!.width.toDouble(), mapImage!.height.toDouble()),
+        Rect.fromLTWH(currentX, currentY, mapW, mapH),
+        Paint(),
+      );
+      // Map Border
+      c.drawRect(Rect.fromLTWH(currentX, currentY, mapW, mapH), Paint()..color = Colors.grey.withOpacity(0.5)..style = PaintingStyle.stroke..strokeWidth = 1 * sc);
+      currentY += mapH + contentVerticalGap;
+    }
 
     // Divider
     currentY += dividerPadding / 2;
@@ -175,36 +153,35 @@ class WatermarkPreviewPainter extends CustomPainter {
     currentY += dividerPadding / 2;
 
     // --- Content Section ---
-    final String dateStr = DateFormat(dateFormat.isNotEmpty ? dateFormat : 'EEEE, d MMMM yyyy', 'id_ID').format(timestamp);
+    final String dateStr = DateFormat(params.dateFormat.isNotEmpty ? params.dateFormat : 'EEEE, d MMMM yyyy', 'id_ID').format(params.timestamp);
     _drawText(c, dateStr, 32 * sc * fontScale, currentY, textPrimary, bold: true, x: currentX);
     currentY += 60 * sc;
 
-    if (showCoordinates && lat != null && lon != null) {
-      final String latDir = lat! >= 0 ? 'N' : 'S';
-      final String lonDir = lon! >= 0 ? 'E' : 'W';
-      final String coord = '${lat!.abs().toStringAsFixed(6)}°$latDir, ${lon!.abs().toStringAsFixed(6)}°$lonDir';
+    if (params.showCoordinates && params.lat != null && params.lon != null) {
+      final String latDir = params.lat! >= 0 ? 'N' : 'S';
+      final String lonDir = params.lon! >= 0 ? 'E' : 'W';
+      final String coord = '${params.lat!.abs().toStringAsFixed(6)}°$latDir, ${params.lon!.abs().toStringAsFixed(6)}°$lonDir';
       _drawText(c, coord, 28 * sc * fontScale, currentY, textSecondary, x: currentX);
       currentY += 55 * sc;
     }
 
-    if (showAccuracy && acc != null) {
-      _drawText(c, 'Accuracy: ±${acc!.toStringAsFixed(1)} m', 24 * sc * fontScale, currentY, textSecondary, x: currentX);
+    if (params.showAccuracy && params.acc != null) {
+      _drawText(c, 'Accuracy: ±${params.acc!.toStringAsFixed(1)} m', 24 * sc * fontScale, currentY, textSecondary, x: currentX);
       currentY += 50 * sc;
     }
 
-    if (showAddress && address.isNotEmpty) {
+    if (params.showAddress && params.address.isNotEmpty) {
       final tp = TextPainter(
-        text: TextSpan(text: address, style: TextStyle(fontSize: 24 * sc * fontScale)),
+        text: TextSpan(text: params.address, style: TextStyle(fontSize: 24 * sc * fontScale)),
         textDirection: ui.TextDirection.ltr,
         maxLines: 3,
       )..layout(maxWidth: panelW - (panelPaddingHorizontal * 2));
-      _drawText(c, address, 24 * sc * fontScale, currentY, textSecondary,
-          x: currentX, maxW: panelW - (panelPaddingHorizontal * 2), maxLines: 3);
+      _drawText(c, params.address, 24 * sc * fontScale, currentY, textSecondary, x: currentX, maxW: panelW - (panelPaddingHorizontal * 2), maxLines: 3);
       currentY += tp.height + 20 * sc;
     }
 
-    if (showWeather && weather.isNotEmpty) {
-      _drawText(c, weather, 24 * sc * fontScale, currentY, const Color(0xFF00796B), x: currentX);
+    if (params.showWeather && params.weather.isNotEmpty) {
+      _drawText(c, params.weather, 24 * sc * fontScale, currentY, const Color(0xFF00796B), x: currentX);
       currentY += 45 * sc;
     }
 
@@ -213,8 +190,7 @@ class WatermarkPreviewPainter extends CustomPainter {
     // Vertical Verification Code
     final String verCode = _previewVerCode();
     final double verCenterY = panelY + panelH / 2;
-    _drawVerticalText(c, '© $verCode Timemark Verified', 22 * sc * fontScale,
-        W - 55 * sc, verCenterY, Colors.white.withOpacity(0.8), sc);
+    _drawVerticalText(c, '© $verCode Timemark Verified', 22 * sc * fontScale, W - 55 * sc, verCenterY, Colors.white.withOpacity(0.8), sc);
 
     // Bottom Branding
     _drawText(c, 'Timemark', 36 * sc * fontScale, H - 120 * sc, Colors.white, bold: true, x: W - 280 * sc);
@@ -223,42 +199,39 @@ class WatermarkPreviewPainter extends CustomPainter {
 
   double _calculatePanelHeight(double sc, double fontScale, double panelW, double verticalPadding, double contentGap, double dividerPadding) {
     double h = verticalPadding * 2;
-    h += 90 * sc; 
+    h += 90 * sc; // Badge/Header
     h += contentGap;
+    
+    if (params.showMiniMap) {
+      h += (params.mapSize.toDouble() * sc) + contentGap;
+    }
+    
     h += dividerPadding;
-    h += 60 * sc; 
-    if (showCoordinates && lat != null) h += 55 * sc;
-    if (showAccuracy && acc != null) h += 50 * sc;
-    if (showAddress && address.isNotEmpty) {
+    h += 60 * sc; // Date
+    if (params.showCoordinates && params.lat != null) h += 55 * sc;
+    if (params.showAccuracy && params.acc != null) h += 50 * sc;
+    if (params.showAddress && params.address.isNotEmpty) {
       final tp = TextPainter(
-        text: TextSpan(text: address, style: TextStyle(fontSize: 24 * sc * fontScale)),
+        text: TextSpan(text: params.address, style: TextStyle(fontSize: 24 * sc * fontScale)),
         textDirection: ui.TextDirection.ltr,
         maxLines: 3,
       )..layout(maxWidth: panelW - (32 * sc * 2));
       h += tp.height + 20 * sc;
     }
-    if (showWeather && weather.isNotEmpty) h += 45 * sc;
+    if (params.showWeather && params.weather.isNotEmpty) h += 45 * sc;
     h += 60 * sc; 
     return h;
   }
 
   void _drawPreviewLogo(Canvas c, double x, double y, double sc, double w, double h, double opacity, Color accentColor) {
-    if (logoType == 'custom' && customLogo != null) {
-      paintImage(
-        canvas: c,
-        rect: Rect.fromLTWH(x, y, w, h),
-        image: customLogo!,
-        fit: BoxFit.contain,
-      );
+    if (params.logoType == 'custom' && customLogo != null) {
+      c.drawImageRect(customLogo!, Rect.fromLTWH(0, 0, customLogo!.width.toDouble(), customLogo!.height.toDouble()), Rect.fromLTWH(x, y, w, h), Paint());
     } else {
       final Paint p = Paint()..color = Colors.white.withOpacity(opacity.clamp(0.6, 1.0));
       c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(8 * sc)), p);
-      
       final Paint iconPaint = Paint()..color = accentColor.withOpacity(opacity.clamp(0.6, 1.0));
       c.drawRect(Rect.fromLTWH(x + 10 * sc, y + 18 * sc, 35 * sc, 24 * sc), iconPaint);
-      
-      _drawText(c, 'NEXT', 16 * sc, y + 22 * sc, Colors.black.withOpacity(opacity.clamp(0.6, 1.0)),
-          bold: true, x: x + 55 * sc);
+      _drawText(c, 'NEXT', 16 * sc, y + 22 * sc, Colors.black.withOpacity(opacity.clamp(0.6, 1.0)), bold: true, x: x + 55 * sc);
     }
   }
 
@@ -274,13 +247,9 @@ class WatermarkPreviewPainter extends CustomPainter {
     c.restore();
   }
 
-  void _drawText(Canvas canvas, String text, double size, double y, Color color,
-      {bool bold = false, double x = 16, double? maxW, bool centerX = false, int maxLines = 2}) {
+  void _drawText(Canvas canvas, String text, double size, double y, Color color, {bool bold = false, double x = 16, double? maxW, bool centerX = false, int maxLines = 2}) {
     final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(color: color, fontSize: size, fontWeight: bold ? FontWeight.w700 : FontWeight.w500),
-      ),
+      text: TextSpan(text: text, style: TextStyle(color: color, fontSize: size, fontWeight: bold ? FontWeight.w700 : FontWeight.w500)),
       textDirection: ui.TextDirection.ltr,
       maxLines: maxLines,
       ellipsis: '…',
@@ -291,7 +260,7 @@ class WatermarkPreviewPainter extends CustomPainter {
 
   String _previewVerCode() {
     int h = 0x811C9DC5;
-    for (final ch in timestamp.millisecondsSinceEpoch.toString().codeUnits) {
+    for (final ch in params.timestamp.millisecondsSinceEpoch.toString().codeUnits) {
       h ^= ch;
       h = (h * 0x01000193) & 0xFFFFFFFF;
     }
@@ -300,27 +269,11 @@ class WatermarkPreviewPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(WatermarkPreviewPainter oldDelegate) {
-    return oldDelegate.timestamp != timestamp ||
-        oldDelegate.hasPosition != hasPosition ||
-        oldDelegate.lat != lat ||
-        oldDelegate.lon != lon ||
-        oldDelegate.acc != acc ||
-        oldDelegate.address != address ||
-        oldDelegate.weather != weather ||
-        oldDelegate.showWeather != showWeather ||
-        oldDelegate.showAccuracy != showAccuracy ||
-        oldDelegate.showAddress != showAddress ||
-        oldDelegate.showCoordinates != showCoordinates ||
-        oldDelegate.opacity != opacity ||
-        oldDelegate.showBorder != showBorder ||
-        oldDelegate.layout != layout ||
-        oldDelegate.appName != appName ||
-        oldDelegate.showLogo != showLogo ||
-        oldDelegate.logoType != logoType ||
+    return oldDelegate.params != params ||
+        oldDelegate.previewWidth != previewWidth ||
+        oldDelegate.previewHeight != previewHeight ||
         oldDelegate.customLogo != customLogo ||
-        oldDelegate.badgeType != badgeType ||
         oldDelegate.customBadge != customBadge ||
-        oldDelegate.dateFormat != dateFormat ||
-        oldDelegate.timeFormat != timeFormat;
+        oldDelegate.mapImage != mapImage;
   }
 }

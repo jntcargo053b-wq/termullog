@@ -2,6 +2,8 @@
 // TOTAL REBUILD – Settings bersih, hanya yang relevan untuk timestamp app
 
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -27,6 +29,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _imageQuality = 92;
   bool _useHighAccuracy = true;
   bool _autoSave = false;
+  String _appName = 'TermulLog';
+  Uint8List? _customLogoBytes;
   bool _loading = true;
 
   @override
@@ -49,6 +53,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _imageQuality = await SettingsCache.imageQuality;
     _useHighAccuracy = await SettingsCache.useHighAccuracy;
     _autoSave = await SettingsCache.autoSave;
+    _appName = await SettingsCache.appName;
+    _customLogoBytes = await SettingsCache.getCustomLogoBytes();
     if (mounted) setState(() => _loading = false);
   }
 
@@ -65,6 +71,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await SettingsCache.setImageQuality(_imageQuality);
     await SettingsCache.setUseHighAccuracy(_useHighAccuracy);
     await SettingsCache.setAutoSave(_autoSave);
+    await SettingsCache.setAppName(_appName);
+    await SettingsCache.setCustomLogoBytes(_customLogoBytes);
   }
 
   @override
@@ -94,6 +102,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 _sectionHeader('Gaya Watermark'),
                 _layoutPicker(),
+
+                _sectionHeader('Branding'),
+                _appNameField(),
+                _logoPicker(),
 
                 _sectionHeader('Informasi yang Ditampilkan'),
                 _toggle('Koordinat GPS', _showCoordinates,
@@ -288,7 +300,120 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _cacheInfo() {
+  Widget _appNameField() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.badge_outlined, color: Color(0xFF3A4570), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextFormField(
+              initialValue: _appName,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: const InputDecoration(
+                labelText: 'Nama pada Watermark',
+                labelStyle: TextStyle(color: Color(0xFF3A4570), fontSize: 13),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              maxLength: 30,
+              buildCounter: (_, {required currentLength, required isFocused, maxLength}) =>
+                  Text('$currentLength/$maxLength',
+                      style: const TextStyle(color: Color(0xFF3A4570), fontSize: 11)),
+              onChanged: (v) => setState(() => _appName = v.trim().isEmpty ? 'TermulLog' : v),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _logoPicker() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1325),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.image_outlined, color: Color(0xFF3A4570), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Logo Watermark',
+                    style: TextStyle(color: Colors.white, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text(
+                  _customLogoBytes != null
+                      ? 'Logo custom terpasang'
+                      : 'Menggunakan logo default',
+                  style: const TextStyle(color: Color(0xFF3A4570), fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          if (_customLogoBytes != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.memory(_customLogoBytes!, width: 48, height: 32, fit: BoxFit.cover),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Color(0xFFE63946), size: 20),
+              onPressed: () => setState(() => _customLogoBytes = null),
+              tooltip: 'Hapus logo',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+            const SizedBox(width: 4),
+          ],
+          TextButton.icon(
+            onPressed: _pickLogo,
+            icon: const Icon(Icons.upload_outlined, size: 16),
+            label: Text(_customLogoBytes != null ? 'Ganti' : 'Pilih'),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF1E90FF),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickLogo() async {
+    try {
+      final picker = ImagePicker();
+      final XFile? file = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 400,
+        maxHeight: 200,
+        imageQuality: 90,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      setState(() => _customLogoBytes = bytes);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memilih logo: $e')),
+        );
+      }
+    }
+  }
+
+    Widget _cacheInfo() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       decoration: BoxDecoration(

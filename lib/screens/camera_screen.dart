@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -90,6 +91,7 @@ class _CameraScreenState extends State<CameraScreen>
   String _fontSize = 'normal';
   String _appName = 'TermulLog';
   Uint8List? _customLogoBytes;
+  ui.Image? _customLogoImage; // decoded for live preview
   String _dateFormat = 'dd/MM/yyyy';
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
@@ -404,7 +406,20 @@ class _CameraScreenState extends State<CameraScreen>
       SettingsCache.fontSize.then((v) =>
           _fontSize = v <= 13 ? 'small' : v >= 20 ? 'large' : 'normal'),
       SettingsCache.appName.then((v) => _appName = v),
-      SettingsCache.getCustomLogoBytes().then((v) => _customLogoBytes = v),
+      SettingsCache.getCustomLogoBytes().then((v) async {
+        _customLogoBytes = v;
+        if (v != null) {
+          try {
+            final codec = await ui.instantiateImageCodec(v);
+            final frame = await codec.getNextFrame();
+            _customLogoImage = frame.image;
+          } catch (_) {
+            _customLogoImage = null;
+          }
+        } else {
+          _customLogoImage = null;
+        }
+      }),
     ]);
     if (mounted) setState(() {});
   }
@@ -497,6 +512,12 @@ class _CameraScreenState extends State<CameraScreen>
               opacity: _opacity,
               showBorder: _showBorder,
               layout: _layout,
+              appName: _appName,
+              showLogo: true,
+              logoType: _customLogoBytes != null ? 'custom' : null,
+              customLogo: _customLogoImage,
+              timeFormat: _timeFormat,
+              fontScale: _fontSize == 'small' ? 0.8 : _fontSize == 'large' ? 1.2 : 1.0,
             ),
           ),
           if (_isMapLoading)
@@ -515,6 +536,7 @@ class _CameraScreenState extends State<CameraScreen>
               lockProgress: _gps.lockProgress,
               fromCache: _gps.fromCache,
               addressLoading: _gps.addressLoading,
+              isFallbackLock: _gps.isFallbackLock,
             ),
           ),
           if (_gps.address.isNotEmpty && _showAddress)

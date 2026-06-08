@@ -5,7 +5,9 @@
 // - Whitelist validation untuk setiap value yang dibaca
 // - Kompatibel dengan camera_screen.dart v9
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../models/watermark_position.dart';
@@ -46,8 +48,9 @@ class SettingsCache {
     'showMiniMap', 'mapSize', 'mapZoomLevel', 'showAddress', 'showCoordinates',
     'opacity', 'showBorder', 'fontSize', 'layout', 'showWeather', 'showAccuracy',
     'dateFormat', 'timeFormat', 'themeMode', 'imageQuality', 'keepScreenOn',
-    'useHighAccuracy', 'autoSave', 'watermark_position', 'appName', 'customLogoBytes',
+    'useHighAccuracy', 'autoSave', 'watermark_position', 'appName',
     // Legacy keys (migration cleanup)
+    'customLogoBytes', // migrated to file system
     'show_mini_map', 'map_size', 'map_zoom_level', 'show_address', 'show_coordinates',
     'show_weather', 'show_accuracy', 'date_format', 'time_format', 'theme_mode',
     'font_size', 'show_border', 'keep_screen_on', 'auto_save', 'image_quality',
@@ -207,27 +210,59 @@ class SettingsCache {
     await _prefs!.setString('appName', trimmed);
   }
 
+  static Future<String> _logoFilePath() async {
+    final dir = await getApplicationSupportDirectory();
+    return '${dir.path}/custom_logo.png';
+  }
+
   static Future<Uint8List?> getCustomLogoBytes() async {
     await preload();
     if (_customLogoBytes != null) return _customLogoBytes;
+
+    // Migrate old base64-in-SharedPreferences (one-time)
     final b64 = _prefs!.getString('customLogoBytes');
-    if (b64 == null || b64.isEmpty) return null;
-    try {
-      _customLogoBytes = base64Decode(b64);
-      return _customLogoBytes;
-    } catch (_) {
-      return null;
+    if (b64 != null && b64.isNotEmpty) {
+      try {
+        final bytes = base64Decode(b64);
+        await _writeLogo(bytes);        // write to file
+        await _prefs!.remove('customLogoBytes'); // remove from prefs
+        _customLogoBytes = bytes;
+        return _customLogoBytes;
+      } catch (_) {
+        await _prefs!.remove('customLogoBytes');
+      }
     }
+
+    // Normal path: read from file
+    try {
+      final path = await _logoFilePath();
+      final file = File(path);
+      if (await file.exists()) {
+        _customLogoBytes = await file.readAsBytes();
+        return _customLogoBytes;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> _writeLogo(Uint8List bytes) async {
+    final path = await _logoFilePath();
+    await File(path).writeAsBytes(bytes, flush: true);
   }
 
   static Future<void> setCustomLogoBytes(Uint8List? bytes) async {
     await preload();
     _customLogoBytes = bytes;
-    if (bytes == null) {
-      await _prefs!.remove('customLogoBytes');
-    } else {
-      await _prefs!.setString('customLogoBytes', base64Encode(bytes));
-    }
+    try {
+      final path = await _logoFilePath();
+      if (bytes == null) {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+        await _prefs!.remove('customLogoBytes'); // clean legacy key too
+      } else {
+        await _writeLogo(bytes);
+      }
+    } catch (_) {}
   }
 
     // ==========================================================================

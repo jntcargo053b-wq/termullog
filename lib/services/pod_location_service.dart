@@ -34,6 +34,7 @@ class PodLocationState {
   final bool fromCache;
   final double lockProgress;
   final bool isFastAddress;
+  final bool isFallbackLock;
 
   const PodLocationState({
     this.lat,
@@ -47,6 +48,7 @@ class PodLocationState {
     this.fromCache = false,
     this.lockProgress = 0.0,
     this.isFastAddress = false,
+    this.isFallbackLock = false,
   });
 
   PodLocationState copyWith({
@@ -61,6 +63,7 @@ class PodLocationState {
     bool? fromCache,
     double? lockProgress,
     bool? isFastAddress,
+    bool? isFallbackLock,
   }) => PodLocationState(
     lat: lat ?? this.lat,
     lon: lon ?? this.lon,
@@ -73,6 +76,7 @@ class PodLocationState {
     fromCache: fromCache ?? this.fromCache,
     lockProgress: lockProgress ?? this.lockProgress,
     isFastAddress: isFastAddress ?? this.isFastAddress,
+    isFallbackLock: isFallbackLock ?? this.isFallbackLock,
   );
 }
 
@@ -226,12 +230,13 @@ class PodLocationService {
     final acc = lock?.accuracy    ?? raw.accuracy;
 
     _emit(currentState.copyWith(
-      lat:          lat,
-      lon:          lon,
-      accuracy:     acc,
-      confidence:   conf,
-      lockResult:   lock,
-      lockProgress: progress,
+      lat:            lat,
+      lon:            lon,
+      accuracy:       acc,
+      confidence:     conf,
+      lockResult:     lock,
+      lockProgress:   progress,
+      isFallbackLock: _gpsEngine.isFallbackLock,
     ));
 
     // Switch distanceFilter ke 5m setelah locked

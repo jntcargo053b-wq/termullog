@@ -19,6 +19,7 @@ class PodGpsBar extends StatelessWidget {
   final double lockProgress;
   final bool fromCache;
   final bool addressLoading;
+  final bool isFallbackLock;
 
   const PodGpsBar({
     super.key,
@@ -27,6 +28,7 @@ class PodGpsBar extends StatelessWidget {
     this.lockProgress = 0.0,
     this.fromCache = false,
     this.addressLoading = false,
+    this.isFallbackLock = false,
   });
 
   @override
@@ -67,6 +69,10 @@ class PodGpsBar extends StatelessWidget {
                   if (confidence == PodConfidence.excellent) ...[
                     const SizedBox(width: 5),
                     _Badge(label: 'LOCKED', color: const Color(0xFF3CB86A)),
+                  ],
+                  if (isFallbackLock) ...[
+                    const SizedBox(width: 5),
+                    _Badge(label: '⚠ FALLBACK', color: const Color(0xFFFF6B35)),
                   ],
                   if (fromCache) ...[
                     const SizedBox(width: 5),

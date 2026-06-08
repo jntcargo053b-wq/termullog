@@ -137,13 +137,17 @@ class PodGpsEngine {
   bool    _posInit = false;
   bool    _locked  = false;
 
+  // ── State ───────────────────────────────────────────────────
+  bool _isFallbackLock = false;
+
   // ── Public getters ──────────────────────────────────────────
-  PodConfidence  get confidence  => _confidence;
-  PodLockResult? get lockResult  => _lockResult;
-  bool           get canCapture  => _confidence.canCapture;
-  bool           get isLocked    => _locked;
-  int            get sampleCount => _window.length;
-  int            get samplesNeeded => _targetSamples;
+  PodConfidence  get confidence      => _confidence;
+  PodLockResult? get lockResult      => _lockResult;
+  bool           get canCapture      => _confidence.canCapture;
+  bool           get isLocked        => _locked;
+  bool           get isFallbackLock  => _isFallbackLock;
+  int            get sampleCount     => _window.length;
+  int            get samplesNeeded   => _targetSamples;
 
   double get lockProgress {
     if (_window.isEmpty) return 0.0;
@@ -222,9 +226,10 @@ class PodGpsEngine {
 
     _confidence = PodConfidence.good;
     _locked = true;
+    _isFallbackLock = true;
     _lockResult = _buildResult(0.6);
     if (kDebugMode) {
-      debugPrint('PodGpsEngine: force lock acc=${best.accuracy.toStringAsFixed(1)}m');
+      debugPrint('PodGpsEngine: force lock acc=${best.accuracy.toStringAsFixed(1)}m [FALLBACK]');
     }
   }
 
@@ -325,6 +330,7 @@ class PodGpsEngine {
   // ── Soft unlock ─────────────────────────────────────────────
   void _softUnlock() {
     _locked = false;
+    _isFallbackLock = false;
     _confidence = PodConfidence.fair;
     _lockResult = null;
     // Simpan 3 sample terakhir
@@ -339,6 +345,7 @@ class PodGpsEngine {
     _window.clear();
     _lockResult = null;
     _locked = false;
+    _isFallbackLock = false;
     _confidence = PodConfidence.searching;
     _posInit = false;
     _timeoutTimer?.cancel();

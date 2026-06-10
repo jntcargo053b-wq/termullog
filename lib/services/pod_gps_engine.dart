@@ -5,9 +5,10 @@
 // Spec:
 //   accuracy threshold : 20m
 //   hard timeout       : 10 detik
-//   target samples     : 5
+//   target samples     : 3 (fast lock), max 8 untuk refine
+//   fast path          : 1 sample ≤5m → excellent langsung
 //   provider           : fused
-//   startup            : lastKnownPosition
+//   startup            : lastKnownPosition (OS cache + SharedPrefs)
 //   distanceFilter     : 0 saat acquiring, 5 setelah locked
 // ============================================================
 
@@ -114,7 +115,8 @@ class PodGpsEngine {
 
   // ── Tuning ──────────────────────────────────────────────────
   static const double _accuracyThreshold  = 20.0;  // terima sample ≤ 20m
-  static const int    _targetSamples      = 5;     // 5 sample → locked
+  static const double _fastPathAccuracy   = 5.0;   // 1 sample ≤5m → excellent langsung
+  static const int    _targetSamples      = 3;     // 3 sample → locked (lebih cepat)
   static const int    _maxWindow          = 10;    // simpan max 10 sample
   static const Duration _hardTimeout      = Duration(seconds: 10);
 
@@ -245,13 +247,19 @@ class PodGpsEngine {
 
     PodConfidence newConf;
 
-    if (n >= _targetSamples && avgAcc <= 10.0) {
+    // Fast path: 1 sample dengan akurasi sangat baik → langsung excellent
+    if (n >= 1 && avgAcc <= _fastPathAccuracy) {
+      newConf = PodConfidence.excellent;
+      _locked = true;
+      _isFallbackLock = false;
+    } else if (n >= _targetSamples && avgAcc <= 10.0) {
       newConf = PodConfidence.excellent;
       _locked = true;
     } else if (n >= _targetSamples && avgAcc <= _accuracyThreshold) {
       newConf = PodConfidence.good;
       _locked = true;
-    } else if (n >= 2 && avgAcc <= _accuracyThreshold) {
+    } else if (n >= 1 && avgAcc <= _accuracyThreshold) {
+      // fair lebih inklusif: 1 sample sudah cukup untuk preview
       newConf = PodConfidence.fair;
     } else {
       newConf = PodConfidence.poor;
@@ -362,7 +370,11 @@ class PodGpsEngine {
   }
 
   // ── Haversine ───────────────────────────────────────────────
-  static double _haversine(double lat1, double lon1, double lat2, double lon2) {
+  static double _haversine(double lat1, double lon1, double lat2, double lon2) =>
+      haversinePublic(lat1, lon1, lat2, lon2);
+
+  /// Public version untuk dipakai service (movement detection geocode re-trigger)
+  static double haversinePublic(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371000.0;
     final dLat = (lat2 - lat1) * pi / 180.0;
     final dLon = (lon2 - lon1) * pi / 180.0;

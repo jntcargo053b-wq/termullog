@@ -545,7 +545,7 @@ class _CameraScreenState extends State<CameraScreen>
               fromCache: _gps.fromCache,
               addressLoading: _gps.addressLoading,
               isFallbackLock: _gps.isFallbackLock,
-              mode: PodLocationService.instance.mode, // tambahkan mode
+              // Parameter mode dihapus karena tidak digunakan di PodGpsBar versi saat ini
             ),
           ),
           if (_gps.address.isNotEmpty && _showAddress)

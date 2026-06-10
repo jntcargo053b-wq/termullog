@@ -1,7 +1,7 @@
 // lib/screens/camera_screen.dart
 // ============================================================
 // CAMERA SCREEN — POD (Proof of Delivery) Edition
-// (dengan isolate aktif untuk resize gambar)
+// dengan on‑demand GPS lifecycle
 // ============================================================
 
 import 'dart:async';
@@ -91,7 +91,7 @@ class _CameraScreenState extends State<CameraScreen>
   String _fontSize = 'normal';
   String _appName = 'TermulLog';
   Uint8List? _customLogoBytes;
-  ui.Image? _customLogoImage; // decoded for live preview
+  ui.Image? _customLogoImage;
   String _dateFormat = 'dd/MM/yyyy';
   String _timeFormat = 'HH:mm:ss';
   int _mapZoomLevel = 15;
@@ -121,7 +121,8 @@ class _CameraScreenState extends State<CameraScreen>
     ]);
     _startClock();
     _subscribeGps();
-    // GPS sudah start dari main.dart
+    // Mulai acquire GPS saat kamera dibuka (on‑demand)
+    unawaited(PodLocationService.instance.acquireForCapture());
   }
 
   void _subscribeGps() {
@@ -137,6 +138,8 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isCameraInit) return;
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
+      // App ke background → stop GPS stream
+      PodLocationService.instance.releaseAfterCapture();
       await _controller?.dispose();
       if (mounted && _controller != null) {
         _controller = null;
@@ -145,7 +148,8 @@ class _CameraScreenState extends State<CameraScreen>
     } else if (state == AppLifecycleState.resumed) {
       await _initCamera();
       await _reloadSettings();
-      await PodLocationService.instance.restart();
+      // Re‑acquire GPS saat kembali ke foreground
+      unawaited(PodLocationService.instance.acquireForCapture());
     }
   }
 
@@ -155,6 +159,8 @@ class _CameraScreenState extends State<CameraScreen>
     _clockTimer?.cancel();
     _gpsSub?.cancel();
     _controller?.dispose();
+    // Pastikan GPS stream berhenti saat screen di-dispose
+    PodLocationService.instance.releaseAfterCapture();
     super.dispose();
   }
 
@@ -281,7 +287,7 @@ class _CameraScreenState extends State<CameraScreen>
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
-      // 🔄 RESIZE MENGGUNAKAN ISOLATE (aktif kembali)
+      // Resize menggunakan isolate
       Uint8List finalBytes;
       try {
         finalBytes = await compute(_resizeImageIsolate, _ResizeParams(rawBytes, imageQuality));
@@ -350,6 +356,8 @@ class _CameraScreenState extends State<CameraScreen>
       _snack('Gagal: ${e.toString().split('\n').first}', Colors.red);
     } finally {
       if (mounted) setState(() => _isCapturing = false);
+      // Hentikan GPS stream setelah selesai capture
+      PodLocationService.instance.releaseAfterCapture();
     }
   }
 
@@ -537,6 +545,7 @@ class _CameraScreenState extends State<CameraScreen>
               fromCache: _gps.fromCache,
               addressLoading: _gps.addressLoading,
               isFallbackLock: _gps.isFallbackLock,
+              mode: PodLocationService.instance.mode, // tambahkan mode
             ),
           ),
           if (_gps.address.isNotEmpty && _showAddress)

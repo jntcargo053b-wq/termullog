@@ -114,11 +114,12 @@ class PodLockResult {
 class PodGpsEngine {
 
   // ── Tuning ──────────────────────────────────────────────────
-  static const double _accuracyThreshold  = 20.0;  // terima sample ≤ 20m
-  static const double _fastPathAccuracy   = 5.0;   // 1 sample ≤5m → excellent langsung
+  static const double _accuracyThreshold  = 25.0;  // terima sample ≤ 25m (urban Indonesia)
+  static const double _fastPathAccuracy   = 6.0;   // 1 sample ≤6m → excellent langsung
+  static const double _excellentThreshold = 12.0;  // 3 sample ≤12m → excellent
   static const int    _targetSamples      = 3;     // 3 sample → locked (lebih cepat)
   static const int    _maxWindow          = 10;    // simpan max 10 sample
-  static const Duration _hardTimeout      = Duration(seconds: 10);
+  static const Duration _hardTimeout      = Duration(seconds: 12);
 
   // distanceFilter: 0 saat acquiring, 5 setelah locked
   // (diatur oleh pod_location_service saat subscribe stream)
@@ -126,8 +127,8 @@ class PodGpsEngine {
   static const double distanceFilterLocked     = 5.0;
 
   // Movement detection
-  static const double _moveThreshold  = 15.0;  // soft unlock
-  static const double _resetThreshold = 30.0;  // hard reset
+  static const double _moveThreshold  = 20.0;  // soft unlock
+  static const double _resetThreshold = 50.0;  // hard reset
 
   // ── State ───────────────────────────────────────────────────
   final List<PodSample> _window = [];
@@ -252,7 +253,7 @@ class PodGpsEngine {
       newConf = PodConfidence.excellent;
       _locked = true;
       _isFallbackLock = false;
-    } else if (n >= _targetSamples && avgAcc <= 10.0) {
+    } else if (n >= _targetSamples && avgAcc <= _excellentThreshold) {
       newConf = PodConfidence.excellent;
       _locked = true;
     } else if (n >= _targetSamples && avgAcc <= _accuracyThreshold) {

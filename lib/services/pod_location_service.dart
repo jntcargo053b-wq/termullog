@@ -125,13 +125,13 @@ class PodLocationService {
   Timer? _acquireTimeout;   // paksa stop acquire jika terlalu lama
 
   // ── Config ───────────────────────────────────────────────────
-  static const Duration _staleAfter      = Duration(minutes: 5);
-  static const Duration _acquireDeadline = Duration(seconds: 15);
+  static const Duration _staleAfter      = Duration(minutes: 10);
+  static const Duration _acquireDeadline = Duration(seconds: 14);
   static const String   _prefLat         = 'last_known_lat';
   static const String   _prefLon         = 'last_known_lon';
   static const String   _prefAddress     = 'last_known_address';
   static const int      _gridRes         = 10000;   // ~10m grid
-  static const double   _geocodeMoveM    = 50.0;    // re-geocode jika bergerak >50m
+  static const double   _geocodeMoveM    = 80.0;    // re-geocode jika bergerak >80m
   static const Duration _weatherMaxAge   = Duration(minutes: 15);
 
   // ── State ───────────────────────────────────────────────────

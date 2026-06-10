@@ -68,7 +68,7 @@ class PodAddressResolver {
   
   // ── Nearby cache (radius 8m, TTL 10 menit) ───────────────
   static final List<_NearbyEntry> _nearbyCache = [];
-  static const double _nearbyCacheRadius = 8.0;  // meter
+  static const double _nearbyCacheRadius = 20.0;  // meter (komplek/gudang)
   static const Duration _nearbyTtl = Duration(minutes: 10);
   static const int _nearbyCacheMax = 50;
   
@@ -182,7 +182,7 @@ class PodAddressResolver {
     final lonS = lon.toStringAsFixed(7);
     
     // Nominatim: coba zoom 18 → 16 → 14
-    for (final zoom in [18, 16, 14]) {
+    for (final zoom in [18, 16, 14, 12]) {
       try {
         final r = await _nominatim(latS, lonS, zoom: zoom);
         if (r.isNotEmpty) {

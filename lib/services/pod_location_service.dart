@@ -2,10 +2,12 @@
 // ============================================================
 // POD LOCATION SERVICE
 // ============================================================
-// - startup: lastKnownPosition dari SharedPreferences
+// - startup: lastKnownPosition (OS cache via getLastKnownPosition)
+//            + SharedPreferences (koordinat + alamat sesi sebelumnya)
+// - geocode: prefetch saat startup dari last known (paralel)
+//            update hanya jika posisi bergerak > _geocodeMoveTreshold
 // - distanceFilter: 0 saat acquiring, 5 setelah locked
-// - geocode: satu kali saat confidence pertama canCapture
-// - weather: update saat lock, lalu tiap 15 menit
+// - weather: fetch paralel dari last known saat startup
 // ============================================================
 
 import 'dart:async';
@@ -109,6 +111,8 @@ class PodLocationService {
   static const String   _prefLon            = 'last_known_lon';
   static const String   _prefAddress        = 'last_known_address';
   static const int      _gridRes            = 10000; // ~10m grid
+  // Geocode ulang hanya jika posisi bergerak lebih dari ini dari last geocode
+  static const double   _geocodeMoveTreshold = 50.0; // meter
 
   // Cache geocode (grid-key → address)
   final Map<String, String> _geocodeCache = {};
@@ -119,6 +123,10 @@ class PodLocationService {
   bool _geocodeDone     = false;    // satu kali geocode per session
   bool _locked          = false;    // sudah switch ke distanceFilter 5
   DateTime? _lastWeather;
+
+  // Posisi terakhir saat geocode dilakukan — untuk deteksi pergerakan
+  double? _lastGeocodeLat;
+  double? _lastGeocodeLon;
 
   // ── Public ──────────────────────────────────────────────────
 
@@ -140,6 +148,12 @@ class PodLocationService {
 
       await _startStream(locked: false); // mulai dengan distanceFilter 0
       _startWeatherTimer();
+
+      // Fetch weather paralel dari last known tanpa tunggu GPS lock
+      final s = currentState;
+      if (s.lat != null && s.lon != null) {
+        unawaited(_updateWeather(s.lat!, s.lon!));
+      }
 
       if (kDebugMode) debugPrint('PodLocationService: started');
     } catch (e) {
@@ -163,8 +177,10 @@ class PodLocationService {
   Future<void> restart() async {
     await stop();
     _gpsEngine.reset();
-    _geocodeDone = false;
-    _locked      = false;
+    _geocodeDone    = false;
+    _locked         = false;
+    _lastGeocodeLat = null;
+    _lastGeocodeLon = null;
     await start();
   }
 
@@ -185,6 +201,34 @@ class PodLocationService {
 
   Future<void> _startStream({required bool locked}) async {
     await _positionStream?.cancel();
+
+    // Inject OS cached position sebelum stream dimulai (hanya saat acquiring)
+    if (!locked) {
+      try {
+        final osLast = await Geolocator.getLastKnownPosition();
+        if (osLast != null && !osLast.isMocked) {
+          _gpsEngine.processSample(osLast);
+          final conf     = _gpsEngine.confidence;
+          final lock     = _gpsEngine.lockResult;
+          final progress = _gpsEngine.lockProgress;
+          _emit(currentState.copyWith(
+            lat:          osLast.latitude,
+            lon:          osLast.longitude,
+            accuracy:     osLast.accuracy,
+            confidence:   conf,
+            lockResult:   lock,
+            lockProgress: progress,
+            isFallbackLock: _gpsEngine.isFallbackLock,
+          ));
+          if (kDebugMode) {
+            debugPrint('PodLocationService: OS lastKnown injected '
+                'acc=${osLast.accuracy.toStringAsFixed(1)}m conf=$conf');
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('PodLocationService: getLastKnownPosition error $e');
+      }
+    }
 
     final settings = AndroidSettings(
       accuracy: LocationAccuracy.high,
@@ -245,9 +289,16 @@ class PodLocationService {
       await _startStream(locked: true);
     }
 
-    // Geocode: satu kali saat pertama canCapture
-    if (!_geocodeDone && conf.canCapture) {
+    // Geocode: saat pertama canCapture ATAU jika posisi bergerak > _geocodeMoveTreshold
+    final shouldReocode = _geocodeDone &&
+        _lastGeocodeLat != null &&
+        _lastGeocodeLon != null &&
+        PodGpsEngine.haversinePublic(_lastGeocodeLat!, _lastGeocodeLon!, lat, lon) > _geocodeMoveTreshold;
+
+    if ((!_geocodeDone && conf.canCapture) || shouldReocode) {
       _geocodeDone = true;
+      _lastGeocodeLat = lat;
+      _lastGeocodeLon = lon;
       await _geocode(lat, lon);
     }
 
@@ -342,6 +393,15 @@ class PodLocationService {
           fromCache:    true,
           isFastAddress: true,
         ));
+
+        // Prefill geocode cache supaya tidak re-query Nominatim untuk posisi yang sama
+        final key = _gridKey(lat, lon);
+        _geocodeCache[key] = address;
+        // Anggap geocode sudah done; akan di-update hanya jika posisi bergerak > 50m
+        _geocodeDone       = true;
+        _lastGeocodeLat    = lat;
+        _lastGeocodeLon    = lon;
+
         if (kDebugMode) debugPrint('PodLocationService: loaded last known → $address');
       }
     } catch (e) {

@@ -29,6 +29,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'pod_gps_engine.dart';
 import 'pod_address_resolver.dart';
 import 'weather_service.dart';
+import '../models/resolved_location.dart';
 
 export 'pod_gps_engine.dart' show PodConfidence, PodConfidenceLabel, PodLockResult;
 
@@ -55,6 +56,7 @@ class PodLocationState {
   final bool isFastAddress;
   final bool isFallbackLock;
   final PodGpsMode mode;
+  final ResolvedLocation? resolvedLocation;
 
   const PodLocationState({
     this.lat,
@@ -70,6 +72,7 @@ class PodLocationState {
     this.isFastAddress = false,
     this.isFallbackLock = false,
     this.mode = PodGpsMode.idle,
+    this.resolvedLocation,
   });
 
   PodLocationState copyWith({
@@ -86,6 +89,7 @@ class PodLocationState {
     bool? isFastAddress,
     bool? isFallbackLock,
     PodGpsMode? mode,
+    ResolvedLocation? resolvedLocation,
   }) => PodLocationState(
     lat:            lat            ?? this.lat,
     lon:            lon            ?? this.lon,
@@ -100,6 +104,7 @@ class PodLocationState {
     isFastAddress:  isFastAddress  ?? this.isFastAddress,
     isFallbackLock: isFallbackLock ?? this.isFallbackLock,
     mode:           mode           ?? this.mode,
+    resolvedLocation: resolvedLocation ?? this.resolvedLocation,
   );
 
   bool get hasPosition => lat != null && lon != null;
@@ -388,8 +393,9 @@ class PodLocationService {
 
     _emit(currentState.copyWith(addressLoading: true));
     try {
-      final address = await PodAddressResolver.resolve(lat, lon);
-      if (address.isNotEmpty && !address.contains('GPS:')) {
+      final resolved = await PodAddressResolver.resolveDetailed(lat, lon);
+      final address = resolved.display;
+      if (address.isNotEmpty && !resolved.isDmsFallback) {
         _geocodeCache[key] = address;
         if (_geocodeCache.length > _maxCache) {
           final remove = _geocodeCache.keys.take(50).toList();
@@ -399,6 +405,7 @@ class PodLocationService {
       }
       _emit(currentState.copyWith(
         address:        address,
+        resolvedLocation: resolved,
         fromCache:      false,
         addressLoading: false,
         isFastAddress:  false,

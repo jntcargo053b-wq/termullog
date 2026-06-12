@@ -4,9 +4,11 @@
 // ============================================================
 // Strategi:
 //   1. Nominatim (OSM) — primary, level jalan + RT/RW/kel/kec/kota
-//   2. Photon (Komoot) — fallback 1
-//   3. Android Geocoder — fallback 2
-//   4. Koordinat DMS    — last resort (tidak pernah kosong)
+//      + namedetails untuk POI di titik tersebut
+//   2. Overpass (OSM)  — POI radius 30m jika Nominatim tanpa nama POI
+//   3. Photon (Komoot) — fallback 1
+//   4. Android Geocoder — fallback 2
+//   5. Koordinat DMS    — last resort (tidak pernah kosong)
 //
 // Fitur khusus POD:
 //   - Multi-query Nominatim dengan zoom berurutan (18→16→14) agar
@@ -18,6 +20,12 @@
 //   - Cross-session persistence via SharedPreferences (20 entri).
 //   - Grid cache tambahan untuk efisiensi (10m x 10m).
 //   - User-Agent compliance untuk semua HTTP requests.
+//
+// resolveDetailed() mengembalikan ResolvedLocation dengan:
+//   - primaryLabel : nama POI (jika ditemukan via Nominatim name
+//                    atau Overpass radius 30m)
+//   - addressLine  : alamat jalan + admin area
+//   - suggestions  : kandidat label lain (POI lain, admin area)
 // ============================================================
 
 import 'dart:collection';
@@ -28,6 +36,8 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
+
+import '../models/resolved_location.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ── Cache Entry dengan TTL ───────────────────────────────────
@@ -79,6 +89,16 @@ class PodAddressResolver {
   // ── Rate limiting Photon ─────────────────────────────────
   static DateTime _lastPhoton = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _photonInterval = Duration(milliseconds: 500);
+
+  // ── Rate limiting Overpass ───────────────────────────────
+  static DateTime _lastOverpass = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _overpassInterval = Duration(milliseconds: 800);
+  static const double _overpassRadiusMeters = 30.0;
+
+  // ── ResolvedLocation cache (in-memory, per-session) ──────
+  static final LinkedHashMap<String, ResolvedLocation> _resolvedCache =
+      LinkedHashMap();
+  static const int _resolvedCacheMax = 100;
   
   // ── Cross-session persistence ─────────────────────────────
   static const String _prefKey = 'pod_address_cache_v3';
@@ -372,6 +392,243 @@ class PodAddressResolver {
         .toList();
     return parts.isEmpty ? '' : parts.join(', ');
   }
+
+  // ════════════════════════════════════════════════════════
+  // DETAILED RESOLUTION — ResolvedLocation (primaryLabel + suggestions)
+  // ════════════════════════════════════════════════════════
+  //
+  //   GPS Lock
+  //     ↓
+  //   Nominatim (zoom 18, namedetails=1)
+  //     ↓
+  //   name tersedia & bukan admin-area?
+  //     ├─ Ya  → primaryLabel = name
+  //     └─ Tidak → Overpass radius 30m → POI terdekat
+  //                 ├─ ada → primaryLabel = POI.name
+  //                 └─ tidak ada → primaryLabel = null
+  //     ↓
+  //   addressLine = hasil _fetchWithFallback (chain lama, sudah teruji)
+  //   suggestions = [POI overpass lainnya..., addressLine sbg 'address']
+  //
+  /// Resolves with full detail: primary POI label + address + suggestions.
+  /// Falls back to plain address (via [resolve]) if POI lookups fail —
+  /// never throws, never returns an empty addressLine.
+  static Future<ResolvedLocation> resolveDetailed(double lat, double lon) async {
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return ResolvedLocation.dms(_toDMS(lat, lon));
+    }
+
+    // Cache check (in-memory, session-only — POI data changes rarely
+    // but we don't want to persist it across sessions like address cache)
+    final cacheKey = _gridKey(lat, lon);
+    final cached = _resolvedCache[cacheKey];
+    if (cached != null) {
+      if (kDebugMode) debugPrint('PodAddressResolver: resolvedCache hit → ${cached.display}');
+      return cached;
+    }
+
+    // 1. Alamat jalan (reuse existing battle-tested chain)
+    final addressLine = await resolve(lat, lon);
+
+    // 2. Coba dapatkan nama POI dari Nominatim namedetails
+    final latS = lat.toStringAsFixed(7);
+    final lonS = lon.toStringAsFixed(7);
+    String? poiName;
+    try {
+      poiName = await _nominatimPoiName(latS, lonS);
+    } catch (e) {
+      if (kDebugMode) debugPrint('PodAddressResolver: nominatimPoiName error → $e');
+    }
+
+    // 3. Jika Nominatim tidak punya nama POI yang relevan, coba Overpass
+    final suggestions = <LocationSuggestion>[];
+    if (poiName == null) {
+      try {
+        final pois = await _overpassNearbyPois(lat, lon);
+        if (pois.isNotEmpty) {
+          poiName = pois.first.label;
+          suggestions.addAll(pois);
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('PodAddressResolver: overpass error → $e');
+      }
+    } else {
+      suggestions.add(LocationSuggestion(label: poiName, source: 'poi'));
+    }
+
+    // 4. Tambahkan addressLine sebagai suggestion 'address'
+    if (addressLine.isNotEmpty && !addressLine.contains('GPS:')) {
+      suggestions.add(LocationSuggestion(label: addressLine, source: 'address'));
+    }
+
+    final result = ResolvedLocation(
+      primaryLabel: poiName,
+      addressLine: addressLine.isNotEmpty ? addressLine : _toDMS(lat, lon),
+      suggestions: _dedupSuggestions(suggestions),
+    );
+
+    if (!result.isDmsFallback) {
+      _resolvedCache[cacheKey] = result;
+      if (_resolvedCache.length > _resolvedCacheMax) {
+        final keysToRemove = _resolvedCache.keys.take(20).toList();
+        for (final k in keysToRemove) {
+          _resolvedCache.remove(k);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  static List<LocationSuggestion> _dedupSuggestions(List<LocationSuggestion> input) {
+    final seen = <String>{};
+    final out = <LocationSuggestion>[];
+    for (final s in input) {
+      final key = s.label.trim().toLowerCase();
+      if (key.isEmpty || seen.contains(key)) continue;
+      seen.add(key);
+      out.add(s);
+    }
+    return out;
+  }
+
+  // ── Nominatim: ambil nama POI (namedetails) di titik ini ────
+  // Mengembalikan null jika tidak ada nama, atau nama tersebut
+  // adalah area administratif (kelurahan/kecamatan/kota/dll) —
+  // karena itu sudah tercakup di addressLine.
+  static Future<String?> _nominatimPoiName(String lat, String lon) async {
+    return await _withClient((client) async {
+      // Rate limit (shared dengan _nominatim)
+      final now = DateTime.now();
+      final elapsed = now.difference(_lastNominatim);
+      if (elapsed < _nominatimInterval) {
+        final delay = _nominatimInterval - elapsed;
+        if (delay <= const Duration(seconds: 5)) {
+          await Future.delayed(delay);
+        } else {
+          _lastNominatim = now;
+        }
+      }
+      _lastNominatim = DateTime.now();
+
+      try {
+        final uri = Uri.parse(
+          'https://nominatim.openstreetmap.org/reverse'
+          '?format=jsonv2&lat=$lat&lon=$lon'
+          '&zoom=18&addressdetails=1&namedetails=1&accept-language=id',
+        );
+        final res = await client.get(
+          uri,
+          headers: {
+            'User-Agent': _userAgent,
+            'Accept-Language': 'id,en;q=0.8',
+          },
+        ).timeout(const Duration(seconds: 7));
+
+        if (res.statusCode != 200) return null;
+
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+
+        // 'class' di Nominatim menandakan tipe entitas. Jika class
+        // adalah boundary/place administratif, 'name' adalah nama
+        // wilayah (kelurahan/kecamatan/kota) — sudah ada di
+        // addressLine, jadi bukan kandidat primaryLabel yang baru.
+        final cls = data['class'] as String?;
+        const adminClasses = {'boundary', 'place'};
+        if (cls != null && adminClasses.contains(cls)) return null;
+
+        // Nama dari namedetails (lebih lengkap) atau top-level 'name'
+        final namedetails = data['namedetails'] as Map<String, dynamic>?;
+        String? name = (namedetails?['name'] as String?)?.trim();
+        name ??= (data['name'] as String?)?.trim();
+
+        if (name == null || name.isEmpty) return null;
+        if (_isPlusCode(name)) return null;
+
+        return name;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  // ── Overpass: cari POI bernama dalam radius 30m ──────────────
+  // Mengembalikan list LocationSuggestion sudah sort by distance.
+  static Future<List<LocationSuggestion>> _overpassNearbyPois(
+      double lat, double lon) async {
+    return await _withClient((client) async {
+      // Rate limit
+      final now = DateTime.now();
+      final elapsed = now.difference(_lastOverpass);
+      if (elapsed < _overpassInterval) {
+        await Future.delayed(_overpassInterval - elapsed);
+      }
+      _lastOverpass = DateTime.now();
+
+      final query = '[out:json][timeout:5];'
+          '('
+          'node(around:${_overpassRadiusMeters.toInt()},$lat,$lon)[name]'
+          '[~"^(amenity|shop|office|tourism|leisure|healthcare)\$"~"."];'
+          ');'
+          'out body 6;';
+
+      try {
+        final uri = Uri.parse('https://overpass-api.de/api/interpreter');
+        final res = await client
+            .post(
+              uri,
+              headers: {
+                'User-Agent': _userAgent,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: 'data=${Uri.encodeComponent(query)}',
+            )
+            .timeout(const Duration(seconds: 6));
+
+        if (res.statusCode != 200) return [];
+
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final elements = data['elements'] as List?;
+        if (elements == null || elements.isEmpty) return [];
+
+        final results = <LocationSuggestion>[];
+        for (final el in elements) {
+          final map = el as Map<String, dynamic>;
+          final tags = map['tags'] as Map<String, dynamic>?;
+          final name = (tags?['name'] as String?)?.trim();
+          if (name == null || name.isEmpty || _isPlusCode(name)) continue;
+
+          final elLat = (map['lat'] as num?)?.toDouble();
+          final elLon = (map['lon'] as num?)?.toDouble();
+          double? dist;
+          if (elLat != null && elLon != null) {
+            dist = Geolocator.distanceBetween(lat, lon, elLat, elLon);
+            // Skip jika ternyata > radius (defensive — query sudah filter,
+            // tapi double-check untuk akurasi suggestions)
+            if (dist > _overpassRadiusMeters + 5) continue;
+          }
+
+          results.add(LocationSuggestion(
+            label: name,
+            source: 'poi',
+            distanceMeters: dist,
+          ));
+        }
+
+        // Sort by distance (terdekat dulu); null distance taruh akhir
+        results.sort((a, b) {
+          if (a.distanceMeters == null && b.distanceMeters == null) return 0;
+          if (a.distanceMeters == null) return 1;
+          if (b.distanceMeters == null) return -1;
+          return a.distanceMeters!.compareTo(b.distanceMeters!);
+        });
+
+        return results;
+      } catch (_) {
+        return [];
+      }
+    });
+  }
   
   // ── Photon ────────────────────────────────────────────────
   static Future<String> _photon(String lat, String lon) async {
@@ -587,6 +844,7 @@ class PodAddressResolver {
     _exactCache.clear();
     _gridCache.clear();
     _nearbyCache.clear();
+    _resolvedCache.clear();
     _persistLoaded = false;
     if (kDebugMode) debugPrint('PodAddressResolver: all caches cleared');
   }

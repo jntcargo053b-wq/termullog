@@ -45,16 +45,12 @@ class WatermarkEngine {
       if (params.customLogoBytes != null) {
         customLogo = await _decodeUiImage(params.customLogoBytes!);
       }
-      ui.Image? customBadge;
-      if (params.customBadgeBytes != null) {
-        customBadge = await _decodeUiImage(params.customBadgeBytes!);
-      }
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, W.toDouble(), H.toDouble()));
       canvas.drawImage(uiImage, Offset.zero, Paint());
 
-      _drawReferenceLayout(canvas, W.toDouble(), H.toDouble(), sc, fontScale, params, customLogo, customBadge);
+      _drawReferenceLayout(canvas, W.toDouble(), H.toDouble(), sc, fontScale, params, customLogo);
 
       final picture = recorder.endRecording();
       final uiOut = await picture.toImage(W, H);
@@ -91,10 +87,6 @@ class WatermarkEngine {
       if (params.customLogoBytes != null) {
         customLogo = await _decodeUiImage(params.customLogoBytes!);
       }
-      ui.Image? customBadge;
-      if (params.customBadgeBytes != null) {
-        customBadge = await _decodeUiImage(params.customBadgeBytes!);
-      }
       
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, canvasW, canvasH));
@@ -108,7 +100,7 @@ class WatermarkEngine {
       canvas.save();
       canvas.translate(offsetX, offsetY);
       canvas.scale(scale, scale);
-      _drawReferenceLayout(canvas, originalW, originalH, sc, fontScale, params, customLogo, customBadge);
+      _drawReferenceLayout(canvas, originalW, originalH, sc, fontScale, params, customLogo);
       canvas.restore();
       
       final picture = recorder.endRecording();
@@ -129,7 +121,7 @@ class WatermarkEngine {
   /// Main layout with Deep Blue & Amber Branding and sync with WatermarkParams
   static void _drawReferenceLayout(
     Canvas c, double W, double H, double sc, double fontScale,
-    WatermarkParams p, ui.Image? customLogo, ui.Image? customBadge
+    WatermarkParams p, ui.Image? customLogo
   ) {
     // --- Branding Colors ---
     const Color brandPrimary = Color(0xFF0D47A1); // Deep Blue
@@ -196,14 +188,7 @@ class WatermarkEngine {
 
     // --- Header Section ---
     // A. Badge
-    if (p.badgeType == 'custom' && customBadge != null) {
-      c.drawImageRect(
-        customBadge,
-        Rect.fromLTWH(0, 0, customBadge.width.toDouble(), customBadge.height.toDouble()),
-        Rect.fromLTWH(currentX, currentY, badgeW, badgeH),
-        Paint(),
-      );
-    } else {
+    {
       final RRect badgeRRect = RRect.fromRectAndRadius(
           Rect.fromLTWH(currentX, currentY, badgeW, badgeH), Radius.circular(12 * sc));
       c.drawRRect(badgeRRect, Paint()..color = brandAccent.withOpacity(p.opacity.clamp(0.6, 1.0)));

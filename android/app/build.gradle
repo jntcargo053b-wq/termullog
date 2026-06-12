@@ -13,14 +13,18 @@ if (localPropertiesFile.exists()) {
     }
 }
 
-def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-if (flutterVersionCode == null) {
-    flutterVersionCode = '1'
-}
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
 
-def flutterVersionName = localProperties.getProperty('flutter.versionName')
-if (flutterVersionName == null) {
-    flutterVersionName = '1.0'
+// FIX: Signing config membaca dari environment variable (CI secrets)
+// atau dari key.properties lokal (development).
+// JANGAN commit key.properties ke git — tambahkan ke .gitignore.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withReader('UTF-8') { reader ->
+        keystoreProperties.load(reader)
+    }
 }
 
 android {
@@ -40,6 +44,19 @@ android {
         main.java.srcDirs += 'src/main/kotlin'
     }
 
+    signingConfigs {
+        release {
+            // Prioritas 1: Environment variables (CI/CD GitHub Actions)
+            // Prioritas 2: key.properties file (local development)
+            keyAlias       = System.getenv("KEY_ALIAS")       ?: keystoreProperties['keyAlias']
+            keyPassword    = System.getenv("KEY_PASSWORD")    ?: keystoreProperties['keyPassword']
+            storeFile      = System.getenv("KEYSTORE_PATH") != null
+                ? file(System.getenv("KEYSTORE_PATH"))
+                : (keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null)
+            storePassword  = System.getenv("STORE_PASSWORD")  ?: keystoreProperties['storePassword']
+        }
+    }
+
     defaultConfig {
         applicationId "com.termullog.app"
         minSdk 21
@@ -50,6 +67,13 @@ android {
 
     buildTypes {
         release {
+            // FIX: pakai signingConfig release, bukan debug
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
             signingConfig signingConfigs.debug
         }
     }

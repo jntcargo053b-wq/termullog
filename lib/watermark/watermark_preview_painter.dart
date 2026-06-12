@@ -3,7 +3,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'watermark_layout.dart';
+import '../core/constants.dart';
 
 /// Live preview painter that matches the exact layout of WatermarkEngine.
 /// Restored individual parameters in the constructor for compatibility with camera_screen.dart.

@@ -21,19 +21,18 @@ class WatermarkParams {
   final String appName;
   final bool showMiniMap;
   final Uint8List? mapBytes;
-  final int mapSize;
+  // mapSize sebagai String ('small'|'medium'|'large') — konsisten dengan SettingsCache
+  final String mapSize;
   final int mapZoomLevel;
   final String fontSize;
   final String dateFormat;
   final String timeFormat;
-  
-  // Custom Badge & Logo Support
+
+  // Logo support
   final bool showLogo;
-  final String? logoType; // 'next_van', 'timemark_icon', or 'custom'
+  final String? logoType; // 'timemark_icon' or 'custom'
   final Uint8List? customLogoBytes;
-  final String? badgeType; // 'default' (yellow) or 'custom'
-  final Uint8List? customBadgeBytes;
-  
+
   const WatermarkParams({
     required this.imageBytes,
     required this.timestamp,
@@ -54,7 +53,7 @@ class WatermarkParams {
     required this.appName,
     required this.showMiniMap,
     this.mapBytes,
-    required this.mapSize,
+    this.mapSize = 'medium',
     required this.mapZoomLevel,
     required this.fontSize,
     required this.dateFormat,
@@ -62,7 +61,5 @@ class WatermarkParams {
     this.showLogo = true,
     this.logoType,
     this.customLogoBytes,
-    this.badgeType,
-    this.customBadgeBytes,
   });
 }

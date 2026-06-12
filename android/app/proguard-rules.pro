@@ -1,12 +1,14 @@
-# Flutter
+# ============================================================
+# ProGuard / R8 rules — TermulLog
+# ============================================================
+
+# Flutter embedding
 -keep class io.flutter.app.** { *; }
 -keep class io.flutter.plugin.** { *; }
 -keep class io.flutter.util.** { *; }
 -keep class io.flutter.view.** { *; }
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
-
-# Keep Flutter engine
 -keep class io.flutter.embedding.** { *; }
 -keep class io.flutter.embedding.engine.** { *; }
 
@@ -18,27 +20,29 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
-# Keep application classes
--keep class com.example.termullog.** { *; }
+# FIX: namespace yang benar (com.termullog.app, bukan com.example.termullog)
+-keep class com.termullog.app.** { *; }
 
-# Keep all model classes
--keepclassmembers class * {
-    *** *;
-}
+# Kotlin metadata & coroutines
+-keep class kotlin.** { *; }
+-keep class kotlin.Metadata { *; }
+-dontwarn kotlin.**
+-keepclassmembers class **$WhenMappings { <fields>; }
+-keepclassmembers class kotlin.Metadata { public <methods>; }
 
-# Prevent R8 from removing network-related classes
+# Annotations & signatures (dibutuhkan Gson, Retrofit, dll)
 -keepattributes *Annotation*
 -keepattributes Signature
 -keepattributes InnerClasses
 -keepattributes EnclosingMethod
 -keepattributes Exceptions
 
-# Keep JavaScript interface
+# JavaScript interface
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# Keep serialization
+# Serializable
 -keepclassmembers class * implements java.io.Serializable {
     static final long serialVersionUID;
     private static final java.io.ObjectStreamField[] serialPersistentFields;
@@ -49,16 +53,18 @@
     java.lang.Object readResolve();
 }
 
-# Kotlin
--keep class kotlin.** { *; }
--keep class kotlin.Metadata { *; }
--dontwarn kotlin.**
--keepclassmembers class **$WhenMappings {
-    <fields>;
-}
--keepclassmembers class kotlin.Metadata {
-    public <methods>;
-}
+# FIX: hapus rule `-keepclassmembers class * { *** *; }` yang terlalu luas
+# dan menonaktifkan seluruh obfuscation. Class model spesifik cukup di-keep
+# via annotation atau rule yang lebih sempit di bawah ini.
 
-# Abaikan kelas Play Core yang hilang (tidak digunakan) - perbaikan R8
+# Geolocator
+-keep class com.baseflow.geolocator.** { *; }
+
+# Camera
+-keep class io.flutter.plugins.camera.** { *; }
+
+# Gallery saver
+-keep class com.sharath07.gallery_saver.** { *; }
+
+# Play Core (tidak digunakan — suppress warning R8)
 -dontwarn com.google.android.play.core.**

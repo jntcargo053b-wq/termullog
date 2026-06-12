@@ -22,17 +22,8 @@
         android:maxSdkVersion="32"
         tools:replace="android:maxSdkVersion" />
 
-    <!-- Foreground service for continuous GPS tracking -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Notifications (required for Android 13+) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
     <!-- ==================== FEATURES ==================== -->
 
-    <!-- GPS hardware is mandatory for POD accuracy -->
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="true" />
@@ -82,20 +73,6 @@
             </intent-filter>
 
         </activity>
-
-        <!-- ==================== GPS FOREGROUND SERVICES ==================== -->
-
-        <!-- Geolocator service for Android 12 and below -->
-        <service
-            android:name="com.baseflow.geolocator.GeolocatorService"
-            android:foregroundServiceType="location"
-            android:exported="false" />
-
-        <!-- Geolocator foreground service for Android 14+ -->
-        <service
-            android:name="com.baseflow.geolocator.GeolocatorForegroundService"
-            android:foregroundServiceType="location"
-            android:exported="false" />
 
         <!-- ==================== FILE PROVIDER (for sharing images) ==================== -->
 

@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  FIX: base-config TIDAK lagi mengizinkan cleartext.
+  Semua trafik app default ke HTTPS.
+  HTTP hanya diizinkan untuk domain tile map OSM dan LocationIQ
+  yang memang belum mendukung HTTPS pada endpoint tile mereka.
+-->
 <network-security-config>
 
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

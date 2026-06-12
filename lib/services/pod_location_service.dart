@@ -126,17 +126,20 @@ class PodLocationService {
   final WeatherService _weatherService = WeatherService();
 
   StreamSubscription<Position>? _positionStream;
-  Timer? _staleTimer;       // tandai locked → stale setelah _staleAfter
-  Timer? _acquireTimeout;   // paksa stop acquire jika terlalu lama
+  Timer? _staleTimer;
+  Timer? _acquireTimeout;
 
   // ── Config ───────────────────────────────────────────────────
   static const Duration _staleAfter      = Duration(minutes: 10);
-  static const Duration _acquireDeadline = Duration(seconds: 14);
+  // FIX: _acquireDeadline diselaraskan dengan engine _hardTimeout (10 s)
+  // ditambah sedikit buffer (2 s) agar engine punya cukup waktu emit
+  // fallback lock sebelum service memaksa stop stream.
+  static const Duration _acquireDeadline = Duration(seconds: 12);
   static const String   _prefLat         = 'last_known_lat';
   static const String   _prefLon         = 'last_known_lon';
   static const String   _prefAddress     = 'last_known_address';
   static const int      _gridRes         = 10000;   // ~10m grid
-  static const double   _geocodeMoveM    = 80.0;    // re-geocode jika bergerak >80m
+  static const double   _geocodeMoveM    = 80.0;
   static const Duration _weatherMaxAge   = Duration(minutes: 15);
 
   // ── State ───────────────────────────────────────────────────
@@ -156,8 +159,7 @@ class PodLocationService {
   DateTime? _lastWeatherAt;
   DateTime? _lockedAt;
 
-  // ── Init: panggil sekali di main() ──────────────────────────
-  // Hanya load cache + OS lastKnown — TIDAK start GPS stream.
+  // ── Init ────────────────────────────────────────────────────
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
@@ -166,19 +168,14 @@ class PodLocationService {
   }
 
   // ── acquireForCapture ───────────────────────────────────────
-  // Dipanggil saat kamera dibuka atau user tap capture.
-  // Jika sudah locked dan belum stale → return langsung.
-  // Jika stale atau idle → mulai fresh acquire.
   Future<void> acquireForCapture() async {
     final mode = currentState.mode;
 
-    // Sudah locked dan fresh → tidak perlu apa-apa
     if (mode == PodGpsMode.locked) {
       if (kDebugMode) debugPrint('PodLocationService: already locked, skip acquire');
       return;
     }
 
-    // Sedang acquiring → biarkan jalan
     if (mode == PodGpsMode.acquiring) {
       if (kDebugMode) debugPrint('PodLocationService: already acquiring');
       return;
@@ -197,24 +194,25 @@ class PodLocationService {
   }
 
   // ── releaseAfterCapture ─────────────────────────────────────
-  // Panggil setelah foto diambil (atau kamera ditutup).
-  // GPS stream dihentikan jika belum locked, timer stale diset.
   void releaseAfterCapture() {
     _stopStream();
     if (currentState.mode == PodGpsMode.locked ||
         currentState.mode == PodGpsMode.acquiring) {
       _scheduleStale();
     }
-    if (kDebugMode) debugPrint('PodLocationService: released, mode=locked/stale scheduled');
+    if (kDebugMode) debugPrint('PodLocationService: released');
   }
 
   // ── forceRefresh ────────────────────────────────────────────
-  // User tap tombol refresh di GPS bar.
   Future<void> forceRefresh() async {
     _cancelTimers();
     _gpsEngine.reset();
-    _geocodeDone = false;
-    _lockedAt    = null;
+    _geocodeDone    = false;
+    // FIX: null-kan koordinat geocode terakhir agar pergerakan <80m pun
+    // tetap men-trigger geocode baru setelah user eksplisit minta refresh.
+    _lastGeocodeLat = null;
+    _lastGeocodeLon = null;
+    _lockedAt       = null;
     await _startAcquire();
   }
 
@@ -240,7 +238,7 @@ class PodLocationService {
       mode:         PodGpsMode.acquiring,
     ));
 
-    // Inject OS cached position dulu → instant preview
+    // Inject OS cached position → instant preview
     try {
       final osLast = await Geolocator.getLastKnownPosition();
       if (osLast != null && !osLast.isMocked) {
@@ -263,7 +261,7 @@ class PodLocationService {
       if (kDebugMode) debugPrint('PodLocationService: getLastKnownPosition error $e');
     }
 
-    // Fetch weather paralel dari posisi yang ada (tidak perlu tunggu lock)
+    // Fetch weather paralel
     final s = currentState;
     if (s.lat != null && s.lon != null && _weatherStale()) {
       unawaited(_updateWeather(s.lat!, s.lon!));
@@ -280,7 +278,6 @@ class PodLocationService {
       if (kDebugMode) debugPrint('PodLocationService: stream error $e');
     });
 
-    // Deadline: paksa stop setelah _acquireDeadline
     _acquireTimeout = Timer(_acquireDeadline, _onAcquireTimeout);
 
     if (kDebugMode) debugPrint('PodLocationService: acquiring started');
@@ -289,8 +286,6 @@ class PodLocationService {
   void _onAcquireTimeout() {
     if (currentState.mode != PodGpsMode.acquiring) return;
     if (kDebugMode) debugPrint('PodLocationService: acquire timeout — force stop');
-    // Engine sudah handle fallback lock di _hardTimeout (10s)
-    // Kita stop stream, biarkan state engine apa adanya
     _stopStream();
     _emit(currentState.copyWith(
       mode: currentState.confidence.canCapture
@@ -335,7 +330,7 @@ class PodLocationService {
       mode:           PodGpsMode.acquiring,
     ));
 
-    // Geocode: pertama kali canCapture ATAU bergerak > _geocodeMoveM
+    // Geocode: canCapture pertama kali ATAU bergerak > _geocodeMoveM
     final movedFar = _geocodeDone &&
         _lastGeocodeLat != null &&
         PodGpsEngine.haversinePublic(
@@ -348,7 +343,6 @@ class PodLocationService {
       unawaited(_geocode(lat, lon));
     }
 
-    // Weather paralel jika stale
     if (upgraded && _weatherStale()) {
       unawaited(_updateWeather(lat, lon));
     }
@@ -361,7 +355,7 @@ class PodLocationService {
       _emit(currentState.copyWith(mode: PodGpsMode.locked));
       _scheduleStale();
       if (kDebugMode) {
-        debugPrint('PodLocationService: locked acc=${acc.toStringAsFixed(1)}m → stream stopped');
+        debugPrint('PodLocationService: locked acc=${acc.toStringAsFixed(1)}m');
       }
     }
   }
@@ -404,11 +398,11 @@ class PodLocationService {
         await _saveLastKnown(lat, lon, address);
       }
       _emit(currentState.copyWith(
-        address:        address,
+        address:          address,
         resolvedLocation: resolved,
-        fromCache:      false,
-        addressLoading: false,
-        isFastAddress:  false,
+        fromCache:        false,
+        addressLoading:   false,
+        isFastAddress:    false,
       ));
       if (kDebugMode) debugPrint('PodLocationService: geocode → $address');
     } catch (e) {
@@ -451,13 +445,13 @@ class PodLocationService {
         _lastGeocodeLon = lon;
 
         _emit(currentState.copyWith(
-          lat:          lat,
-          lon:          lon,
-          address:      address,
-          fromCache:    true,
+          lat:           lat,
+          lon:           lon,
+          address:       address,
+          fromCache:     true,
           isFastAddress: true,
-          confidence:   PodConfidence.fair, // preview saja, belum verify
-          mode:         PodGpsMode.stale,   // perlu re-acquire saat butuh
+          confidence:    PodConfidence.fair,
+          mode:          PodGpsMode.stale,
         ));
         if (kDebugMode) debugPrint('PodLocationService: cache loaded → $address');
       }

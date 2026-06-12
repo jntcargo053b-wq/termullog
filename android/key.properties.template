@@ -1,0 +1,7 @@
+# Template untuk development lokal.
+# Salin file ini ke android/key.properties dan isi dengan data keystore Anda.
+# JANGAN commit key.properties ke git!
+storeFile=../keystore/termullog-release.jks
+storePassword=YOUR_STORE_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
+keyPassword=YOUR_KEY_PASSWORD

@@ -23,8 +23,14 @@ enum GpsGate { noPosition, blockedByAccuracy, needsConfirmation, ok }
 class CaptureResult {
   final bool success;
   final bool savedToGallery;
+  final String? savedPath;
   final String? errorMessage;
-  const CaptureResult({required this.success, this.savedToGallery = false, this.errorMessage});
+  const CaptureResult({
+    required this.success,
+    this.savedToGallery = false,
+    this.savedPath,
+    this.errorMessage,
+  });
 }
 
 class PhotoCaptureController {
@@ -33,18 +39,32 @@ class PhotoCaptureController {
   const PhotoCaptureController();
 
   GpsGateResult checkGpsGate(PodLocationState gps) {
-    if (gps.lat == null || gps.lon == null) return const GpsGateResult(gate: GpsGate.noPosition, accuracy: 0);
+    if (gps.lat == null || gps.lon == null) {
+      return const GpsGateResult(gate: GpsGate.noPosition, accuracy: 0);
+    }
     final acc = gps.accuracy ?? 999.0;
-    if (acc > hardBlockAccuracy) return GpsGateResult(gate: GpsGate.blockedByAccuracy, accuracy: acc);
-    if (!gps.confidence.canCapture || acc > warnAccuracy) return GpsGateResult(gate: GpsGate.needsConfirmation, accuracy: acc);
+    if (acc > hardBlockAccuracy) {
+      return GpsGateResult(gate: GpsGate.blockedByAccuracy, accuracy: acc);
+    }
+    if (!gps.confidence.canCapture || acc > warnAccuracy) {
+      return GpsGateResult(gate: GpsGate.needsConfirmation, accuracy: acc);
+    }
     return GpsGateResult(gate: GpsGate.ok, accuracy: acc);
   }
 
-  Future<CaptureResult> capture({required CameraController controller, required PodLocationState gps, required CaptureSettings settings}) async {
+  Future<CaptureResult> capture({
+    required CameraController controller,
+    required PodLocationState gps,
+    required CaptureSettings settings,
+  }) async {
+    // FIX: captureTime diambil SEBELUM await takePicture() agar timestamp
+    // mencerminkan waktu shutter, bukan waktu selesai I/O.
+    final captureTime = DateTime.now();
+
+    XFile? xFile;
     try {
-      final xFile = await controller.takePicture();
+      xFile = await controller.takePicture();
       final rawBytes = await File(xFile.path).readAsBytes();
-      final captureTime = DateTime.now();
       final fontScale = await SettingsCache.getFontScale();
       final imageQuality = await SettingsCache.imageQuality;
 
@@ -58,7 +78,11 @@ class PhotoCaptureController {
       Uint8List? mapBytes;
       if (settings.showMiniMap && gps.lat != null && gps.lon != null) {
         try {
-          mapBytes = await LocationWeatherService.fetchMapWithRetry(gps.lat!, gps.lon!, width: 240, height: 240, zoom: settings.mapZoomLevel);
+          mapBytes = await LocationWeatherService.fetchMapWithRetry(
+            gps.lat!, gps.lon!,
+            width: 240, height: 240,
+            zoom: settings.mapZoomLevel,
+          );
         } catch (_) {}
       }
 
@@ -85,7 +109,7 @@ class PhotoCaptureController {
         customLogoBytes: settings.customLogoBytes,
         showMiniMap: settings.showMiniMap,
         mapBytes: mapBytes,
-        mapSize: 120,
+        mapSize: 'medium',
         mapZoomLevel: settings.mapZoomLevel,
         fontSize: settings.fontSize,
         dateFormat: settings.dateFormat,
@@ -98,11 +122,26 @@ class PhotoCaptureController {
       await histDir.create(recursive: true);
       final outPath = '${histDir.path}/termullog_${captureTime.millisecondsSinceEpoch}.jpg';
       await File(outPath).writeAsBytes(jpegBytes);
+
       final saved = await GallerySaver.saveImage(outPath, albumName: 'TermulLog');
+
+      // FIX: hapus temp file kamera setelah semua proses selesai sukses
       await File(xFile.path).delete();
-      return CaptureResult(success: true, savedToGallery: saved == true);
+
+      return CaptureResult(
+        success: true,
+        savedToGallery: saved == true,
+        savedPath: outPath,
+      );
     } catch (e) {
-      return CaptureResult(success: false, errorMessage: e.toString().split('\n').first);
+      // FIX: pastikan temp file kamera tetap dihapus meski proses gagal
+      if (xFile != null) {
+        try { await File(xFile.path).delete(); } catch (_) {}
+      }
+      return CaptureResult(
+        success: false,
+        errorMessage: e.toString().split('\n').first,
+      );
     }
   }
 }

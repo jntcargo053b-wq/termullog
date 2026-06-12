@@ -74,8 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (_) =>
-              CameraScreen(cameras: CameraRegistry.cameras)),
+          builder: (_) => const CameraScreen()), // ← Perbaikan
     );
     _loadPhotos();
   }

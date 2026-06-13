@@ -75,6 +75,8 @@ class PhotoCaptureController {
         finalBytes = await resizeImageSync(rawBytes, imageQuality);
       }
 
+      final mapSize = await SettingsCache.mapSize;
+
       Uint8List? mapBytes;
       if (settings.showMiniMap && gps.lat != null && gps.lon != null) {
         try {
@@ -109,7 +111,7 @@ class PhotoCaptureController {
         customLogoBytes: settings.customLogoBytes,
         showMiniMap: settings.showMiniMap,
         mapBytes: mapBytes,
-        mapSize: 'medium',
+        mapSize: mapSize,
         mapZoomLevel: settings.mapZoomLevel,
         fontSize: settings.fontSize,
         dateFormat: settings.dateFormat,

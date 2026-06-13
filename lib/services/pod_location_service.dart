@@ -232,6 +232,9 @@ class PodLocationService {
     _gpsEngine.reset();
     _cancelTimers();
 
+    // FIX: selalu fetch geocode fresh saat acquire baru
+    _geocodeDone = false;
+
     _emit(currentState.copyWith(
       confidence:   PodConfidence.searching,
       lockProgress: 0.0,

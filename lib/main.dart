@@ -6,7 +6,6 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/camera_registry.dart';
 import 'services/settings_cache.dart';
-import 'services/pod_address_resolver.dart';
 import 'services/pod_location_service.dart';
 import 'ui/app.dart';
 

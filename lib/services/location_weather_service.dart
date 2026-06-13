@@ -3,7 +3,6 @@
 //   - fetchMap / fetchMapWithRetry  (static map tiles OSM)
 //   - fetchFromPosition             (weather saja, delegate ke WeatherService)
 //   - LocationWeatherResult         (dipakai oleh watermark_params)
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;

@@ -157,7 +157,6 @@ class PodLocationService {
   double?   _lastGeocodeLat;
   double?   _lastGeocodeLon;
   DateTime? _lastWeatherAt;
-  DateTime? _lockedAt;
 
   // ── Init ────────────────────────────────────────────────────
   Future<void> init() async {
@@ -212,7 +211,6 @@ class PodLocationService {
     // tetap men-trigger geocode baru setelah user eksplisit minta refresh.
     _lastGeocodeLat = null;
     _lastGeocodeLon = null;
-    _lockedAt       = null;
     await _startAcquire();
   }
 
@@ -354,7 +352,6 @@ class PodLocationService {
     if (_gpsEngine.isLocked) {
       _cancelTimers();
       _stopStream();
-      _lockedAt = DateTime.now();
       _emit(currentState.copyWith(mode: PodGpsMode.locked));
       _scheduleStale();
       if (kDebugMode) {

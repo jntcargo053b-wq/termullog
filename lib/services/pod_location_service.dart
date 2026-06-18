@@ -157,7 +157,7 @@ class PodLocationService {
   double?   _lastGeocodeLat;
   double?   _lastGeocodeLon;
   DateTime? _lastWeatherAt;
-  DateTime? _lockedAt;
+ 
 
   // ── Init ────────────────────────────────────────────────────
   Future<void> init() async {

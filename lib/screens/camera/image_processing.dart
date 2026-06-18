@@ -1,5 +1,5 @@
 import 'package:image/image.dart' as img;
-
+import 'package:flutter/foundation.dart';
 @immutable
 class ResizeParams {
   final Uint8List rawBytes;

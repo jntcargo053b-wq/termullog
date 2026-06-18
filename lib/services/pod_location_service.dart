@@ -20,6 +20,7 @@
 // ============================================================
 
 import 'dart:async';
+import 'dart:io' show Platform;              // <-- ADDED for platform check
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -131,9 +132,6 @@ class PodLocationService {
 
   // ── Config ───────────────────────────────────────────────────
   static const Duration _staleAfter      = Duration(minutes: 10);
-  // FIX: _acquireDeadline diselaraskan dengan engine _hardTimeout (10 s)
-  // ditambah sedikit buffer (2 s) agar engine punya cukup waktu emit
-  // fallback lock sebelum service memaksa stop stream.
   static const Duration _acquireDeadline = Duration(seconds: 12);
   static const String   _prefLat         = 'last_known_lat';
   static const String   _prefLon         = 'last_known_lon';
@@ -157,7 +155,7 @@ class PodLocationService {
   double?   _lastGeocodeLat;
   double?   _lastGeocodeLon;
   DateTime? _lastWeatherAt;
-  DateTime? _lockedAt;
+  // _lockedAt removed – unused
 
   // ── Init ────────────────────────────────────────────────────
   Future<void> init() async {
@@ -196,9 +194,18 @@ class PodLocationService {
   // ── releaseAfterCapture ─────────────────────────────────────
   void releaseAfterCapture() {
     _stopStream();
-    if (currentState.mode == PodGpsMode.locked ||
-        currentState.mode == PodGpsMode.acquiring) {
+    _cancelTimers();   // <-- FIX: cancel acquire timeout too
+
+    final mode = currentState.mode;
+    if (mode == PodGpsMode.locked) {
       _scheduleStale();
+    } else if (mode == PodGpsMode.acquiring) {
+      // No lock achieved – fall back to idle or stale if we have a usable position
+      final hasUsable = currentState.hasPosition && currentState.confidence.canCapture;
+      _emit(currentState.copyWith(
+        mode: hasUsable ? PodGpsMode.stale : PodGpsMode.idle,
+      ));
+      if (hasUsable) _scheduleStale();
     }
     if (kDebugMode) debugPrint('PodLocationService: released');
   }
@@ -208,11 +215,8 @@ class PodLocationService {
     _cancelTimers();
     _gpsEngine.reset();
     _geocodeDone    = false;
-    // FIX: null-kan koordinat geocode terakhir agar pergerakan <80m pun
-    // tetap men-trigger geocode baru setelah user eksplisit minta refresh.
     _lastGeocodeLat = null;
     _lastGeocodeLon = null;
-    _lockedAt       = null;
     await _startAcquire();
   }
 
@@ -244,13 +248,13 @@ class PodLocationService {
       if (osLast != null && !osLast.isMocked) {
         _gpsEngine.processSample(osLast);
         _emit(currentState.copyWith(
-          lat:          osLast.latitude,
-          lon:          osLast.longitude,
-          accuracy:     osLast.accuracy,
-          confidence:   _gpsEngine.confidence,
-          lockProgress: _gpsEngine.lockProgress,
+          lat:            osLast.latitude,
+          lon:            osLast.longitude,
+          accuracy:       osLast.accuracy,
+          confidence:     _gpsEngine.confidence,
+          lockProgress:   _gpsEngine.lockProgress,
           isFallbackLock: _gpsEngine.isFallbackLock,
-          mode:         PodGpsMode.acquiring,
+          mode:           PodGpsMode.acquiring,
         ));
         if (kDebugMode) {
           debugPrint('PodLocationService: OS lastKnown injected '
@@ -267,13 +271,30 @@ class PodLocationService {
       unawaited(_updateWeather(s.lat!, s.lon!));
     }
 
-    // Start GPS stream
-    _positionStream = Geolocator.getPositionStream(
-      locationSettings: AndroidSettings(
+    // ── FIX: Platform‑specific location settings ──────────────
+    LocationSettings settings;
+    if (Platform.isAndroid) {
+      settings = AndroidSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(),
         forceLocationManager: false,
-      ),
+      );
+    } else if (Platform.isIOS) {
+      settings = AppleSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring,
+        activityType: ActivityType.fitness,
+      );
+    } else {
+      // fallback – let the plugin decide
+      settings = const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+      );
+    }
+
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: settings,
     ).listen(_onPosition, onError: (e) {
       if (kDebugMode) debugPrint('PodLocationService: stream error $e');
     });
@@ -343,7 +364,8 @@ class PodLocationService {
       unawaited(_geocode(lat, lon));
     }
 
-    if (upgraded && _weatherStale()) {
+    // Weather: fetch if stale (regardless of upgrade)
+    if (_weatherStale()) {
       unawaited(_updateWeather(lat, lon));
     }
 
@@ -351,7 +373,6 @@ class PodLocationService {
     if (_gpsEngine.isLocked) {
       _cancelTimers();
       _stopStream();
-      _lockedAt = DateTime.now();
       _emit(currentState.copyWith(mode: PodGpsMode.locked));
       _scheduleStale();
       if (kDebugMode) {
@@ -392,6 +413,7 @@ class PodLocationService {
       if (address.isNotEmpty && !resolved.isDmsFallback) {
         _geocodeCache[key] = address;
         if (_geocodeCache.length > _maxCache) {
+          // evict oldest 50 entries
           final remove = _geocodeCache.keys.take(50).toList();
           for (final k in remove) _geocodeCache.remove(k);
         }

@@ -20,7 +20,7 @@
 // ============================================================
 
 import 'dart:async';
-import 'dart:io' show Platform;              // <-- ADDED for platform check
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -155,7 +155,6 @@ class PodLocationService {
   double?   _lastGeocodeLat;
   double?   _lastGeocodeLon;
   DateTime? _lastWeatherAt;
-  // _lockedAt removed – unused
 
   // ── Init ────────────────────────────────────────────────────
   Future<void> init() async {
@@ -194,13 +193,12 @@ class PodLocationService {
   // ── releaseAfterCapture ─────────────────────────────────────
   void releaseAfterCapture() {
     _stopStream();
-    _cancelTimers();   // <-- FIX: cancel acquire timeout too
+    _cancelTimers();
 
     final mode = currentState.mode;
     if (mode == PodGpsMode.locked) {
       _scheduleStale();
     } else if (mode == PodGpsMode.acquiring) {
-      // No lock achieved – fall back to idle or stale if we have a usable position
       final hasUsable = currentState.hasPosition && currentState.confidence.canCapture;
       _emit(currentState.copyWith(
         mode: hasUsable ? PodGpsMode.stale : PodGpsMode.idle,
@@ -271,25 +269,25 @@ class PodLocationService {
       unawaited(_updateWeather(s.lat!, s.lon!));
     }
 
-    // ── FIX: Platform‑specific location settings ──────────────
+    // ── Platform‑specific location settings ──────────────────
     LocationSettings settings;
     if (Platform.isAndroid) {
       settings = AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(),
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(), // <-- dipastikan int
         forceLocationManager: false,
       );
     } else if (Platform.isIOS) {
       settings = AppleSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: PodGpsEngine.distanceFilterAcquiring,
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring, // <-- double
         activityType: ActivityType.fitness,
       );
     } else {
-      // fallback – let the plugin decide
+      // fallback – gunakan double agar kompatibel
       settings = const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 0,
+        distanceFilter: 0.0,
       );
     }
 
@@ -331,7 +329,9 @@ class PodLocationService {
       return;
     }
 
-    final upgraded = _gpsEngine.processSample(raw);
+    // Proses sample, return value tidak digunakan lagi
+    _gpsEngine.processSample(raw);
+
     final conf     = _gpsEngine.confidence;
     final lock     = _gpsEngine.lockResult;
     final progress = _gpsEngine.lockProgress;
@@ -364,7 +364,7 @@ class PodLocationService {
       unawaited(_geocode(lat, lon));
     }
 
-    // Weather: fetch if stale (regardless of upgrade)
+    // Weather: fetch jika stale (tidak bergantung pada upgrade)
     if (_weatherStale()) {
       unawaited(_updateWeather(lat, lon));
     }
@@ -413,7 +413,6 @@ class PodLocationService {
       if (address.isNotEmpty && !resolved.isDmsFallback) {
         _geocodeCache[key] = address;
         if (_geocodeCache.length > _maxCache) {
-          // evict oldest 50 entries
           final remove = _geocodeCache.keys.take(50).toList();
           for (final k in remove) _geocodeCache.remove(k);
         }

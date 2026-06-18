@@ -9,7 +9,6 @@ import '../../watermark/watermark_engine.dart';
 import '../../watermark/watermark_params.dart';
 import 'image_processing.dart';
 import 'camera_settings_controller.dart';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 class GpsGateResult {

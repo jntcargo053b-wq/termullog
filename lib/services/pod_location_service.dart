@@ -282,7 +282,7 @@ class PodLocationService {
     } else if (Platform.isIOS) {
       settings = AppleSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: PodGpsEngine.distanceFilterAcquiring, // ← double
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(), // ← int
         activityType: ActivityType.fitness,
       );
     } else {

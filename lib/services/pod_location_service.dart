@@ -270,27 +270,26 @@ class PodLocationService {
     }
 
     // ── Platform‑specific location settings ──────────────────
-    // PERHATIKAN: AndroidSettings.distanceFilter bertipe int,
-    // AppleSettings.distanceFilter bertipe double.
-    // Untuk fallback, gunakan int 0 agar kompatibel dengan const constructor.
+    // Pastikan semua distanceFilter bertipe sesuai:
+    // Android → int, iOS → double, fallback → int (konstan)
     LocationSettings settings;
     if (Platform.isAndroid) {
       settings = AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(), // int
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(), // ← int
         forceLocationManager: false,
       );
     } else if (Platform.isIOS) {
       settings = AppleSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: PodGpsEngine.distanceFilterAcquiring, // double
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring, // ← double
         activityType: ActivityType.fitness,
       );
     } else {
-      // Web atau platform lain
+      // Web / platform lain – gunakan int agar kompatibel dengan const
       settings = const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 0, // int, agar tidak bentrok dengan const
+        distanceFilter: 0, // int, bukan double
       );
     }
 

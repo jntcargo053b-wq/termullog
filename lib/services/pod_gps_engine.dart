@@ -195,7 +195,7 @@ class PodGpsEngine {
       lat: raw.latitude,
       lon: raw.longitude,
       accuracy: raw.accuracy,
-      time: raw.timestamp ?? DateTime.now(),
+      time: raw.timestamp,
     ));
     if (_window.length > _maxWindow) _window.removeAt(0);
 

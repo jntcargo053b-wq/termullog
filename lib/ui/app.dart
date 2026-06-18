@@ -17,7 +17,7 @@ class App extends StatelessWidget {
           primary: Color(0xFF1E90FF),
           secondary: Color(0xFFE63946),
           surface: Color(0xFF0D1325),
-          background: Color(0xFF070B16),
+          // background is deprecated – removed
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF070B16),

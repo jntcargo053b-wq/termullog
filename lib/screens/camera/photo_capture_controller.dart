@@ -1,7 +1,5 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../services/pod_location_service.dart';

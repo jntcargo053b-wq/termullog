@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
+import '../core/camera_registry.dart';
 import 'camera_screen.dart';
 import 'settings_screen.dart';
 import 'history_screen.dart';

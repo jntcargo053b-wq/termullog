@@ -3,6 +3,7 @@
 // Menyimpan ke ApplicationDocumentsDirectory/history (bukan termullog_history)
 // Watermark processing, mini map, save ke galeri, share
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';

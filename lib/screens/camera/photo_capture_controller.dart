@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
@@ -74,8 +75,6 @@ class PhotoCaptureController {
         finalBytes = await resizeImageSync(rawBytes, imageQuality);
       }
 
-      final mapSize = await SettingsCache.mapSize;
-
       Uint8List? mapBytes;
       if (settings.showMiniMap && gps.lat != null && gps.lon != null) {
         try {
@@ -110,7 +109,7 @@ class PhotoCaptureController {
         customLogoBytes: settings.customLogoBytes,
         showMiniMap: settings.showMiniMap,
         mapBytes: mapBytes,
-        mapSize: mapSize,
+        mapSize: 'medium',
         mapZoomLevel: settings.mapZoomLevel,
         fontSize: settings.fontSize,
         dateFormat: settings.dateFormat,

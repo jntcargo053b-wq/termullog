@@ -270,24 +270,27 @@ class PodLocationService {
     }
 
     // ── Platform‑specific location settings ──────────────────
+    // PERHATIKAN: AndroidSettings.distanceFilter bertipe int,
+    // AppleSettings.distanceFilter bertipe double.
+    // Untuk fallback, gunakan int 0 agar kompatibel dengan const constructor.
     LocationSettings settings;
     if (Platform.isAndroid) {
       settings = AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(), // <-- dipastikan int
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring.toInt(), // int
         forceLocationManager: false,
       );
     } else if (Platform.isIOS) {
       settings = AppleSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: PodGpsEngine.distanceFilterAcquiring, // <-- double
+        distanceFilter: PodGpsEngine.distanceFilterAcquiring, // double
         activityType: ActivityType.fitness,
       );
     } else {
-      // fallback – gunakan double agar kompatibel
+      // Web atau platform lain
       settings = const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 0.0,
+        distanceFilter: 0, // int, agar tidak bentrok dengan const
       );
     }
 
@@ -329,7 +332,7 @@ class PodLocationService {
       return;
     }
 
-    // Proses sample, return value tidak digunakan lagi
+    // Proses sample; return value tidak digunakan
     _gpsEngine.processSample(raw);
 
     final conf     = _gpsEngine.confidence;
